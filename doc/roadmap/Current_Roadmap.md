@@ -12,7 +12,8 @@
 The project currently has:
 
 - Qt/C++ project skeleton with CMake presets.
-- vcpkg manifest for Qt WebEngine, Qt WebChannel, reflect-cpp, spdlog and Drogon.
+- vcpkg manifest for reflect-cpp, spdlog and Drogon.
+- Qt is resolved from the system or external Qt installation, not from vcpkg.
 - `cppwiki::Application` and `cppwiki::MainWindow`.
 - `QWebEngineView` wired as the editor host.
 - Vite/React editor bundle under `frontend/editor`.

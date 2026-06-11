@@ -4,29 +4,6 @@
   "description": "Desktop-first offline-first wiki platform built with Qt and C++20.",
   "builtin-baseline": "dd306f32e07d87fdb16837af64f33b6b415c770a",
   "dependencies": [
-    {
-      "name": "qtbase",
-      "default-features": false,
-      "features": [
-        "gui",
-        "network",
-        "thread",
-        "widgets"
-      ]
-    },
-    {
-      "name": "qtwebchannel",
-      "default-features": false
-    },
-    {
-      "name": "qtwebengine",
-      "default-features": false,
-      "features": [
-        "webengine",
-        "webchannel"
-      ],
-      "platform": "(linux | osx | (windows & x64)) & !static"
-    },
     "reflectcpp",
     "spdlog",
     {

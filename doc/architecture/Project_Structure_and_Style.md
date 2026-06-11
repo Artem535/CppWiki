@@ -172,13 +172,14 @@ export VCPKG_ROOT=/path/to/vcpkg
 cmake --preset debug
 ```
 
-On Linux x64 the project uses `x64-linux-dynamic` by default because `qtwebengine` is not supported by vcpkg's default static Linux triplet.
+Qt is not installed through vcpkg. Use system Qt packages or an external Qt installation and expose it through `CMAKE_PREFIX_PATH` when CMake cannot find it automatically:
+
+```bash
+cmake --preset debug -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x.x/gcc_64
+```
 
 Current manifest dependencies:
 
-- `qtbase` with `gui`, `network`, `thread`, `widgets`;
-- `qtwebchannel`;
-- `qtwebengine` with `webengine`, `webchannel`;
 - `reflectcpp`;
 - `spdlog`;
 - `drogon` without default features.
