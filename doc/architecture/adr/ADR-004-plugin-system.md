@@ -1,0 +1,60 @@
+# ADR-004 — Plugin System
+
+## Status
+
+Accepted
+
+## Date
+
+2026-06-11
+
+---
+
+# Context
+
+The platform needs safe extensibility.
+
+Native dynamic libraries such as `dlopen` or `QLibrary` provide performance, but are unsafe: crashes, memory corruption and ABI issues can affect the host process.
+
+The product also wants plugin developers to write C++.
+
+---
+
+# Decision
+
+Use WebAssembly plugins executed through Wasmtime.
+
+Expose a C++20 Plugin SDK to plugin developers.
+
+The SDK hides low-level ABI details.
+
+---
+
+# Consequences
+
+## Positive
+
+- Strong isolation.
+- Cross-platform plugins.
+- C++ developer experience.
+- Plugin crashes do not crash host.
+- Capability-based permission model is possible.
+
+## Negative
+
+- SDK must be maintained.
+- ABI glue still exists internally.
+- WASM runtime adds complexity.
+- Some native libraries may be hard to compile to WASM.
+
+---
+
+# Plugin contract
+
+Plugins provide:
+
+- manifest;
+- schema;
+- validation;
+- rendering;
+- plain-text extraction for search.

@@ -1,0 +1,82 @@
+# ADR-001 — Editor Choice
+
+## Status
+
+Accepted
+
+## Date
+
+2026-06-11
+
+---
+
+# Context
+
+The original architecture used:
+
+```text
+Qt QTextEdit
++
+Djot
++
+QSyntaxHighlighter
++
+QWebEngine preview
+```
+
+This approach provided a native desktop editing experience, but created major risks:
+
+- no mature collaboration bridge between QTextDocument and Yjs;
+- significant custom work for block UX;
+- limited extension ecosystem;
+- harder Confluence compatibility;
+- high cost of implementing Notion-like interactions.
+
+The project requirements evolved toward a structured Confluence/Notion-like knowledge platform.
+
+---
+
+# Decision
+
+Use:
+
+```text
+Qt 6 Widgets
++
+QWebEngine
++
+BlockNote
++
+Tiptap
++
+ProseMirror
+```
+
+Qt remains the native desktop shell.
+
+The editor runs inside QWebEngine.
+
+---
+
+# Consequences
+
+## Positive
+
+- Mature structured editor ecosystem.
+- Notion-like block UX.
+- Future path to Yjs collaboration.
+- Easier custom block implementation.
+- Better alignment with Confluence/ADF-style structured documents.
+
+## Negative
+
+- Requires embedded web runtime.
+- Adds frontend build pipeline.
+- Increases application size.
+- Requires JS/C++ bridge maintenance.
+
+---
+
+# Notes
+
+This decision intentionally trades a fully native editor for lower architectural risk and faster delivery of modern document editing features.
