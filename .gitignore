@@ -1,0 +1,14 @@
+build/
+cmake-build-*/
+vcpkg_installed/
+node_modules/
+frontend/editor/dist/
+.cache/
+.idea/
+.vscode/
+compile_commands.json
+*.user
+*.autosave
+*.swp
+*.swo
+*.log
