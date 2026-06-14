@@ -2,6 +2,8 @@ qt_add_executable(cppwiki_app
   WIN32
   MACOSX_BUNDLE
     app/application.cc
+    bridge/editor_bridge.cc
+    bridge/editor_bridge.h
     main.cc
     app/application.cc
     app/application.h
@@ -29,6 +31,7 @@ target_link_libraries(cppwiki_app
     Qt6::Widgets
     Qt6::WebChannel
     Qt6::WebEngineWidgets
+    spdlog::spdlog
 )
 
 cppwiki_apply_common_options(cppwiki_app)

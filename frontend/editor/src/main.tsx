@@ -4,10 +4,17 @@ import "./styles.css";
 
 import { BlockNoteView } from "@blocknote/mantine";
 import { useCreateBlockNote } from "@blocknote/react";
-import { StrictMode } from "react";
+import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { createEditorBridge } from "./bridge";
+import type { EditorBridge } from "./bridge/editorBridge";
+
+const kSnapshotDebounceMs = 500;
 
 function EditorApp() {
+  const [bridge, setBridge] = useState<EditorBridge | null>(null);
+  const snapshot_timer = useRef<number | null>(null);
+
   const editor = useCreateBlockNote({
     initialContent: [
       {
@@ -37,6 +44,44 @@ function EditorApp() {
     ],
   });
 
+  useEffect(() => {
+    let cancelled = false;
+
+    void createEditorBridge().then(async (created_bridge) => {
+      if (cancelled) {
+        return;
+      }
+
+      setBridge(created_bridge);
+
+      const response = await created_bridge.getInitialDocument();
+      if (response.ok && Array.isArray(response.result)) {
+        editor.replaceBlocks(editor.document, response.result);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      if (snapshot_timer.current !== null) {
+        window.clearTimeout(snapshot_timer.current);
+      }
+    };
+  }, [editor]);
+
+  const handleEditorChange = () => {
+    if (!bridge) {
+      return;
+    }
+
+    if (snapshot_timer.current !== null) {
+      window.clearTimeout(snapshot_timer.current);
+    }
+
+    snapshot_timer.current = window.setTimeout(() => {
+      void bridge.updateSnapshot(editor.document);
+    }, kSnapshotDebounceMs);
+  };
+
   return (
     <main className="app-shell">
       <aside className="sidebar" aria-label="Workspace navigation">
@@ -59,7 +104,11 @@ function EditorApp() {
           </div>
           <span className="status-pill">QWebEngine</span>
         </header>
-        <BlockNoteView editor={editor} theme="light" />
+        <BlockNoteView
+          editor={editor}
+          onChange={handleEditorChange}
+          theme="light"
+        />
       </section>
     </main>
   );

@@ -5,15 +5,22 @@
 
 #include "gui/i_page.h"
 
+class QWebChannel;
 class QWebEngineView;
+
+namespace cppwiki::bridge {
+class QEditorBridge;
+}
 
 namespace cppwiki {
 
 class Page final : public QWidget, public IPage {
  public:
   explicit Page(QWidget* parent = nullptr);
+
   Page(const Page&) = delete;
   auto operator=(const Page&) -> Page& = delete;
+
   ~Page() override;
 
   [[nodiscard]] auto Title() const -> QString override;
@@ -22,8 +29,11 @@ class Page final : public QWidget, public IPage {
  private:
   void BuildUi();
   void LoadEditor();
+  void InstallWebChannelScript();
 
   QWebEngineView* editor_view_ = nullptr;
+  QWebChannel* channel_ = nullptr;
+  bridge::QEditorBridge* editor_bridge_ = nullptr;
 };
 
 }  // namespace cppwiki

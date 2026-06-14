@@ -1,9 +1,17 @@
 #include "gui/page.h"
 
+#include <QFile>
 #include <QFileInfo>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QWebChannel>
+#include <QWebEnginePage>
+#include <QWebEngineProfile>
+#include <QWebEngineScript>
+#include <QWebEngineScriptCollection>
 #include <QWebEngineView>
+
+#include "bridge/editor_bridge.h"
 
 namespace cppwiki {
 namespace {
@@ -83,7 +91,15 @@ void Page::BuildUi() {
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
 
+  // Create the QWebEngineView and QWebChannel.
+  channel_ = new QWebChannel(this);
+  editor_bridge_ = new bridge::QEditorBridge(this);
+  channel_->registerObject(QStringLiteral("editorBridge"), editor_bridge_);
+
   editor_view_ = new QWebEngineView(this);
+  editor_view_->page()->setWebChannel(channel_);
+  InstallWebChannelScript();
+
   layout->addWidget(editor_view_);
 
   LoadEditor();
@@ -100,6 +116,22 @@ void Page::LoadEditor() {
   }
 
   editor_view_->setHtml(EditorFallbackHtml(editor_index.absoluteFilePath()));
+}
+
+void Page::InstallWebChannelScript() {
+  QFile script_file(QStringLiteral(":/qtwebchannel/qwebchannel.js"));
+  if (!script_file.open(QIODevice::ReadOnly)) {
+    return;
+  }
+
+  QWebEngineScript script;
+  script.setName(QStringLiteral("qwebchannel"));
+  script.setSourceCode(QString::fromUtf8(script_file.readAll()));
+  script.setInjectionPoint(QWebEngineScript::DocumentCreation);
+  script.setWorldId(QWebEngineScript::MainWorld);
+  script.setRunsOnSubFrames(false);
+
+  editor_view_->page()->scripts().insert(script);
 }
 
 }  // namespace cppwiki
