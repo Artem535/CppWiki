@@ -1,0 +1,16 @@
+# Pinned Couchbase Lite for C runtime package metadata.
+#
+# Fill these values when selecting the exact release for the storage spike.
+# Binary archives must not be committed to the repository; bootstrap scripts
+# should download/unpack them into .deps/couchbase-lite/<platform>/.
+
+version=4.0.3
+
+linux_x86_64_url=https://packages.couchbase.com/releases/couchbase-lite-c/4.0.3/couchbase-lite-c-community-4.0.3-linux-x86_64.tar.gz
+linux_x86_64_sha256=cece2a2177a1e2e5190a44826abd0cd9d9237d3bd274d8c17665a366449af614
+
+macos_arm64_url=https://packages.couchbase.com/releases/couchbase-lite-c/4.0.3/couchbase-lite-c-community-4.0.3-macos.zip
+macos_arm64_sha256=359f1ca64ce0ac7c8e34e78db6471c8427313060eb9da86c5461109816415961
+
+windows_x86_64_url=https://packages.couchbase.com/releases/couchbase-lite-c/4.0.3/couchbase-lite-c-community-4.0.3-windows-x86_64.zip
+windows_x86_64_sha256=2abac6a4f1c52ef368ada2ed9cbaf69528689c959f13d2de051767c3345d62e7

@@ -21,8 +21,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(CPPWIKI_BUILD_TESTS "Build CppWiki tests" ON)
 option(CPPWIKI_ENABLE_CLANG_TIDY "Enable clang-tidy when available" OFF)
+option(CPPWIKI_ENABLE_CBLITE_STORAGE "Enable Couchbase Lite storage adapter" OFF)
 
 include(cmake/ProjectOptions.cmake)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 find_package(
   Qt6 6.5 REQUIRED
@@ -31,6 +33,10 @@ find_package(
 find_package(Drogon CONFIG REQUIRED)
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+
+if(CPPWIKI_ENABLE_CBLITE_STORAGE)
+  find_package(CBLite REQUIRED)
+endif()
 
 qt_standard_project_setup(REQUIRES 6.5)
 

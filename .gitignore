@@ -1,5 +1,6 @@
 build/
 cmake-build-*/
+.deps/
 vcpkg_installed/
 node_modules/
 frontend/editor/dist/
