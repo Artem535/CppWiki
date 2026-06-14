@@ -13,11 +13,11 @@ class Page final : public QWidget, public IPage {
  public:
   explicit Page(QWidget* parent = nullptr);
   Page(const Page&) = delete;
-  Page& operator=(const Page&) = delete;
+  auto operator=(const Page&) -> Page& = delete;
   ~Page() override;
 
-  QString Title() const override;
-  QWidget* Widget() override;
+  [[nodiscard]] auto Title() const -> QString override;
+  auto Widget() -> QWidget* override;
 
  private:
   void BuildUi();

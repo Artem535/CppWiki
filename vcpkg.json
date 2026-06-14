@@ -2,7 +2,6 @@
   "name": "cppwiki",
   "version-string": "0.1.0",
   "description": "Desktop-first offline-first wiki platform built with Qt and C++20.",
-  "builtin-baseline": "dd306f32e07d87fdb16837af64f33b6b415c770a",
   "dependencies": [
     "reflectcpp",
     "spdlog",

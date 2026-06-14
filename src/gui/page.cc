@@ -8,7 +8,7 @@
 namespace cppwiki {
 namespace {
 
-QString EditorFallbackHtml(const QString& expected_path) {
+auto EditorFallbackHtml(const QString& expected_path) -> QString {
   return QStringLiteral(R"(
 <!doctype html>
 <html lang="en">

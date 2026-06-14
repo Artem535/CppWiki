@@ -1,10 +1,7 @@
 qt_add_executable(cppwiki_app
   WIN32
   MACOSX_BUNDLE
-)
-
-target_sources(cppwiki_app
-  PRIVATE
+    app/application.cc
     main.cc
     app/application.cc
     app/application.h
