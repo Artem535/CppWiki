@@ -87,6 +87,31 @@ add_test(
   COMMAND cppwiki_program_settings_tests
 )
 
+add_executable(cppwiki_local_document_repository_tests
+  storage/local_document_repository_test.cc
+  ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
+  ${CMAKE_SOURCE_DIR}/src/document/document.h
+  ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
+)
+
+target_include_directories(cppwiki_local_document_repository_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_local_document_repository_tests
+  PRIVATE
+    spdlog::spdlog
+    reflectcpp::reflectcpp
+)
+
+cppwiki_apply_common_options(cppwiki_local_document_repository_tests)
+
+add_test(
+  NAME cppwiki_local_document_repository_tests
+  COMMAND cppwiki_local_document_repository_tests
+)
+
 if(CPPWIKI_ENABLE_CBLITE_STORAGE)
   add_executable(cppwiki_cblite_cpp_smoke_tests
     storage/cblite_cpp_smoke_test.cc
