@@ -2,6 +2,10 @@ add_executable(cppwiki_bridge_tests
   bridge/editor_bridge_test.cc
   ${CMAKE_SOURCE_DIR}/src/bridge/editor_bridge.cc
   ${CMAKE_SOURCE_DIR}/src/bridge/editor_bridge.h
+  ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
+  ${CMAKE_SOURCE_DIR}/src/document/document.h
+  ${CMAKE_SOURCE_DIR}/src/document/document_validator.cc
+  ${CMAKE_SOURCE_DIR}/src/document/document_validator.h
   ${CMAKE_SOURCE_DIR}/src/core/constants.h
   ${CMAKE_SOURCE_DIR}/src/core/qt_string.h
 )
@@ -15,6 +19,7 @@ target_link_libraries(cppwiki_bridge_tests
   PRIVATE
     Qt6::Core
     spdlog::spdlog
+    reflectcpp::reflectcpp
 )
 
 cppwiki_apply_common_options(cppwiki_bridge_tests)
@@ -22,6 +27,33 @@ cppwiki_apply_common_options(cppwiki_bridge_tests)
 add_test(
   NAME cppwiki_bridge_tests
   COMMAND cppwiki_bridge_tests
+)
+
+add_executable(cppwiki_document_validator_tests
+  document/document_validator_test.cc
+  ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
+  ${CMAKE_SOURCE_DIR}/src/document/document.h
+  ${CMAKE_SOURCE_DIR}/src/document/document_validator.cc
+  ${CMAKE_SOURCE_DIR}/src/document/document_validator.h
+)
+
+target_include_directories(cppwiki_document_validator_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_document_validator_tests
+  PRIVATE
+    Qt6::Core
+    spdlog::spdlog
+    reflectcpp::reflectcpp
+)
+
+cppwiki_apply_common_options(cppwiki_document_validator_tests)
+
+add_test(
+  NAME cppwiki_document_validator_tests
+  COMMAND cppwiki_document_validator_tests
 )
 
 add_executable(cppwiki_program_settings_tests
@@ -45,6 +77,7 @@ target_compile_definitions(cppwiki_program_settings_tests
 target_link_libraries(cppwiki_program_settings_tests
   PRIVATE
     Qt6::Core
+    spdlog::spdlog
 )
 
 cppwiki_apply_common_options(cppwiki_program_settings_tests)
@@ -62,6 +95,7 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
   target_link_libraries(cppwiki_cblite_cpp_smoke_tests
     PRIVATE
       CBLite::cblite
+      spdlog::spdlog
   )
 
   cppwiki_apply_common_options(cppwiki_cblite_cpp_smoke_tests)

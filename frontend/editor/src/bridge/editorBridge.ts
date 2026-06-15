@@ -1,3 +1,5 @@
+import type { Block, PartialBlock } from "@blocknote/core";
+
 export const bridgeApiVersion = 1;
 
 export type BridgeResult<T> =
@@ -8,7 +10,8 @@ export type BridgeResult<T> =
       error: { code: string; message: string };
     };
 
-export type DocumentSnapshot = unknown;
+export type DocumentSnapshot = Block[];
+export type InitialDocumentSnapshot = PartialBlock[];
 
 export type BridgeInfo = {
   apiVersion: typeof bridgeApiVersion;
@@ -18,6 +21,6 @@ export type BridgeInfo = {
 
 export interface EditorBridge {
   getBridgeInfo(): Promise<BridgeResult<BridgeInfo>>;
-  getInitialDocument(): Promise<BridgeResult<DocumentSnapshot>>;
+  getInitialDocument(): Promise<BridgeResult<InitialDocumentSnapshot>>;
   updateSnapshot(snapshot: DocumentSnapshot): Promise<BridgeResult<void>>;
 }

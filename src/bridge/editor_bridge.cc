@@ -2,13 +2,11 @@
 
 #include <spdlog/spdlog.h>
 
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonParseError>
 #include <QVariant>
 
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "document/document_validator.h"
 
 namespace cppwiki::bridge {
 
@@ -51,15 +49,29 @@ auto InitialDocument() -> QVariantList {
   QVariantList blocks;
 
   blocks.append(QVariantMap{
+      {QStringLiteral("id"), QStringLiteral("initial-heading")},
       {QStringLiteral("type"), QStringLiteral("heading")},
       {QStringLiteral("props"), QVariantMap{{QStringLiteral("level"), 1}}},
-      {QStringLiteral("content"), QStringLiteral("CppWiki")},
+      {QStringLiteral("content"),
+       QVariantList{QVariantMap{
+           {QStringLiteral("type"), QStringLiteral("text")},
+           {QStringLiteral("text"), QStringLiteral("CppWiki")},
+           {QStringLiteral("styles"), QVariantMap{}},
+       }}},
+      {QStringLiteral("children"), QVariantList{}},
   });
 
   blocks.append(QVariantMap{
+      {QStringLiteral("id"), QStringLiteral("initial-body")},
       {QStringLiteral("type"), QStringLiteral("paragraph")},
       {QStringLiteral("content"),
-       QStringLiteral("Initial document loaded from C++ through QWebChannel.")},
+       QVariantList{QVariantMap{
+           {QStringLiteral("type"), QStringLiteral("text")},
+           {QStringLiteral("text"),
+            QStringLiteral("Initial document loaded from C++ through QWebChannel.")},
+           {QStringLiteral("styles"), QVariantMap{}},
+       }}},
+      {QStringLiteral("children"), QVariantList{}},
   });
 
   return blocks;
@@ -79,22 +91,16 @@ QVariantMap QEditorBridge::getInitialDocument() {
 
 QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
   const auto snapshot_bytes = snapshot_json.toUtf8();
-  QJsonParseError parse_error;
-  const auto document = QJsonDocument::fromJson(snapshot_bytes, &parse_error);
-  if (parse_error.error != QJsonParseError::NoError) {
-    spdlog::warn("editor snapshot rejected: invalid json: {}",
-                 parse_error.errorString().toStdString());
-    return ErrorResponse(QStringLiteral("invalid_json"),
-                         QStringLiteral("Snapshot payload is not valid JSON."));
+  const auto validation = document::DocumentValidator::ParseAndValidateSnapshot(snapshot_bytes);
+  if (validation.error) {
+    spdlog::warn("editor snapshot rejected: {}: {}",
+                 ToString(validation.error->code),
+                 validation.error->message);
+    return ErrorResponse(ToQString(ToString(validation.error->code)),
+                         QString::fromStdString(validation.error->message));
   }
 
-  if (!document.isArray()) {
-    spdlog::warn("editor snapshot rejected: root payload is not an array");
-    return ErrorResponse(QStringLiteral("invalid_snapshot"),
-                         QStringLiteral("Snapshot payload must be a BlockNote block array."));
-  }
-
-  const auto block_count = document.isArray() ? document.array().size() : 0;
+  const auto block_count = validation.document->blocks.size();
 
   spdlog::info("editor snapshot received: bytes={}, blocks={}", snapshot_bytes.size(), block_count);
 

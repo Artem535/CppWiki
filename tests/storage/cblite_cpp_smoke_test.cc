@@ -1,7 +1,8 @@
 #include <cbl++/CouchbaseLite.hh>
+#include <spdlog/spdlog.h>
+
 #include <cstdlib>
 #include <filesystem>
-#include <iostream>
 #include <string>
 #include <string_view>
 
@@ -11,7 +12,7 @@ constexpr std::string_view kDatabaseName = "cppwiki-cblite-smoke";
 
 auto Require(bool condition, std::string_view message) -> void {
   if (!condition) {
-    std::cerr << "FAIL: " << message << '\n';
+    spdlog::error("FAIL: {}", message);
     std::exit(EXIT_FAILURE);
   }
 }
@@ -38,11 +39,10 @@ auto SmokeOpenCloseDeleteDatabase() -> void {
 
     cbl::Database::deleteDatabase(Slice(kDatabaseName), Slice(directory));
   } catch (const CBLError& error) {
-    std::cerr << "FAIL: Couchbase Lite error domain=" << error.domain << " code=" << error.code
-              << '\n';
+    spdlog::error("FAIL: Couchbase Lite error domain={} code={}", error.domain, error.code);
     std::exit(EXIT_FAILURE);
   } catch (const std::exception& error) {
-    std::cerr << "FAIL: " << error.what() << '\n';
+    spdlog::error("FAIL: {}", error.what());
     std::exit(EXIT_FAILURE);
   }
 
@@ -54,6 +54,6 @@ auto SmokeOpenCloseDeleteDatabase() -> void {
 auto main() -> int {
   SmokeOpenCloseDeleteDatabase();
 
-  std::cout << "cppwiki_cblite_cpp_smoke_tests passed\n";
+  spdlog::info("cppwiki_cblite_cpp_smoke_tests passed");
   return EXIT_SUCCESS;
 }

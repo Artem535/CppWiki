@@ -5,6 +5,10 @@ qt_add_executable(cppwiki_app
     app/application.cc
     bridge/editor_bridge.cc
     bridge/editor_bridge.h
+    document/block_note_snapshot.h
+    document/document.h
+    document/document_validator.cc
+    document/document_validator.h
     main.cc
     app/application.h
     app/program_settings.cc
@@ -36,6 +40,7 @@ target_link_libraries(cppwiki_app
     Qt6::WebChannel
     Qt6::WebEngineWidgets
     spdlog::spdlog
+    reflectcpp::reflectcpp
 )
 
 cppwiki_apply_common_options(cppwiki_app)

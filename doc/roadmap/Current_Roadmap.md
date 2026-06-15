@@ -71,13 +71,14 @@ Scope:
 - define document schema version;
 - implement basic validation;
 - map BlockNote content to internal document payload;
-- add fixture tests for supported starter blocks.
+- preserve validated raw BlockNote snapshot JSON for storage;
+- add fixture tests for the supported BlockNote block set.
 
 Exit criteria:
 
 - sample BlockNote document can be serialized/deserialized;
 - invalid payloads are rejected before persistence;
-- fixture tests cover paragraph, heading and list blocks.
+- fixture tests cover the BlockNote block set used by the editor.
 
 ## Milestone 4: Local Persistence Spike
 
@@ -163,7 +164,7 @@ Exit criteria:
 | :--- | :--- |
 | WebEngine gate | local BlockNote bundle loads inside Qt and accepts editing |
 | Bridge gate | QWebChannel supports typed request/response/error exchange |
-| Document gate | reflect-cpp DTOs serialize and validate starter block documents |
+| Document gate | reflect-cpp DTOs serialize and validate BlockNote documents |
 | Persistence gate | local save/load works offline without data loss |
 | Security gate | editor has no raw filesystem, token or unrestricted native access |
 | Plugin gate | failed plugin cannot crash the host |
@@ -185,8 +186,7 @@ Exit criteria:
 
 # 6. Immediate Next Actions
 
-1. Add a minimal document DTO using reflect-cpp.
-2. Add schema version and starter block validation.
-3. Add fixture tests for paragraph, heading and starter list blocks.
-4. Route `wiki.documents.updateSnapshot` through validation before accepting snapshots.
-5. Start the local persistence spike only after invalid snapshots are rejected with structured errors.
+1. Finish documenting the Phase 2 document DTO and validation contract.
+2. Keep BlockNote-owned payload limits out of C++ validation.
+3. Start the local persistence spike only after invalid snapshots are rejected with structured errors.
+4. Add a repository boundary that persists the validated raw BlockNote snapshot without lossy conversion.

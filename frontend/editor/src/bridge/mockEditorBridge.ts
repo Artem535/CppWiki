@@ -2,19 +2,23 @@ import {
   bridgeApiVersion,
   type BridgeInfo,
   type BridgeResult,
-  type DocumentSnapshot,
   type EditorBridge,
+  type InitialDocumentSnapshot,
 } from "./editorBridge";
 
-const initialDocument = [
+const initialDocument: InitialDocumentSnapshot = [
   {
+    id: "mock-heading",
     type: "heading",
     props: { level: 1 },
-    content: "CppWiki",
+    content: [{ type: "text", text: "CppWiki", styles: {} }],
+    children: [],
   },
   {
+    id: "mock-body",
     type: "paragraph",
-    content: "Running without Qt bridge.",
+    content: [{ type: "text", text: "Running without Qt bridge.", styles: {} }],
+    children: [],
   },
 ];
 
@@ -32,7 +36,7 @@ export function createMockEditorBridge(): EditorBridge {
       };
     },
 
-    async getInitialDocument(): Promise<BridgeResult<DocumentSnapshot>> {
+    async getInitialDocument(): Promise<BridgeResult<InitialDocumentSnapshot>> {
       return { apiVersion: bridgeApiVersion, ok: true, result: initialDocument };
     },
 

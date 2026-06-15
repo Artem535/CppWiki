@@ -1,10 +1,11 @@
 #include "app/program_settings.h"
 
+#include <spdlog/spdlog.h>
+
 #include <QCoreApplication>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <cstdlib>
-#include <iostream>
 #include <string_view>
 
 #include "core/constants.h"
@@ -14,7 +15,7 @@ namespace {
 
 auto Require(bool condition, std::string_view message) -> void {
   if (!condition) {
-    std::cerr << "FAIL: " << message << '\n';
+    spdlog::error("FAIL: {}", message);
     std::exit(EXIT_FAILURE);
   }
 }
@@ -77,6 +78,6 @@ auto main(int argc, char* argv[]) -> int {
   TestDefaultSettings();
   TestSettingsOverrides();
 
-  std::cout << "cppwiki_program_settings_tests passed\n";
+  spdlog::info("cppwiki_program_settings_tests passed");
   return EXIT_SUCCESS;
 }

@@ -183,25 +183,38 @@ Make document data typed, versioned and reject invalid payloads before storage e
 
 - Add `core` or `document` module for document DTOs.
 - Define page metadata DTO.
-- Define block DTO for starter block types:
+- Define reflect-cpp DTOs for BlockNote snapshots.
+- Preserve the validated raw BlockNote snapshot JSON for lossless persistence.
+- Support the current BlockNote block set:
   - paragraph;
   - heading;
+  - quote;
   - bullet list item;
   - numbered list item;
-  - checklist item.
+  - checklist item;
+  - toggle list item;
+  - code block;
+  - table;
+  - image;
+  - video;
+  - audio;
+  - file;
+  - divider;
+  - page break.
 - Add `schema_version`.
 - Add stable page ID and block ID rules.
 - Add basic validation:
   - required IDs;
   - supported block types;
   - valid heading levels;
-  - valid list nesting;
-  - bounded payload size.
-- Add fixture tests for valid and invalid starter documents.
+  - duplicate block IDs across nested blocks.
+- Add fixture tests for valid and invalid BlockNote documents.
+- Do not duplicate BlockNote-owned payload limits in C++ validation.
 
 ## Exit Gate
 
 - Sample BlockNote document serializes and deserializes through C++ DTOs.
+- Validated snapshots keep raw JSON for the persistence phase.
 - Invalid payloads are rejected with structured errors.
 - Fixture tests run in CTest.
 - Bridge only accepts validated document snapshots.
@@ -210,7 +223,7 @@ Make document data typed, versioned and reject invalid payloads before storage e
 
 - Couchbase Lite.
 - Import/export conversion.
-- Full PRD block set.
+- Custom application-specific block types beyond the BlockNote schema.
 
 ---
 

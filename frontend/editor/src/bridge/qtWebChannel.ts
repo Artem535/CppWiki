@@ -1,8 +1,8 @@
 import type {
   BridgeInfo,
   BridgeResult,
-  DocumentSnapshot,
   EditorBridge,
+  InitialDocumentSnapshot,
 } from "./editorBridge";
 
 declare global {
@@ -20,7 +20,7 @@ declare global {
 type QtEditorBridgeObject = {
   getBridgeInfo(callback: (response: BridgeResult<BridgeInfo>) => void): void;
   getInitialDocument(
-    callback: (response: BridgeResult<DocumentSnapshot>) => void,
+    callback: (response: BridgeResult<InitialDocumentSnapshot>) => void,
   ): void;
   updateSnapshot(
     snapshotJson: string,

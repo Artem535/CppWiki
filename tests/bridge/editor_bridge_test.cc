@@ -1,8 +1,9 @@
 #include "bridge/editor_bridge.h"
 
+#include <spdlog/spdlog.h>
+
 #include <QVariant>
 #include <cstdlib>
-#include <iostream>
 #include <string_view>
 
 #include "core/constants.h"
@@ -12,7 +13,7 @@ namespace {
 
 auto Require(bool condition, std::string_view message) -> void {
   if (!condition) {
-    std::cerr << "FAIL: " << message << '\n';
+    spdlog::error("FAIL: {}", message);
     std::exit(EXIT_FAILURE);
   }
 }
@@ -77,7 +78,22 @@ auto TestInitialDocument() -> void {
 auto TestValidSnapshot() -> void {
   cppwiki::bridge::QEditorBridge bridge;
   const auto response = bridge.updateSnapshot(QStringLiteral(R"([
-    { "type": "paragraph", "content": "Saved from test" }
+    {
+      "id": "b1",
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "Saved from test", "styles": {} }
+      ],
+      "children": []
+    },
+    {
+      "id": "quote-1",
+      "type": "quote",
+      "content": [
+        { "type": "text", "text": "Quoted from bridge test", "styles": {} }
+      ],
+      "children": []
+    }
   ])"));
 
   RequireSuccessEnvelope(response);
@@ -94,7 +110,7 @@ auto TestInvalidRootSnapshot() -> void {
   cppwiki::bridge::QEditorBridge bridge;
   const auto response = bridge.updateSnapshot(QStringLiteral(R"({ "type": "paragraph" })"));
 
-  RequireErrorEnvelope(response, QStringLiteral("invalid_snapshot"));
+  RequireErrorEnvelope(response, QStringLiteral("missing_schema_version"));
 }
 
 }  // namespace
@@ -106,6 +122,6 @@ auto main() -> int {
   TestInvalidJsonSnapshot();
   TestInvalidRootSnapshot();
 
-  std::cout << "cppwiki_bridge_tests passed\n";
+  spdlog::info("cppwiki_bridge_tests passed");
   return EXIT_SUCCESS;
 }
