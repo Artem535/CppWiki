@@ -199,3 +199,15 @@ npm run build
 ```
 
 The Qt application loads `frontend/editor/dist/index.html` through `QWebEngineView`. If the bundle is missing, the desktop app shows a fallback page with build instructions.
+
+CMake also exposes the explicit frontend target:
+
+```bash
+cmake --build --preset debug --target editor_bundle
+```
+
+By default, `cppwiki_app` does not depend on `editor_bundle`, so normal C++ builds do not run npm. For linked development builds, configure with:
+
+```bash
+cmake --preset debug -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON
+```

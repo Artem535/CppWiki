@@ -176,17 +176,17 @@ Exit criteria:
 | Decision | Status | Notes |
 | :--- | :--- | :--- |
 | Wasmtime dependency provisioning | Open | Not in current `vcpkg.json`; needs supported port, overlay port or separate vendoring strategy |
-| Couchbase Lite C++ packaging | Open | Need confirm practical C++ integration and package source |
-| Editor bundle packaging | Open | Current path loads from `frontend/editor/dist`; production packaging may move to Qt resources or installed app data |
-| QWebChannel schema | Open | Need stable JSON envelope and generated TypeScript/C++ DTOs |
+| Couchbase Lite C++ packaging | Spike proof added | Optional C++ wrapper smoke test runs when `CPPWIKI_ENABLE_CBLITE_STORAGE=ON` and `CPPWIKI_CBLITE_ROOT` points to an extracted package |
+| Editor bundle packaging | Partially decided | Current path loads from `frontend/editor/dist`; `editor_bundle` remains explicit by default, with `CPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON` available for linked dev builds. Production packaging may move to Qt resources or installed app data |
+| QWebChannel schema | Phase 1 baseline done | Versioned `{ apiVersion, ok, result/error }` envelope exists for the current editor bridge. Generated TypeScript/C++ DTOs still belong to the document-model phase |
 | Frontend package manager | Tentative | npm is used now; can revisit if workspace tooling changes |
 
 ---
 
 # 6. Immediate Next Actions
 
-1. Add `editor_bridge` module and first QWebChannel object.
-2. Add a minimal document DTO using reflect-cpp.
-3. Add frontend bridge client wrapper around `window.qt.webChannelTransport`.
-4. Wire editor `onChange` to send document snapshots to C++.
-5. Decide whether CMake should depend on `editor_bundle` by default or keep it as an explicit build target.
+1. Add a minimal document DTO using reflect-cpp.
+2. Add schema version and starter block validation.
+3. Add fixture tests for paragraph, heading and starter list blocks.
+4. Route `wiki.documents.updateSnapshot` through validation before accepting snapshots.
+5. Start the local persistence spike only after invalid snapshots are rejected with structured errors.

@@ -355,7 +355,9 @@ The first Couchbase Lite spike should be intentionally small.
 
 - Configure `CPPWIKI_CBLITE_ROOT`.
 - Add `FindCBLite.cmake`.
-- Add a `storage` target.
+- Add a CTest smoke target behind `CPPWIKI_ENABLE_CBLITE_STORAGE`.
+- Use Couchbase Lite's C++ wrapper in the smoke target.
+- Add a `storage` target when real persistence starts.
 - Open a local database in an app data directory.
 - Save one validated page document.
 - Load it back after process restart.
@@ -366,6 +368,7 @@ The first Couchbase Lite spike should be intentionally small.
 
 - CMake fails clearly if `CPPWIKI_CBLITE_ROOT` is missing or invalid.
 - Test can create, save, load and delete a temporary database.
+- Early smoke test can open, close and delete a temporary database through `cbl::Database`.
 - GUI code has no direct Couchbase Lite dependency.
 - No public app header exposes `cbl`, `cbl++` or Fleece types.
 - Local persistence can be disabled or replaced by a file-backed adapter during development if Couchbase Lite is unavailable.
@@ -389,7 +392,7 @@ The first Couchbase Lite spike should be intentionally small.
 
 Do not install Couchbase Lite into the app immediately.
 
-First add a `LocalDocumentRepository` interface and a file-backed implementation for the edit-save-restart-load vertical slice. In parallel, prepare `FindCBLite.cmake` and a tiny standalone storage spike using Couchbase Lite's C++ wrapper behind a build option:
+First add document DTOs and validation, then add a `LocalDocumentRepository` interface for the edit-save-restart-load vertical slice. A tiny Couchbase Lite C++ wrapper smoke test exists behind a build option:
 
 ```cmake
 option(CPPWIKI_ENABLE_CBLITE_STORAGE "Enable Couchbase Lite storage adapter" OFF)

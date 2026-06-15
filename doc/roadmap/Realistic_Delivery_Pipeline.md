@@ -141,6 +141,38 @@ Create the first reliable bridge between BlockNote and the C++ core.
 
 ---
 
+# 4.5. Phase 1.5 - Runtime Foundation and CBLite Proof
+
+## Goal
+
+Put shared runtime configuration and dependency proof points in place before introducing typed document DTOs.
+
+## Scope
+
+- Add a central `ProgramSettings` class for application runtime paths and metadata.
+- Move shared application and bridge constants into one `constants` header.
+- Keep editor bundle path, app data path and database path behind settings rather than scattered literals.
+- Add a CTest-covered bridge contract test.
+- Add a CTest-covered settings test.
+- Add a Couchbase Lite C++ API smoke test behind `CPPWIKI_ENABLE_CBLITE_STORAGE`.
+- Keep Couchbase Lite optional and outside GUI/public app headers.
+
+## Exit Gate
+
+- Default configure/build/test works without Couchbase Lite installed.
+- When `CPPWIKI_ENABLE_CBLITE_STORAGE=ON` and `CPPWIKI_CBLITE_ROOT` points to a valid package, CTest opens, closes and deletes a temporary Couchbase Lite database through the C++ wrapper.
+- Runtime paths are available from `ProgramSettings`.
+- Shared constants are not duplicated across C++ bridge and Qt host code.
+
+## Do Not Include
+
+- Real document persistence.
+- Repository implementation.
+- Couchbase document schema.
+- Sync Gateway or replication.
+
+---
+
 # 5. Phase 2 - Document Model Skeleton
 
 ## Goal
@@ -527,15 +559,12 @@ Some work can run in parallel after the first vertical slice is stable.
 
 # 17. Recommended Immediate Backlog
 
-1. Add `editor_bridge` C++ module.
-2. Register one QWebChannel object on the current `QWebEngineView`.
-3. Add TypeScript bridge wrapper with mock fallback outside Qt.
-4. Send BlockNote snapshots to C++ on document changes.
-5. Add C++ logs for received snapshots.
-6. Define minimal document DTO with `schema_version`, page ID and block IDs.
-7. Add fixture tests for valid and invalid starter documents.
-8. Add local repository interface before choosing final Couchbase Lite packaging.
-9. Move product navigation/status out of the frontend demo when the Qt shell phase starts.
+1. Define minimal document DTO with `schema_version`, page ID and block IDs.
+2. Add fixture tests for valid and invalid starter documents.
+3. Route `wiki.documents.updateSnapshot` through document validation.
+4. Add local repository interface before implementing real persistence.
+5. Keep Couchbase Lite behind the storage boundary and build option.
+6. Move product navigation/status out of the frontend demo when the Qt shell phase starts.
 
 ---
 
@@ -544,9 +573,9 @@ Some work can run in parallel after the first vertical slice is stable.
 | Decision | Recommended Handling |
 | :--- | :--- |
 | Wasmtime dependency provisioning | Defer until Phase 11; do not block editor/document/persistence work |
-| Couchbase Lite C++ packaging | Investigate during Phase 3; allow temporary file-backed repository if packaging blocks delivery |
+| Couchbase Lite C++ packaging | C++ wrapper smoke test exists behind `CPPWIKI_ENABLE_CBLITE_STORAGE`; keep packaging optional until Phase 3 persistence work |
 | Editor bundle packaging | Keep filesystem `dist` during spikes; decide Qt resources vs installed app data before release hardening |
-| QWebChannel schema | Close in Phase 1 before adding persistence |
+| QWebChannel schema | Phase 1 baseline closed; generated DTOs continue in Phase 2 |
 | Frontend package manager | Keep npm unless workspace tooling becomes a real pain point |
 | JS widget boundary | Default to Qt; use JS only for BlockNote-native widgets and editor internals |
 

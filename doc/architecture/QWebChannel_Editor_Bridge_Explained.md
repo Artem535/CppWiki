@@ -117,7 +117,7 @@ sequenceDiagram
 
   Page->>Channel: create QWebChannel
   Page->>Bridge: create QEditorBridge
-  Page->>Channel: registerObject("editorBridge", bridge)
+  Page->>Channel: registerObject("wikiDocuments", bridge)
   Page->>View: setWebChannel(channel)
   Page->>View: inject qwebchannel.js
   Page->>View: load frontend/editor/dist/index.html
@@ -129,7 +129,7 @@ Relevant C++ code:
 ```cpp
 channel_ = new QWebChannel(this);
 editor_bridge_ = new bridge::QEditorBridge(this);
-channel_->registerObject(QStringLiteral("editorBridge"), editor_bridge_);
+channel_->registerObject(QStringLiteral("wikiDocuments"), editor_bridge_);
 
 editor_view_ = new QWebEngineView(this);
 editor_view_->page()->setWebChannel(channel_);
@@ -139,13 +139,13 @@ InstallWebChannelScript();
 The name is important:
 
 ```cpp
-"editorBridge"
+"wikiDocuments"
 ```
 
 That is the name JavaScript uses later:
 
 ```ts
-channel.objects.editorBridge
+channel.objects.wikiDocuments
 ```
 
 ---
@@ -208,10 +208,13 @@ sequenceDiagram
 
   React->>TsBridge: createEditorBridge()
   TsBridge->>QtJs: new QWebChannel(...)
-  QtJs-->>TsBridge: channel.objects.editorBridge
+  QtJs-->>TsBridge: channel.objects.wikiDocuments
+  React->>TsBridge: getBridgeInfo()
+  TsBridge->>CppBridge: getBridgeInfo()
+  CppBridge-->>TsBridge: { apiVersion: 1, ok: true, result: info }
   React->>TsBridge: getInitialDocument()
   TsBridge->>CppBridge: getInitialDocument()
-  CppBridge-->>TsBridge: { ok: true, result: blocks }
+  CppBridge-->>TsBridge: { apiVersion: 1, ok: true, result: blocks }
   TsBridge-->>React: BridgeResult
   React->>BlockNote: replaceBlocks(editor.document, blocks)
 ```
@@ -236,13 +239,13 @@ if (response.ok && Array.isArray(response.result)) {
 The response shape is:
 
 ```ts
-{ ok: true, result: ... }
+{ apiVersion: 1, ok: true, result: ... }
 ```
 
-Later error responses should use:
+Error responses use:
 
 ```ts
-{ ok: false, error: { code: "...", message: "..." } }
+{ apiVersion: 1, ok: false, error: { code: "...", message: "..." } }
 ```
 
 ---
@@ -272,7 +275,7 @@ sequenceDiagram
   TsBridge->>TsBridge: JSON.stringify(snapshot)
   TsBridge->>CppBridge: updateSnapshot(snapshotJson)
   CppBridge->>Logs: editor snapshot received
-  CppBridge-->>TsBridge: { ok: true, result: null }
+  CppBridge-->>TsBridge: { apiVersion: 1, ok: true, result: null }
 ```
 
 React code:
@@ -393,10 +396,10 @@ This function injects `qwebchannel.js` into the web page.
 ```cpp
 channel_ = new QWebChannel(this);
 editor_bridge_ = new bridge::QEditorBridge(this);
-channel_->registerObject(QStringLiteral("editorBridge"), editor_bridge_);
+channel_->registerObject(QStringLiteral("wikiDocuments"), editor_bridge_);
 ```
 
-This creates the channel, creates the C++ bridge object, and publishes it under the JavaScript name `editorBridge`.
+This creates the channel, creates the C++ bridge object, and publishes it under the JavaScript name `wikiDocuments`.
 
 Then it creates the web view and connects the channel:
 
@@ -439,6 +442,7 @@ class QEditorBridge final : public QObject {
  public:
   explicit QEditorBridge(QObject* parent = nullptr);
 
+  Q_INVOKABLE QVariantMap getBridgeInfo();
   Q_INVOKABLE QVariantMap getInitialDocument();
   Q_INVOKABLE QVariantMap updateSnapshot(const QString& snapshot_json);
 };
@@ -455,16 +459,18 @@ Important parts:
 JavaScript sees this as an object with methods:
 
 ```ts
-editorBridge.getInitialDocument(...)
-editorBridge.updateSnapshot(...)
+wikiDocuments.getBridgeInfo(...)
+wikiDocuments.getInitialDocument(...)
+wikiDocuments.updateSnapshot(...)
 ```
 
 ## 9.4. `src/bridge/editor_bridge.cc`
 
-`SuccessResponse()` builds a consistent response envelope:
+`SuccessResponse()` and `ErrorResponse()` build a versioned response envelope:
 
 ```cpp
 return QVariantMap{
+    {QStringLiteral("apiVersion"), 1},
     {QStringLiteral("ok"), true},
     {QStringLiteral("result"), result},
 };
@@ -473,10 +479,22 @@ return QVariantMap{
 JavaScript receives:
 
 ```ts
-{ ok: true, result: ... }
+{ apiVersion: 1, ok: true, result: ... }
+```
+
+Errors use the same envelope:
+
+```ts
+{
+  apiVersion: 1,
+  ok: false,
+  error: { code: "...", message: "..." }
+}
 ```
 
 `InitialDocument()` currently returns hardcoded starter blocks. This is temporary. Later it should load a real document from the document service or repository.
+
+`getBridgeInfo()` exposes the bridge API version, namespace and method list. React calls it during startup before loading the initial document.
 
 `getInitialDocument()` returns those blocks:
 
@@ -495,11 +513,11 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json)
 It parses the JSON only enough to log basic information:
 
 ```cpp
-const auto document = QJsonDocument::fromJson(snapshot_bytes);
-const auto block_count = document.isArray() ? document.array().size() : 0;
+QJsonParseError parse_error;
+const auto document = QJsonDocument::fromJson(snapshot_bytes, &parse_error);
 ```
 
-Then it logs:
+Invalid JSON and non-array snapshot roots are rejected with structured errors. Valid snapshots are logged:
 
 ```cpp
 editor snapshot received: bytes=..., blocks=...
@@ -513,6 +531,7 @@ This file defines the frontend-facing interface:
 
 ```ts
 export interface EditorBridge {
+  getBridgeInfo(): Promise<BridgeResult<BridgeInfo>>;
   getInitialDocument(): Promise<BridgeResult<DocumentSnapshot>>;
   updateSnapshot(snapshot: DocumentSnapshot): Promise<BridgeResult<void>>;
 }
@@ -524,11 +543,11 @@ The response type is:
 
 ```ts
 export type BridgeResult<T> =
-  | { ok: true; result: T }
-  | { ok: false; error: { code: string; message: string } };
+  | { apiVersion: 1; ok: true; result: T }
+  | { apiVersion: 1; ok: false; error: { code: string; message: string } };
 ```
 
-That matches the response shape C++ already returns for successful calls.
+That matches the response shape C++ returns for successful and failed calls.
 
 ## 9.6. `frontend/editor/src/bridge/qtWebChannel.ts`
 
@@ -555,14 +574,14 @@ If yes, it creates a JavaScript `QWebChannel`:
 
 ```ts
 new window.QWebChannel!(window.qt!.webChannelTransport!, (channel) => {
-  resolve(channel.objects.editorBridge as QtEditorBridgeObject);
+  resolve(channel.objects.wikiDocuments as QtEditorBridgeObject);
 });
 ```
 
 This line retrieves the C++ object registered in `page.cc`:
 
 ```cpp
-channel_->registerObject(QStringLiteral("editorBridge"), editor_bridge_);
+channel_->registerObject(QStringLiteral("wikiDocuments"), editor_bridge_);
 ```
 
 `updateSnapshot()` converts the editor document to JSON:
@@ -656,7 +675,7 @@ flowchart TD
   A["Page::BuildUi"]
   B["create QWebChannel"]
   C["create QEditorBridge"]
-  D["registerObject(editorBridge)"]
+  D["registerObject(wikiDocuments)"]
   E["inject qwebchannel.js"]
   F["React createEditorBridge"]
   G{"Qt globals exist?"}
@@ -776,10 +795,16 @@ cd frontend/editor
 npm run build
 ```
 
+or through CMake:
+
+```bash
+cmake --build --preset debug --target editor_bundle
+```
+
 Build C++:
 
 ```bash
-cmake --build build/debug
+cmake --build --preset debug
 ```
 
 Run app:
