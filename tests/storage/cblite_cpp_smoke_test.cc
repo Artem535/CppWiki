@@ -39,7 +39,9 @@ auto SmokeOpenCloseDeleteDatabase() -> void {
 
     cbl::Database::deleteDatabase(Slice(kDatabaseName), Slice(directory));
   } catch (const CBLError& error) {
-    spdlog::error("FAIL: Couchbase Lite error domain={} code={}", error.domain, error.code);
+    spdlog::error("FAIL: Couchbase Lite error domain={} code={}",
+                  static_cast<int>(error.domain),
+                  error.code);
     std::exit(EXIT_FAILURE);
   } catch (const std::exception& error) {
     spdlog::error("FAIL: {}", error.what());
