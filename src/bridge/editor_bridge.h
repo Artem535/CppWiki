@@ -5,6 +5,12 @@
 #include <QString>
 #include <QVariant>
 
+#include <memory>
+
+namespace cppwiki::storage {
+class LocalDocumentRepository;
+}
+
 namespace cppwiki::bridge {
 
 class QEditorBridge final : public QObject {
@@ -13,9 +19,20 @@ class QEditorBridge final : public QObject {
  public:
   explicit QEditorBridge(QObject* parent = nullptr);
 
-  Q_INVOKABLE static QVariantMap getBridgeInfo();
-  Q_INVOKABLE static QVariantMap getInitialDocument();
+  // Set the document repository for persistence operations.
+  void SetRepository(std::shared_ptr<storage::LocalDocumentRepository> repository);
+
+  Q_INVOKABLE QVariantMap getBridgeInfo();
+  Q_INVOKABLE QVariantMap getInitialDocument();
   Q_INVOKABLE QVariantMap updateSnapshot(const QString& snapshot_json);
+
+ signals:
+  // Emitted when document save status changes (for UI feedback).
+  void saveStatusChanged(const QString& pageId, bool success, const QString& message);
+
+ private:
+  std::shared_ptr<storage::LocalDocumentRepository> repository_;
+  QString current_page_id_;
 };
 
 }  // namespace cppwiki::bridge

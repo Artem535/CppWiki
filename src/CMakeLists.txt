@@ -2,26 +2,31 @@ qt_add_executable(cppwiki_app
   MANUAL_FINALIZATION
   WIN32
   MACOSX_BUNDLE
+    app/app_context.h
     app/application.cc
+    app/application.h
+    app/program_settings.cc
+    app/program_settings.h
     bridge/editor_bridge.cc
     bridge/editor_bridge.h
+    core/constants.h
+    core/qt_string.h
     document/block_note_snapshot.h
     document/document.h
     document/document_validator.cc
     document/document_validator.h
-    main.cc
-    app/application.h
-    app/program_settings.cc
-    app/program_settings.h
-    core/constants.h
-    core/qt_string.h
     gui/i_page.h
     gui/main_window.cc
     gui/main_window.h
     gui/page.cc
     gui/page.h
+    main.cc
+    storage/file_document_repository.cc
+    storage/file_document_repository.h
     storage/cblite_document_repository.h
     storage/local_document_repository.h
+    storage/repository_factory.cc
+    storage/repository_factory.h
 )
 
 target_include_directories(cppwiki_app

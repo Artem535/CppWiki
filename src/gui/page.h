@@ -3,7 +3,7 @@
 
 #include <QWidget>
 
-#include "app/program_settings.h"
+#include "app/app_context.h"
 #include "gui/i_page.h"
 
 class QWebChannel;
@@ -17,7 +17,7 @@ namespace cppwiki {
 
 class Page final : public QWidget, public IPage {
  public:
-  explicit Page(ProgramSettings settings, QWidget* parent = nullptr);
+  explicit Page(const AppContext& context, QWidget* parent = nullptr);
 
   Page(const Page&) = delete;
   auto operator=(const Page&) -> Page& = delete;
@@ -32,10 +32,10 @@ class Page final : public QWidget, public IPage {
   void LoadEditor();
   void InstallWebChannelScript();
 
+  const AppContext& context_;
   QWebEngineView* editor_view_ = nullptr;
   QWebChannel* channel_ = nullptr;
   bridge::QEditorBridge* editor_bridge_ = nullptr;
-  ProgramSettings settings_;
 };
 
 }  // namespace cppwiki

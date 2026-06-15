@@ -76,8 +76,8 @@ auto EditorFallbackHtml(const QString& expected_path) -> QString {
 
 }  // namespace
 
-Page::Page(ProgramSettings settings, QWidget* parent)
-    : QWidget(parent), settings_(std::move(settings)) {
+Page::Page(const AppContext& context, QWidget* parent)
+    : QWidget(parent), context_(context) {
   BuildUi();
 }
 
@@ -100,6 +100,9 @@ void Page::BuildUi() {
   editor_bridge_ = new bridge::QEditorBridge(this);
   channel_->registerObject(ToQString(constants::kDocumentsBridgeObjectName), editor_bridge_);
 
+  // Set the document repository for the bridge
+  editor_bridge_->SetRepository(context_.document_repository);
+
   editor_view_ = new QWebEngineView(this);
   editor_view_->page()->setWebChannel(channel_);
   InstallWebChannelScript();
@@ -110,7 +113,7 @@ void Page::BuildUi() {
 }
 
 void Page::LoadEditor() {
-  const QString editor_index_path = settings_.EditorDistDirectory() + QStringLiteral("/index.html");
+  const QString editor_index_path = context_.settings.EditorDistDirectory() + QStringLiteral("/index.html");
   const QFileInfo editor_index(editor_index_path);
 
   if (editor_index.exists() && editor_index.isFile()) {

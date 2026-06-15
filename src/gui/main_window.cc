@@ -4,7 +4,9 @@
 #include <QString>
 #include <QWidget>
 
+#include "app/app_context.h"
 #include "gui/i_page.h"
+#include "gui/page.h"
 
 namespace cppwiki {
 namespace {
@@ -20,13 +22,21 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
 MainWindow::~MainWindow() = default;
 
-void MainWindow::SetPage(IPage* page) {
-  current_page_ = page;
-  if (current_page_ == nullptr) {
+void MainWindow::SetContext(AppContext* context) {
+  context_ = context;
+  CreateInitialPage();
+}
+
+void MainWindow::CreateInitialPage() {
+  if (context_ == nullptr) {
     setCentralWidget(nullptr);
     setWindowTitle(QStringLiteral("CppWiki"));
     return;
   }
+
+  // Create the main page with the application context
+  auto* page = new Page(*context_, this);
+  current_page_ = page;
 
   setCentralWidget(current_page_->Widget());
   setWindowTitle(QStringLiteral("CppWiki - %1").arg(current_page_->Title()));

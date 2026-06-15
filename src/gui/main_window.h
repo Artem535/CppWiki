@@ -5,6 +5,7 @@
 
 namespace cppwiki {
 
+class AppContext;
 class IPage;
 
 class MainWindow final : public QMainWindow {
@@ -14,12 +15,14 @@ class MainWindow final : public QMainWindow {
   MainWindow& operator=(const MainWindow&) = delete;
   ~MainWindow() override;
 
-  // QMainWindow takes ownership of page->Widget() after it becomes central.
-  void SetPage(IPage* page);
+  // Sets the application context and creates the initial page.
+  void SetContext(AppContext* context);
 
  private:
   void BuildUi();
+  void CreateInitialPage();
 
+  AppContext* context_ = nullptr;
   IPage* current_page_ = nullptr;
 };
 

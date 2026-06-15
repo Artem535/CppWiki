@@ -2,8 +2,10 @@
 #define CPPWIKI_SRC_APP_APPLICATION_H_
 
 #include <QApplication>
+#include <memory>
 #include <optional>
 
+#include "app/app_context.h"
 #include "app/program_settings.h"
 #include "gui/main_window.h"
 
@@ -21,6 +23,7 @@ class Application final {
  private:
   QApplication qt_application_;
   std::optional<ProgramSettings> settings_;
+  std::unique_ptr<AppContext> context_;
   MainWindow main_window_;
 };
 
