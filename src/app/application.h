@@ -2,7 +2,9 @@
 #define CPPWIKI_SRC_APP_APPLICATION_H_
 
 #include <QApplication>
+#include <optional>
 
+#include "app/program_settings.h"
 #include "gui/main_window.h"
 
 namespace cppwiki {
@@ -18,6 +20,7 @@ class Application final {
 
  private:
   QApplication qt_application_;
+  std::optional<ProgramSettings> settings_;
   MainWindow main_window_;
 };
 

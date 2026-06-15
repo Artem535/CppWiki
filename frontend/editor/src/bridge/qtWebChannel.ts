@@ -1,4 +1,9 @@
-import type { BridgeResult, DocumentSnapshot, EditorBridge } from "./editorBridge";
+import type {
+  BridgeInfo,
+  BridgeResult,
+  DocumentSnapshot,
+  EditorBridge,
+} from "./editorBridge";
 
 declare global {
   interface Window {
@@ -13,6 +18,7 @@ declare global {
 }
 
 type QtEditorBridgeObject = {
+  getBridgeInfo(callback: (response: BridgeResult<BridgeInfo>) => void): void;
   getInitialDocument(
     callback: (response: BridgeResult<DocumentSnapshot>) => void,
   ): void;
@@ -29,11 +35,17 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
 
   const qtObject = await new Promise<QtEditorBridgeObject>((resolve) => {
     new window.QWebChannel!(window.qt!.webChannelTransport!, (channel) => {
-      resolve(channel.objects.editorBridge as QtEditorBridgeObject);
+      resolve(channel.objects.wikiDocuments as QtEditorBridgeObject);
     });
   });
 
   return {
+    getBridgeInfo() {
+      return new Promise((resolve) => {
+        qtObject.getBridgeInfo(resolve);
+      });
+    },
+
     getInitialDocument() {
       return new Promise((resolve) => {
         qtObject.getInitialDocument(resolve);

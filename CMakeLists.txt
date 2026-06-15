@@ -22,6 +22,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(CPPWIKI_BUILD_TESTS "Build CppWiki tests" ON)
 option(CPPWIKI_ENABLE_CLANG_TIDY "Enable clang-tidy when available" OFF)
 option(CPPWIKI_ENABLE_CBLITE_STORAGE "Enable Couchbase Lite storage adapter" OFF)
+option(
+  CPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP
+  "Build the frontend editor bundle before building the desktop app"
+  OFF
+)
 
 include(cmake/ProjectOptions.cmake)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -40,8 +45,12 @@ endif()
 
 qt_standard_project_setup(REQUIRES 6.5)
 
+if(CPPWIKI_BUILD_TESTS)
+  enable_testing()
+endif()
+
 add_subdirectory(src)
 
 if(CPPWIKI_BUILD_TESTS)
-  enable_testing()
+  add_subdirectory(tests)
 endif()

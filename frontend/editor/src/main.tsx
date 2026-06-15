@@ -7,7 +7,7 @@ import { useCreateBlockNote } from "@blocknote/react";
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createEditorBridge } from "./bridge";
-import type { EditorBridge } from "./bridge/editorBridge";
+import { bridgeApiVersion, type EditorBridge } from "./bridge/editorBridge";
 
 const kSnapshotDebounceMs = 500;
 
@@ -15,34 +15,7 @@ function EditorApp() {
   const [bridge, setBridge] = useState<EditorBridge | null>(null);
   const snapshot_timer = useRef<number | null>(null);
 
-  const editor = useCreateBlockNote({
-    initialContent: [
-      {
-        type: "heading",
-        props: {
-          level: 1,
-        },
-        content: "CppWiki",
-      },
-      {
-        type: "paragraph",
-        content:
-          "This is the first BlockNote document running inside Qt QWebEngine.",
-      },
-      {
-        type: "bulletListItem",
-        content: "Desktop shell: Qt 6 Widgets",
-      },
-      {
-        type: "bulletListItem",
-        content: "Editor host: QWebEngine",
-      },
-      {
-        type: "bulletListItem",
-        content: "Editor runtime: BlockNote / Tiptap / ProseMirror",
-      },
-    ],
-  });
+  const editor = useCreateBlockNote();
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +26,16 @@ function EditorApp() {
       }
 
       setBridge(created_bridge);
+
+      const bridge_info = await created_bridge.getBridgeInfo();
+      if (
+        !bridge_info.ok ||
+        bridge_info.result.apiVersion !== bridgeApiVersion ||
+        bridge_info.result.namespace !== "wiki.documents"
+      ) {
+        console.error("Unsupported editor bridge contract", bridge_info);
+        return;
+      }
 
       const response = await created_bridge.getInitialDocument();
       if (response.ok && Array.isArray(response.result)) {

@@ -1,4 +1,10 @@
-import type { BridgeResult, DocumentSnapshot, EditorBridge } from "./editorBridge";
+import {
+  bridgeApiVersion,
+  type BridgeInfo,
+  type BridgeResult,
+  type DocumentSnapshot,
+  type EditorBridge,
+} from "./editorBridge";
 
 const initialDocument = [
   {
@@ -14,12 +20,24 @@ const initialDocument = [
 
 export function createMockEditorBridge(): EditorBridge {
   return {
+    async getBridgeInfo(): Promise<BridgeResult<BridgeInfo>> {
+      return {
+        apiVersion: bridgeApiVersion,
+        ok: true,
+        result: {
+          apiVersion: bridgeApiVersion,
+          namespace: "wiki.documents",
+          methods: ["getBridgeInfo", "getInitialDocument", "updateSnapshot"],
+        },
+      };
+    },
+
     async getInitialDocument(): Promise<BridgeResult<DocumentSnapshot>> {
-      return { ok: true, result: initialDocument };
+      return { apiVersion: bridgeApiVersion, ok: true, result: initialDocument };
     },
 
     async updateSnapshot(): Promise<BridgeResult<void>> {
-      return { ok: true, result: undefined };
+      return { apiVersion: bridgeApiVersion, ok: true, result: undefined };
     },
   };
 }

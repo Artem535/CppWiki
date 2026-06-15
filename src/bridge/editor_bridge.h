@@ -13,7 +13,8 @@ class QEditorBridge final : public QObject {
  public:
   explicit QEditorBridge(QObject* parent = nullptr);
 
-  Q_INVOKABLE QVariantMap getInitialDocument();
+  Q_INVOKABLE static QVariantMap getBridgeInfo();
+  Q_INVOKABLE static QVariantMap getInitialDocument();
   Q_INVOKABLE QVariantMap updateSnapshot(const QString& snapshot_json);
 };
 

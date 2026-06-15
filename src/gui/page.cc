@@ -10,8 +10,11 @@
 #include <QWebEngineScript>
 #include <QWebEngineScriptCollection>
 #include <QWebEngineView>
+#include <utility>
 
 #include "bridge/editor_bridge.h"
+#include "core/constants.h"
+#include "core/qt_string.h"
 
 namespace cppwiki {
 namespace {
@@ -73,14 +76,15 @@ auto EditorFallbackHtml(const QString& expected_path) -> QString {
 
 }  // namespace
 
-Page::Page(QWidget* parent) : QWidget(parent) {
+Page::Page(ProgramSettings settings, QWidget* parent)
+    : QWidget(parent), settings_(std::move(settings)) {
   BuildUi();
 }
 
 Page::~Page() = default;
 
 QString Page::Title() const {
-  return QStringLiteral("Getting Started");
+  return ToQString(constants::kDefaultPageTitle);
 }
 
 QWidget* Page::Widget() {
@@ -94,7 +98,7 @@ void Page::BuildUi() {
   // Create the QWebEngineView and QWebChannel.
   channel_ = new QWebChannel(this);
   editor_bridge_ = new bridge::QEditorBridge(this);
-  channel_->registerObject(QStringLiteral("editorBridge"), editor_bridge_);
+  channel_->registerObject(ToQString(constants::kDocumentsBridgeObjectName), editor_bridge_);
 
   editor_view_ = new QWebEngineView(this);
   editor_view_->page()->setWebChannel(channel_);
@@ -106,8 +110,7 @@ void Page::BuildUi() {
 }
 
 void Page::LoadEditor() {
-  const QString editor_index_path =
-      QStringLiteral(CPPWIKI_EDITOR_DIST_DIR) + QStringLiteral("/index.html");
+  const QString editor_index_path = settings_.EditorDistDirectory() + QStringLiteral("/index.html");
   const QFileInfo editor_index(editor_index_path);
 
   if (editor_index.exists() && editor_index.isFile()) {

@@ -1,12 +1,16 @@
 qt_add_executable(cppwiki_app
+  MANUAL_FINALIZATION
   WIN32
   MACOSX_BUNDLE
     app/application.cc
     bridge/editor_bridge.cc
     bridge/editor_bridge.h
     main.cc
-    app/application.cc
     app/application.h
+    app/program_settings.cc
+    app/program_settings.h
+    core/constants.h
+    core/qt_string.h
     gui/i_page.h
     gui/main_window.cc
     gui/main_window.h
@@ -45,6 +49,10 @@ if(CPPWIKI_NPM_EXECUTABLE)
     COMMENT "Building BlockNote editor bundle"
     VERBATIM
   )
+
+  if(CPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP)
+    add_dependencies(cppwiki_app editor_bundle)
+  endif()
 else()
   message(WARNING "npm was not found; editor_bundle target will be unavailable")
 endif()
