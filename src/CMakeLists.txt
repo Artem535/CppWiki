@@ -20,6 +20,8 @@ qt_add_executable(cppwiki_app
     gui/main_window.h
     gui/page.cc
     gui/page.h
+    storage/cblite_document_repository.h
+    storage/local_document_repository.h
 )
 
 target_include_directories(cppwiki_app
@@ -42,6 +44,18 @@ target_link_libraries(cppwiki_app
     spdlog::spdlog
     reflectcpp::reflectcpp
 )
+
+if(CPPWIKI_ENABLE_CBLITE_STORAGE)
+  target_sources(cppwiki_app
+    PRIVATE
+      storage/cblite_document_repository.cc
+  )
+
+  target_link_libraries(cppwiki_app
+    PRIVATE
+      CBLite::cblite
+  )
+endif()
 
 cppwiki_apply_common_options(cppwiki_app)
 
