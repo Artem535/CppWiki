@@ -1,22 +1,16 @@
 // Suppress upstream header warnings before including CBLite headers
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wattributes"
-
+#include "core/constants.h"
 #include "storage/cblite_document_repository.h"
 
 #include <cbl++/CouchbaseLite.hh>
-
-#pragma clang diagnostic pop
-
 #include <rfl/json.hpp>
 
 #include <exception>
 #include <utility>
 
+
 namespace cppwiki::storage {
 namespace {
-
-constexpr std::string_view kDocumentsCollectionName = "documents";
 
 auto Slice(std::string_view value) -> cbl::slice {
   return cbl::slice(value.data(), value.size());
@@ -45,58 +39,63 @@ class CbliteDocumentRepository::Impl {
       return SaveDocumentResult{.error = error};
     }
 
-      try {
-        auto doc = collection_->getMutableDocument(Slice(document.metadata.id));
-        doc.set("title", Slice(document.metadata.title));
-        doc.set("raw_snapshot", Slice(document.raw_snapshot_json));
+    try {
+      auto doc = collection_->getMutableDocument(Slice(document.metadata.id));
+      doc.set("title", Slice(document.metadata.title));
+      doc.set("raw_snapshot", Slice(document.raw_snapshot_json));
 
-        collection_->saveDocument(doc);
-        return SaveDocumentResult{};
-      } catch (const CBLError& error) {
-        return SaveDocumentResult{.error = MakeError(RepositoryErrorCode::kWriteFailed, CbliteErrorMessage(error))};
-      } catch (const std::exception& error) {
-        return SaveDocumentResult{.error = MakeError(RepositoryErrorCode::kWriteFailed, error.what())};
-      }
+      collection_->saveDocument(doc);
+      return SaveDocumentResult{};
+    } catch (const CBLError& error) {
+      return SaveDocumentResult{
+          .error = MakeError(RepositoryErrorCode::kWriteFailed, CbliteErrorMessage(error))};
+    } catch (const std::exception& error) {
+      return SaveDocumentResult{.error =
+                                    MakeError(RepositoryErrorCode::kWriteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto LoadDocument(std::string_view page_id) -> LoadDocumentResult {
+    if (const auto error = EnsureDatabaseOpen()) {
+      return LoadDocumentResult{
+          .document = std::nullopt,
+          .error = error,
+      };
     }
 
-    [[nodiscard]] auto LoadDocument(std::string_view page_id) -> LoadDocumentResult {
-      if (const auto error = EnsureDatabaseOpen()) {
+    try {
+      auto doc = collection_->getDocument(Slice(page_id));
+      if (!doc) {
         return LoadDocumentResult{
             .document = std::nullopt,
-            .error = error,
+            .error = MakeError(RepositoryErrorCode::kReadFailed, "Document not found in CBLite"),
         };
       }
 
+      DocumentRecord record;
+      record.metadata.id = std::string(page_id);
+      // Document properties are accessed via Dict interface
+      auto props = doc.properties();
+      record.metadata.title = std::string(props["title"].asString());
+      record.raw_snapshot_json = std::string(props["raw_snapshot"].asString());
+
       try {
-        auto doc = collection_->getDocument(Slice(page_id));
-        if (!doc) {
-          return LoadDocumentResult{
-              .document = std::nullopt,
-              .error = MakeError(RepositoryErrorCode::kReadFailed, "Document not found in CBLite"),
-          };
-        }
-
-        DocumentRecord record;
-        record.metadata.id = std::string(page_id);
-        // Document properties are accessed via Dict interface
-        auto props = doc.properties();
-        record.metadata.title = std::string(props["title"].asString());
-        record.raw_snapshot_json = std::string(props["raw_snapshot"].asString());
-
-        try {
-          auto result = rfl::json::read<document::BlockNoteDocumentSnapshot>(record.raw_snapshot_json);
+        auto result =
+            rfl::json::read<document::BlockNoteDocumentSnapshot>(record.raw_snapshot_json);
         if (!result) {
           return LoadDocumentResult{
               .document = std::nullopt,
-              .error = MakeError(RepositoryErrorCode::kInvalidRecord, 
-                                 std::string("Failed to deserialize snapshot: ") + result.error().what()),
+              .error = MakeError(
+                  RepositoryErrorCode::kInvalidRecord,
+                  std::string("Failed to deserialize snapshot: ") + result.error().what()),
           };
         }
         record.snapshot = result.value();
       } catch (const std::exception& e) {
         return LoadDocumentResult{
             .document = std::nullopt,
-            .error = MakeError(RepositoryErrorCode::kInvalidRecord, std::string("Failed to deserialize snapshot: ") + e.what()),
+            .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                               std::string("Failed to deserialize snapshot: ") + e.what()),
         };
       }
 
@@ -129,11 +128,10 @@ class CbliteDocumentRepository::Impl {
       config.directory = Slice(database_directory_);
       database_ = std::make_unique<cbl::Database>(Slice(options_.database_name), config);
       if (!static_cast<bool>(*database_)) {
-        return MakeError(RepositoryErrorCode::kOpenFailed,
-                         "Couchbase Lite database did not open.");
+        return MakeError(RepositoryErrorCode::kOpenFailed, "Couchbase Lite database did not open.");
       }
       collection_ = std::make_unique<cbl::Collection>(
-          database_->createCollection(Slice(kDocumentsCollectionName)));
+          database_->createCollection(Slice(constants::kDocumentsCollectionName)));
       return std::nullopt;
     } catch (const CBLError& error) {
       return MakeError(RepositoryErrorCode::kOpenFailed, CbliteErrorMessage(error));
@@ -153,8 +151,7 @@ CbliteDocumentRepository::CbliteDocumentRepository(CbliteDocumentRepositoryOptio
 
 CbliteDocumentRepository::~CbliteDocumentRepository() = default;
 
-auto CbliteDocumentRepository::SaveDocument(const DocumentRecord& document)
-    -> SaveDocumentResult {
+auto CbliteDocumentRepository::SaveDocument(const DocumentRecord& document) -> SaveDocumentResult {
   return impl_->SaveDocument(document);
 }
 

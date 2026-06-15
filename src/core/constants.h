@@ -12,9 +12,9 @@ inline constexpr std::string_view kOrganizationName = "CppWiki";
 inline constexpr int kBridgeApiVersion = 1;
 inline constexpr std::string_view kDocumentsBridgeObjectName = "wikiDocuments";
 inline constexpr std::string_view kDocumentsBridgeNamespace = "wiki.documents";
-inline constexpr std::string_view kBridgeMethodGetBridgeInfo = "getBridgeInfo";
-inline constexpr std::string_view kBridgeMethodGetInitialDocument = "getInitialDocument";
-inline constexpr std::string_view kBridgeMethodUpdateSnapshot = "updateSnapshot";
+inline constexpr std::string_view kBridgeMethodGetBridgeInfo = "GetBridgeInfo";
+inline constexpr std::string_view kBridgeMethodGetInitialDocument = "GetInitialDocument";
+inline constexpr std::string_view kBridgeMethodUpdateSnapshot = "UpdateSnapshot";
 
 inline constexpr std::string_view kDatabaseDirectoryName = "database";
 inline constexpr std::string_view kDefaultPageTitle = "Getting Started";
@@ -23,6 +23,8 @@ inline constexpr std::string_view kSettingsAppDataDirectoryKey = "paths/appDataD
 inline constexpr std::string_view kSettingsDatabaseDirectoryKey = "paths/databaseDirectory";
 inline constexpr std::string_view kSettingsEditorDistDirectoryKey = "paths/editorDistDirectory";
 
+
+inline constexpr std::string_view kDocumentsCollectionName = "documents";
 }  // namespace cppwiki::constants
 
 #endif  // CPPWIKI_SRC_CORE_CONSTANTS_H_
