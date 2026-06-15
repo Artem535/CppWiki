@@ -1,12 +1,22 @@
+// Suppress upstream header warnings before including CBLite headers
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wattributes"
+
 #include "storage/cblite_document_repository.h"
 
 #include <cbl++/CouchbaseLite.hh>
+
+#pragma clang diagnostic pop
+
+#include <rfl/json.hpp>
 
 #include <exception>
 #include <utility>
 
 namespace cppwiki::storage {
 namespace {
+
+constexpr std::string_view kDocumentsCollectionName = "documents";
 
 auto Slice(std::string_view value) -> cbl::slice {
   return cbl::slice(value.data(), value.size());
@@ -35,27 +45,76 @@ class CbliteDocumentRepository::Impl {
       return SaveDocumentResult{.error = error};
     }
 
-    return SaveDocumentResult{
-        .error = MakeError(RepositoryErrorCode::kUnsupported,
-                           "Couchbase Lite document save is not implemented yet for page '" +
-                               document.metadata.id + "'."),
-    };
-  }
+      try {
+        auto doc = collection_->getMutableDocument(Slice(document.metadata.id));
+        doc.set("title", Slice(document.metadata.title));
+        doc.set("raw_snapshot", Slice(document.raw_snapshot_json));
 
-  [[nodiscard]] auto LoadDocument(std::string_view page_id) -> LoadDocumentResult {
-    if (const auto error = EnsureDatabaseOpen()) {
-      return LoadDocumentResult{
-          .document = std::nullopt,
-          .error = error,
-      };
+        collection_->saveDocument(doc);
+        return SaveDocumentResult{};
+      } catch (const CBLError& error) {
+        return SaveDocumentResult{.error = MakeError(RepositoryErrorCode::kWriteFailed, CbliteErrorMessage(error))};
+      } catch (const std::exception& error) {
+        return SaveDocumentResult{.error = MakeError(RepositoryErrorCode::kWriteFailed, error.what())};
+      }
     }
 
-    return LoadDocumentResult{
-        .document = std::nullopt,
-        .error = MakeError(RepositoryErrorCode::kUnsupported,
-                           "Couchbase Lite document load is not implemented yet for page '" +
-                               std::string(page_id) + "'."),
-    };
+    [[nodiscard]] auto LoadDocument(std::string_view page_id) -> LoadDocumentResult {
+      if (const auto error = EnsureDatabaseOpen()) {
+        return LoadDocumentResult{
+            .document = std::nullopt,
+            .error = error,
+        };
+      }
+
+      try {
+        auto doc = collection_->getDocument(Slice(page_id));
+        if (!doc) {
+          return LoadDocumentResult{
+              .document = std::nullopt,
+              .error = MakeError(RepositoryErrorCode::kReadFailed, "Document not found in CBLite"),
+          };
+        }
+
+        DocumentRecord record;
+        record.metadata.id = std::string(page_id);
+        // Document properties are accessed via Dict interface
+        auto props = doc.properties();
+        record.metadata.title = std::string(props["title"].asString());
+        record.raw_snapshot_json = std::string(props["raw_snapshot"].asString());
+
+        try {
+          auto result = rfl::json::read<document::BlockNoteDocumentSnapshot>(record.raw_snapshot_json);
+        if (!result) {
+          return LoadDocumentResult{
+              .document = std::nullopt,
+              .error = MakeError(RepositoryErrorCode::kInvalidRecord, 
+                                 std::string("Failed to deserialize snapshot: ") + result.error().what()),
+          };
+        }
+        record.snapshot = result.value();
+      } catch (const std::exception& e) {
+        return LoadDocumentResult{
+            .document = std::nullopt,
+            .error = MakeError(RepositoryErrorCode::kInvalidRecord, std::string("Failed to deserialize snapshot: ") + e.what()),
+        };
+      }
+
+      return LoadDocumentResult{
+          .document = std::make_optional(std::move(record)),
+          .error = std::nullopt,
+      };
+    } catch (const CBLError& error) {
+      return LoadDocumentResult{
+          .document = std::nullopt,
+          .error = MakeError(RepositoryErrorCode::kReadFailed, CbliteErrorMessage(error)),
+      };
+    } catch (const std::exception& error) {
+      return LoadDocumentResult{
+          .document = std::nullopt,
+          .error = MakeError(RepositoryErrorCode::kReadFailed, error.what()),
+      };
+    }
   }
 
  private:
@@ -73,6 +132,8 @@ class CbliteDocumentRepository::Impl {
         return MakeError(RepositoryErrorCode::kOpenFailed,
                          "Couchbase Lite database did not open.");
       }
+      collection_ = std::make_unique<cbl::Collection>(
+          database_->createCollection(Slice(kDocumentsCollectionName)));
       return std::nullopt;
     } catch (const CBLError& error) {
       return MakeError(RepositoryErrorCode::kOpenFailed, CbliteErrorMessage(error));
@@ -84,6 +145,7 @@ class CbliteDocumentRepository::Impl {
   CbliteDocumentRepositoryOptions options_;
   std::string database_directory_;
   std::unique_ptr<cbl::Database> database_;
+  std::unique_ptr<cbl::Collection> collection_;
 };
 
 CbliteDocumentRepository::CbliteDocumentRepository(CbliteDocumentRepositoryOptions options)

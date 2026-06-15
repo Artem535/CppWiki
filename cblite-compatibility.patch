@@ -1,0 +1,28 @@
+--- .deps/couchbase-lite/linux-x86_64/include/fleece/CompilerSupport.h.orig
++++ .deps/couchbase-lite/linux-x86_64/include/fleece/CompilerSupport.h
+@@ -280,10 +280,7 @@
+     // dependent value is used after the value it depends on exits scope. For examples of usage, see slice.hh.
+     // "The `lifetimebound` attribute on a function parameter or implicit object parameter indicates that objects that are
+     // referred to by that parameter may also be referred to by the return value of the annotated function (or, for a
+     // parameter of a constructor, by the value of the constructed object)."
+     // -- https://clang.llvm.org/docs/AttributeReference.html#lifetimebound
+-#   if __has_cpp_attribute(clang::lifetimebound)
+-#       define LIFETIMEBOUND [[clang::lifetimebound]]
+-#   else
+-#       define LIFETIMEBOUND
+-#   endif
++#   define LIFETIMEBOUND
+ #else
+ #   define FLAPI
+ #   define LIFETIMEBOUND
+--- .deps/couchbase-lite/linux-x86_64/include/cbl++/Document.hh.orig
++++ .deps/couchbase-lite/linux-x86_64/include/cbl++/Document.hh
+@@ -106,7 +106,7 @@ namespace cbl {
+     public:
+         /** Creates a new, empty document in memory, with a randomly-generated unique ID.
+             It will not be added to a database until saved. */
+-        explicit MutableDocument(nullptr_t)             {_ref = (CBLRefCounted*)CBLDocument_CreateWithID(fleece::nullslice);}
++        explicit MutableDocument(std::nullptr_t)             {_ref = (CBLRefCounted*)CBLDocument_CreateWithID(fleece::nullslice);}
+         
+         /** Creates a new, empty document in memory, with the given ID.
+             It will not be added to a database until saved.

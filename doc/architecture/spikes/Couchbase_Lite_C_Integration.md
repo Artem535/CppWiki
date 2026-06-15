@@ -337,11 +337,38 @@ storage/
 The Couchbase Lite adapter should own:
 
 - database open/close;
-- collection access;
+- collection creation and access (CBL 3.x+ requires explicit collection usage for documents);
 - document ID mapping;
 - JSON/Fleece conversion;
 - save error mapping;
 - conflict metadata extraction later.
+
+### Collection API Usage (CBL 3.x+)
+
+In Couchbase Lite C++ 3.x+, documents are accessed through Collections rather than directly through the Database:
+
+```cpp
+// Create or get existing collection
+auto collection = database_->createCollection("documents");
+
+// Create or get mutable document
+auto doc = collection.getMutableDocument(document_id);
+
+// Set properties
+doc.setString("title", title_value);
+doc.setString("content", content_value);
+
+// Save document
+collection.saveDocument(doc);
+
+// Read document
+auto doc = collection.getDocument(document_id);
+if (doc) {
+    auto title = doc.getString("title");
+}
+```
+
+The default collection (`_default`) is created automatically, but custom collections should be explicitly created for application data separation.
 
 The adapter may include `cbl++/CouchbaseLite.hh`. The rest of the app should not include Couchbase Lite headers or expose Couchbase Lite types in public interfaces.
 
