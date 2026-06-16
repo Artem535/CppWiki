@@ -13,6 +13,25 @@ export type BridgeResult<T> =
 export type DocumentSnapshot = Block[];
 export type InitialDocumentSnapshot = PartialBlock[];
 
+export type DocumentSummary = {
+  id: string;
+  title: string;
+  parentId?: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LoadedDocument = {
+  id: string;
+  title: string;
+  parentId?: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  blocks: InitialDocumentSnapshot;
+};
+
 export type BridgeInfo = {
   apiVersion: typeof bridgeApiVersion;
   namespace: "wiki.documents";
@@ -22,5 +41,11 @@ export type BridgeInfo = {
 export interface EditorBridge {
   getBridgeInfo(): Promise<BridgeResult<BridgeInfo>>;
   getInitialDocument(): Promise<BridgeResult<InitialDocumentSnapshot>>;
+  listDocuments(): Promise<BridgeResult<DocumentSummary[]>>;
+  loadDocument(pageId: string): Promise<BridgeResult<LoadedDocument>>;
+  openDocument(pageId: string): Promise<BridgeResult<LoadedDocument>>;
   updateSnapshot(snapshot: DocumentSnapshot): Promise<BridgeResult<void>>;
+  onDocumentOpenRequested(callback: (pageId: string) => void): () => void;
+  onDocumentLoaded(callback: (document: LoadedDocument) => void): () => void;
+  onDocumentLoadFailed(callback: (pageId: string, message: string) => void): () => void;
 }

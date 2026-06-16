@@ -4,10 +4,15 @@
 
 #include <QVariant>
 #include <cstdlib>
+#include <map>
+#include <memory>
+#include <optional>
 #include <string_view>
+#include <utility>
 
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "storage/local_document_repository.h"
 
 namespace {
 
@@ -38,6 +43,46 @@ auto RequireErrorEnvelope(const QVariantMap& response, const QString& expected_c
           "error message must not be empty");
 }
 
+class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepository {
+ public:
+  [[nodiscard]] auto SaveDocument(const cppwiki::storage::DocumentRecord& document)
+      -> cppwiki::storage::SaveDocumentResult override {
+    documents_[document.metadata.id] = document;
+    return cppwiki::storage::SaveDocumentResult{};
+  }
+
+  [[nodiscard]] auto LoadDocument(std::string_view page_id)
+      -> cppwiki::storage::LoadDocumentResult override {
+    const auto it = documents_.find(std::string(page_id));
+    if (it == documents_.end()) {
+      return cppwiki::storage::LoadDocumentResult{
+          .document = std::nullopt,
+          .error = cppwiki::storage::RepositoryError{
+              .code = cppwiki::storage::RepositoryErrorCode::kReadFailed,
+              .message = "Document was not found.",
+          },
+      };
+    }
+
+    return cppwiki::storage::LoadDocumentResult{
+        .document = it->second,
+        .error = std::nullopt,
+    };
+  }
+
+  [[nodiscard]] auto ListDocuments() -> cppwiki::storage::ListDocumentsResult override {
+    cppwiki::storage::ListDocumentsResult result;
+    for (const auto& [id, document] : documents_) {
+      result.documents.push_back(
+          cppwiki::storage::DocumentSummaryFromMetadata(document.metadata));
+    }
+    return result;
+  }
+
+ private:
+  std::map<std::string, cppwiki::storage::DocumentRecord> documents_;
+};
+
 auto TestBridgeInfo() -> void {
   cppwiki::bridge::QEditorBridge bridge;
   const auto response = bridge.getBridgeInfo();
@@ -57,26 +102,92 @@ auto TestBridgeInfo() -> void {
           "missing info method");
   Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodGetInitialDocument)),
           "missing initial document method");
+  Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodListDocuments)),
+          "missing list documents method");
+  Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodCreateDocument)),
+          "missing create document method");
+  Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodLoadDocument)),
+          "missing load document method");
+  Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodOpenDocument)),
+          "missing open document method");
   Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodUpdateSnapshot)),
           "missing update snapshot method");
 }
 
-auto TestInitialDocument() -> void {
+auto TestInitialDocumentStartsEmpty() -> void {
   cppwiki::bridge::QEditorBridge bridge;
   const auto response = bridge.getInitialDocument();
 
   RequireSuccessEnvelope(response);
 
   const auto blocks = response.value(QStringLiteral("result")).toList();
-  Require(blocks.size() == 2, "initial document should have two blocks");
+  Require(blocks.empty(), "initial document should be empty until a page is selected");
+}
 
-  const auto heading = blocks.front().toMap();
-  Require(heading.value(QStringLiteral("type")).toString() == QStringLiteral("heading"),
-          "first initial block should be a heading");
+auto TestDocumentListBootstrapsWelcomePage() -> QString {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto response = bridge.listDocuments();
+  RequireSuccessEnvelope(response);
+
+  const auto pages = response.value(QStringLiteral("result")).toList();
+  Require(pages.size() == 1, "empty repository should be bootstrapped with one page");
+
+  const auto page = pages.front().toMap();
+  Require(page.value(QStringLiteral("title")).toString() == QStringLiteral("Welcome to CppWiki"),
+          "bootstrap page title should match");
+  return page.value(QStringLiteral("id")).toString();
+}
+
+auto TestCreateDocument() -> QString {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto response = bridge.createDocument();
+  RequireSuccessEnvelope(response);
+
+  const auto created = response.value(QStringLiteral("result")).toMap();
+  Require(created.value(QStringLiteral("title")).toString() == QStringLiteral("Untitled note"),
+          "created document title should match");
+  Require(!created.value(QStringLiteral("id")).toString().isEmpty(),
+          "created document id should not be empty");
+  return created.value(QStringLiteral("id")).toString();
+}
+
+auto TestOpenDocumentReturnsLoadedDocument() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto list_response = bridge.listDocuments();
+  RequireSuccessEnvelope(list_response);
+  const auto page_id = list_response.value(QStringLiteral("result")).toList().front().toMap().value(
+      QStringLiteral("id")).toString();
+
+  const auto response = bridge.openDocument(page_id);
+  RequireSuccessEnvelope(response);
+
+  const auto document = response.value(QStringLiteral("result")).toMap();
+  Require(document.value(QStringLiteral("id")).toString() == page_id,
+          "opened document id should match selected page");
+  Require(document.value(QStringLiteral("blocks")).toList().size() == 2,
+          "opened welcome document should include blocks");
 }
 
 auto TestValidSnapshot() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+  const auto list_response = bridge.listDocuments();
+  RequireSuccessEnvelope(list_response);
+  const auto page_id = list_response.value(QStringLiteral("result")).toList().front().toMap().value(
+      QStringLiteral("id")).toString();
+
+  RequireSuccessEnvelope(bridge.loadDocument(page_id));
+
   const auto response = bridge.updateSnapshot(QStringLiteral(R"([
     {
       "id": "b1",
@@ -100,14 +211,30 @@ auto TestValidSnapshot() -> void {
 }
 
 auto TestInvalidJsonSnapshot() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+  const auto list_response = bridge.listDocuments();
+  RequireSuccessEnvelope(list_response);
+  const auto page_id = list_response.value(QStringLiteral("result")).toList().front().toMap().value(
+      QStringLiteral("id")).toString();
+  RequireSuccessEnvelope(bridge.loadDocument(page_id));
+
   const auto response = bridge.updateSnapshot(QStringLiteral("{"));
 
   RequireErrorEnvelope(response, QStringLiteral("invalid_json"));
 }
 
 auto TestInvalidRootSnapshot() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+  const auto list_response = bridge.listDocuments();
+  RequireSuccessEnvelope(list_response);
+  const auto page_id = list_response.value(QStringLiteral("result")).toList().front().toMap().value(
+      QStringLiteral("id")).toString();
+  RequireSuccessEnvelope(bridge.loadDocument(page_id));
+
   const auto response = bridge.updateSnapshot(QStringLiteral(R"({ "type": "paragraph" })"));
 
   RequireErrorEnvelope(response, QStringLiteral("missing_schema_version"));
@@ -117,7 +244,10 @@ auto TestInvalidRootSnapshot() -> void {
 
 auto main() -> int {
   TestBridgeInfo();
-  TestInitialDocument();
+  TestInitialDocumentStartsEmpty();
+  TestDocumentListBootstrapsWelcomePage();
+  TestCreateDocument();
+  TestOpenDocumentReturnsLoadedDocument();
   TestValidSnapshot();
   TestInvalidJsonSnapshot();
   TestInvalidRootSnapshot();

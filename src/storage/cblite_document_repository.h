@@ -26,6 +26,7 @@ class CbliteDocumentRepository final : public LocalDocumentRepository {
 
   [[nodiscard]] auto SaveDocument(const DocumentRecord& document) -> SaveDocumentResult override;
   [[nodiscard]] auto LoadDocument(std::string_view page_id) -> LoadDocumentResult override;
+  [[nodiscard]] auto ListDocuments() -> ListDocumentsResult override;
 
  private:
   class Impl;

@@ -1,8 +1,10 @@
 import type {
   BridgeInfo,
   BridgeResult,
+  DocumentSummary,
   EditorBridge,
   InitialDocumentSnapshot,
+  LoadedDocument,
 } from "./editorBridge";
 
 declare global {
@@ -18,9 +20,30 @@ declare global {
 }
 
 type QtEditorBridgeObject = {
+  documentOpenRequested: {
+    connect(callback: (pageId: string) => void): void;
+    disconnect(callback: (pageId: string) => void): void;
+  };
+  documentLoaded: {
+    connect(callback: (document: LoadedDocument) => void): void;
+    disconnect(callback: (document: LoadedDocument) => void): void;
+  };
+  documentLoadFailed: {
+    connect(callback: (pageId: string, message: string) => void): void;
+    disconnect(callback: (pageId: string, message: string) => void): void;
+  };
   getBridgeInfo(callback: (response: BridgeResult<BridgeInfo>) => void): void;
   getInitialDocument(
     callback: (response: BridgeResult<InitialDocumentSnapshot>) => void,
+  ): void;
+  listDocuments(callback: (response: BridgeResult<DocumentSummary[]>) => void): void;
+  loadDocument(
+    pageId: string,
+    callback: (response: BridgeResult<LoadedDocument>) => void,
+  ): void;
+  openDocument(
+    pageId: string,
+    callback: (response: BridgeResult<LoadedDocument>) => void,
   ): void;
   updateSnapshot(
     snapshotJson: string,
@@ -52,10 +75,49 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
       });
     },
 
+    listDocuments() {
+      return new Promise((resolve) => {
+        qtObject.listDocuments(resolve);
+      });
+    },
+
+    loadDocument(pageId) {
+      return new Promise((resolve) => {
+        qtObject.loadDocument(pageId, resolve);
+      });
+    },
+
+    openDocument(pageId) {
+      return new Promise((resolve) => {
+        qtObject.openDocument(pageId, resolve);
+      });
+    },
+
     updateSnapshot(snapshot) {
       return new Promise((resolve) => {
         qtObject.updateSnapshot(JSON.stringify(snapshot), resolve);
       });
+    },
+
+    onDocumentOpenRequested(callback) {
+      qtObject.documentOpenRequested.connect(callback);
+      return () => {
+        qtObject.documentOpenRequested.disconnect(callback);
+      };
+    },
+
+    onDocumentLoaded(callback) {
+      qtObject.documentLoaded.connect(callback);
+      return () => {
+        qtObject.documentLoaded.disconnect(callback);
+      };
+    },
+
+    onDocumentLoadFailed(callback) {
+      qtObject.documentLoadFailed.connect(callback);
+      return () => {
+        qtObject.documentLoadFailed.disconnect(callback);
+      };
     },
   };
 }

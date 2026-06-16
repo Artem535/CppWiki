@@ -5,6 +5,7 @@
 #include <cbl++/CouchbaseLite.hh>
 #include <rfl/json.hpp>
 
+#include <algorithm>
 #include <exception>
 #include <utility>
 
@@ -28,6 +29,15 @@ auto CbliteErrorMessage(const CBLError& error) -> std::string {
          " code=" + std::to_string(error.code);
 }
 
+auto GetMutableDocument(const cbl::Collection& collection, std::string_view document_id)
+    -> cbl::MutableDocument {
+  auto existing = collection.getDocument(Slice(document_id));
+  if (existing) {
+    return existing.mutableCopy();
+  }
+  return cbl::MutableDocument(Slice(document_id));
+}
+
 }  // namespace
 
 class CbliteDocumentRepository::Impl {
@@ -40,11 +50,20 @@ class CbliteDocumentRepository::Impl {
     }
 
     try {
-      auto doc = collection_->getMutableDocument(Slice(document.metadata.id));
+      auto doc = GetMutableDocument(*collection_, document.metadata.id);
       doc.set("title", Slice(document.metadata.title));
+      if (document.metadata.parent_id) {
+        doc.set("parent_id", Slice(*document.metadata.parent_id));
+      } else {
+        doc.properties().remove("parent_id");
+      }
+      doc.set("sort_order", document.metadata.sort_order);
+      doc.set("created_at", Slice(document.metadata.created_at));
+      doc.set("updated_at", Slice(document.metadata.updated_at));
       doc.set("raw_snapshot", Slice(document.raw_snapshot_json));
 
       collection_->saveDocument(doc);
+      SaveDocumentIndexEntry(document.metadata);
       return SaveDocumentResult{};
     } catch (const CBLError& error) {
       return SaveDocumentResult{
@@ -77,6 +96,12 @@ class CbliteDocumentRepository::Impl {
       // Document properties are accessed via Dict interface
       auto props = doc.properties();
       record.metadata.title = std::string(props["title"].asString());
+      if (const auto parent_id = props["parent_id"]; parent_id) {
+        record.metadata.parent_id = std::string(parent_id.asString());
+      }
+      record.metadata.sort_order = static_cast<std::int32_t>(props["sort_order"].asInt());
+      record.metadata.created_at = std::string(props["created_at"].asString());
+      record.metadata.updated_at = std::string(props["updated_at"].asString());
       record.raw_snapshot_json = std::string(props["raw_snapshot"].asString());
 
       try {
@@ -116,7 +141,62 @@ class CbliteDocumentRepository::Impl {
     }
   }
 
+  [[nodiscard]] auto ListDocuments() -> ListDocumentsResult {
+    if (const auto error = EnsureDatabaseOpen()) {
+      return ListDocumentsResult{
+          .documents = {},
+          .error = error,
+      };
+    }
+
+    try {
+      std::vector<DocumentSummary> documents;
+
+      auto doc = collection_->getDocument(Slice(constants::kDocumentsIndexDocumentId));
+      if (!doc) {
+        return ListDocumentsResult{};
+      }
+
+      auto props = doc.properties();
+      for (auto it = props.begin(); it != props.end(); ++it) {
+        auto loaded = LoadDocument(it.keyString().asString());
+        if (!loaded.document) {
+          continue;
+        }
+        documents.push_back(DocumentSummaryFromMetadata(loaded.document->metadata));
+      }
+
+      std::ranges::sort(documents, [](const DocumentSummary& lhs, const DocumentSummary& rhs) {
+        if (lhs.sort_order != rhs.sort_order) {
+          return lhs.sort_order < rhs.sort_order;
+        }
+        return lhs.title < rhs.title;
+      });
+
+      return ListDocumentsResult{
+          .documents = std::move(documents),
+          .error = std::nullopt,
+      };
+    } catch (const CBLError& error) {
+      return ListDocumentsResult{
+          .documents = {},
+          .error = MakeError(RepositoryErrorCode::kReadFailed, CbliteErrorMessage(error)),
+      };
+    } catch (const std::exception& error) {
+      return ListDocumentsResult{
+          .documents = {},
+          .error = MakeError(RepositoryErrorCode::kReadFailed, error.what()),
+      };
+    }
+  }
+
  private:
+  void SaveDocumentIndexEntry(const document::PageMetadata& metadata) {
+    auto index_doc = GetMutableDocument(*collection_, constants::kDocumentsIndexDocumentId);
+    index_doc.set(Slice(metadata.id), Slice(metadata.title));
+    collection_->saveDocument(index_doc);
+  }
+
   [[nodiscard]] auto EnsureDatabaseOpen() -> std::optional<RepositoryError> {
     if (database_) {
       return std::nullopt;
@@ -157,6 +237,10 @@ auto CbliteDocumentRepository::SaveDocument(const DocumentRecord& document) -> S
 
 auto CbliteDocumentRepository::LoadDocument(std::string_view page_id) -> LoadDocumentResult {
   return impl_->LoadDocument(page_id);
+}
+
+auto CbliteDocumentRepository::ListDocuments() -> ListDocumentsResult {
+  return impl_->ListDocuments();
 }
 
 }  // namespace cppwiki::storage

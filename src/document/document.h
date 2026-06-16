@@ -45,6 +45,10 @@ struct PageMetadata {
   std::string id;
   SchemaVersion schema_version{SchemaVersion::kV1};
   std::string title;
+  std::optional<std::string> parent_id;
+  std::int32_t sort_order{};
+  std::string created_at;
+  std::string updated_at;
 };
 
 struct Document {

@@ -5,16 +5,11 @@
 #include <QWidget>
 
 #include "app/app_context.h"
+#include "core/constants.h"
 #include "gui/i_page.h"
 #include "gui/page.h"
 
 namespace cppwiki {
-namespace {
-
-constexpr int kInitialWindowWidth = 1280;
-constexpr int kInitialWindowHeight = 800;
-
-}  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   BuildUi();
@@ -44,7 +39,7 @@ void MainWindow::CreateInitialPage() {
 
 void MainWindow::BuildUi() {
   setWindowTitle(QStringLiteral("CppWiki"));
-  resize(kInitialWindowWidth, kInitialWindowHeight);
+  resize(constants::kInitialWindowWidth, constants::kInitialWindowHeight);
   statusBar()->showMessage(QStringLiteral("Ready"));
 }
 

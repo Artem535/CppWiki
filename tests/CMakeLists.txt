@@ -8,6 +8,8 @@ add_executable(cppwiki_bridge_tests
   ${CMAKE_SOURCE_DIR}/src/document/document_validator.h
   ${CMAKE_SOURCE_DIR}/src/core/constants.h
   ${CMAKE_SOURCE_DIR}/src/core/qt_string.h
+  ${CMAKE_SOURCE_DIR}/src/core/uuid.cc
+  ${CMAKE_SOURCE_DIR}/src/core/uuid.h
 )
 
 target_include_directories(cppwiki_bridge_tests
@@ -113,6 +115,35 @@ add_test(
 )
 
 if(CPPWIKI_ENABLE_CBLITE_STORAGE)
+  add_executable(cppwiki_cblite_repository_tests
+    storage/cblite_repository_test.cc
+    ${CMAKE_SOURCE_DIR}/src/core/constants.h
+    ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
+    ${CMAKE_SOURCE_DIR}/src/document/document.h
+    ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.cc
+    ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.h
+    ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
+  )
+
+  target_include_directories(cppwiki_cblite_repository_tests
+    PRIVATE
+      ${CMAKE_SOURCE_DIR}/src
+  )
+
+  target_link_libraries(cppwiki_cblite_repository_tests
+    PRIVATE
+      CBLite::cblite
+      spdlog::spdlog
+      reflectcpp::reflectcpp
+  )
+
+  cppwiki_apply_common_options(cppwiki_cblite_repository_tests)
+
+  add_test(
+    NAME cppwiki_cblite_repository_tests
+    COMMAND cppwiki_cblite_repository_tests
+  )
+
   add_executable(cppwiki_cblite_cpp_smoke_tests
     storage/cblite_cpp_smoke_test.cc
   )

@@ -5,7 +5,7 @@
 
 namespace cppwiki {
 
-class AppContext;
+struct AppContext;
 class IPage;
 
 class MainWindow final : public QMainWindow {

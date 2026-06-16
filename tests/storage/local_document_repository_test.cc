@@ -42,6 +42,15 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     };
   }
 
+  [[nodiscard]] auto ListDocuments() -> cppwiki::storage::ListDocumentsResult override {
+    cppwiki::storage::ListDocumentsResult result;
+    if (document_) {
+      result.documents.push_back(
+          cppwiki::storage::DocumentSummaryFromMetadata(document_->metadata));
+    }
+    return result;
+  }
+
  private:
   std::optional<cppwiki::storage::DocumentRecord> document_;
 };
@@ -55,6 +64,10 @@ auto TestRepositoryInterfaceStoresValidatedRawSnapshot() -> void {
               .id = "page-1",
               .schema_version = cppwiki::document::SchemaVersion::kV1,
               .title = "Getting Started",
+              .parent_id = std::nullopt,
+              .sort_order = 10,
+              .created_at = "2026-06-16T08:00:00.000Z",
+              .updated_at = "2026-06-16T08:01:00.000Z",
           },
       .snapshot =
           cppwiki::document::BlockNoteDocumentSnapshot{
@@ -73,8 +86,17 @@ auto TestRepositoryInterfaceStoresValidatedRawSnapshot() -> void {
   Require(load_result.document.has_value(), "load through repository interface should return document");
   Require(!load_result.error, "load through repository interface should not return error");
   Require(load_result.document->metadata.id == "page-1", "loaded metadata id should match");
+  Require(load_result.document->metadata.sort_order == 10,
+          "loaded metadata sort order should match");
   Require(load_result.document->raw_snapshot_json == document.raw_snapshot_json,
           "loaded raw snapshot should match");
+
+  const auto list_result = repository.ListDocuments();
+  Require(!list_result.error, "list through repository interface should not return error");
+  Require(list_result.documents.size() == 1, "repository list should include saved document");
+  Require(list_result.documents.front().id == "page-1", "listed metadata id should match");
+  Require(list_result.documents.front().sort_order == 10,
+          "listed metadata sort order should match");
 }
 
 }  // namespace

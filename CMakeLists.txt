@@ -33,7 +33,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 find_package(
   Qt6 6.5 REQUIRED
-  COMPONENTS Core Gui Widgets WebChannel WebEngineWidgets
+  COMPONENTS Core Gui Widgets WebChannel WebEngineWidgets Svg
 )
 find_package(Drogon CONFIG REQUIRED)
 find_package(reflectcpp CONFIG REQUIRED)
@@ -44,6 +44,10 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
 endif()
 
 qt_standard_project_setup(REQUIRES 6.5)
+
+set(QLEMENTINE_SANDBOX OFF CACHE BOOL "Build qlementine sandbox" FORCE)
+set(QLEMENTINE_SHOWCASE OFF CACHE BOOL "Build qlementine showcase" FORCE)
+add_subdirectory(third_party/qlementine)
 
 if(CPPWIKI_BUILD_TESTS)
   enable_testing()

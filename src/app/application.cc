@@ -1,6 +1,10 @@
 #include "app/application.h"
 
+#include <oclero/qlementine.hpp>
+
 #include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 
 #include "core/constants.h"
 #include "core/qt_string.h"
@@ -9,11 +13,40 @@
 
 namespace cppwiki {
 
+namespace {
+
+auto ResolveDarkThemePath() -> QString {
+  const auto candidates = {
+      QDir::current().filePath(ToQString(constants::kQlementineDarkThemePath)),
+      QDir(QCoreApplication::applicationDirPath()).filePath(
+          QStringLiteral("../../") + ToQString(constants::kQlementineDarkThemePath)),
+      QDir(QCoreApplication::applicationDirPath()).filePath(
+          QStringLiteral("../../../") + ToQString(constants::kQlementineDarkThemePath)),
+  };
+
+  for (const auto& candidate : candidates) {
+    if (QFileInfo(candidate).exists()) {
+      return candidate;
+    }
+  }
+  return {};
+}
+
+}  // namespace
+
 Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   QCoreApplication::setApplicationName(ToQString(constants::kApplicationName));
   QCoreApplication::setApplicationVersion(ToQString(constants::kApplicationVersion));
   QCoreApplication::setOrganizationName(ToQString(constants::kOrganizationName));
   QApplication::setQuitOnLastWindowClosed(true);
+  QApplication::setStyle(new oclero::qlementine::QlementineStyle(&qt_application_));
+  if (auto* qlementine_style =
+          qobject_cast<oclero::qlementine::QlementineStyle*>(QApplication::style())) {
+    const auto theme_path = ResolveDarkThemePath();
+    if (!theme_path.isEmpty()) {
+      qlementine_style->setThemeJsonPath(theme_path);
+    }
+  }
 
   settings_.emplace(ProgramSettings::FromDefaults());
 

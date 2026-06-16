@@ -7,18 +7,43 @@ import { useCreateBlockNote } from "@blocknote/react";
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createEditorBridge } from "./bridge";
-import { bridgeApiVersion, type EditorBridge } from "./bridge/editorBridge";
-
-const kSnapshotDebounceMs = 500;
+import {
+  bridgeApiVersion,
+  type EditorBridge,
+} from "./bridge/editorBridge";
+import {
+  emptyStateMessage,
+  emptyStateTitle,
+  snapshotDebounceMs,
+} from "./constants";
 
 function EditorApp() {
   const [bridge, setBridge] = useState<EditorBridge | null>(null);
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const [isLoadingDocument, setIsLoadingDocument] = useState(false);
+  const editorTheme: "dark" = "dark";
   const snapshot_timer = useRef<number | null>(null);
+  const replacing_document = useRef(false);
+  const selected_page_id = useRef<string | null>(null);
 
   const editor = useCreateBlockNote();
 
+  const flushAutosave = async (activeBridge: EditorBridge | null) => {
+    if (!activeBridge || !selected_page_id.current) {
+      return;
+    }
+
+    if (snapshot_timer.current !== null) {
+      window.clearTimeout(snapshot_timer.current);
+      snapshot_timer.current = null;
+    }
+
+    await activeBridge.updateSnapshot(editor.document);
+  };
+
   useEffect(() => {
     let cancelled = false;
+    const unsubscribers: Array<() => void> = [];
 
     void createEditorBridge().then(async (created_bridge) => {
       if (cancelled) {
@@ -37,9 +62,43 @@ function EditorApp() {
         return;
       }
 
-      const response = await created_bridge.getInitialDocument();
-      if (response.ok && Array.isArray(response.result)) {
-        editor.replaceBlocks(editor.document, response.result);
+      unsubscribers.push(
+        created_bridge.onDocumentOpenRequested((pageId) => {
+          setIsLoadingDocument(true);
+          void flushAutosave(created_bridge).then(async () => {
+            const response = await created_bridge.openDocument(pageId);
+            if (!response.ok) {
+              console.error("Failed to open document", response.error);
+              setIsLoadingDocument(false);
+            }
+          });
+        }),
+      );
+
+      const unsubscribeLoaded = created_bridge.onDocumentLoaded((document) => {
+        replacing_document.current = true;
+        setIsLoadingDocument(true);
+        editor.replaceBlocks(editor.document, document.blocks);
+        selected_page_id.current = document.id;
+        setSelectedPageId(document.id);
+        window.setTimeout(() => {
+          replacing_document.current = false;
+          setIsLoadingDocument(false);
+        }, 0);
+      });
+
+      const unsubscribeLoadFailed = created_bridge.onDocumentLoadFailed(
+        (_pageId, message) => {
+          console.error("Failed to load document", message);
+          setIsLoadingDocument(false);
+        },
+      );
+      unsubscribers.push(unsubscribeLoaded, unsubscribeLoadFailed);
+
+      if (cancelled) {
+        unsubscribers.forEach((unsubscribe) => {
+          unsubscribe();
+        });
       }
     });
 
@@ -48,11 +107,14 @@ function EditorApp() {
       if (snapshot_timer.current !== null) {
         window.clearTimeout(snapshot_timer.current);
       }
+      unsubscribers.forEach((unsubscribe) => {
+        unsubscribe();
+      });
     };
   }, [editor]);
 
   const handleEditorChange = () => {
-    if (!bridge) {
+    if (!bridge || !selectedPageId || replacing_document.current) {
       return;
     }
 
@@ -61,37 +123,26 @@ function EditorApp() {
     }
 
     snapshot_timer.current = window.setTimeout(() => {
+      snapshot_timer.current = null;
       void bridge.updateSnapshot(editor.document);
-    }, kSnapshotDebounceMs);
+    }, snapshotDebounceMs);
   };
 
   return (
     <main className="app-shell">
-      <aside className="sidebar" aria-label="Workspace navigation">
-        <div className="workspace-title">CppWiki</div>
-        <button className="nav-item is-active" type="button">
-          Getting Started
-        </button>
-        <button className="nav-item" type="button">
-          Architecture
-        </button>
-        <button className="nav-item" type="button">
-          Sync Status
-        </button>
-      </aside>
       <section className="editor-pane" aria-label="Document editor">
-        <header className="document-header">
-          <div>
-            <p className="eyebrow">Local draft</p>
-            <h1>Getting Started</h1>
+        {!selectedPageId || isLoadingDocument ? (
+          <div className="empty-state">
+            <h1>{emptyStateTitle}</h1>
+            <p>{emptyStateMessage}</p>
           </div>
-          <span className="status-pill">QWebEngine</span>
-        </header>
-        <BlockNoteView
-          editor={editor}
-          onChange={handleEditorChange}
-          theme="light"
-        />
+        ) : (
+          <BlockNoteView
+            editor={editor}
+            onChange={handleEditorChange}
+            theme={editorTheme}
+          />
+        )}
       </section>
     </main>
   );

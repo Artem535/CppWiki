@@ -1,14 +1,18 @@
 #include "storage/file_document_repository.h"
 
+#include <rfl/json/read.hpp>
+#include <rfl/json/write.hpp>
 #include <spdlog/spdlog.h>
 
-#include <cstdlib>
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace cppwiki::storage {
-namespace {
+namespace file_repository {
 
 auto MakeError(RepositoryErrorCode code, std::string message) -> RepositoryError {
   return RepositoryError{
@@ -22,7 +26,7 @@ auto MakePageFilePath(const std::filesystem::path& storage_dir, std::string_view
   // Sanitize page_id for filesystem usage (basic version)
   std::string sanitized;
   for (char c : page_id) {
-    if (std::isalnum(c) || c == '-' || c == '_') {
+    if (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_') {
       sanitized += c;
     } else {
       sanitized += '_';
@@ -116,7 +120,50 @@ auto RestoreFromBackup(const std::filesystem::path& target_path) -> bool {
   }
 }
 
-}  // namespace
+struct FileDocumentRecordDto {
+  std::string id;
+  std::int32_t schema_version{};
+  std::string title;
+  std::optional<std::string> parent_id;
+  std::int32_t sort_order{};
+  std::string created_at;
+  std::string updated_at;
+  std::string raw_snapshot_json;
+};
+
+auto ToDto(const DocumentRecord& document) -> FileDocumentRecordDto {
+  return FileDocumentRecordDto{
+      .id = document.metadata.id,
+      .schema_version = static_cast<std::int32_t>(document.metadata.schema_version),
+      .title = document.metadata.title,
+      .parent_id = document.metadata.parent_id,
+      .sort_order = document.metadata.sort_order,
+      .created_at = document.metadata.created_at,
+      .updated_at = document.metadata.updated_at,
+      .raw_snapshot_json = document.raw_snapshot_json,
+  };
+}
+
+auto FromDto(FileDocumentRecordDto dto) -> DocumentRecord {
+  return DocumentRecord{
+      .metadata =
+          document::PageMetadata{
+              .id = std::move(dto.id),
+              .schema_version = document::SchemaVersion::kV1,
+              .title = std::move(dto.title),
+              .parent_id = std::move(dto.parent_id),
+              .sort_order = dto.sort_order,
+              .created_at = std::move(dto.created_at),
+              .updated_at = std::move(dto.updated_at),
+          },
+      .snapshot = document::BlockNoteDocumentSnapshot{},
+      .raw_snapshot_json = std::move(dto.raw_snapshot_json),
+  };
+}
+
+}  // namespace file_repository
+
+using namespace file_repository;
 
 class FileDocumentRepository::Impl {
  public:
@@ -173,120 +220,77 @@ class FileDocumentRepository::Impl {
     }
   }
 
+  [[nodiscard]] auto ListDocuments() -> ListDocumentsResult {
+    try {
+      const auto pages_directory = options_.storage_directory / "pages";
+      if (!std::filesystem::exists(pages_directory)) {
+        return ListDocumentsResult{};
+      }
+
+      std::vector<DocumentSummary> documents;
+      for (const auto& entry : std::filesystem::directory_iterator(pages_directory)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json") {
+          continue;
+        }
+
+        const auto page_id = entry.path().stem().string();
+        auto loaded = LoadDocument(page_id);
+        if (!loaded.document) {
+          continue;
+        }
+
+        documents.push_back(DocumentSummaryFromMetadata(loaded.document->metadata));
+      }
+
+      std::ranges::sort(documents, [](const DocumentSummary& lhs, const DocumentSummary& rhs) {
+        if (lhs.sort_order != rhs.sort_order) {
+          return lhs.sort_order < rhs.sort_order;
+        }
+        return lhs.title < rhs.title;
+      });
+
+      return ListDocumentsResult{
+          .documents = std::move(documents),
+          .error = std::nullopt,
+      };
+    } catch (const std::exception& e) {
+      return ListDocumentsResult{
+          .documents = {},
+          .error = MakeError(RepositoryErrorCode::kReadFailed, e.what()),
+      };
+    }
+  }
+
  private:
   [[nodiscard]] auto SerializeDocument(const DocumentRecord& document) -> std::string {
-    // Build JSON manually for simplicity (no external JSON library needed for basic storage)
-    // In production, could use reflect-cpp or nlohmann/json
-    std::string json = "{";
-    json += "\"id\":\"" + EscapeJsonString(document.metadata.id) + "\",";
-    json += "\"schema_version\":" +
-            std::to_string(static_cast<int>(document.metadata.schema_version)) + ",";
-    json += "\"title\":\"" + EscapeJsonString(document.metadata.title) + "\",";
-    json += "\"raw_snapshot\":" + document.raw_snapshot_json;
-    json += "}";
-    return json;
+    return rfl::json::write(ToDto(document));
   }
 
   [[nodiscard]] auto DeserializeDocument(const std::string& content, std::string_view expected_id)
       -> LoadDocumentResult {
-    // For now, use a simple approach - parse JSON fields we need
-    // The raw_snapshot_json is preserved as-is for the DocumentRecord
-
-    DocumentRecord record;
-    record.metadata.id = std::string(expected_id);
-    record.metadata.schema_version = document::SchemaVersion::kV1;
-    record.raw_snapshot_json = content;  // Store the entire JSON as raw snapshot
-
-    // Try to extract title from the JSON
-    // This is a simple parser - in production, use proper JSON library
-    const auto title_start = content.find("\"title\":\"");
-    if (title_start != std::string::npos) {
-      const auto value_start = title_start + 9;
-      const auto value_end = content.find("\"", value_start);
-      if (value_end != std::string::npos) {
-        record.metadata.title = content.substr(value_start, value_end - value_start);
-      }
+    auto parsed = rfl::json::read<FileDocumentRecordDto>(content);
+    if (!parsed) {
+      return LoadDocumentResult{
+          .document = std::nullopt,
+          .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                             std::string("Failed to parse document file: ") +
+                                 parsed.error().what()),
+      };
     }
 
-    // Try to find and extract raw_snapshot
-    const auto snapshot_start = content.find("\"raw_snapshot\":");
-    if (snapshot_start != std::string::npos) {
-      const auto value_start = snapshot_start + 15;  // length of "raw_snapshot":
-      // Find matching closing brace (this is a simplified approach)
-      auto brace_count = 0;
-      auto in_string = false;
-      auto escape_next = false;
-      std::size_t end_pos = value_start;
-
-      for (std::size_t i = value_start; i < content.size(); ++i) {
-        const char c = content[i];
-        if (escape_next) {
-          escape_next = false;
-          continue;
-        }
-        if (c == '\\') {
-          escape_next = true;
-          continue;
-        }
-        if (c == '"' && !in_string) {
-          in_string = !in_string;
-        } else if (c == '"' && in_string) {
-          in_string = !in_string;
-        } else if (c == '{' && !in_string) {
-          brace_count++;
-        } else if (c == '}' && !in_string) {
-          brace_count--;
-          if (brace_count == 0) {
-            end_pos = i + 1;
-            break;
-          }
-        }
-      }
-
-      if (end_pos > value_start) {
-        record.raw_snapshot_json = content.substr(value_start, end_pos - value_start);
-      }
+    auto record = FromDto(std::move(parsed.value()));
+    if (record.metadata.id != expected_id) {
+      return LoadDocumentResult{
+          .document = std::nullopt,
+          .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                             "Document id does not match file name."),
+      };
     }
-
-    // Note: We don't fully parse the snapshot into BlockNoteDocumentSnapshot here
-    // because the validator will do that. We just preserve the JSON.
 
     return LoadDocumentResult{
         .document = std::make_optional(std::move(record)),
         .error = std::nullopt,
     };
-  }
-
-  [[nodiscard]] static auto EscapeJsonString(std::string_view str) -> std::string {
-    std::string result;
-    for (char c : str) {
-      switch (c) {
-        case '"':
-          result += "\\\"";
-          break;
-        case '\\':
-          result += "\\\\";
-          break;
-        case '\b':
-          result += "\\b";
-          break;
-        case '\f':
-          result += "\\f";
-          break;
-        case '\n':
-          result += "\\n";
-          break;
-        case '\r':
-          result += "\\r";
-          break;
-        case '\t':
-          result += "\\t";
-          break;
-        default:
-          result += c;
-      }
-    }
-    return result;
   }
 
   FileDocumentRepositoryOptions options_;
@@ -303,6 +307,10 @@ auto FileDocumentRepository::SaveDocument(const DocumentRecord& document) -> Sav
 
 auto FileDocumentRepository::LoadDocument(std::string_view page_id) -> LoadDocumentResult {
   return impl_->LoadDocument(page_id);
+}
+
+auto FileDocumentRepository::ListDocuments() -> ListDocumentsResult {
+  return impl_->ListDocuments();
 }
 
 }  // namespace cppwiki::storage

@@ -1,24 +1,46 @@
 import {
   bridgeApiVersion,
+  type DocumentSummary,
   type BridgeInfo,
   type BridgeResult,
   type EditorBridge,
   type InitialDocumentSnapshot,
 } from "./editorBridge";
+import {
+  mockBodyBlockId,
+  mockBodyText,
+  mockHeadingBlockId,
+  mockHeadingText,
+  mockPageCreatedAt,
+  mockPageId,
+  mockPageTitle,
+  mockPageUpdatedAt,
+} from "../constants";
 
 const initialDocument: InitialDocumentSnapshot = [
   {
-    id: "mock-heading",
+    id: mockHeadingBlockId,
     type: "heading",
     props: { level: 1 },
-    content: [{ type: "text", text: "CppWiki", styles: {} }],
+    content: [{ type: "text", text: mockHeadingText, styles: {} }],
     children: [],
   },
   {
-    id: "mock-body",
+    id: mockBodyBlockId,
     type: "paragraph",
-    content: [{ type: "text", text: "Running without Qt bridge.", styles: {} }],
+    content: [{ type: "text", text: mockBodyText, styles: {} }],
     children: [],
+  },
+];
+
+const documents: DocumentSummary[] = [
+  {
+    id: mockPageId,
+    title: mockPageTitle,
+    parentId: null,
+    sortOrder: 0,
+    createdAt: mockPageCreatedAt,
+    updatedAt: mockPageUpdatedAt,
   },
 ];
 
@@ -31,7 +53,14 @@ export function createMockEditorBridge(): EditorBridge {
         result: {
           apiVersion: bridgeApiVersion,
           namespace: "wiki.documents",
-          methods: ["getBridgeInfo", "getInitialDocument", "updateSnapshot"],
+          methods: [
+            "getBridgeInfo",
+            "getInitialDocument",
+            "listDocuments",
+            "loadDocument",
+            "openDocument",
+            "updateSnapshot",
+          ],
         },
       };
     },
@@ -40,8 +69,56 @@ export function createMockEditorBridge(): EditorBridge {
       return { apiVersion: bridgeApiVersion, ok: true, result: initialDocument };
     },
 
+    async listDocuments(): Promise<BridgeResult<DocumentSummary[]>> {
+      return { apiVersion: bridgeApiVersion, ok: true, result: documents };
+    },
+
+    async loadDocument() {
+      return {
+        apiVersion: bridgeApiVersion,
+        ok: true,
+        result: {
+          id: mockPageId,
+          title: mockPageTitle,
+          parentId: null,
+          sortOrder: 0,
+          createdAt: mockPageCreatedAt,
+          updatedAt: mockPageUpdatedAt,
+          blocks: initialDocument,
+        },
+      };
+    },
+
+    async openDocument(pageId) {
+      return {
+        apiVersion: bridgeApiVersion,
+        ok: true,
+        result: {
+          id: pageId,
+          title: mockPageTitle,
+          parentId: null,
+          sortOrder: 0,
+          createdAt: mockPageCreatedAt,
+          updatedAt: mockPageUpdatedAt,
+          blocks: initialDocument,
+        },
+      };
+    },
+
     async updateSnapshot(): Promise<BridgeResult<void>> {
       return { apiVersion: bridgeApiVersion, ok: true, result: undefined };
+    },
+
+    onDocumentOpenRequested() {
+      return () => undefined;
+    },
+
+    onDocumentLoaded() {
+      return () => undefined;
+    },
+
+    onDocumentLoadFailed() {
+      return () => undefined;
     },
   };
 }

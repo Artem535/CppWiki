@@ -11,10 +11,18 @@ qt_add_executable(cppwiki_app
     bridge/editor_bridge.h
     core/constants.h
     core/qt_string.h
+    core/uuid.cc
+    core/uuid.h
     document/block_note_snapshot.h
     document/document.h
     document/document_validator.cc
     document/document_validator.h
+    gui/document_tree_item_delegate.cc
+    gui/document_tree_item_delegate.h
+    gui/document_tree_model.cc
+    gui/document_tree_model.h
+    gui/document_tree_view.h
+    gui/document_tree_view.cc
     gui/i_page.h
     gui/main_window.cc
     gui/main_window.h
@@ -46,11 +54,17 @@ target_link_libraries(cppwiki_app
     Qt6::Widgets
     Qt6::WebChannel
     Qt6::WebEngineWidgets
+    qlementine
     spdlog::spdlog
     reflectcpp::reflectcpp
 )
 
 if(CPPWIKI_ENABLE_CBLITE_STORAGE)
+  target_compile_definitions(cppwiki_app
+    PRIVATE
+      CPPWIKI_ENABLE_CBLITE_STORAGE
+  )
+
   target_sources(cppwiki_app
     PRIVATE
       storage/cblite_document_repository.cc
