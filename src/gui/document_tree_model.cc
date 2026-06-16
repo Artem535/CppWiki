@@ -33,6 +33,13 @@ void DocumentTreeItem::addChild(std::unique_ptr<DocumentTreeItem> child) {
   children_.push_back(std::move(child));
 }
 
+void DocumentTreeItem::insertChild(int row, std::unique_ptr<DocumentTreeItem> child) {
+  child->parent_ = this;
+  const auto insert_it =
+      children_.begin() + std::clamp(row, 0, static_cast<int>(children_.size()));
+  children_.insert(insert_it, std::move(child));
+}
+
 void DocumentTreeItem::sortChildren() {
   std::ranges::sort(children_, [](const auto& lhs, const auto& rhs) {
     if (lhs->isAction() != rhs->isAction()) {
@@ -200,30 +207,38 @@ void DocumentTreeModel::setDocuments(const std::vector<storage::DocumentSummary>
 }
 
 void DocumentTreeModel::appendDocument(const storage::DocumentSummary& document) {
-  // Rebuild the tree to keep action items and sort order consistent.
-  // A full reset is acceptable here because the document list is small.
-  std::vector<storage::DocumentSummary> current_documents;
-  std::queue<DocumentTreeItem*> queue;
-  queue.push(root_item_.get());
-  while (!queue.empty()) {
-    auto* item = queue.front();
-    queue.pop();
-    for (const auto& child : item->children()) {
-      if (child->kind() == DocumentTreeItem::Kind::kDocument) {
-        storage::DocumentSummary summary;
-        summary.id = child->id();
-        summary.title = child->title();
-        summary.sort_order = child->sortOrder();
-        if (auto* parent = child->parent(); parent != nullptr && parent != root_item_.get()) {
-          summary.parent_id = parent->id();
-        }
-        current_documents.push_back(std::move(summary));
-      }
-      queue.push(child.get());
+  auto* parent_item = root_item_.get();
+  QModelIndex parent_index;
+
+  if (document.parent_id.has_value() && !document.parent_id->empty()) {
+    parent_item = root_item_->findItemById(*document.parent_id);
+    if (parent_item == nullptr) {
+      parent_item = root_item_.get();
+    } else {
+      parent_index = indexForItem(parent_item);
     }
   }
-  current_documents.push_back(document);
-  setDocuments(current_documents);
+
+  const auto insert_row = [&]() -> int {
+    int row = 0;
+    for (const auto& child : parent_item->children()) {
+      if (child->kind() != DocumentTreeItem::Kind::kDocument) {
+        continue;
+      }
+      if (child->sortOrder() > document.sort_order) {
+        break;
+      }
+      if (child->sortOrder() == document.sort_order && child->title() > document.title) {
+        break;
+      }
+      ++row;
+    }
+    return row;
+  }();
+
+  beginInsertRows(parent_index, insert_row, insert_row);
+  parent_item->insertChild(insert_row, std::make_unique<DocumentTreeItem>(document, parent_item));
+  endInsertRows();
 }
 
 void DocumentTreeModel::buildTree(const std::vector<storage::DocumentSummary>& documents) {
@@ -247,14 +262,6 @@ void DocumentTreeModel::buildTree(const std::vector<storage::DocumentSummary>& d
   // Map parent_id -> list of children summaries
   std::map<std::optional<std::string>, std::vector<const storage::DocumentSummary*>> children_map;
   std::map<std::string, std::unique_ptr<DocumentTreeItem>> detached_items;
-
-  // Single root-level "New note" action. A separate toolbar button above the
-  // tree was removed because it duplicated this first-row action.
-  root_item_->addChild(std::make_unique<DocumentTreeItem>(
-      DocumentTreeItem::Kind::kRootAction,
-      std::string(constants::kNewDocumentActionId),
-      std::string(constants::kNewDocumentActionTitle),
-      root_item_.get()));
 
   // Create document items (not attached yet) preserving key order
   for (const auto& [id, summary] : document_map) {

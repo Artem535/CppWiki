@@ -32,6 +32,10 @@ type QtEditorBridgeObject = {
     connect(callback: (pageId: string, message: string) => void): void;
     disconnect(callback: (pageId: string, message: string) => void): void;
   };
+  documentSelectionCleared: {
+    connect(callback: () => void): void;
+    disconnect(callback: () => void): void;
+  };
   getBridgeInfo(callback: (response: BridgeResult<BridgeInfo>) => void): void;
   getInitialDocument(
     callback: (response: BridgeResult<InitialDocumentSnapshot>) => void,
@@ -117,6 +121,13 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
       qtObject.documentLoadFailed.connect(callback);
       return () => {
         qtObject.documentLoadFailed.disconnect(callback);
+      };
+    },
+
+    onDocumentSelectionCleared(callback) {
+      qtObject.documentSelectionCleared.connect(callback);
+      return () => {
+        qtObject.documentSelectionCleared.disconnect(callback);
       };
     },
   };

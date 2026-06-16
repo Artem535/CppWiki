@@ -92,8 +92,10 @@ void DocumentTreeItemDelegate::paint(QPainter* painter, const QStyleOptionViewIt
   const int vertical_padding = ThemeSpacing(theme, 8);
   const qreal radius = ThemeRadius(theme);
 
-  const QRect row_rect = opt.rect.adjusted(margin / 2, vertical_padding / 2, -margin / 2,
-                                           -vertical_padding / 2);
+  const QRect hover_row_rect = opt.rect.adjusted(margin / 2, vertical_padding / 2, -margin / 2,
+                                                 -vertical_padding / 2);
+  const QRect selected_row_rect =
+      opt.rect.adjusted(0, vertical_padding / 2, 0, -vertical_padding / 2);
 
   QColor background;
   QColor foreground;
@@ -106,17 +108,19 @@ void DocumentTreeItemDelegate::paint(QPainter* painter, const QStyleOptionViewIt
       background = WithAlpha(theme.neutralColor, 18);
     }
     if (selected == oclero::qlementine::SelectionState::Selected) {
-      background = WithAlpha(theme.primaryColor, 24);
-      foreground = theme.secondaryColor;
+      background = WithAlpha(theme.neutralColor, 32);
+      foreground = qlementine_style->listItemForegroundColor(
+          oclero::qlementine::MouseState::Normal,
+          oclero::qlementine::SelectionState::NotSelected, focus, active);
       if (opt.state.testFlag(QStyle::State_MouseOver)) {
-        background = WithAlpha(theme.primaryColor, 32);
+        background = WithAlpha(theme.neutralColor, 40);
       }
     }
   } else {
     background = opt.palette.base().color();
     foreground = opt.palette.text().color();
     if (opt.state.testFlag(QStyle::State_Selected)) {
-      background = WithAlpha(opt.palette.highlight().color(), 40);
+      background = WithAlpha(opt.palette.mid().color(), 56);
       foreground = opt.palette.text().color();
     } else if (opt.state.testFlag(QStyle::State_MouseOver)) {
       background = opt.palette.alternateBase().color();
@@ -127,12 +131,16 @@ void DocumentTreeItemDelegate::paint(QPainter* painter, const QStyleOptionViewIt
       opt.state.testFlag(QStyle::State_MouseOver)) {
     painter->setPen(Qt::NoPen);
     painter->setBrush(background);
-    painter->drawRoundedRect(row_rect, radius, radius);
+    const QRect background_rect =
+        selected == oclero::qlementine::SelectionState::Selected ? selected_row_rect : hover_row_rect;
+    painter->drawRoundedRect(background_rect, radius, radius);
   }
 
+  QRect content_rect = selected_row_rect.adjusted(margin, 0, -margin, 0);
+
   const QRect add_child_button_rect = addChildButtonRect(opt, index);
-  QRect content_rect = row_rect.adjusted(
-      margin, 0,
+  content_rect = content_rect.adjusted(
+      0, 0,
       add_child_button_rect.isValid() ? -(margin + kAddChildButtonSize + margin / 2) : -margin,
       0);
 
@@ -205,8 +213,7 @@ QRect DocumentTreeItemDelegate::addChildButtonRect(const QStyleOptionViewItem& o
   const int margin = ThemeSpacing(theme, 8);
   const int vertical_padding = ThemeSpacing(theme, 8);
 
-  const QRect row_rect = option.rect.adjusted(margin / 2, vertical_padding / 2, -margin / 2,
-                                              -vertical_padding / 2);
+  const QRect row_rect = option.rect.adjusted(0, vertical_padding / 2, 0, -vertical_padding / 2);
   const int size = std::min(kAddChildButtonSize, std::max(0, row_rect.height()));
   if (size <= 0) {
     return QRect();

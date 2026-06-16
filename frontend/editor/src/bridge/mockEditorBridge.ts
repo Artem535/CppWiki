@@ -120,5 +120,9 @@ export function createMockEditorBridge(): EditorBridge {
     onDocumentLoadFailed() {
       return () => undefined;
     },
+
+    onDocumentSelectionCleared() {
+      return () => undefined;
+    },
   };
 }

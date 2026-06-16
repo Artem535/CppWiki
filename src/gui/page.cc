@@ -2,11 +2,17 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <set>
+
 #include <QAbstractItemView>
+#include <QAction>
 #include <QIcon>
 #include <QFile>
 #include <QFileInfo>
 #include <QFrame>
+#include <QHBoxLayout>
+#include <QMenu>
 #include <QPushButton>
 #include <QSize>
 #include <QVBoxLayout>
@@ -98,6 +104,23 @@ auto OptionalParentId(const QVariant& value) -> std::optional<std::string> {
   return str.toStdString();
 }
 
+void VisitIndexes(const QAbstractItemModel* model, const QModelIndex& parent,
+                  const std::function<void(const QModelIndex&)>& visitor) {
+  if (model == nullptr) {
+    return;
+  }
+
+  const int rows = model->rowCount(parent);
+  for (int row = 0; row < rows; ++row) {
+    const auto index = model->index(row, 0, parent);
+    if (!index.isValid()) {
+      continue;
+    }
+    visitor(index);
+    VisitIndexes(model, index, visitor);
+  }
+}
+
 }  // namespace
 
 Page::Page(const AppContext& context, QWidget* parent)
@@ -120,10 +143,6 @@ void Page::BuildUi() {
   layout->setContentsMargins(0, 0, 0, 0);
   layout->setSpacing(0);
 
-  // The tree model already provides a "New note" action as the first root row,
-  // so keep only that single button inside the tree. A separate top-level button
-  // duplicates functionality and visually clutters the panel.
-
   // Create the QWebEngineView and QWebChannel.
   channel_ = new QWebChannel(this);
   editor_bridge_ = new bridge::QEditorBridge(this);
@@ -142,9 +161,26 @@ void Page::BuildUi() {
   auto* splitter = new QSplitter(Qt::Horizontal, this);
   page_panel_ = new QWidget(this);
   auto* page_panel_layout = new QVBoxLayout(page_panel_);
-  page_panel_layout->setContentsMargins(0, 0, 0, 0);
-  page_panel_layout->setSpacing(0);
+  page_panel_layout->setContentsMargins(12, 12, 12, 12);
+  page_panel_layout->setSpacing(8);
 
+  auto* controls_layout = new QHBoxLayout();
+  controls_layout->setContentsMargins(0, 0, 0, 0);
+  controls_layout->setSpacing(8);
+
+  new_document_button_ = new QPushButton(QStringLiteral("New page"), page_panel_);
+  new_document_button_->setObjectName(QStringLiteral("newDocumentButton"));
+  new_document_button_->setIcon(QIcon::fromTheme(QStringLiteral("document-new")));
+  new_document_button_->setIconSize(QSize(16, 16));
+  new_document_button_->setCursor(Qt::PointingHandCursor);
+  connect(new_document_button_, &QPushButton::clicked, this, [this]() {
+    CreateNewDocument();
+  });
+
+  controls_layout->addWidget(new_document_button_);
+  controls_layout->addStretch(1);
+
+  page_panel_layout->addLayout(controls_layout);
   page_panel_layout->addWidget(page_tree_, 1);
   splitter->addWidget(page_panel_);
   splitter->addWidget(editor_view_);
@@ -197,6 +233,7 @@ void Page::SetupTreeView() {
   page_tree_->setEditTriggers(QAbstractItemView::NoEditTriggers);
   page_tree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
   page_tree_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+  page_tree_->setContextMenuPolicy(Qt::CustomContextMenu);
 
   // Open documents from normal row clicks. Inline tree actions are handled by DocumentTreeView.
   connect(page_tree_, &QTreeView::clicked, this, [this](const QModelIndex& index) {
@@ -204,10 +241,17 @@ void Page::SetupTreeView() {
       OnTreePressed(index);
     }
   });
+  connect(page_tree_, &QWidget::customContextMenuRequested, this, [this](const QPoint& position) {
+    ShowContextMenu(position);
+  });
 
   connect(document_tree_view, &gui::DocumentTreeView::addChildRequested, this,
           [this](const QModelIndex& parent_index) {
             CreateChildDocument(parent_index);
+          });
+  connect(editor_bridge_, &bridge::QEditorBridge::saveStatusChanged, this,
+          [this](const QString& page_id, bool success, const QString&) {
+            HandleDocumentSaved(page_id, success);
           });
 }
 
@@ -240,6 +284,7 @@ void Page::InstallWebChannelScript() {
 }
 
 void Page::PopulatePageList() {
+  const auto expanded_ids = CaptureExpandedDocumentIds();
   const auto response = editor_bridge_->listDocuments();
   if (!response.value(QStringLiteral("ok")).toBool()) {
     const auto error = response.value(QStringLiteral("error")).toMap();
@@ -268,36 +313,16 @@ void Page::PopulatePageList() {
   }
 
   tree_model_->setDocuments(summaries);
-  page_tree_->expandAll();
+  RestoreExpandedDocumentIds(expanded_ids);
 }
 
 void Page::OnTreePressed(const QModelIndex& index) {
-  if (index.data(gui::DocumentTreeModel::kAddChildActionRole).toBool()) {
-    emit tree_model_->addChildRequested(index);
-    return;
-  }
-
-  const auto doc_id = tree_model_->documentId(index);
-  if (!doc_id) {
-    if (index.data(gui::DocumentTreeModel::kIsActionRole).toBool()) {
-      CreateNewDocument();
-    }
-    return;
-  }
-
-  editor_bridge_->RequestOpenDocument(QString::fromStdString(*doc_id));
-}
-
-void Page::OpenPage(const QModelIndex& index) {
-  if (!index.isValid()) {
-    return;
-  }
-
   const auto doc_id = tree_model_->documentId(index);
   if (!doc_id) {
     return;
   }
 
+  selected_page_id_ = QString::fromStdString(*doc_id);
   editor_bridge_->RequestOpenDocument(QString::fromStdString(*doc_id));
 }
 
@@ -333,6 +358,8 @@ void Page::HandleCreatedDocument(const QVariantMap& response) {
   }
 
   tree_model_->appendDocument(SummaryFromVariantMap(created));
+  selected_page_id_ = page_id;
+  ExpandAncestors(page_id);
   SelectDocumentById(page_id);
   editor_bridge_->RequestOpenDocument(page_id);
 }
@@ -344,9 +371,201 @@ void Page::SelectDocumentById(const QString& page_id) {
 
   const auto index = tree_model_->indexForDocumentId(page_id.toStdString());
   if (index.isValid()) {
+    ExpandAncestors(page_id);
     page_tree_->setCurrentIndex(index);
     page_tree_->scrollTo(index, QAbstractItemView::PositionAtCenter);
   }
+}
+
+void Page::DeleteDocument(const QModelIndex& index) {
+  const auto doc_id = tree_model_->documentId(index);
+  if (!doc_id) {
+    return;
+  }
+
+  const auto response = editor_bridge_->deleteDocument(QString::fromStdString(*doc_id));
+  if (!response.value(QStringLiteral("ok")).toBool()) {
+    const auto error = response.value(QStringLiteral("error")).toMap();
+    spdlog::error("Failed to delete document: {}",
+                  error.value(QStringLiteral("message")).toString().toStdString());
+    return;
+  }
+
+  PopulatePageList();
+
+  const auto summaries = FetchDocumentSummaries();
+  if (summaries.empty()) {
+    selected_page_id_.clear();
+    editor_bridge_->ClearCurrentDocumentSelection();
+    return;
+  }
+
+  selected_page_id_ = QString::fromStdString(summaries.front().id);
+  SelectDocumentById(selected_page_id_);
+  editor_bridge_->RequestOpenDocument(selected_page_id_);
+}
+
+void Page::MoveDocument(const QModelIndex& index, int delta) {
+  const auto doc_id = tree_model_->documentId(index);
+  if (!doc_id || delta == 0) {
+    return;
+  }
+
+  auto summaries = FetchDocumentSummaries();
+  const auto target_it = std::find_if(summaries.begin(), summaries.end(), [&](const auto& summary) {
+    return summary.id == *doc_id;
+  });
+  if (target_it == summaries.end()) {
+    return;
+  }
+
+  const auto same_parent = [&](const storage::DocumentSummary& summary) {
+    return summary.parent_id == target_it->parent_id;
+  };
+
+  std::vector<std::reference_wrapper<storage::DocumentSummary>> siblings;
+  for (auto& summary : summaries) {
+    if (same_parent(summary)) {
+      siblings.push_back(summary);
+    }
+  }
+
+  std::ranges::sort(siblings, [](const auto& lhs, const auto& rhs) {
+    if (lhs.get().sort_order != rhs.get().sort_order) {
+      return lhs.get().sort_order < rhs.get().sort_order;
+    }
+    return lhs.get().title < rhs.get().title;
+  });
+
+  auto sibling_it = std::find_if(siblings.begin(), siblings.end(), [&](const auto& summary) {
+    return summary.get().id == *doc_id;
+  });
+  if (sibling_it == siblings.end()) {
+    return;
+  }
+
+  const auto position = static_cast<std::ptrdiff_t>(std::distance(siblings.begin(), sibling_it));
+  const auto new_position = position + delta;
+  if (new_position < 0 ||
+      new_position >= static_cast<std::ptrdiff_t>(siblings.size())) {
+    return;
+  }
+
+  std::iter_swap(siblings.begin() + position, siblings.begin() + new_position);
+
+  for (std::size_t i = 0; i < siblings.size(); ++i) {
+    auto& summary = siblings[i].get();
+    const auto response = editor_bridge_->updateDocumentPlacement(
+        QString::fromStdString(summary.id),
+        summary.parent_id ? QString::fromStdString(*summary.parent_id) : QString{},
+        summary.parent_id.has_value(),
+        static_cast<int>(i));
+    if (!response.value(QStringLiteral("ok")).toBool()) {
+      const auto error = response.value(QStringLiteral("error")).toMap();
+      spdlog::error("Failed to move document: {}",
+                    error.value(QStringLiteral("message")).toString().toStdString());
+      return;
+    }
+  }
+
+  PopulatePageList();
+  SelectDocumentById(QString::fromStdString(*doc_id));
+}
+
+void Page::ShowContextMenu(const QPoint& position) {
+  const auto index = page_tree_->indexAt(position);
+  const auto doc_id = tree_model_->documentId(index);
+  if (!doc_id) {
+    return;
+  }
+
+  QMenu menu(page_tree_);
+  auto* add_child_action = menu.addAction(QStringLiteral("Add child page"));
+  auto* move_up_action = menu.addAction(QStringLiteral("Move up"));
+  auto* move_down_action = menu.addAction(QStringLiteral("Move down"));
+  menu.addSeparator();
+  auto* delete_action = menu.addAction(QStringLiteral("Delete page"));
+
+  QAction* chosen = menu.exec(page_tree_->viewport()->mapToGlobal(position));
+  if (chosen == add_child_action) {
+    CreateChildDocument(index);
+  } else if (chosen == move_up_action) {
+    MoveDocument(index, -1);
+  } else if (chosen == move_down_action) {
+    MoveDocument(index, 1);
+  } else if (chosen == delete_action) {
+    DeleteDocument(index);
+  }
+}
+
+void Page::HandleDocumentSaved(const QString& page_id, bool success) {
+  if (!success || selected_page_id_.isEmpty() || page_id != selected_page_id_) {
+    return;
+  }
+
+  PopulatePageList();
+  SelectDocumentById(selected_page_id_);
+}
+
+std::set<std::string> Page::CaptureExpandedDocumentIds() const {
+  std::set<std::string> expanded_ids;
+  if (page_tree_ == nullptr || tree_model_ == nullptr) {
+    return expanded_ids;
+  }
+
+  VisitIndexes(tree_model_.get(), QModelIndex{}, [&](const QModelIndex& index) {
+    if (!page_tree_->isExpanded(index)) {
+      return;
+    }
+    if (const auto doc_id = tree_model_->documentId(index); doc_id.has_value()) {
+      expanded_ids.insert(*doc_id);
+    }
+  });
+  return expanded_ids;
+}
+
+void Page::RestoreExpandedDocumentIds(const std::set<std::string>& expanded_ids) {
+  if (page_tree_ == nullptr || tree_model_ == nullptr) {
+    return;
+  }
+
+  for (const auto& doc_id : expanded_ids) {
+    const auto index = tree_model_->indexForDocumentId(doc_id);
+    if (index.isValid()) {
+      page_tree_->setExpanded(index, true);
+    }
+  }
+}
+
+void Page::ExpandAncestors(const QString& page_id) {
+  if (page_tree_ == nullptr || tree_model_ == nullptr || page_id.isEmpty()) {
+    return;
+  }
+
+  auto index = tree_model_->indexForDocumentId(page_id.toStdString());
+  while (index.isValid()) {
+    const auto parent = index.parent();
+    if (!parent.isValid()) {
+      break;
+    }
+    page_tree_->setExpanded(parent, true);
+    index = parent;
+  }
+}
+
+std::vector<storage::DocumentSummary> Page::FetchDocumentSummaries() const {
+  std::vector<storage::DocumentSummary> summaries;
+  const auto response = editor_bridge_->listDocuments();
+  if (!response.value(QStringLiteral("ok")).toBool()) {
+    return summaries;
+  }
+
+  const auto documents = response.value(QStringLiteral("result")).toList();
+  summaries.reserve(static_cast<std::size_t>(documents.size()));
+  for (const auto& document_value : documents) {
+    summaries.push_back(SummaryFromVariantMap(document_value.toMap()));
+  }
+  return summaries;
 }
 
 std::optional<std::string> Page::MapToParentDocumentId(const QModelIndex& index) const {

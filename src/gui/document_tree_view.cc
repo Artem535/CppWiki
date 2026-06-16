@@ -57,6 +57,30 @@ DocumentTreeView::DocumentTreeView(QWidget* parent) : QTreeView(parent) {
   viewport()->setAttribute(Qt::WA_Hover, true);
 }
 
+void DocumentTreeView::setModel(QAbstractItemModel* model) {
+  if (this->model() != nullptr) {
+    disconnect(this->model(), nullptr, this, nullptr);
+  }
+
+  clearTrackedIndexes();
+  QTreeView::setModel(model);
+
+  if (model == nullptr) {
+    return;
+  }
+
+  const auto reset_tracking = [this]() {
+    clearTrackedIndexes();
+    viewport()->update();
+  };
+
+  connect(model, &QAbstractItemModel::modelAboutToBeReset, this, reset_tracking);
+  connect(model, &QAbstractItemModel::modelReset, this, reset_tracking);
+  connect(model, &QAbstractItemModel::layoutAboutToBeChanged, this, reset_tracking);
+  connect(model, &QAbstractItemModel::layoutChanged, this, reset_tracking);
+  connect(model, &QAbstractItemModel::rowsAboutToBeRemoved, this, reset_tracking);
+}
+
 void DocumentTreeView::drawBranches(QPainter* painter, const QRect& rect,
                                     const QModelIndex& index) const {
   // Erase the branch area explicitly. QTreeView can paint selected row panels
@@ -147,14 +171,18 @@ void DocumentTreeView::mouseReleaseEvent(QMouseEvent* event) {
 
 void DocumentTreeView::leaveEvent(QEvent* event) {
   const QModelIndex previous_hovered = hovered_index_;
-  hovered_index_ = QModelIndex();
-  pressed_add_child_index_ = QModelIndex();
+  clearTrackedIndexes();
 
   if (previous_hovered.isValid()) {
     viewport()->update(visualRect(previous_hovered));
   }
 
   QTreeView::leaveEvent(event);
+}
+
+void DocumentTreeView::clearTrackedIndexes() {
+  hovered_index_ = QModelIndex();
+  pressed_add_child_index_ = QModelIndex();
 }
 
 QRect DocumentTreeView::addChildButtonRect(const QModelIndex& index) const {

@@ -17,7 +17,6 @@ class DocumentTreeItem {
  public:
   enum class Kind {
     kDocument,
-    kRootAction,      // "New note" action at the root level
     kAddChildAction,  // "+" action attached to a document
   };
 
@@ -37,6 +36,7 @@ class DocumentTreeItem {
   }
 
   void addChild(std::unique_ptr<DocumentTreeItem> child);
+  void insertChild(int row, std::unique_ptr<DocumentTreeItem> child);
   void sortChildren();
 
   [[nodiscard]] int childRow(const DocumentTreeItem* child) const;
@@ -45,7 +45,6 @@ class DocumentTreeItem {
   [[nodiscard]] bool isContainer() const { return !children_.empty(); }
   [[nodiscard]] bool isAction() const { return kind_ != Kind::kDocument; }
   [[nodiscard]] bool isAddChildAction() const { return kind_ == Kind::kAddChildAction; }
-  [[nodiscard]] bool isRootAction() const { return kind_ == Kind::kRootAction; }
 
   // Iterative lookup helpers
   [[nodiscard]] DocumentTreeItem* findItemById(std::string_view id);

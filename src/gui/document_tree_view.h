@@ -11,6 +11,7 @@ class DocumentTreeView final : public QTreeView {
 
  public:
   explicit DocumentTreeView(QWidget* parent = nullptr);
+  void setModel(QAbstractItemModel* model) override;
 
  signals:
   void addChildRequested(const QModelIndex& parent_index);
@@ -28,6 +29,7 @@ class DocumentTreeView final : public QTreeView {
  private:
   [[nodiscard]] QRect addChildButtonRect(const QModelIndex& index) const;
   [[nodiscard]] bool canShowAddChildButton(const QModelIndex& index) const;
+  void clearTrackedIndexes();
 
   QModelIndex hovered_index_;
   QModelIndex pressed_add_child_index_;

@@ -48,4 +48,5 @@ export interface EditorBridge {
   onDocumentOpenRequested(callback: (pageId: string) => void): () => void;
   onDocumentLoaded(callback: (document: LoadedDocument) => void): () => void;
   onDocumentLoadFailed(callback: (pageId: string, message: string) => void): () => void;
+  onDocumentSelectionCleared(callback: () => void): () => void;
 }
