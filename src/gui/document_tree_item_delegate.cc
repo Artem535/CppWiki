@@ -20,15 +20,6 @@ auto ThemeSpacing(const oclero::qlementine::Theme& theme, int fallback) -> int {
   return theme.spacing > 0 ? theme.spacing : fallback;
 }
 
-auto ThemeRadius(const oclero::qlementine::Theme& theme) -> qreal {
-  return theme.borderRadius > 0.0 ? theme.borderRadius : 8.0;
-}
-
-auto WithAlpha(QColor color, int alpha) -> QColor {
-  color.setAlpha(alpha);
-  return color;
-}
-
 void DrawAddChildButton(QPainter* painter, const QRect& rect, const QColor& foreground) {
   painter->save();
   painter->setRenderHint(QPainter::Antialiasing, true);
@@ -90,50 +81,19 @@ void DocumentTreeItemDelegate::paint(QPainter* painter, const QStyleOptionViewIt
 
   const int margin = ThemeSpacing(theme, 8);
   const int vertical_padding = ThemeSpacing(theme, 8);
-  const qreal radius = ThemeRadius(theme);
-
-  const QRect hover_row_rect = opt.rect.adjusted(margin / 2, vertical_padding / 2, -margin / 2,
-                                                 -vertical_padding / 2);
   const QRect selected_row_rect =
       opt.rect.adjusted(0, vertical_padding / 2, 0, -vertical_padding / 2);
 
-  QColor background;
   QColor foreground;
   if (qlementine_style) {
-    background = qlementine_style->listItemRowBackgroundColor(
-        mouse, oclero::qlementine::AlternateState::NotAlternate);
     foreground = qlementine_style->listItemForegroundColor(mouse, selected, focus, active);
-
-    if (opt.state.testFlag(QStyle::State_MouseOver)) {
-      background = WithAlpha(theme.neutralColor, 18);
-    }
     if (selected == oclero::qlementine::SelectionState::Selected) {
-      background = WithAlpha(theme.neutralColor, 32);
       foreground = qlementine_style->listItemForegroundColor(
           oclero::qlementine::MouseState::Normal,
           oclero::qlementine::SelectionState::NotSelected, focus, active);
-      if (opt.state.testFlag(QStyle::State_MouseOver)) {
-        background = WithAlpha(theme.neutralColor, 40);
-      }
     }
   } else {
-    background = opt.palette.base().color();
     foreground = opt.palette.text().color();
-    if (opt.state.testFlag(QStyle::State_Selected)) {
-      background = WithAlpha(opt.palette.mid().color(), 56);
-      foreground = opt.palette.text().color();
-    } else if (opt.state.testFlag(QStyle::State_MouseOver)) {
-      background = opt.palette.alternateBase().color();
-    }
-  }
-
-  if (selected == oclero::qlementine::SelectionState::Selected ||
-      opt.state.testFlag(QStyle::State_MouseOver)) {
-    painter->setPen(Qt::NoPen);
-    painter->setBrush(background);
-    const QRect background_rect =
-        selected == oclero::qlementine::SelectionState::Selected ? selected_row_rect : hover_row_rect;
-    painter->drawRoundedRect(background_rect, radius, radius);
   }
 
   QRect content_rect = selected_row_rect.adjusted(margin, 0, -margin, 0);

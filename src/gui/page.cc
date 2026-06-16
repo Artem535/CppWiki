@@ -160,6 +160,19 @@ void Page::BuildUi() {
 
   auto* splitter = new QSplitter(Qt::Horizontal, this);
   page_panel_ = new QWidget(this);
+  page_panel_->setObjectName(QStringLiteral("pagePanel"));
+  page_panel_->setAttribute(Qt::WA_StyledBackground, true);
+  page_panel_->setStyleSheet(QStringLiteral(R"(
+    QWidget#pagePanel {
+      background-color: palette(base);
+      border-radius: 10px;
+    }
+    QWidget#pagePanel QTreeView,
+    QWidget#pagePanel QTreeView::viewport {
+      background: transparent;
+      border: none;
+    }
+  )"));
   auto* page_panel_layout = new QVBoxLayout(page_panel_);
   page_panel_layout->setContentsMargins(12, 12, 12, 12);
   page_panel_layout->setSpacing(8);
