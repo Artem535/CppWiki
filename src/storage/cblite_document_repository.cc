@@ -4,11 +4,12 @@
 
 #include <cbl++/CouchbaseLite.hh>
 #include <rfl/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <exception>
+#include <filesystem>
 #include <utility>
-
 
 namespace cppwiki::storage {
 namespace {
@@ -25,8 +26,40 @@ auto MakeError(RepositoryErrorCode code, std::string message) -> RepositoryError
 }
 
 auto CbliteErrorMessage(const CBLError& error) -> std::string {
-  return "Couchbase Lite error domain=" + std::to_string(static_cast<int>(error.domain)) +
-         " code=" + std::to_string(error.code);
+  const auto message = cbl::alloc_slice(CBLError_Message(&error)).asString();
+  std::string result = "Couchbase Lite error domain=" +
+                       std::to_string(static_cast<int>(error.domain)) +
+                       " code=" + std::to_string(error.code);
+  if (!message.empty()) {
+    result += " message=" + message;
+  }
+  return result;
+}
+
+auto EnsureDirectoryExists(const std::filesystem::path& directory_path)
+    -> std::optional<RepositoryError> {
+  try {
+    if (directory_path.empty()) {
+      return MakeError(RepositoryErrorCode::kOpenFailed,
+                       "Couchbase Lite database directory path is empty.");
+    }
+
+    if (std::filesystem::exists(directory_path)) {
+      if (!std::filesystem::is_directory(directory_path)) {
+        return MakeError(RepositoryErrorCode::kOpenFailed,
+                         "Couchbase Lite database path exists but is not a directory: " +
+                             directory_path.string());
+      }
+      return std::nullopt;
+    }
+
+    std::filesystem::create_directories(directory_path);
+    return std::nullopt;
+  } catch (const std::exception& error) {
+    return MakeError(RepositoryErrorCode::kOpenFailed,
+                     "Failed to create Couchbase Lite database directory '" +
+                         directory_path.string() + "': " + error.what());
+  }
 }
 
 auto GetMutableDocument(const cbl::Collection& collection, std::string_view document_id)
@@ -50,6 +83,10 @@ class CbliteDocumentRepository::Impl {
     }
 
     try {
+      spdlog::debug("CBLite SaveDocument: id={} parent={} sort_order={}",
+                    document.metadata.id,
+                    document.metadata.parent_id.value_or("<root>"),
+                    document.metadata.sort_order);
       auto doc = GetMutableDocument(*collection_, document.metadata.id);
       doc.set("title", Slice(document.metadata.title));
       if (document.metadata.parent_id) {
@@ -74,6 +111,28 @@ class CbliteDocumentRepository::Impl {
     }
   }
 
+  [[nodiscard]] auto DeleteDocument(std::string_view page_id) -> DeleteDocumentResult {
+    if (const auto error = EnsureDatabaseOpen()) {
+      return DeleteDocumentResult{.error = error};
+    }
+
+    try {
+      spdlog::debug("CBLite DeleteDocument: id={}", page_id);
+      auto doc = collection_->getDocument(Slice(page_id));
+      if (doc) {
+        collection_->deleteDocument(doc);
+      }
+      RemoveDocumentIndexEntry(page_id);
+      return DeleteDocumentResult{};
+    } catch (const CBLError& error) {
+      return DeleteDocumentResult{
+          .error = MakeError(RepositoryErrorCode::kDeleteFailed, CbliteErrorMessage(error))};
+    } catch (const std::exception& error) {
+      return DeleteDocumentResult{
+          .error = MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
+    }
+  }
+
   [[nodiscard]] auto LoadDocument(std::string_view page_id) -> LoadDocumentResult {
     if (const auto error = EnsureDatabaseOpen()) {
       return LoadDocumentResult{
@@ -83,6 +142,7 @@ class CbliteDocumentRepository::Impl {
     }
 
     try {
+      spdlog::debug("CBLite LoadDocument: id={}", page_id);
       auto doc = collection_->getDocument(Slice(page_id));
       if (!doc) {
         return LoadDocumentResult{
@@ -152,8 +212,10 @@ class CbliteDocumentRepository::Impl {
     try {
       std::vector<DocumentSummary> documents;
 
+      spdlog::debug("CBLite ListDocuments: loading index doc {}", constants::kDocumentsIndexDocumentId);
       auto doc = collection_->getDocument(Slice(constants::kDocumentsIndexDocumentId));
       if (!doc) {
+        spdlog::debug("CBLite ListDocuments: index doc not found, returning empty list");
         return ListDocumentsResult{};
       }
 
@@ -192,8 +254,16 @@ class CbliteDocumentRepository::Impl {
 
  private:
   void SaveDocumentIndexEntry(const document::PageMetadata& metadata) {
+    spdlog::debug("CBLite SaveDocumentIndexEntry: id={} title={}", metadata.id, metadata.title);
     auto index_doc = GetMutableDocument(*collection_, constants::kDocumentsIndexDocumentId);
     index_doc.set(Slice(metadata.id), Slice(metadata.title));
+    collection_->saveDocument(index_doc);
+  }
+
+  void RemoveDocumentIndexEntry(std::string_view document_id) {
+    spdlog::debug("CBLite RemoveDocumentIndexEntry: id={}", document_id);
+    auto index_doc = GetMutableDocument(*collection_, constants::kDocumentsIndexDocumentId);
+    index_doc.properties().remove(Slice(document_id));
     collection_->saveDocument(index_doc);
   }
 
@@ -203,15 +273,27 @@ class CbliteDocumentRepository::Impl {
     }
 
     try {
+      const auto normalized_directory =
+          std::filesystem::absolute(options_.database_directory).lexically_normal();
+      if (const auto error = EnsureDirectoryExists(normalized_directory)) {
+        return error;
+      }
+
       auto config = CBLDatabaseConfiguration_Default();
-      database_directory_ = options_.database_directory.string();
+      database_directory_ = normalized_directory.string();
       config.directory = Slice(database_directory_);
+      spdlog::info("CBLite opening database: name={} directory={}",
+                   options_.database_name,
+                   database_directory_);
       database_ = std::make_unique<cbl::Database>(Slice(options_.database_name), config);
       if (!static_cast<bool>(*database_)) {
         return MakeError(RepositoryErrorCode::kOpenFailed, "Couchbase Lite database did not open.");
       }
+      spdlog::info("CBLite database opened: path={}", database_->path());
+      spdlog::info("CBLite creating/opening collection: {}", constants::kDocumentsCollectionName);
       collection_ = std::make_unique<cbl::Collection>(
           database_->createCollection(Slice(constants::kDocumentsCollectionName)));
+      spdlog::info("CBLite collection ready: {}", constants::kDocumentsCollectionName);
       return std::nullopt;
     } catch (const CBLError& error) {
       return MakeError(RepositoryErrorCode::kOpenFailed, CbliteErrorMessage(error));
@@ -233,6 +315,10 @@ CbliteDocumentRepository::~CbliteDocumentRepository() = default;
 
 auto CbliteDocumentRepository::SaveDocument(const DocumentRecord& document) -> SaveDocumentResult {
   return impl_->SaveDocument(document);
+}
+
+auto CbliteDocumentRepository::DeleteDocument(std::string_view page_id) -> DeleteDocumentResult {
+  return impl_->DeleteDocument(page_id);
 }
 
 auto CbliteDocumentRepository::LoadDocument(std::string_view page_id) -> LoadDocumentResult {

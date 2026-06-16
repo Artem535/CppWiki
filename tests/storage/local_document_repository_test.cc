@@ -24,6 +24,14 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     return cppwiki::storage::SaveDocumentResult{.error = std::nullopt};
   }
 
+  [[nodiscard]] auto DeleteDocument(std::string_view page_id)
+      -> cppwiki::storage::DeleteDocumentResult override {
+    if (document_ && document_->metadata.id == page_id) {
+      document_.reset();
+    }
+    return cppwiki::storage::DeleteDocumentResult{.error = std::nullopt};
+  }
+
   [[nodiscard]] auto LoadDocument(std::string_view page_id)
       -> cppwiki::storage::LoadDocumentResult override {
     if (!document_ || document_->metadata.id != page_id) {
@@ -97,6 +105,11 @@ auto TestRepositoryInterfaceStoresValidatedRawSnapshot() -> void {
   Require(list_result.documents.front().id == "page-1", "listed metadata id should match");
   Require(list_result.documents.front().sort_order == 10,
           "listed metadata sort order should match");
+
+  const auto delete_result = repository.DeleteDocument("page-1");
+  Require(!delete_result.error, "delete through repository interface should succeed");
+  Require(!repository.LoadDocument("page-1").document.has_value(),
+          "deleted document should no longer be loadable");
 }
 
 }  // namespace

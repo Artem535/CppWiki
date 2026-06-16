@@ -51,6 +51,12 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     return cppwiki::storage::SaveDocumentResult{};
   }
 
+  [[nodiscard]] auto DeleteDocument(std::string_view page_id)
+      -> cppwiki::storage::DeleteDocumentResult override {
+    documents_.erase(std::string(page_id));
+    return cppwiki::storage::DeleteDocumentResult{};
+  }
+
   [[nodiscard]] auto LoadDocument(std::string_view page_id)
       -> cppwiki::storage::LoadDocumentResult override {
     const auto it = documents_.find(std::string(page_id));
@@ -106,6 +112,8 @@ auto TestBridgeInfo() -> void {
           "missing list documents method");
   Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodCreateDocument)),
           "missing create document method");
+  Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodCreateChildDocument)),
+          "missing create child document method");
   Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodLoadDocument)),
           "missing load document method");
   Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodOpenDocument)),
@@ -154,7 +162,63 @@ auto TestCreateDocument() -> QString {
           "created document title should match");
   Require(!created.value(QStringLiteral("id")).toString().isEmpty(),
           "created document id should not be empty");
+  Require(created.value(QStringLiteral("parentId")).isNull() ||
+              !created.value(QStringLiteral("parentId")).isValid(),
+          "created root document should not have a parent");
   return created.value(QStringLiteral("id")).toString();
+}
+
+auto TestCreateDocumentLoadsEmptyAndSaves() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created = bridge.createDocument();
+  RequireSuccessEnvelope(created);
+  const auto created_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+
+  const auto loaded = bridge.loadDocument(created_id);
+  RequireSuccessEnvelope(loaded);
+  Require(loaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("blocks")).toList().isEmpty(),
+          "new document should load with no initial blocks");
+
+  const auto saved = bridge.updateSnapshot(QStringLiteral(R"([
+    {
+      "id": "b1",
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "Body only", "styles": {} }
+      ],
+      "children": []
+    }
+  ])"));
+  RequireSuccessEnvelope(saved);
+
+  const auto reloaded = bridge.loadDocument(created_id);
+  RequireSuccessEnvelope(reloaded);
+  Require(reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
+              QStringLiteral("Untitled note"),
+          "document without h1 should keep its existing title");
+}
+
+auto TestDeleteDocumentRemovesItFromList() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created = bridge.createDocument();
+  RequireSuccessEnvelope(created);
+  const auto created_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+
+  const auto deleted = bridge.deleteDocument(created_id);
+  RequireSuccessEnvelope(deleted);
+
+  const auto listed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed);
+  const auto pages = listed.value(QStringLiteral("result")).toList();
+  Require(pages.size() == 1, "after deleting only note, welcome page should be bootstrapped again");
 }
 
 auto TestOpenDocumentReturnsLoadedDocument() -> void {
@@ -247,6 +311,8 @@ auto main() -> int {
   TestInitialDocumentStartsEmpty();
   TestDocumentListBootstrapsWelcomePage();
   TestCreateDocument();
+  TestCreateDocumentLoadsEmptyAndSaves();
+  TestDeleteDocumentRemovesItFromList();
   TestOpenDocumentReturnsLoadedDocument();
   TestValidSnapshot();
   TestInvalidJsonSnapshot();

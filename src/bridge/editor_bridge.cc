@@ -10,6 +10,10 @@
 #include <QVariant>
 
 #include <cstdint>
+#include <map>
+#include <queue>
+#include <set>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -54,6 +58,7 @@ auto BridgeInfo() -> QVariantMap {
            ToQString(constants::kBridgeMethodGetInitialDocument),
            ToQString(constants::kBridgeMethodListDocuments),
            ToQString(constants::kBridgeMethodCreateDocument),
+           ToQString(constants::kBridgeMethodCreateChildDocument),
            ToQString(constants::kBridgeMethodLoadDocument),
            ToQString(constants::kBridgeMethodOpenDocument),
            ToQString(constants::kBridgeMethodUpdateSnapshot),
@@ -257,14 +262,62 @@ auto NextChildSortOrder(std::shared_ptr<storage::LocalDocumentRepository> reposi
   return found_any ? max_order + 1 : 0;
 }
 
-auto ExtractTitle(const document::Document& document) -> std::string {
+auto ExtractTitle(const document::Document& document, std::string_view fallback_title)
+    -> std::string {
   for (const auto& block : document.blocks) {
     if (block.type == document::BlockType::kHeading && block.heading_props &&
         block.heading_props->level == 1 && !block.text_content.empty()) {
       return block.text_content;
     }
   }
-  return std::string(constants::kDefaultPageTitle);
+  return std::string(fallback_title);
+}
+
+auto LoadDocumentRecord(std::shared_ptr<storage::LocalDocumentRepository> repository,
+                        const QString& page_id) -> std::variant<storage::DocumentRecord, QVariantMap> {
+  auto result = repository->LoadDocument(page_id.toStdString());
+  if (!result.document) {
+    return ErrorResponse(QStringLiteral("load_failed"),
+                         QString::fromStdString(result.error ? result.error->message
+                                                             : "Document was not found."));
+  }
+  return std::move(*result.document);
+}
+
+auto DeleteDocumentTree(std::shared_ptr<storage::LocalDocumentRepository> repository,
+                        std::string_view root_id) -> std::optional<storage::RepositoryError> {
+  auto list_result = repository->ListDocuments();
+  if (list_result.error) {
+    return list_result.error;
+  }
+
+  std::multimap<std::string, std::string> children_by_parent;
+  for (const auto& document : list_result.documents) {
+    if (document.parent_id) {
+      children_by_parent.emplace(*document.parent_id, document.id);
+    }
+  }
+
+  std::queue<std::string> pending;
+  std::vector<std::string> deletion_order;
+  pending.push(std::string(root_id));
+  while (!pending.empty()) {
+    auto current = std::move(pending.front());
+    pending.pop();
+    deletion_order.push_back(current);
+    auto [it, end] = children_by_parent.equal_range(current);
+    for (; it != end; ++it) {
+      pending.push(it->second);
+    }
+  }
+
+  for (auto it = deletion_order.rbegin(); it != deletion_order.rend(); ++it) {
+    auto delete_result = repository->DeleteDocument(*it);
+    if (delete_result.error) {
+      return delete_result.error;
+    }
+  }
+  return std::nullopt;
 }
 
 }  // namespace
@@ -278,6 +331,11 @@ void QEditorBridge::SetRepository(
 
 void QEditorBridge::RequestOpenDocument(const QString& page_id) {
   emit documentOpenRequested(page_id);
+}
+
+void QEditorBridge::ClearCurrentDocumentSelection() {
+  current_page_id_.clear();
+  emit documentSelectionCleared();
 }
 
 QVariantMap QEditorBridge::getBridgeInfo() {
@@ -367,6 +425,60 @@ QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
   });
 }
 
+QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const QString& parent_id,
+                                                   bool has_parent_id, int sort_order) {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+
+  auto loaded_or_error = LoadDocumentRecord(repository_, page_id);
+  if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
+    return std::get<QVariantMap>(std::move(loaded_or_error));
+  }
+
+  auto record = std::move(std::get<storage::DocumentRecord>(loaded_or_error));
+  record.metadata.parent_id = has_parent_id ? std::make_optional(parent_id.toStdString()) : std::nullopt;
+  record.metadata.sort_order = sort_order;
+  record.metadata.updated_at = CurrentUtcTimestamp();
+
+  auto save_result = repository_->SaveDocument(record);
+  if (save_result.error) {
+    return ErrorResponse(QStringLiteral("move_failed"),
+                         QString::fromStdString(save_result.error->message));
+  }
+
+  return SuccessResponse(QVariantMap{
+      {QStringLiteral("id"), QString::fromStdString(record.metadata.id)},
+      {QStringLiteral("title"), QString::fromStdString(record.metadata.title)},
+      {QStringLiteral("parentId"), OptionalStringToVariant(record.metadata.parent_id)},
+      {QStringLiteral("sortOrder"), record.metadata.sort_order},
+      {QStringLiteral("createdAt"), QString::fromStdString(record.metadata.created_at)},
+      {QStringLiteral("updatedAt"), QString::fromStdString(record.metadata.updated_at)},
+  });
+}
+
+QVariantMap QEditorBridge::deleteDocument(const QString& page_id) {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+  if (page_id.isEmpty()) {
+    return ErrorResponse(QStringLiteral("invalid_document"),
+                         QStringLiteral("Document id is required."));
+  }
+
+  if (const auto error = DeleteDocumentTree(repository_, page_id.toStdString())) {
+    return ErrorResponse(QStringLiteral("delete_failed"),
+                         QString::fromStdString(error->message));
+  }
+
+  if (current_page_id_ == page_id) {
+    current_page_id_.clear();
+  }
+  return SuccessResponse(QVariant{});
+}
+
 QVariantMap QEditorBridge::loadDocument(const QString& page_id) {
   if (!repository_) {
     return ErrorResponse(QStringLiteral("repository_unavailable"),
@@ -444,7 +556,10 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
     }
     record.metadata.id = current_page_id_.toStdString();
     record.metadata.schema_version = document::SchemaVersion::kV1;
-    record.metadata.title = ExtractTitle(*validation.document);
+    const auto fallback_title = record.metadata.title.empty()
+                                    ? std::string_view(constants::kNewDocumentTitle)
+                                    : std::string_view(record.metadata.title);
+    record.metadata.title = ExtractTitle(*validation.document, fallback_title);
     if (record.metadata.created_at.empty()) {
       record.metadata.created_at = CurrentUtcTimestamp();
     }

@@ -56,6 +56,10 @@ struct SaveDocumentResult {
   std::optional<RepositoryError> error;
 };
 
+struct DeleteDocumentResult {
+  std::optional<RepositoryError> error;
+};
+
 struct LoadDocumentResult {
   std::optional<DocumentRecord> document;
   std::optional<RepositoryError> error;
@@ -77,6 +81,8 @@ class LocalDocumentRepository {
 
   [[nodiscard]] virtual auto SaveDocument(const DocumentRecord& document)
       -> SaveDocumentResult = 0;
+  [[nodiscard]] virtual auto DeleteDocument(std::string_view page_id)
+      -> DeleteDocumentResult = 0;
   [[nodiscard]] virtual auto LoadDocument(std::string_view page_id) -> LoadDocumentResult = 0;
   [[nodiscard]] virtual auto ListDocuments() -> ListDocumentsResult = 0;
 };

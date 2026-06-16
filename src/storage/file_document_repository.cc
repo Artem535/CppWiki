@@ -192,6 +192,21 @@ class FileDocumentRepository::Impl {
     }
   }
 
+  [[nodiscard]] auto DeleteDocument(std::string_view page_id) -> DeleteDocumentResult {
+    try {
+      const auto page_path = MakePageFilePath(options_.storage_directory, page_id);
+      if (!std::filesystem::exists(page_path)) {
+        return DeleteDocumentResult{};
+      }
+      std::filesystem::remove(page_path);
+      return DeleteDocumentResult{};
+    } catch (const std::exception& e) {
+      return DeleteDocumentResult{
+          .error = MakeError(RepositoryErrorCode::kDeleteFailed, e.what()),
+      };
+    }
+  }
+
   [[nodiscard]] auto LoadDocument(std::string_view page_id) -> LoadDocumentResult {
     try {
       const auto page_path = MakePageFilePath(options_.storage_directory, page_id);
@@ -303,6 +318,10 @@ FileDocumentRepository::~FileDocumentRepository() = default;
 
 auto FileDocumentRepository::SaveDocument(const DocumentRecord& document) -> SaveDocumentResult {
   return impl_->SaveDocument(document);
+}
+
+auto FileDocumentRepository::DeleteDocument(std::string_view page_id) -> DeleteDocumentResult {
+  return impl_->DeleteDocument(page_id);
 }
 
 auto FileDocumentRepository::LoadDocument(std::string_view page_id) -> LoadDocumentResult {

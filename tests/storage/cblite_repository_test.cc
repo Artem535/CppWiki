@@ -20,9 +20,9 @@ auto Require(bool condition, std::string_view message) -> void {
 }
 
 auto TestCbliteRepositorySaveLoad() -> void {
-  const auto test_directory = std::filesystem::temp_directory_path() / "cppwiki-cblite-test";
+  const auto test_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-cblite-test" / "nested" / "database";
   std::filesystem::remove_all(test_directory);
-  std::filesystem::create_directories(test_directory);
 
   cppwiki::storage::CbliteDocumentRepositoryOptions options{
       .database_directory = test_directory,
@@ -102,10 +102,15 @@ auto TestCbliteRepositorySaveLoad() -> void {
                 std::make_optional<std::string>("parent-page"),
             "CBLite list parent id should match");
     Require(list_result.documents.front().sort_order == 42, "CBLite list sort order should match");
+
+    const auto delete_result = repository.DeleteDocument("page-123");
+    Require(!delete_result.error, "CBLite delete should succeed");
+    const auto deleted_load = repository.LoadDocument("page-123");
+    Require(!deleted_load.document.has_value(), "Deleted CBLite document should not load");
   }
 
   spdlog::info("CBLite save/load cycle passed successfully");
-  std::filesystem::remove_all(test_directory);
+  std::filesystem::remove_all(test_directory.parent_path().parent_path());
 }
 
 }  // namespace

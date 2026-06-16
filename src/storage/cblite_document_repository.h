@@ -25,6 +25,7 @@ class CbliteDocumentRepository final : public LocalDocumentRepository {
   auto operator=(CbliteDocumentRepository&&) -> CbliteDocumentRepository& = delete;
 
   [[nodiscard]] auto SaveDocument(const DocumentRecord& document) -> SaveDocumentResult override;
+  [[nodiscard]] auto DeleteDocument(std::string_view page_id) -> DeleteDocumentResult override;
   [[nodiscard]] auto LoadDocument(std::string_view page_id) -> LoadDocumentResult override;
   [[nodiscard]] auto ListDocuments() -> ListDocumentsResult override;
 
