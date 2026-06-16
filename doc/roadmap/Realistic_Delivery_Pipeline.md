@@ -2,7 +2,7 @@
 
 **Product:** CppWiki / Wiki Platform v9 - Block Document Edition  
 **Status:** Draft delivery plan  
-**Date:** 2026-06-14  
+**Date:** 2026-06-16
 **Related docs:** `doc/PRD_v9_Block_Document_Edition.md`, `doc/roadmap/Current_Roadmap.md`, `doc/architecture/Architecture_Baseline_Libraries_and_Approaches.md`
 
 ---
@@ -11,7 +11,7 @@
 
 This pipeline turns the current architecture roadmap into a realistic build order.
 
-The project currently has a working Qt shell, `QWebEngineView`, local Vite/React bundle loading, and BlockNote rendering. The current frontend may contain demo navigation only as temporary scaffolding. Product navigation, workspace UI and application chrome belong to Qt.
+The project currently has a working Qt shell, `QWebEngineView`, local Vite/React bundle loading, BlockNote rendering, QWebChannel bridge, typed document validation, local repository boundary and a minimal page list path. The current frontend may contain temporary navigation only as scaffolding. Product navigation, workspace UI and application chrome belong to Qt.
 
 The remaining work should be delivered in risk-reducing slices, not by implementing the full PRD surface at once.
 
@@ -23,6 +23,7 @@ BlockNote edit
   -> typed C++ document DTO
   -> validation
   -> local save
+  -> page list/load
   -> restart
   -> local load
 ```
@@ -238,20 +239,28 @@ Close the first real user path: edit, save, restart, load.
 - Choose the practical local persistence implementation.
 - If Couchbase Lite C++ packaging is blocked, use a temporary repository interface with a file-backed JSON implementation and keep the Couchbase decision explicit.
 - Add `LocalDocumentRepository` interface.
-- Persist one workspace and one page.
+- Persist one workspace and multiple page records.
+- Add repository methods for saving, loading and listing documents.
 - Save validated document snapshots.
+- Add UUID generation for document IDs.
+- Bootstrap a default `Welcome to CppWiki` page when the repository is empty.
+- Add a temporary left-side list view so users can select a page before editing.
+- Show an empty/loading hint widget before a document is selected.
+- Autosave the currently selected page.
 - Preserve the previous valid version on save failure.
-- Load last document at startup.
-- Surface save status in the desktop UI.
-- Add tests for save/load/failure behavior.
+- Load selected document snapshots through the bridge.
+- Surface persistence errors through bridge responses and logs.
+- Add tests for repository save/load/list behavior and bridge list/load/update behavior.
 
 ## Exit Gate
 
-- User can edit a document and save locally.
-- Restart loads the last saved valid document.
+- Empty repository creates a default welcome page.
+- Page list is loaded from the repository.
+- User can select a page, edit it and autosave locally.
+- Restart can load the saved valid document by ID.
 - Invalid documents are not persisted.
 - Failed save does not destroy the previous valid document.
-- Save failures are visible in UI and logs.
+- Save/load/list failures are visible through bridge errors and logs.
 
 ## Do Not Include
 
@@ -259,6 +268,55 @@ Close the first real user path: edit, save, restart, load.
 - Conflict resolution.
 - Authenticated access.
 - Attachment blobs.
+- Final tree navigation.
+- Document hash based dirty checking.
+
+---
+
+# 6.5. Phase 3.5 - Navigation and Dirty-State Hardening
+
+## Goal
+
+Stabilize the Phase 3 document lifecycle before moving into the full native product shell.
+
+## Scope
+
+- Add explicit selected-document state to the C++ application layer.
+- Extend page metadata for hierarchy-ready navigation:
+  - `parent_id`;
+  - `sort_order`;
+  - `workspace_id` if the repository needs it before real workspaces;
+  - `created_at`;
+  - `updated_at`.
+- Keep the first UI pass as list view, but read it from the hierarchy-ready model.
+- Move page navigation ownership from React to a Qt widget.
+- Replace the Qt list widget with a Qt tree view after hierarchy metadata and selected-document state are stable.
+- Add application theme state owned by C++/Qt.
+- Add light/dark theme switching through Qlementine.
+- Propagate the active theme to the WebView editor so BlockNote uses matching colors.
+- Decide whether to store a document hash for quick dirty checks.
+- Add skip-save behavior only if it measurably simplifies autosave or sync preparation.
+- Add manual QA checklist for empty repository, first page, selection, autosave, restart and corrupted document cases.
+
+## Exit Gate
+
+- Page metadata can represent both flat lists and trees.
+- The app can still run with a flat list while tree metadata is present.
+- Navigation selection is owned by C++/Qt, not by React application state.
+- Tree view can be introduced without changing the stored document snapshot payload.
+- Light/dark switching has a single source of truth in the Qt application layer.
+- The WebView editor background and text colors match the active Qlementine theme.
+- Dirty-state behavior is explicit: either hash-based or snapshot-comparison based.
+- Page navigation data model can evolve from list view to tree view without changing stored document payloads.
+- Autosave does not write when no document is selected.
+- Corrupted stored snapshots fail safely.
+
+## Do Not Include
+
+- Sync Gateway.
+- Full permissions model.
+- Confluence import/export.
+- Plugin runtime.
 
 ---
 
@@ -271,6 +329,7 @@ Replace the proof-of-connection UI with a minimal Qt-owned wiki workspace shell.
 ## Scope
 
 - Add page tree placeholder as a Qt widget.
+- Start from list view if hierarchy metadata is still incomplete.
 - Add document title area in Qt.
 - Add editor save status in Qt.
 - Add offline/online status placeholder in Qt.
@@ -280,6 +339,8 @@ Replace the proof-of-connection UI with a minimal Qt-owned wiki workspace shell.
 - Keep the JavaScript bundle focused on the BlockNote editor surface.
 - Keep editor as the primary surface.
 - Keep layout stable during resize.
+- Keep Qlementine as the application style baseline unless a stronger Qt theme decision replaces it.
+- Expose theme switching from the native shell, not from the editor bundle.
 
 ## Exit Gate
 
@@ -289,6 +350,7 @@ Replace the proof-of-connection UI with a minimal Qt-owned wiki workspace shell.
 - The shell does not imply unfinished features are working.
 - Page tree, title and status are native Qt UI, not React application chrome.
 - The web view contains the editor widget, not the application shell.
+- Switching between light and dark themes updates both Qt widgets and the WebView editor.
 
 ## Do Not Include
 

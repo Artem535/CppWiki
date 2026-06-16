@@ -2,7 +2,7 @@
 
 **Product:** Wiki Platform v9 — Block Document Edition  
 **Status:** Draft / Baseline for implementation spikes  
-**Date:** 2026-06-11  
+**Date:** 2026-06-16
 **Source:** `doc/PRD_v9_Block_Document_Edition.md`  
 **Related ADRs:** ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-008
 
@@ -42,6 +42,7 @@ This document does not replace ADRs. If a choice becomes controversial or change
 | Area | Selected Technology | Status | Reason |
 | :--- | :--- | :--- | :--- |
 | Desktop shell | Qt 6 Widgets | Accepted | Mature native desktop UI, cross-platform support, existing C++ ecosystem |
+| Desktop styling | Qlementine | Selected default | Modern Qt Widgets style baseline while the native product shell is developed |
 | Embedded editor host | QWebEngine | Accepted | Required to host modern JS block editor inside desktop app |
 | JS/native bridge | QWebChannel | Baseline | Native Qt mechanism for typed communication between QWebEngine and C++ |
 | Editor framework | BlockNote | Accepted | Notion-like block UX, structured block model, custom blocks |
@@ -68,6 +69,8 @@ This document does not replace ADRs. If a choice becomes controversial or change
 ## 4.1. Desktop and Editor Boundary
 
 Use Qt 6 Widgets for the desktop shell and QWebEngine for the editor host.
+
+Use Qlementine as the default Qt Widgets style while the desktop shell is being built.
 
 The Qt shell owns:
 
@@ -142,6 +145,8 @@ Canonical Render:
 
 Use Couchbase Lite for local persistence and Couchbase Sync Gateway for replication.
 
+The current local persistence boundary is `LocalDocumentRepository`. It must hide storage-specific details from the editor bridge and GUI. The default development fallback can be file-backed JSON; the Couchbase Lite adapter remains optional behind `CPPWIKI_ENABLE_CBLITE_STORAGE` until packaging is settled.
+
 MVP persistence must support:
 
 - users cache;
@@ -153,6 +158,15 @@ MVP persistence must support:
 - lock cache;
 - plugin metadata;
 - Confluence mapping.
+
+Current Phase 3 persistence stores page metadata and the validated raw BlockNote snapshot. Repository operations needed by the product shell are:
+
+- list documents as lightweight `id/title` summaries;
+- load one document by stable ID;
+- save one validated document snapshot;
+- bootstrap a default welcome page when the repository is empty.
+
+Document hash storage is not part of the current baseline. It should be reconsidered when adding explicit dirty-state optimization, conflict detection or sync.
 
 Sync rules:
 
