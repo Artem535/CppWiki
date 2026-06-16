@@ -384,7 +384,6 @@ QVariantMap QEditorBridge::createDocument() {
                          QString::fromStdString(save_result.error->message));
   }
 
-  current_page_id_ = QString::fromStdString(record.metadata.id);
   return SuccessResponse(QVariantMap{
       {QStringLiteral("id"), QString::fromStdString(record.metadata.id)},
       {QStringLiteral("title"), QString::fromStdString(record.metadata.title)},
@@ -414,7 +413,6 @@ QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
                          QString::fromStdString(save_result.error->message));
   }
 
-  current_page_id_ = QString::fromStdString(record.metadata.id);
   return SuccessResponse(QVariantMap{
       {QStringLiteral("id"), QString::fromStdString(record.metadata.id)},
       {QStringLiteral("title"), QString::fromStdString(record.metadata.title)},

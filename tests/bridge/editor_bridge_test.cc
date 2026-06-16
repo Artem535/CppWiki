@@ -202,6 +202,51 @@ auto TestCreateDocumentLoadsEmptyAndSaves() -> void {
           "document without h1 should keep its existing title");
 }
 
+auto TestCreateDocumentDoesNotHijackAutosaveSelection() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed);
+  const auto welcome_id =
+      listed.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("id")).toString();
+
+  RequireSuccessEnvelope(bridge.openDocument(welcome_id));
+
+  const auto created = bridge.createDocument();
+  RequireSuccessEnvelope(created);
+  const auto created_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+
+  const auto saved = bridge.updateSnapshot(QStringLiteral(R"([
+    {
+      "id": "welcome-heading",
+      "type": "heading",
+      "props": { "level": 1 },
+      "content": [
+        { "type": "text", "text": "Welcome heading", "styles": {} }
+      ],
+      "children": []
+    }
+  ])"));
+  RequireSuccessEnvelope(saved);
+
+  const auto loaded_created = bridge.loadDocument(created_id);
+  RequireSuccessEnvelope(loaded_created);
+  const auto created_result = loaded_created.value(QStringLiteral("result")).toMap();
+  Require(created_result.value(QStringLiteral("title")).toString() == QStringLiteral("Untitled note"),
+          "creating a document should not change bridge selection before open");
+  Require(created_result.value(QStringLiteral("blocks")).toList().isEmpty(),
+          "newly created document should remain empty until it is opened and edited");
+
+  const auto loaded_welcome = bridge.loadDocument(welcome_id);
+  RequireSuccessEnvelope(loaded_welcome);
+  const auto welcome_result = loaded_welcome.value(QStringLiteral("result")).toMap();
+  Require(welcome_result.value(QStringLiteral("title")).toString() == QStringLiteral("Welcome heading"),
+          "autosave should still apply to the previously opened document");
+}
+
 auto TestDeleteDocumentRemovesItFromList() -> void {
   auto repository = std::make_shared<FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
@@ -312,6 +357,7 @@ auto main() -> int {
   TestDocumentListBootstrapsWelcomePage();
   TestCreateDocument();
   TestCreateDocumentLoadsEmptyAndSaves();
+  TestCreateDocumentDoesNotHijackAutosaveSelection();
   TestDeleteDocumentRemovesItFromList();
   TestOpenDocumentReturnsLoadedDocument();
   TestValidSnapshot();
