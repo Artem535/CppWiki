@@ -277,7 +277,7 @@ Close the first real user path: edit, save, restart, load.
 
 ## Goal
 
-Stabilize the Phase 3 document lifecycle before moving into the full native product shell.
+Stabilize the Phase 3 document lifecycle and harden the native navigation shell before moving into the full product shell.
 
 ## Scope
 
@@ -290,7 +290,7 @@ Stabilize the Phase 3 document lifecycle before moving into the full native prod
   - `updated_at`.
 - Keep the first UI pass as list view, but read it from the hierarchy-ready model.
 - Move page navigation ownership from React to a Qt widget.
-- Replace the Qt list widget with a Qt tree view after hierarchy metadata and selected-document state are stable.
+- Move from the temporary list widget to a Qt tree view after hierarchy metadata and selected-document state are stable.
 - Finish row-level navigation actions in the tree:
   - add-child button;
   - right-click context menu;
@@ -314,6 +314,7 @@ Stabilize the Phase 3 document lifecycle before moving into the full native prod
 - Light/dark switching has a single source of truth in the Qt application layer.
 - The WebView editor background and text colors match the active Qlementine theme.
 - Dirty-state behavior is explicit: either hash-based or snapshot-comparison based.
+- Native tree navigation is stable enough to replace React-owned chrome.
 - Page navigation data model can evolve from list view to tree view without changing stored document payloads.
 - Autosave does not write when no document is selected.
 - Corrupted stored snapshots fail safely.

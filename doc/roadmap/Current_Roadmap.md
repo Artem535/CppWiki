@@ -25,9 +25,11 @@ The project currently has:
 - Minimal page list navigation in the editor bundle while the native shell is still being developed.
 - Default `Welcome to CppWiki` page bootstrap when the local repository is empty.
 - UUID helper for generated document IDs.
+- Native Qt navigation tree with add-child affordance, context menu actions, delete, move up/down and drag-and-drop reordering.
+- Dedicated popup widget for document row actions instead of `QMenu`.
 - Architecture and project-structure documentation.
 
-The current UI is a minimal working shell, not the final native product shell. The page list is intentionally a list view for the current phase; tree view belongs to a later step.
+The current UI is a minimal working shell, not the final native product shell. The navigation surface is moving from the temporary list view toward the native tree view and row actions.
 
 ---
 
@@ -194,17 +196,14 @@ Exit criteria:
 | QWebChannel schema | Phase 3 baseline | Versioned `{ apiVersion, ok, result/error }` envelope exists for bridge info, document list, document load and snapshot update. Generated TypeScript/C++ DTOs can still be revisited later |
 | Frontend package manager | Tentative | npm is used now; can revisit if workspace tooling changes |
 | Document hash / dirty check | Deferred | Not required for current autosave loop. Revisit for Phase 3.5 when adding conflict detection, skip-save optimization or sync |
-| Page navigation shape | List first | Current UI uses list view. Tree view is deferred until hierarchy metadata exists |
+| Page navigation shape | Tree migration underway | Current UI has native Qt navigation and row actions. Tree view is now the active path; list-only navigation is no longer the target shape |
 
 ---
 
 # 6. Immediate Next Actions
 
 1. Exercise the Phase 3 path manually: empty repository -> default page -> select page -> edit -> autosave -> restart -> load.
-2. Add hierarchy-ready page metadata before implementing tree view: `parent_id`, `sort_order`, timestamps and workspace binding if needed.
-3. Move page navigation from temporary React chrome into a Qt-owned list widget.
-4. Replace the Qt list widget with tree view after the navigation model and selected-document state are stable.
-5. Finish tree row actions: add-child button, context menu, delete, move up/down and drag-and-drop reordering/reparenting.
-6. Add Qt-owned light/dark theme switching through Qlementine and propagate the active theme into the WebView editor.
-7. Add a small user-visible save/error state in the desktop shell.
-8. Decide whether document hash belongs in Phase 3.5 after the autosave loop is stable.
+2. Finish Phase 3.5 hardening around navigation state: preserve selection across reloads, avoid tree flicker on updates, and keep context actions stable.
+3. Decide whether document hash belongs in Phase 3.5 after the autosave loop is stable.
+4. Add Qt-owned light/dark theme switching through Qlementine and propagate the active theme into the WebView editor.
+5. Add a small user-visible save/error state in the desktop shell.
