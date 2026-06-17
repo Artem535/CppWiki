@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <queue>
+#include <set>
 #include <string_view>
 #include <utility>
 
@@ -338,30 +339,36 @@ void DocumentTreeModel::buildTree(const std::vector<storage::DocumentSummary>& d
     return parent_id;
   };
 
-  // Map document IDs to their summaries, keeping them in input order but
-  // keyed for parent lookup.
+  // Keep summaries keyed by ID. If duplicates appear, the latest item wins,
+  // which mirrors the old behavior and avoids duplicated QModelIndex entries.
   std::map<std::string, storage::DocumentSummary> document_map;
   for (const auto& doc : documents) {
+    if (doc.id.empty()) {
+      continue;
+    }
     document_map[doc.id] = doc;
   }
 
-  // Map parent_id -> list of children summaries
+  // Map parent_id -> list of children summaries.
   std::map<std::optional<std::string>, std::vector<const storage::DocumentSummary*>> children_map;
   std::map<std::string, std::unique_ptr<DocumentTreeItem>> detached_items;
 
-  // Create document items (not attached yet) preserving key order
   for (const auto& [id, summary] : document_map) {
-    auto item = std::make_unique<DocumentTreeItem>(summary, nullptr);
-    detached_items.emplace(id, std::move(item));
-  }
-
-  // Build parent-child map
-  for (const auto& [id, summary] : document_map) {
+    detached_items.emplace(id, std::make_unique<DocumentTreeItem>(summary, nullptr));
     children_map[normalizedParentId(summary.parent_id)].push_back(&summary);
   }
 
-  // Recursive helper that places items under a parent and decorates each
-  // document with an "add child" action item.
+  const auto sortByPlacement = [](auto& children) {
+    std::ranges::sort(children, [](const auto* lhs, const auto* rhs) {
+      if (lhs->sort_order != rhs->sort_order) {
+        return lhs->sort_order < rhs->sort_order;
+      }
+      return lhs->title < rhs->title;
+    });
+  };
+
+  std::set<std::string> recursion_stack;
+
   std::function<void(DocumentTreeItem*, const std::optional<std::string>&)> attachChildren =
       [&](DocumentTreeItem* parent_item, const std::optional<std::string>& parent_id) {
         auto it = children_map.find(parent_id);
@@ -369,15 +376,14 @@ void DocumentTreeModel::buildTree(const std::vector<storage::DocumentSummary>& d
           return;
         }
 
-        std::vector<const storage::DocumentSummary*> children = it->second;
-        std::ranges::sort(children, [](const auto* lhs, const auto* rhs) {
-          if (lhs->sort_order != rhs->sort_order) {
-            return lhs->sort_order < rhs->sort_order;
-          }
-          return lhs->title < rhs->title;
-        });
+        auto children = it->second;
+        sortByPlacement(children);
 
         for (const auto* child_summary : children) {
+          if (child_summary == nullptr || recursion_stack.contains(child_summary->id)) {
+            continue;
+          }
+
           auto node = detached_items.extract(child_summary->id);
           if (node.empty()) {
             continue;
@@ -387,12 +393,27 @@ void DocumentTreeModel::buildTree(const std::vector<storage::DocumentSummary>& d
           auto* child_item = child.get();
           parent_item->addChild(std::move(child));
 
-          // Recursively attach children of this document
+          recursion_stack.insert(child_summary->id);
           attachChildren(child_item, child_summary->id);
+          recursion_stack.erase(child_summary->id);
         }
       };
 
   attachChildren(root_item_.get(), std::nullopt);
+
+  // Do not silently drop documents whose parent_id points to a missing document
+  // or participates in a cycle. Attach the remaining roots to the top level,
+  // then recursively attach their valid descendants.
+  while (!detached_items.empty()) {
+    auto node = detached_items.extract(detached_items.begin());
+    auto* child_item = node.mapped().get();
+    const auto child_id = node.key();
+    root_item_->addChild(std::move(node.mapped()));
+
+    recursion_stack.insert(child_id);
+    attachChildren(child_item, child_id);
+    recursion_stack.erase(child_id);
+  }
 }
 
 DocumentTreeItem* DocumentTreeModel::itemFromIndex(const QModelIndex& index) const {
@@ -406,11 +427,18 @@ QModelIndex DocumentTreeModel::indexForItem(const DocumentTreeItem* item) const 
   if (!item || item == root_item_.get()) {
     return QModelIndex();
   }
+
   auto* parent = item->parent();
   if (!parent) {
     return QModelIndex();
   }
-  return createIndex(parent->childRow(item), 0, const_cast<DocumentTreeItem*>(item));
+
+  const auto row = parent->childRow(item);
+  if (row < 0) {
+    return QModelIndex();
+  }
+
+  return createIndex(row, 0, const_cast<DocumentTreeItem*>(item));
 }
 
 std::optional<std::string> DocumentTreeModel::documentId(const QModelIndex& index) const {

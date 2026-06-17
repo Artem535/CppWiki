@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <initializer_list>
 #include <iterator>
 #include <set>
 #include <string_view>
@@ -42,15 +43,48 @@
 namespace cppwiki {
 namespace {
 
-auto OptionalParentId(const QVariant& value) -> std::optional<std::string> {
+auto OptionalString(const QVariant& value) -> std::optional<std::string> {
   if (!value.isValid() || value.isNull()) {
     return std::nullopt;
   }
-  const auto str = value.toString();
+
+  const auto str = value.toString().trimmed();
   if (str.isEmpty()) {
     return std::nullopt;
   }
+
   return str.toStdString();
+}
+
+QVariant ValueFromFirstExistingKey(const QVariantMap& map, std::initializer_list<QString> keys) {
+  for (const auto& key : keys) {
+    if (map.contains(key)) {
+      return map.value(key);
+    }
+  }
+
+  return {};
+}
+
+auto OptionalParentId(const QVariantMap& document) -> std::optional<std::string> {
+  // UI / bridge usually uses camelCase, while storage / JSON may use snake_case.
+  return OptionalString(ValueFromFirstExistingKey(
+      document, {QStringLiteral("parentId"), QStringLiteral("parent_id"),
+                 QStringLiteral("parentDocumentId"), QStringLiteral("parent_document_id")}));
+}
+
+QString StringFromFirstExistingKey(const QVariantMap& map, std::initializer_list<QString> keys) {
+  return ValueFromFirstExistingKey(map, keys).toString();
+}
+
+int IntFromFirstExistingKey(const QVariantMap& map, std::initializer_list<QString> keys,
+                            int default_value = 0) {
+  const auto value = ValueFromFirstExistingKey(map, keys);
+  if (!value.isValid() || value.isNull()) {
+    return default_value;
+  }
+
+  return value.toInt();
 }
 
 void VisitIndexes(const QAbstractItemModel* model, const QModelIndex& parent,
@@ -257,19 +291,15 @@ void Page::PopulatePageList() {
 
   const auto documents = response.value(QStringLiteral("result")).toList();
 
-  // Convert QVariantList to DocumentSummary vector
   std::vector<storage::DocumentSummary> summaries;
   summaries.reserve(static_cast<size_t>(documents.size()));
 
   for (const auto& document_value : documents) {
-    const auto document = document_value.toMap();
-    storage::DocumentSummary summary;
-    summary.id = document.value(QStringLiteral("id")).toString().toStdString();
-    summary.title = document.value(QStringLiteral("title")).toString().toStdString();
-    summary.parent_id = OptionalParentId(document.value(QStringLiteral("parentId")));
-    summary.sort_order = document.value(QStringLiteral("sortOrder")).toInt();
-    summary.created_at = document.value(QStringLiteral("createdAt")).toString().toStdString();
-    summary.updated_at = document.value(QStringLiteral("updatedAt")).toString().toStdString();
+    auto summary = SummaryFromVariantMap(document_value.toMap());
+
+    spdlog::debug("Document summary: id={}, title={}, parent_id={}, sort_order={}",
+                  summary.id, summary.title, summary.parent_id.value_or("<root>"),
+                  summary.sort_order);
 
     summaries.push_back(std::move(summary));
   }
@@ -716,12 +746,15 @@ std::optional<std::string> Page::MapToParentDocumentId(const QModelIndex& index)
 
 storage::DocumentSummary Page::SummaryFromVariantMap(const QVariantMap& document) const {
   storage::DocumentSummary summary;
-  summary.id = document.value(QStringLiteral("id")).toString().toStdString();
-  summary.title = document.value(QStringLiteral("title")).toString().toStdString();
-  summary.parent_id = OptionalParentId(document.value(QStringLiteral("parentId")));
-  summary.sort_order = document.value(QStringLiteral("sortOrder")).toInt();
-  summary.created_at = document.value(QStringLiteral("createdAt")).toString().toStdString();
-  summary.updated_at = document.value(QStringLiteral("updatedAt")).toString().toStdString();
+  summary.id = StringFromFirstExistingKey(document, {QStringLiteral("id")}).toStdString();
+  summary.title = StringFromFirstExistingKey(document, {QStringLiteral("title")}).toStdString();
+  summary.parent_id = OptionalParentId(document);
+  summary.sort_order = IntFromFirstExistingKey(
+      document, {QStringLiteral("sortOrder"), QStringLiteral("sort_order")});
+  summary.created_at = StringFromFirstExistingKey(
+      document, {QStringLiteral("createdAt"), QStringLiteral("created_at")}).toStdString();
+  summary.updated_at = StringFromFirstExistingKey(
+      document, {QStringLiteral("updatedAt"), QStringLiteral("updated_at")}).toStdString();
   return summary;
 }
 
