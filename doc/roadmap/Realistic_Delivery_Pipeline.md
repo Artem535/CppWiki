@@ -291,6 +291,12 @@ Stabilize the Phase 3 document lifecycle before moving into the full native prod
 - Keep the first UI pass as list view, but read it from the hierarchy-ready model.
 - Move page navigation ownership from React to a Qt widget.
 - Replace the Qt list widget with a Qt tree view after hierarchy metadata and selected-document state are stable.
+- Finish row-level navigation actions in the tree:
+  - add-child button;
+  - right-click context menu;
+  - delete;
+  - move up/down;
+  - drag-and-drop reparenting and reordering.
 - Add application theme state owned by C++/Qt.
 - Add light/dark theme switching through Qlementine.
 - Propagate the active theme to the WebView editor so BlockNote uses matching colors.
@@ -304,6 +310,7 @@ Stabilize the Phase 3 document lifecycle before moving into the full native prod
 - The app can still run with a flat list while tree metadata is present.
 - Navigation selection is owned by C++/Qt, not by React application state.
 - Tree view can be introduced without changing the stored document snapshot payload.
+- Row actions work consistently through click targets, context menu and drag-and-drop.
 - Light/dark switching has a single source of truth in the Qt application layer.
 - The WebView editor background and text colors match the active Qlementine theme.
 - Dirty-state behavior is explicit: either hash-based or snapshot-comparison based.

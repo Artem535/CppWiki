@@ -204,6 +204,7 @@ Exit criteria:
 2. Add hierarchy-ready page metadata before implementing tree view: `parent_id`, `sort_order`, timestamps and workspace binding if needed.
 3. Move page navigation from temporary React chrome into a Qt-owned list widget.
 4. Replace the Qt list widget with tree view after the navigation model and selected-document state are stable.
-5. Add Qt-owned light/dark theme switching through Qlementine and propagate the active theme into the WebView editor.
-6. Add a small user-visible save/error state in the desktop shell.
-7. Decide whether document hash belongs in Phase 3.5 after the autosave loop is stable.
+5. Finish tree row actions: add-child button, context menu, delete, move up/down and drag-and-drop reordering/reparenting.
+6. Add Qt-owned light/dark theme switching through Qlementine and propagate the active theme into the WebView editor.
+7. Add a small user-visible save/error state in the desktop shell.
+8. Decide whether document hash belongs in Phase 3.5 after the autosave loop is stable.
