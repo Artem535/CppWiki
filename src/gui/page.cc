@@ -37,65 +37,10 @@
 #include "gui/document_tree_item_delegate.h"
 #include "gui/document_tree_model.h"
 #include "gui/document_tree_view.h"
+#include "app/editor_fallback.h"
 
 namespace cppwiki {
 namespace {
-
-auto EditorFallbackHtml(const QString& expected_path) -> QString {
-  return QStringLiteral(R"(
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1"
-    >
-    <style>
-      body {
-        margin: 0;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        color: #1f2933;
-        background: #f7f8fa;
-      }
-      main {
-        box-sizing: border-box;
-        min-height: 100vh;
-        padding: 48px;
-      }
-      h1 {
-        margin: 0 0 12px;
-        font-size: 28px;
-        font-weight: 600;
-      }
-      p {
-        max-width: 720px;
-        margin: 0;
-        line-height: 1.55;
-      }
-      code {
-        border-radius: 4px;
-        background: #e5e7eb;
-        padding: 2px 5px;
-      }
-    </style>
-    <title>CppWiki Editor Host</title>
-  </head>
-  <body>
-    <main>
-      <h1>CppWiki Editor Host</h1>
-      <p>
-        QWebEngine is running, but the BlockNote editor bundle has not been built yet.
-        Run <code>npm ci</code> and <code>npm run build</code> in <code>frontend/editor</code>.
-      </p>
-      <p style="margin-top: 16px;">Expected bundle: <code>%1</code></p>
-    </main>
-  </body>
-</html>
-)")
-      .arg(expected_path.toHtmlEscaped());
-}
-
 
 auto OptionalParentId(const QVariant& value) -> std::optional<std::string> {
   if (!value.isValid() || value.isNull()) {
@@ -281,7 +226,7 @@ void Page::LoadEditor() {
     return;
   }
 
-  editor_view_->setHtml(EditorFallbackHtml(editor_index.absoluteFilePath()));
+  editor_view_->setHtml(LoadEditorFallbackHtml(editor_index.absoluteFilePath()));
 }
 
 void Page::InstallWebChannelScript() {

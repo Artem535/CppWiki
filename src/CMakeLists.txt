@@ -5,6 +5,9 @@ qt_add_executable(cppwiki_app
     app/app_context.h
     app/application.cc
     app/application.h
+    app/editor_fallback.cc
+    app/editor_fallback.h
+    app/editor_fallback.html
     app/application_stylesheet.cc
     app/application_stylesheet.h
     app/cppwiki.qss
