@@ -9,6 +9,7 @@
 
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "app/application_stylesheet.h"
 #include "gui/page.h"
 #include "storage/repository_factory.h"
 
@@ -95,6 +96,8 @@ void Application::ApplyAppearanceFromSettings(const ProgramSettings& settings) {
       qlementine_style->setThemeJsonPath(theme_path);
     }
   }
+
+  ApplyApplicationStylesheet();
 }
 
 }  // namespace cppwiki

@@ -1,0 +1,18 @@
+QWidget#pagePanel {
+  background-color: palette(window);
+  border-radius: 0px;
+}
+
+QWidget#pagePanel QTreeView,
+QWidget#pagePanel QTreeView::viewport {
+  background: palette(window);
+  border: none;
+}
+
+QStatusBar {
+  background-color: palette(window);
+}
+
+QPushButton#newDocumentButton {
+  padding: 6px 10px;
+}

@@ -39,6 +39,7 @@ inline constexpr std::string_view kAddChildActionId = "cppwiki-add-child-action"
 inline constexpr std::string_view kNewDocumentActionId = "cppwiki-new-document-action";
 inline constexpr std::string_view kQlementineDarkThemePath =
     "third_party/qlementine/showcase/resources/themes/dark.json";
+inline constexpr std::string_view kApplicationQssPath = "src/app/cppwiki.qss";
 
 inline constexpr std::string_view kSettingsAppDataDirectoryKey = "paths/appDataDirectory";
 inline constexpr std::string_view kSettingsDatabaseDirectoryKey = "paths/databaseDirectory";

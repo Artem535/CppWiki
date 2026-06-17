@@ -5,6 +5,9 @@ qt_add_executable(cppwiki_app
     app/app_context.h
     app/application.cc
     app/application.h
+    app/application_stylesheet.cc
+    app/application_stylesheet.h
+    app/cppwiki.qss
     app/program_settings.cc
     app/program_settings.h
     bridge/editor_bridge.cc

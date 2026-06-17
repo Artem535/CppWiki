@@ -166,17 +166,6 @@ void Page::BuildUi() {
   page_panel_ = new QWidget(this);
   page_panel_->setObjectName(QStringLiteral("pagePanel"));
   page_panel_->setAttribute(Qt::WA_StyledBackground, true);
-  page_panel_->setStyleSheet(QStringLiteral(R"(
-    QWidget#pagePanel {
-      background-color: palette(window);
-      border-radius: 0px;
-    }
-    QWidget#pagePanel QTreeView,
-    QWidget#pagePanel QTreeView::viewport {
-      background: palette(window);
-      border: none;
-    }
-  )"));
   auto* page_panel_layout = new QVBoxLayout(page_panel_);
   page_panel_layout->setContentsMargins(12, 12, 12, 12);
   page_panel_layout->setSpacing(8);
