@@ -10,7 +10,6 @@ class QSpinBox;
 
 namespace oclero::qlementine {
 class LineEdit;
-class Switch;
 }  // namespace oclero::qlementine
 
 namespace cppwiki::gui {
@@ -27,7 +26,6 @@ class SettingsDialog final : public QDialog {
   ProgramSettings current_settings_;
   QFormLayout* form_layout_ = nullptr;
   QSpinBox* font_size_spinbox_ = nullptr;
-  oclero::qlementine::Switch* theme_switch_ = nullptr;
   oclero::qlementine::LineEdit* database_directory_edit_ = nullptr;
 };
 

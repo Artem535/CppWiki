@@ -66,6 +66,11 @@ void MainWindow::BuildUi() {
   setWindowTitle(QStringLiteral("CppWiki"));
   resize(constants::kInitialWindowWidth, constants::kInitialWindowHeight);
   statusBar()->showMessage(QStringLiteral("Ready"));
+  statusBar()->setStyleSheet(QStringLiteral(R"(
+    QStatusBar {
+      background-color: palette(window);
+    }
+  )"));
 
   auto* settings_menu = menuBar()->addMenu(QStringLiteral("Settings"));
   auto* preferences_action =

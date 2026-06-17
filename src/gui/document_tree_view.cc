@@ -89,7 +89,7 @@ void DocumentTreeView::drawBranches(QPainter* painter, const QRect& rect,
   // Erase the branch area explicitly. QTreeView can paint selected row panels
   // before drawBranches(), so replacing only PE_IndicatorBranch is not enough
   // with some styles.
-  painter->fillRect(rect, viewport()->palette().color(QPalette::Base));
+  painter->fillRect(rect, viewport()->palette().color(QPalette::Window));
 
   if (!index.isValid() || model() == nullptr || !model()->hasChildren(index)) {
     return;

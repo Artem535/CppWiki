@@ -5,7 +5,6 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
-#include <QFont>
 #include <QSettings>
 
 #include "core/constants.h"
@@ -17,10 +16,8 @@ namespace cppwiki {
 
 namespace {
 
-auto ResolveThemePath(ProgramSettings::ThemeMode theme_mode) -> QString {
-  const auto theme_path = theme_mode == ProgramSettings::ThemeMode::kLight
-                              ? constants::kQlementineLightThemePath
-                              : constants::kQlementineDarkThemePath;
+auto ResolveThemePath() -> QString {
+  const auto theme_path = constants::kQlementineDarkThemePath;
 
   const auto candidates = {
       QDir::current().filePath(ToQString(theme_path)),
@@ -93,7 +90,7 @@ void Application::ApplyAppearanceFromSettings(const ProgramSettings& settings) {
 
   if (auto* qlementine_style =
           qobject_cast<oclero::qlementine::QlementineStyle*>(QApplication::style())) {
-    const auto theme_path = ResolveThemePath(settings.ThemeModeValue());
+    const auto theme_path = ResolveThemePath();
     if (!theme_path.isEmpty()) {
       qlementine_style->setThemeJsonPath(theme_path);
     }

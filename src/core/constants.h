@@ -39,16 +39,12 @@ inline constexpr std::string_view kAddChildActionId = "cppwiki-add-child-action"
 inline constexpr std::string_view kNewDocumentActionId = "cppwiki-new-document-action";
 inline constexpr std::string_view kQlementineDarkThemePath =
     "third_party/qlementine/showcase/resources/themes/dark.json";
-inline constexpr std::string_view kQlementineLightThemePath =
-    "third_party/qlementine/showcase/resources/themes/light.json";
 
 inline constexpr std::string_view kSettingsAppDataDirectoryKey = "paths/appDataDirectory";
 inline constexpr std::string_view kSettingsDatabaseDirectoryKey = "paths/databaseDirectory";
 inline constexpr std::string_view kSettingsEditorDistDirectoryKey = "paths/editorDistDirectory";
 inline constexpr std::string_view kSettingsApplicationFontPointSizeKey =
     "appearance/applicationFontPointSize";
-inline constexpr std::string_view kSettingsThemeModeKey = "appearance/themeMode";
-
 
 inline constexpr std::string_view kDocumentsCollectionName = "documents";
 inline constexpr std::string_view kDocumentsIndexDocumentId = "cppwiki-document-index";

@@ -168,12 +168,12 @@ void Page::BuildUi() {
   page_panel_->setAttribute(Qt::WA_StyledBackground, true);
   page_panel_->setStyleSheet(QStringLiteral(R"(
     QWidget#pagePanel {
-      background-color: palette(base);
+      background-color: palette(window);
       border-radius: 0px;
     }
     QWidget#pagePanel QTreeView,
     QWidget#pagePanel QTreeView::viewport {
-      background: palette(base);
+      background: palette(window);
       border: none;
     }
   )"));
