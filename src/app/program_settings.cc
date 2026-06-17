@@ -27,23 +27,52 @@ auto DefaultAppDataDirectory() -> QString {
   return QDir(QDir::tempPath()).filePath(ToQString(constants::kApplicationName));
 }
 
+auto DefaultApplicationFontPointSize() -> int {
+  return constants::kDefaultApplicationFontPointSize;
+}
+
+auto DefaultThemeMode() -> ProgramSettings::ThemeMode {
+  return ProgramSettings::ThemeMode::kDark;
+}
+
 auto SettingsValueOrDefault(const QSettings& settings, std::string_view key,
                             const QString& fallback) -> QString {
   const auto value = settings.value(ToQString(key), fallback).toString();
   return value.isEmpty() ? fallback : value;
 }
 
+auto ThemeModeToString(ProgramSettings::ThemeMode theme_mode) -> QString {
+  switch (theme_mode) {
+    case ProgramSettings::ThemeMode::kLight:
+      return QStringLiteral("light");
+    case ProgramSettings::ThemeMode::kDark:
+      return QStringLiteral("dark");
+  }
+  return QStringLiteral("dark");
+}
+
+auto ThemeModeFromString(const QString& value) -> ProgramSettings::ThemeMode {
+  const auto normalized = value.trimmed().toLower();
+  if (normalized == QStringLiteral("light")) {
+    return ProgramSettings::ThemeMode::kLight;
+  }
+  return ProgramSettings::ThemeMode::kDark;
+}
+
 }  // namespace
 
 ProgramSettings::ProgramSettings(QString application_name, QString application_version,
                                  QString organization_name, QString app_data_directory,
-                                 QString database_directory, QString editor_dist_directory)
+                                 QString database_directory, QString editor_dist_directory,
+                                 int application_font_point_size, ThemeMode theme_mode)
     : application_name_(std::move(application_name)),
       application_version_(std::move(application_version)),
       organization_name_(std::move(organization_name)),
       app_data_directory_(std::move(app_data_directory)),
       database_directory_(std::move(database_directory)),
-      editor_dist_directory_(std::move(editor_dist_directory)) {}
+      editor_dist_directory_(std::move(editor_dist_directory)),
+      application_font_point_size_(application_font_point_size),
+      theme_mode_(theme_mode) {}
 
 auto ProgramSettings::FromDefaults() -> ProgramSettings {
   const QSettings settings;
@@ -66,16 +95,32 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
       SettingsValueOrDefault(settings, constants::kSettingsEditorDistDirectoryKey,
                              QStringLiteral(CPPWIKI_EDITOR_DIST_DIR));
 
+  const auto application_font_point_size_value =
+      settings.value(ToQString(constants::kSettingsApplicationFontPointSizeKey),
+                     DefaultApplicationFontPointSize())
+          .toInt();
+  const auto application_font_point_size =
+      application_font_point_size_value > 0 ? application_font_point_size_value
+                                            : DefaultApplicationFontPointSize();
+
+  const auto theme_mode = ThemeModeFromString(
+      SettingsValueOrDefault(settings, constants::kSettingsThemeModeKey,
+                             ThemeModeToString(DefaultThemeMode())));
+
   return ProgramSettings(ToQString(constants::kApplicationName),
                          ToQString(constants::kApplicationVersion),
                          ToQString(constants::kOrganizationName), app_data_directory,
-                         database_directory, editor_dist_directory);
+                         database_directory, editor_dist_directory,
+                         application_font_point_size, theme_mode);
 }
 
 void ProgramSettings::SaveToSettings(QSettings& settings) const {
   settings.setValue(ToQString(constants::kSettingsAppDataDirectoryKey), app_data_directory_);
   settings.setValue(ToQString(constants::kSettingsDatabaseDirectoryKey), database_directory_);
   settings.setValue(ToQString(constants::kSettingsEditorDistDirectoryKey), editor_dist_directory_);
+  settings.setValue(ToQString(constants::kSettingsApplicationFontPointSizeKey),
+                    application_font_point_size_);
+  settings.setValue(ToQString(constants::kSettingsThemeModeKey), ThemeModeToString(theme_mode_));
 }
 
 auto ProgramSettings::ApplicationName() const -> const QString& {
@@ -100,6 +145,14 @@ auto ProgramSettings::DatabaseDirectory() const -> const QString& {
 
 auto ProgramSettings::EditorDistDirectory() const -> const QString& {
   return editor_dist_directory_;
+}
+
+auto ProgramSettings::ApplicationFontPointSize() const -> int {
+  return application_font_point_size_;
+}
+
+auto ProgramSettings::ThemeModeValue() const -> ThemeMode {
+  return theme_mode_;
 }
 
 }  // namespace cppwiki

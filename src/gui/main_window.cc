@@ -1,6 +1,7 @@
 #include "gui/main_window.h"
 
 #include <QAction>
+#include <QDialog>
 #include <QMenuBar>
 #include <QStatusBar>
 #include <QString>
@@ -57,7 +58,7 @@ void MainWindow::ShowSettingsDialog() {
   updated_settings.SaveToSettings(settings);
   settings.sync();
 
-  statusBar()->showMessage(QStringLiteral("Settings saved. Reloading application context..."), 3000);
+  statusBar()->showMessage(QStringLiteral("Settings saved."), 3000);
   emit settingsChanged();
 }
 

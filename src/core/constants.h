@@ -14,6 +14,7 @@ inline constexpr int kInitialWindowHeight = 800;
 inline constexpr int kPageListInitialWidth = 280;
 inline constexpr int kPageListMinimumWidth = 220;
 inline constexpr int kPageListMaximumWidth = 360;
+inline constexpr int kDefaultApplicationFontPointSize = 11;
 
 inline constexpr int kBridgeApiVersion = 1;
 inline constexpr std::string_view kDocumentsBridgeObjectName = "wikiDocuments";
@@ -38,10 +39,15 @@ inline constexpr std::string_view kAddChildActionId = "cppwiki-add-child-action"
 inline constexpr std::string_view kNewDocumentActionId = "cppwiki-new-document-action";
 inline constexpr std::string_view kQlementineDarkThemePath =
     "third_party/qlementine/showcase/resources/themes/dark.json";
+inline constexpr std::string_view kQlementineLightThemePath =
+    "third_party/qlementine/showcase/resources/themes/light.json";
 
 inline constexpr std::string_view kSettingsAppDataDirectoryKey = "paths/appDataDirectory";
 inline constexpr std::string_view kSettingsDatabaseDirectoryKey = "paths/databaseDirectory";
 inline constexpr std::string_view kSettingsEditorDistDirectoryKey = "paths/editorDistDirectory";
+inline constexpr std::string_view kSettingsApplicationFontPointSizeKey =
+    "appearance/applicationFontPointSize";
+inline constexpr std::string_view kSettingsThemeModeKey = "appearance/themeMode";
 
 
 inline constexpr std::string_view kDocumentsCollectionName = "documents";

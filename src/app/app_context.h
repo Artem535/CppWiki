@@ -11,12 +11,12 @@ namespace cppwiki {
 // Application context that provides access to shared services and configuration.
 // This is passed to GUI components instead of individual dependencies.
 struct AppContext {
-  const ProgramSettings& settings;
+  ProgramSettings settings;
   std::shared_ptr<storage::LocalDocumentRepository> document_repository;
 
-  AppContext(const ProgramSettings& settings,
+  AppContext(ProgramSettings settings,
              std::shared_ptr<storage::LocalDocumentRepository> repository)
-      : settings(settings), document_repository(std::move(repository)) {}
+      : settings(std::move(settings)), document_repository(std::move(repository)) {}
 };
 
 }  // namespace cppwiki

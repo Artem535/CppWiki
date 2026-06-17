@@ -22,6 +22,7 @@ class Application final {
 
  private:
   void ReloadContext();
+  void ApplyAppearanceFromSettings(const ProgramSettings& settings);
 
   QApplication qt_application_;
   std::optional<ProgramSettings> settings_;

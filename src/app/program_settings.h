@@ -9,9 +9,15 @@ namespace cppwiki {
 
 class ProgramSettings final {
  public:
+  enum class ThemeMode {
+    kLight,
+    kDark,
+  };
+
   ProgramSettings(QString application_name, QString application_version, QString organization_name,
                   QString app_data_directory, QString database_directory,
-                  QString editor_dist_directory);
+                  QString editor_dist_directory, int application_font_point_size,
+                  ThemeMode theme_mode);
 
   [[nodiscard]] static auto FromDefaults() -> ProgramSettings;
   [[nodiscard]] static auto FromSettings(const QSettings& settings) -> ProgramSettings;
@@ -23,6 +29,8 @@ class ProgramSettings final {
   [[nodiscard]] auto AppDataDirectory() const -> const QString&;
   [[nodiscard]] auto DatabaseDirectory() const -> const QString&;
   [[nodiscard]] auto EditorDistDirectory() const -> const QString&;
+  [[nodiscard]] auto ApplicationFontPointSize() const -> int;
+  [[nodiscard]] auto ThemeModeValue() const -> ThemeMode;
 
  private:
   QString application_name_;
@@ -31,6 +39,8 @@ class ProgramSettings final {
   QString app_data_directory_;
   QString database_directory_;
   QString editor_dist_directory_;
+  int application_font_point_size_;
+  ThemeMode theme_mode_;
 };
 
 }  // namespace cppwiki

@@ -342,7 +342,7 @@ Replace the proof-of-connection UI with a minimal Qt-owned wiki workspace shell.
 - Add editor save status in Qt.
 - Add offline/online status placeholder in Qt.
 - Add sync status placeholder in Qt.
-- Add settings dialog in Qt using Qlementine widgets for the runtime path fields and actions.
+- Add settings dialog in Qt using Qlementine widgets for font size, light/dark theme and database folder access.
 - Add remaining settings/action placeholders in Qt.
 - Remove or hide frontend demo navigation/sidebar from the product view.
 - Keep the JavaScript bundle focused on the BlockNote editor surface.
@@ -360,7 +360,7 @@ Replace the proof-of-connection UI with a minimal Qt-owned wiki workspace shell.
 - Page tree, title and status are native Qt UI, not React application chrome.
 - The web view contains the editor widget, not the application shell.
 - Switching between light and dark themes updates both Qt widgets and the WebView editor.
-- Native settings dialog uses Qlementine widgets instead of plain Qt form controls.
+- Native settings dialog uses Qlementine widgets instead of plain Qt form controls and only exposes the current user-facing appearance/runtime actions.
 
 ## Do Not Include
 

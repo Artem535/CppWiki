@@ -36,6 +36,9 @@ auto TestDefaultSettings() -> void {
           "database directory should end with configured directory name");
   Require(settings.EditorDistDirectory().endsWith(QStringLiteral("frontend/editor/dist")),
           "editor dist directory should point to frontend/editor/dist");
+  Require(settings.ApplicationFontPointSize() > 0, "font size should be positive");
+  Require(settings.ThemeModeValue() == cppwiki::ProgramSettings::ThemeMode::kDark,
+          "default theme should be dark");
 }
 
 auto TestSettingsOverrides() -> void {
@@ -55,6 +58,9 @@ auto TestSettingsOverrides() -> void {
                     database_directory);
   settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsEditorDistDirectoryKey),
                     editor_dist_directory);
+  settings.setValue(
+      cppwiki::ToQString(cppwiki::constants::kSettingsApplicationFontPointSizeKey), 15);
+  settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsThemeModeKey), "light");
 
   const auto program_settings = cppwiki::ProgramSettings::FromSettings(settings);
 
@@ -64,6 +70,10 @@ auto TestSettingsOverrides() -> void {
           "database directory should be read from QSettings");
   Require(program_settings.EditorDistDirectory() == editor_dist_directory,
           "editor dist directory should be read from QSettings");
+  Require(program_settings.ApplicationFontPointSize() == 15,
+          "font size should be read from QSettings");
+  Require(program_settings.ThemeModeValue() == cppwiki::ProgramSettings::ThemeMode::kLight,
+          "theme should be read from QSettings");
 }
 
 auto TestSettingsRoundTrip() -> void {
@@ -81,7 +91,8 @@ auto TestSettingsRoundTrip() -> void {
       cppwiki::ToQString(cppwiki::constants::kApplicationName),
       cppwiki::ToQString(cppwiki::constants::kApplicationVersion),
       cppwiki::ToQString(cppwiki::constants::kOrganizationName), app_data_directory,
-      database_directory, editor_dist_directory);
+      database_directory, editor_dist_directory, 15,
+      cppwiki::ProgramSettings::ThemeMode::kLight);
   program_settings.SaveToSettings(settings);
   settings.sync();
 
@@ -92,6 +103,10 @@ auto TestSettingsRoundTrip() -> void {
           "saved database directory should round-trip through QSettings");
   Require(reloaded.EditorDistDirectory() == editor_dist_directory,
           "saved editor dist directory should round-trip through QSettings");
+  Require(reloaded.ApplicationFontPointSize() == 15,
+          "saved font size should round-trip through QSettings");
+  Require(reloaded.ThemeModeValue() == cppwiki::ProgramSettings::ThemeMode::kLight,
+          "saved theme should round-trip through QSettings");
 }
 
 }  // namespace
