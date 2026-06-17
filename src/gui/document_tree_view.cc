@@ -88,27 +88,17 @@ QColor RowBackgroundColor(const QTreeView* view, const QModelIndex& index, bool 
   return view->palette().color(QPalette::AlternateBase);
 }
 
-QColor BranchArrowColor(const QTreeView* view, const QModelIndex& index, bool hovered) {
+QColor BranchArrowColor(const QTreeView* view, const QModelIndex& /*index*/, bool hovered) {
   if (view == nullptr) {
     return QColor{};
   }
 
-  const bool selected = view->selectionModel() != nullptr && view->selectionModel()->isSelected(index);
-
-  if (auto* style = GetQlementineStyle(view)) {
-    const auto mouse = hovered ? oclero::qlementine::MouseState::Hovered
-                               : oclero::qlementine::MouseState::Normal;
-    const auto selection = selected ? oclero::qlementine::SelectionState::Selected
-                                    : oclero::qlementine::SelectionState::NotSelected;
-    const auto focus = view->hasFocus() ? oclero::qlementine::FocusState::Focused
-                                        : oclero::qlementine::FocusState::NotFocused;
-    const auto active = view->isActiveWindow() ? oclero::qlementine::ActiveState::Active
-                                               : oclero::qlementine::ActiveState::NotActive;
-    return style->listItemForegroundColor(mouse, selection, focus, active);
-  }
-
-  return selected || hovered ? view->palette().color(QPalette::Text)
-                             : view->palette().color(QPalette::Mid);
+  // Keep the disclosure arrow calm, like a sidebar chevron. Using the regular
+  // selected text color often makes it too bright, while some platform styles
+  // may return a nearly invisible branch color on dark themes.
+  QColor color = view->palette().color(QPalette::Text);
+  color.setAlpha(hovered ? 180 : 115);
+  return color;
 }
 
 
@@ -135,6 +125,22 @@ void DrawFullRowBackground(QPainter* painter, const QTreeView* view, const QRect
   painter->setBrush(background);
   painter->drawRoundedRect(row_rect, kRadius, kRadius);
   painter->restore();
+}
+
+
+QRect DisclosureArrowRect(const QTreeView* view, const QModelIndex& index) {
+  if (view == nullptr || !index.isValid()) {
+    return QRect();
+  }
+
+  const QRect item_rect = view->visualRect(index);
+  if (!item_rect.isValid()) {
+    return QRect();
+  }
+
+  const int indent = std::max(16, view->indentation());
+  const int x = std::max(view->viewport()->rect().left(), item_rect.left() - indent);
+  return QRect(x, item_rect.top(), indent, item_rect.height());
 }
 
 }  // namespace
@@ -213,12 +219,9 @@ void DocumentTreeView::drawBranches(QPainter* painter, const QRect& rect,
     painter->fillRect(rect, viewport()->palette().color(QPalette::Base));
   }
 
-  if (!index.isValid() || model() == nullptr || !model()->hasChildren(index)) {
-    return;
-  }
-
-  DrawDisclosureTriangle(painter, rect, indentation(), isExpanded(index),
-                         BranchArrowColor(this, index, hovered));
+  // The disclosure arrow is painted in drawRow() after the full-row
+  // background. Drawing it here is unreliable because QTreeView paints
+  // branches before rows, so our custom hover/selection pill can cover it.
 }
 
 void DocumentTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& option,
@@ -230,6 +233,14 @@ void DocumentTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& op
   const bool hovered = index == hovered_index_;
   const QColor background = RowBackgroundColor(this, index, hovered);
   DrawFullRowBackground(painter, this, option.rect, background);
+
+  if (model() != nullptr && model()->hasChildren(index)) {
+    painter->save();
+    painter->setClipping(false);
+    DrawDisclosureTriangle(painter, DisclosureArrowRect(this, index), indentation(),
+                           isExpanded(index), BranchArrowColor(this, index, hovered));
+    painter->restore();
+  }
 
   // Do not call QTreeView::drawRow() here. Some platform styles paint the
   // current/focus/selection frame inside the branch area after delegate
