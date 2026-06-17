@@ -72,6 +72,12 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
                          database_directory, editor_dist_directory);
 }
 
+void ProgramSettings::SaveToSettings(QSettings& settings) const {
+  settings.setValue(ToQString(constants::kSettingsAppDataDirectoryKey), app_data_directory_);
+  settings.setValue(ToQString(constants::kSettingsDatabaseDirectoryKey), database_directory_);
+  settings.setValue(ToQString(constants::kSettingsEditorDistDirectoryKey), editor_dist_directory_);
+}
+
 auto ProgramSettings::ApplicationName() const -> const QString& {
   return application_name_;
 }

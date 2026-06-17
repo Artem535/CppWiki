@@ -9,6 +9,8 @@ struct AppContext;
 class IPage;
 
 class MainWindow final : public QMainWindow {
+  Q_OBJECT
+
  public:
   explicit MainWindow(QWidget* parent = nullptr);
   MainWindow(const MainWindow&) = delete;
@@ -18,9 +20,13 @@ class MainWindow final : public QMainWindow {
   // Sets the application context and creates the initial page.
   void SetContext(AppContext* context);
 
+ signals:
+  void settingsChanged();
+
  private:
   void BuildUi();
   void CreateInitialPage();
+  void ShowSettingsDialog();
 
   AppContext* context_ = nullptr;
   IPage* current_page_ = nullptr;

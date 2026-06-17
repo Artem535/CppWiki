@@ -66,6 +66,34 @@ auto TestSettingsOverrides() -> void {
           "editor dist directory should be read from QSettings");
 }
 
+auto TestSettingsRoundTrip() -> void {
+  QTemporaryDir temporary_directory;
+  Require(temporary_directory.isValid(), "temporary directory should be valid");
+
+  const auto settings_path = temporary_directory.filePath(QStringLiteral("cppwiki-roundtrip.ini"));
+  QSettings settings(settings_path, QSettings::IniFormat);
+
+  const auto app_data_directory = temporary_directory.filePath(QStringLiteral("app-data-roundtrip"));
+  const auto database_directory = temporary_directory.filePath(QStringLiteral("database-roundtrip"));
+  const auto editor_dist_directory = temporary_directory.filePath(QStringLiteral("editor-dist-roundtrip"));
+
+  const cppwiki::ProgramSettings program_settings(
+      cppwiki::ToQString(cppwiki::constants::kApplicationName),
+      cppwiki::ToQString(cppwiki::constants::kApplicationVersion),
+      cppwiki::ToQString(cppwiki::constants::kOrganizationName), app_data_directory,
+      database_directory, editor_dist_directory);
+  program_settings.SaveToSettings(settings);
+  settings.sync();
+
+  const auto reloaded = cppwiki::ProgramSettings::FromSettings(settings);
+  Require(reloaded.AppDataDirectory() == app_data_directory,
+          "saved app data directory should round-trip through QSettings");
+  Require(reloaded.DatabaseDirectory() == database_directory,
+          "saved database directory should round-trip through QSettings");
+  Require(reloaded.EditorDistDirectory() == editor_dist_directory,
+          "saved editor dist directory should round-trip through QSettings");
+}
+
 }  // namespace
 
 auto main(int argc, char* argv[]) -> int {
@@ -77,6 +105,7 @@ auto main(int argc, char* argv[]) -> int {
 
   TestDefaultSettings();
   TestSettingsOverrides();
+  TestSettingsRoundTrip();
 
   spdlog::info("cppwiki_program_settings_tests passed");
   return EXIT_SUCCESS;

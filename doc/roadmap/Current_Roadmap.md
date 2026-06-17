@@ -206,4 +206,5 @@ Exit criteria:
 2. Finish Phase 3.5 hardening around navigation state: preserve selection across reloads, avoid tree flicker on updates, and keep context actions stable.
 3. Decide whether document hash belongs in Phase 3.5 after the autosave loop is stable.
 4. Add Qt-owned light/dark theme switching through Qlementine and propagate the active theme into the WebView editor.
-5. Add a small user-visible save/error state in the desktop shell.
+5. Add a native settings dialog backed by QSettings and Qlementine widgets.
+6. Add a small user-visible save/error state in the desktop shell.

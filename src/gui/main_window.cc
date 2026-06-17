@@ -1,12 +1,17 @@
 #include "gui/main_window.h"
 
+#include <QAction>
+#include <QMenuBar>
 #include <QStatusBar>
 #include <QString>
 #include <QWidget>
+#include <QSettings>
 
 #include "app/app_context.h"
+#include "app/program_settings.h"
 #include "core/constants.h"
 #include "gui/i_page.h"
+#include "gui/settings_dialog.h"
 #include "gui/page.h"
 
 namespace cppwiki {
@@ -37,10 +42,36 @@ void MainWindow::CreateInitialPage() {
   setWindowTitle(QStringLiteral("CppWiki - %1").arg(current_page_->Title()));
 }
 
+void MainWindow::ShowSettingsDialog() {
+  if (context_ == nullptr) {
+    return;
+  }
+
+  gui::SettingsDialog dialog(context_->settings, this);
+  if (dialog.exec() != QDialog::Accepted) {
+    return;
+  }
+
+  const auto updated_settings = dialog.BuildProgramSettings();
+  QSettings settings;
+  updated_settings.SaveToSettings(settings);
+  settings.sync();
+
+  statusBar()->showMessage(QStringLiteral("Settings saved. Reloading application context..."), 3000);
+  emit settingsChanged();
+}
+
 void MainWindow::BuildUi() {
   setWindowTitle(QStringLiteral("CppWiki"));
   resize(constants::kInitialWindowWidth, constants::kInitialWindowHeight);
   statusBar()->showMessage(QStringLiteral("Ready"));
+
+  auto* settings_menu = menuBar()->addMenu(QStringLiteral("Settings"));
+  auto* preferences_action =
+      settings_menu->addAction(QIcon::fromTheme(QStringLiteral("settings-configure")),
+                               QStringLiteral("Preferences..."));
+  preferences_action->setShortcut(QKeySequence::Preferences);
+  connect(preferences_action, &QAction::triggered, this, [this]() { ShowSettingsDialog(); });
 }
 
 }  // namespace cppwiki

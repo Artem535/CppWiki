@@ -5,6 +5,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QSettings>
 
 #include "core/constants.h"
 #include "core/qt_string.h"
@@ -48,7 +49,23 @@ Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
     }
   }
 
-  settings_.emplace(ProgramSettings::FromDefaults());
+  ReloadContext();
+
+  QObject::connect(&main_window_, &MainWindow::settingsChanged, &qt_application_, [this]() {
+    ReloadContext();
+  });
+}
+
+Application::~Application() = default;
+
+int Application::Run() {
+  main_window_.show();
+  return qt_application_.exec();
+}
+
+void Application::ReloadContext() {
+  QSettings settings;
+  settings_.emplace(ProgramSettings::FromSettings(settings));
 
   // Create document repository using factory (CBLite if available, otherwise file-based)
   auto repository = storage::RepositoryFactory::Create(*settings_);
@@ -57,13 +74,6 @@ Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   context_ = std::make_unique<AppContext>(*settings_, std::move(repository));
 
   main_window_.SetContext(context_.get());
-}
-
-Application::~Application() = default;
-
-int Application::Run() {
-  main_window_.show();
-  return qt_application_.exec();
 }
 
 }  // namespace cppwiki

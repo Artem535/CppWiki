@@ -28,6 +28,8 @@ qt_add_executable(cppwiki_app
     gui/i_page.h
     gui/main_window.cc
     gui/main_window.h
+    gui/settings_dialog.cc
+    gui/settings_dialog.h
     gui/page.cc
     gui/page.h
     main.cc

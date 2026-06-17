@@ -21,6 +21,8 @@ class Application final {
   int Run();
 
  private:
+  void ReloadContext();
+
   QApplication qt_application_;
   std::optional<ProgramSettings> settings_;
   std::unique_ptr<AppContext> context_;

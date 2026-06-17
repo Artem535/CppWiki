@@ -15,6 +15,7 @@ class ProgramSettings final {
 
   [[nodiscard]] static auto FromDefaults() -> ProgramSettings;
   [[nodiscard]] static auto FromSettings(const QSettings& settings) -> ProgramSettings;
+  void SaveToSettings(QSettings& settings) const;
 
   [[nodiscard]] auto ApplicationName() const -> const QString&;
   [[nodiscard]] auto ApplicationVersion() const -> const QString&;
