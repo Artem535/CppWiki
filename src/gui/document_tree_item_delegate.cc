@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <QCursor>
 #include <QPainter>
 #include <QStyleOptionViewItem>
 #include <QTreeView>
@@ -52,6 +53,7 @@ void DocumentTreeItemDelegate::initStyleOption(QStyleOptionViewItem* option,
   QStyledItemDelegate::initStyleOption(option, index);
   option->decorationSize = QSize(kIconSize, kIconSize);
   option->displayAlignment = Qt::AlignVCenter | Qt::AlignLeft;
+  option->showDecorationSelected = true;
 }
 
 void DocumentTreeItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
@@ -62,12 +64,16 @@ void DocumentTreeItemDelegate::paint(QPainter* painter, const QStyleOptionViewIt
   QStyleOptionViewItem opt = option;
   initStyleOption(&opt, index);
 
-  // DocumentTreeView intentionally removes State_Selected in drawRow() to stop
-  // QTreeView/QStyle from painting the blue selected block in the branch area.
-  // Restore selection only for the delegate-owned item rect.
   if (const auto* tree_view = qobject_cast<const QTreeView*>(opt.widget)) {
     if (tree_view->selectionModel() != nullptr && tree_view->selectionModel()->isSelected(index)) {
       opt.state |= QStyle::State_Selected;
+    }
+
+    if (tree_view->viewport() != nullptr) {
+      const QPoint cursor_pos = tree_view->viewport()->mapFromGlobal(QCursor::pos());
+      const bool hovered = tree_view->viewport()->rect().contains(cursor_pos) &&
+                           tree_view->indexAt(cursor_pos) == index;
+      opt.state.setFlag(QStyle::State_MouseOver, hovered);
     }
   }
 
@@ -81,9 +87,6 @@ void DocumentTreeItemDelegate::paint(QPainter* painter, const QStyleOptionViewIt
 
   const int margin = ThemeSpacing(theme, 8);
   const int vertical_padding = ThemeSpacing(theme, 8);
-  const QRect selected_row_rect =
-      opt.rect.adjusted(0, vertical_padding / 2, 0, -vertical_padding / 2);
-
   QColor foreground;
   if (qlementine_style) {
     foreground = qlementine_style->listItemForegroundColor(mouse, selected, focus, active);
@@ -96,6 +99,7 @@ void DocumentTreeItemDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     foreground = opt.palette.text().color();
   }
 
+  const QRect selected_row_rect = opt.rect.adjusted(0, vertical_padding / 2, 0, -vertical_padding / 2);
   QRect content_rect = selected_row_rect.adjusted(margin, 0, -margin, 0);
 
   const QRect add_child_button_rect = addChildButtonRect(opt, index);

@@ -4,6 +4,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <QAbstractItemDelegate>
 #include <QAbstractItemModel>
 #include <QEvent>
 #include <QMouseEvent>
@@ -12,14 +13,25 @@
 #include <QPolygon>
 #include <QStyleOptionViewItem>
 
+#include <oclero/qlementine/style/QlementineStyle.hpp>
+#include <oclero/qlementine/utils/StateUtils.hpp>
+
 #include "gui/document_tree_model.h"
 
 namespace cppwiki::gui {
 namespace {
 
 constexpr int kAddChildButtonSize = 24;
+constexpr int kSelectionIndicatorWidth = 4;
 constexpr int kRowVerticalPadding = 8;
 constexpr int kRowMargin = 8;
+
+struct RowPaintState {
+  oclero::qlementine::MouseState mouse;
+  oclero::qlementine::SelectionState selected;
+  oclero::qlementine::FocusState focus;
+  oclero::qlementine::ActiveState active;
+};
 
 void DrawDisclosureTriangle(QPainter* painter, const QRect& rect, bool expanded) {
   painter->save();
@@ -45,6 +57,77 @@ void DrawDisclosureTriangle(QPainter* painter, const QRect& rect, bool expanded)
   painter->drawPolygon(triangle);
 
   painter->restore();
+}
+
+oclero::qlementine::QlementineStyle* GetQlementineStyle(const QWidget* widget) {
+  if (widget == nullptr) {
+    return oclero::qlementine::appStyle();
+  }
+
+  if (auto* style = qobject_cast<oclero::qlementine::QlementineStyle*>(widget->style())) {
+    return style;
+  }
+
+  return oclero::qlementine::appStyle();
+}
+
+RowPaintState GetRowPaintState(const QTreeView* view, const QModelIndex& index, bool hovered) {
+  const bool selected = view != nullptr && view->selectionModel() != nullptr &&
+                        view->selectionModel()->isSelected(index);
+  return {
+      hovered ? oclero::qlementine::MouseState::Hovered : oclero::qlementine::MouseState::Normal,
+      selected ? oclero::qlementine::SelectionState::Selected : oclero::qlementine::SelectionState::NotSelected,
+      view != nullptr && view->hasFocus() ? oclero::qlementine::FocusState::Focused
+                                          : oclero::qlementine::FocusState::NotFocused,
+      view != nullptr && view->isActiveWindow() ? oclero::qlementine::ActiveState::Active
+                                                : oclero::qlementine::ActiveState::NotActive,
+  };
+}
+
+QColor GetRowBackgroundColor(const QTreeView* view, const QModelIndex& index, bool hovered) {
+  const bool selected = view != nullptr && view->selectionModel() != nullptr &&
+                        view->selectionModel()->isSelected(index);
+  if (!selected && !hovered) {
+    return QColor{};
+  }
+
+  const auto* qlementine_style = GetQlementineStyle(view);
+  if (qlementine_style == nullptr) {
+    return selected || hovered ? view->palette().color(QPalette::AlternateBase) : QColor{};
+  }
+
+  const auto state = GetRowPaintState(view, index, hovered);
+  return qlementine_style->listItemBackgroundColor(
+      oclero::qlementine::MouseState::Hovered,
+      oclero::qlementine::SelectionState::NotSelected, state.focus, state.active, index, view);
+}
+
+QColor GetBranchArrowColor(const QTreeView* view, const QModelIndex& index, bool hovered) {
+  const auto* qlementine_style = GetQlementineStyle(view);
+  if (qlementine_style == nullptr) {
+    const bool selected = view != nullptr && view->selectionModel() != nullptr &&
+                          view->selectionModel()->isSelected(index);
+    return selected || hovered ? view->palette().highlightedText().color()
+                               : view->palette().color(QPalette::Mid);
+  }
+
+  const auto state = GetRowPaintState(view, index, hovered);
+  return qlementine_style->listItemForegroundColor(state.mouse, state.selected, state.focus, state.active);
+}
+
+QColor GetSelectionIndicatorColor(const QTreeView* view, const QModelIndex& index, bool hovered) {
+  const bool selected = view != nullptr && view->selectionModel() != nullptr &&
+                        view->selectionModel()->isSelected(index);
+  if (!selected && !hovered) {
+    return QColor{};
+  }
+
+  const auto* qlementine_style = GetQlementineStyle(view);
+  if (qlementine_style == nullptr) {
+    return view != nullptr ? view->palette().color(QPalette::Button) : QColor{};
+  }
+
+  return qlementine_style->theme().neutralColor;
 }
 
 }  // namespace
@@ -86,22 +169,19 @@ void DocumentTreeView::setModel(QAbstractItemModel* model) {
 
 void DocumentTreeView::drawBranches(QPainter* painter, const QRect& rect,
                                     const QModelIndex& index) const {
-  // Erase the branch area explicitly. QTreeView can paint selected row panels
-  // before drawBranches(), so replacing only PE_IndicatorBranch is not enough
-  // with some styles.
-  painter->fillRect(rect, viewport()->palette().color(QPalette::Window));
+  const bool hovered = index == hovered_index_;
+  const QColor background_color = GetRowBackgroundColor(this, index, hovered);
+  painter->fillRect(rect, background_color.isValid() && background_color.alpha() > 0
+                              ? background_color
+                              : viewport()->palette().color(QPalette::Base));
 
   if (!index.isValid() || model() == nullptr || !model()->hasChildren(index)) {
     return;
   }
 
-  // Do not call QTreeView::drawBranches(). Some styles paint selected/hover
-  // background in the branch area there, which creates the blue square to the
-  // left of the row. The view still uses the native expansion logic; only the
-  // branch painting is custom.
   const QPen old_pen = painter->pen();
   QPen pen = old_pen;
-  pen.setColor(palette().color(QPalette::Mid));
+  pen.setColor(GetBranchArrowColor(this, index, hovered));
   painter->setPen(pen);
 
   DrawDisclosureTriangle(painter, rect, isExpanded(index));
@@ -111,15 +191,30 @@ void DocumentTreeView::drawBranches(QPainter* painter, const QRect& rect,
 
 void DocumentTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& option,
                                const QModelIndex& index) const {
-  // QTreeView/QStyle may paint the selected row background across the whole row,
-  // including the branch/indent area. We clear the selected/focus flags here so
-  // the view does not paint that left block. The delegate restores the selected
-  // state for the actual item rect by checking selectionModel()->isSelected().
-  QStyleOptionViewItem row_option(option);
-  row_option.state &= ~QStyle::State_Selected;
-  row_option.state &= ~QStyle::State_HasFocus;
+  const bool hovered = index == hovered_index_;
+  const QColor background_color = GetRowBackgroundColor(this, index, hovered);
+  if (background_color.isValid() && background_color.alpha() > 0) {
+    const QRect row_rect(viewport()->rect().left(), option.rect.top(), viewport()->width(),
+                         option.rect.height());
+    painter->fillRect(row_rect, background_color);
+  }
 
-  QTreeView::drawRow(painter, row_option, index);
+  const QColor indicator_color = GetSelectionIndicatorColor(this, index, hovered);
+  if (indicator_color.isValid() && indicator_color.alpha() > 0) {
+    const QRect indicator_rect(option.rect.left(), option.rect.top(),
+                               std::min(kSelectionIndicatorWidth, option.rect.width()),
+                               option.rect.height());
+    painter->fillRect(indicator_rect, indicator_color);
+  }
+
+  if (auto* delegate = itemDelegateForIndex(index)) {
+    QStyleOptionViewItem item_option(option);
+    item_option.state &= ~QStyle::State_Selected;
+    item_option.state &= ~QStyle::State_HasFocus;
+    item_option.state &= ~QStyle::State_MouseOver;
+    item_option.state &= ~QStyle::State_Sunken;
+    delegate->paint(painter, item_option, index);
+  }
 }
 
 void DocumentTreeView::mouseMoveEvent(QMouseEvent* event) {

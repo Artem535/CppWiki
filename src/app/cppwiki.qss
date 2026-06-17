@@ -1,16 +1,32 @@
 QWidget#pagePanel {
-  background-color: palette(window);
-  border-radius: 0px;
+  background-color: palette(base);
 }
 
-QWidget#pagePanel QTreeView,
-QWidget#pagePanel QTreeView::viewport {
-  background: palette(window);
+QWidget#pagePanel QTreeView {
+  selection-background-color: transparent;
+  selection-color: palette(text);
+  show-decoration-selected: 0;
+}
+
+QWidget#pagePanel QTreeView::item {
+  background: transparent;
   border: none;
 }
 
+QWidget#pagePanel QTreeView::item:selected {
+  background: transparent;
+}
+
+QWidget#pagePanel QTreeView::item:hover {
+  background: transparent;
+}
+
+QWidget#pagePanel QTreeView::branch {
+  background: transparent;
+}
+
 QStatusBar {
-  background-color: palette(window);
+  background-color: palette(base);
 }
 
 QPushButton#newDocumentButton {
