@@ -23,6 +23,7 @@ inline constexpr std::string_view kBridgeMethodGetInitialDocument = "GetInitialD
 inline constexpr std::string_view kBridgeMethodListDocuments = "ListDocuments";
 inline constexpr std::string_view kBridgeMethodCreateDocument = "CreateDocument";
 inline constexpr std::string_view kBridgeMethodCreateChildDocument = "CreateChildDocument";
+inline constexpr std::string_view kBridgeMethodRenameDocument = "RenameDocument";
 inline constexpr std::string_view kBridgeMethodLoadDocument = "LoadDocument";
 inline constexpr std::string_view kBridgeMethodOpenDocument = "OpenDocument";
 inline constexpr std::string_view kBridgeMethodUpdateSnapshot = "UpdateSnapshot";

@@ -3,16 +3,19 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <functional>
+#include <iterator>
 #include <set>
+#include <string_view>
 
 #include <QAbstractItemView>
-#include <QAction>
 #include <QIcon>
 #include <QFile>
 #include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
-#include <QMenu>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSize>
 #include <QVBoxLayout>
@@ -30,6 +33,7 @@
 #include "bridge/editor_bridge.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "gui/document_context_menu.h"
 #include "gui/document_tree_item_delegate.h"
 #include "gui/document_tree_model.h"
 #include "gui/document_tree_view.h"
@@ -247,6 +251,12 @@ void Page::SetupTreeView() {
   page_tree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
   page_tree_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
   page_tree_->setContextMenuPolicy(Qt::CustomContextMenu);
+  page_tree_->setDragEnabled(true);
+  page_tree_->setAcceptDrops(true);
+  page_tree_->setDropIndicatorShown(true);
+  page_tree_->setDefaultDropAction(Qt::MoveAction);
+  page_tree_->setDragDropMode(QAbstractItemView::InternalMove);
+  page_tree_->setDragDropOverwriteMode(false);
 
   // Open documents from normal row clicks. Inline tree actions are handled by DocumentTreeView.
   connect(page_tree_, &QTreeView::clicked, this, [this](const QModelIndex& index) {
@@ -254,13 +264,18 @@ void Page::SetupTreeView() {
       OnTreePressed(index);
     }
   });
-  connect(page_tree_, &QWidget::customContextMenuRequested, this, [this](const QPoint& position) {
-    ShowContextMenu(position);
-  });
+  connect(page_tree_, &QWidget::customContextMenuRequested, this,
+          [this](const QPoint& position) { ShowContextMenu(position); });
 
   connect(document_tree_view, &gui::DocumentTreeView::addChildRequested, this,
           [this](const QModelIndex& parent_index) {
             CreateChildDocument(parent_index);
+          });
+  connect(tree_model_.get(), &gui::DocumentTreeModel::documentMoveRequested, this,
+          [this](const QString& source_document_id, const QString& target_parent_id,
+                 bool has_parent_id, int target_sort_order) {
+            MoveDocumentToPlacement(source_document_id, target_parent_id, has_parent_id,
+                                    target_sort_order);
           });
   connect(editor_bridge_, &bridge::QEditorBridge::saveStatusChanged, this,
           [this](const QString& page_id, bool success, const QString&) {
@@ -353,6 +368,34 @@ void Page::CreateChildDocument(const QModelIndex& parent_index) {
 
   const auto response = editor_bridge_->createChildDocument(QString::fromStdString(*parent_id));
   HandleCreatedDocument(response);
+}
+
+void Page::RenameDocument(const QModelIndex& index) {
+  const auto doc_id = tree_model_->documentId(index);
+  if (!doc_id) {
+    return;
+  }
+
+  bool accepted = false;
+  const auto current_title = index.data(Qt::DisplayRole).toString();
+  const auto new_title = QInputDialog::getText(page_tree_, QStringLiteral("Rename title"),
+                                               QStringLiteral("Title:"), QLineEdit::Normal,
+                                               current_title, &accepted)
+                             .trimmed();
+  if (!accepted || new_title.isEmpty() || new_title == current_title) {
+    return;
+  }
+
+  const auto response = editor_bridge_->renameDocument(QString::fromStdString(*doc_id), new_title);
+  if (!response.value(QStringLiteral("ok")).toBool()) {
+    const auto error = response.value(QStringLiteral("error")).toMap();
+    spdlog::error("Failed to rename document: {}",
+                  error.value(QStringLiteral("message")).toString().toStdString());
+    return;
+  }
+
+  PopulatePageList();
+  SelectDocumentById(QString::fromStdString(*doc_id));
 }
 
 void Page::HandleCreatedDocument(const QVariantMap& response) {
@@ -485,6 +528,109 @@ void Page::MoveDocument(const QModelIndex& index, int delta) {
   SelectDocumentById(QString::fromStdString(*doc_id));
 }
 
+void Page::MoveDocumentToPlacement(const QString& source_document_id, const QString& target_parent_id,
+                                   bool has_parent_id, int target_sort_order) {
+  if (!tree_model_ || source_document_id.isEmpty()) {
+    return;
+  }
+
+  if (has_parent_id && target_parent_id == source_document_id) {
+    return;
+  }
+
+  auto summaries = FetchDocumentSummaries();
+  auto source_it = std::find_if(summaries.begin(), summaries.end(), [&](const auto& summary) {
+    return summary.id == source_document_id.toStdString();
+  });
+  if (source_it == summaries.end()) {
+    return;
+  }
+
+  const auto source_id_std = source_document_id.toStdString();
+  if (has_parent_id) {
+    std::optional<std::string> cursor = target_parent_id.toStdString();
+    while (cursor.has_value()) {
+      if (*cursor == source_id_std) {
+        return;
+      }
+      const auto parent_it = std::find_if(summaries.begin(), summaries.end(), [&](const auto& summary) {
+        return summary.id == *cursor;
+      });
+      if (parent_it == summaries.end()) {
+        break;
+      }
+      cursor = parent_it->parent_id;
+    }
+  }
+
+  const auto old_parent = source_it->parent_id;
+  const auto new_parent = has_parent_id ? std::make_optional(target_parent_id.toStdString())
+                                        : std::nullopt;
+
+  auto build_group = [&](const std::optional<std::string>& parent_id,
+                         std::string_view skip_id) {
+    std::vector<std::reference_wrapper<storage::DocumentSummary>> group;
+    for (auto& summary : summaries) {
+      if (summary.parent_id == parent_id && summary.id != skip_id) {
+        group.push_back(summary);
+      }
+    }
+    std::ranges::sort(group, [](const auto& lhs, const auto& rhs) {
+      if (lhs.get().sort_order != rhs.get().sort_order) {
+        return lhs.get().sort_order < rhs.get().sort_order;
+      }
+      return lhs.get().title < rhs.get().title;
+    });
+    return group;
+  };
+
+  auto persist_group = [this](std::vector<std::reference_wrapper<storage::DocumentSummary>>& group,
+                              const std::optional<std::string>& parent_id) -> bool {
+    for (std::size_t i = 0; i < group.size(); ++i) {
+      auto& summary = group[i].get();
+      const auto response = editor_bridge_->updateDocumentPlacement(
+          QString::fromStdString(summary.id),
+          parent_id ? QString::fromStdString(*parent_id) : QString{},
+          parent_id.has_value(),
+          static_cast<int>(i));
+      if (!response.value(QStringLiteral("ok")).toBool()) {
+        const auto error = response.value(QStringLiteral("error")).toMap();
+        spdlog::error("Failed to move document: {}",
+                      error.value(QStringLiteral("message")).toString().toStdString());
+        return false;
+      }
+    }
+    return true;
+  };
+
+  if (old_parent == new_parent) {
+    auto group = build_group(old_parent, source_id_std);
+    auto source_ref = std::ref(*source_it);
+    const auto insert_row = std::clamp(target_sort_order, 0, static_cast<int>(group.size()));
+    group.insert(group.begin() + insert_row, source_ref);
+
+    if (!persist_group(group, old_parent)) {
+      return;
+    }
+  } else {
+    auto old_group = build_group(old_parent, source_id_std);
+    auto new_group = build_group(new_parent, source_id_std);
+    auto source_ref = std::ref(*source_it);
+    const auto insert_row = std::clamp(target_sort_order, 0, static_cast<int>(new_group.size()));
+    new_group.insert(new_group.begin() + insert_row, source_ref);
+
+    if (!persist_group(old_group, old_parent)) {
+      return;
+    }
+    if (!persist_group(new_group, new_parent)) {
+      return;
+    }
+  }
+
+  PopulatePageList();
+  SelectDocumentById(source_document_id);
+}
+
 void Page::ShowContextMenu(const QPoint& position) {
   const auto index = page_tree_->indexAt(position);
   const auto doc_id = tree_model_->documentId(index);
@@ -492,23 +638,67 @@ void Page::ShowContextMenu(const QPoint& position) {
     return;
   }
 
-  QMenu menu(page_tree_);
-  auto* add_child_action = menu.addAction(QStringLiteral("Add child page"));
-  auto* move_up_action = menu.addAction(QStringLiteral("Move up"));
-  auto* move_down_action = menu.addAction(QStringLiteral("Move down"));
-  menu.addSeparator();
-  auto* delete_action = menu.addAction(QStringLiteral("Delete page"));
+  page_tree_->setCurrentIndex(index);
+  spdlog::info("Context menu requested");
 
-  QAction* chosen = menu.exec(page_tree_->viewport()->mapToGlobal(position));
-  if (chosen == add_child_action) {
-    CreateChildDocument(index);
-  } else if (chosen == move_up_action) {
-    MoveDocument(index, -1);
-  } else if (chosen == move_down_action) {
-    MoveDocument(index, 1);
-  } else if (chosen == delete_action) {
-    DeleteDocument(index);
+  const auto summaries = FetchDocumentSummaries();
+  const auto current_it = std::find_if(summaries.begin(), summaries.end(), [&](const auto& summary) {
+    return summary.id == *doc_id;
+  });
+
+  auto same_parent_siblings = std::vector<const storage::DocumentSummary*>{};
+  if (current_it != summaries.end()) {
+    for (const auto& summary : summaries) {
+      if (summary.parent_id == current_it->parent_id) {
+        same_parent_siblings.push_back(&summary);
+      }
+    }
+    std::ranges::sort(same_parent_siblings, [](const auto* lhs, const auto* rhs) {
+      if (lhs->sort_order != rhs->sort_order) {
+        return lhs->sort_order < rhs->sort_order;
+      }
+      return lhs->title < rhs->title;
+    });
   }
+
+  const auto current_sibling_it = std::find_if(same_parent_siblings.begin(), same_parent_siblings.end(),
+                                               [&](const auto* summary) {
+                                                 return summary->id == *doc_id;
+                                               });
+  const bool can_move_up =
+      current_sibling_it != same_parent_siblings.end() && current_sibling_it != same_parent_siblings.begin();
+  const bool can_move_down =
+      current_sibling_it != same_parent_siblings.end() &&
+      std::next(current_sibling_it) != same_parent_siblings.end();
+
+  auto* menu = new gui::DocumentContextMenu(
+      {.can_move_up = can_move_up, .can_move_down = can_move_down}, page_tree_);
+  connect(menu, &gui::DocumentContextMenu::actionRequested, this,
+          [this, index](gui::DocumentContextMenu::Action action) {
+            switch (action) {
+              case gui::DocumentContextMenu::Action::kAddChildPage:
+                spdlog::info("Context menu: add child page");
+                CreateChildDocument(index);
+                break;
+              case gui::DocumentContextMenu::Action::kRenameTitle:
+                spdlog::info("Context menu: rename title");
+                RenameDocument(index);
+                break;
+              case gui::DocumentContextMenu::Action::kMoveUp:
+                spdlog::info("Context menu: move up");
+                MoveDocument(index, -1);
+                break;
+              case gui::DocumentContextMenu::Action::kMoveDown:
+                spdlog::info("Context menu: move down");
+                MoveDocument(index, 1);
+                break;
+              case gui::DocumentContextMenu::Action::kDeletePage:
+                spdlog::info("Context menu: delete page");
+                DeleteDocument(index);
+                break;
+            }
+          });
+  menu->ShowAt(page_tree_->mapToGlobal(position));
 }
 
 void Page::HandleDocumentSaved(const QString& page_id, bool success) {

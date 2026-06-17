@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include <spdlog/spdlog.h>
+
 #include <QAbstractItemModel>
 #include <QEvent>
 #include <QMouseEvent>
@@ -16,7 +18,8 @@ namespace cppwiki::gui {
 namespace {
 
 constexpr int kAddChildButtonSize = 24;
-constexpr int kAddChildButtonRightPadding = 8;
+constexpr int kRowVerticalPadding = 8;
+constexpr int kRowMargin = 8;
 
 void DrawDisclosureTriangle(QPainter* painter, const QRect& rect, bool expanded) {
   painter->save();
@@ -140,32 +143,34 @@ void DocumentTreeView::mousePressEvent(QMouseEvent* event) {
     const QModelIndex index = indexAt(event->pos());
     if (index.isValid() && addChildButtonRect(index).contains(event->pos())) {
       pressed_add_child_index_ = index;
+      spdlog::info("Add child button pressed");
       event->accept();
       return;
     }
   }
 
-  pressed_add_child_index_ = QModelIndex();
+  pressed_add_child_index_ = QPersistentModelIndex();
   QTreeView::mousePressEvent(event);
 }
 
 void DocumentTreeView::mouseReleaseEvent(QMouseEvent* event) {
   if (event->button() == Qt::LeftButton && pressed_add_child_index_.isValid()) {
-    const QModelIndex index = indexAt(event->pos());
-    const bool same_index = index == pressed_add_child_index_;
-    const bool still_inside_button = same_index && addChildButtonRect(index).contains(event->pos());
+    const QModelIndex pressed_index = pressed_add_child_index_;
+    const bool still_inside_button = addChildButtonRect(pressed_index).contains(event->pos());
 
-    const QModelIndex parent_index = pressed_add_child_index_;
-    pressed_add_child_index_ = QModelIndex();
+    pressed_add_child_index_ = QPersistentModelIndex();
 
     if (still_inside_button) {
-      emit addChildRequested(parent_index);
+      spdlog::info("Add child button triggered");
+      emit addChildRequested(pressed_index);
       event->accept();
       return;
     }
+
+    spdlog::info("Add child button release ignored");
   }
 
-  pressed_add_child_index_ = QModelIndex();
+  pressed_add_child_index_ = QPersistentModelIndex();
   QTreeView::mouseReleaseEvent(event);
 }
 
@@ -195,13 +200,14 @@ QRect DocumentTreeView::addChildButtonRect(const QModelIndex& index) const {
     return QRect();
   }
 
-  const int size = std::min(kAddChildButtonSize, std::max(0, row_rect.height() - 4));
+  const QRect content_rect = row_rect.adjusted(0, kRowVerticalPadding / 2, 0, -kRowVerticalPadding / 2);
+  const int size = std::min(kAddChildButtonSize, std::max(0, content_rect.height()));
   if (size <= 0) {
     return QRect();
   }
 
-  const int x = row_rect.right() - kAddChildButtonRightPadding - size + 1;
-  const int y = row_rect.top() + (row_rect.height() - size) / 2;
+  const int x = content_rect.right() - kRowMargin - size + 1;
+  const int y = content_rect.top() + (content_rect.height() - size) / 2;
   return QRect(x, y, size, size);
 }
 

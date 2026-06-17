@@ -2,6 +2,7 @@
 #define CPPWIKI_SRC_GUI_DOCUMENT_TREE_MODEL_H_
 
 #include <QAbstractItemModel>
+#include <QMimeData>
 
 #include <memory>
 #include <optional>
@@ -76,6 +77,13 @@ class DocumentTreeModel : public QAbstractItemModel {
   [[nodiscard]] bool hasChildren(const QModelIndex& parent = QModelIndex()) const override;
   [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
   [[nodiscard]] Qt::ItemFlags flags(const QModelIndex& index) const override;
+  [[nodiscard]] QStringList mimeTypes() const override;
+  [[nodiscard]] QMimeData* mimeData(const QModelIndexList& indexes) const override;
+  [[nodiscard]] bool canDropMimeData(const QMimeData* data, Qt::DropAction action, int row,
+                                     int column, const QModelIndex& parent) const override;
+  [[nodiscard]] bool dropMimeData(const QMimeData* data, Qt::DropAction action, int row, int column,
+                                  const QModelIndex& parent) override;
+  [[nodiscard]] Qt::DropActions supportedDropActions() const override;
 
   // Custom interface
   void setDocuments(const std::vector<storage::DocumentSummary>& documents);
@@ -91,9 +99,12 @@ class DocumentTreeModel : public QAbstractItemModel {
   static constexpr int kSyncStatusRole = Qt::UserRole + 3;
   static constexpr int kIsActionRole = Qt::UserRole + 4;
   static constexpr int kAddChildActionRole = Qt::UserRole + 5;
+  static constexpr auto kDocumentIdMimeType = "application/x-cppwiki-document-id";
 
  signals:
   void addChildRequested(const QModelIndex& parent_document_index);
+  void documentMoveRequested(const QString& source_document_id, const QString& target_parent_id,
+                             bool has_parent_id, int target_sort_order);
 
  private:
   void buildTree(const std::vector<storage::DocumentSummary>& documents);

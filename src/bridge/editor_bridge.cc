@@ -52,13 +52,14 @@ auto BridgeInfo() -> QVariantMap {
   return QVariantMap{
       {QStringLiteral("apiVersion"), constants::kBridgeApiVersion},
       {QStringLiteral("namespace"), ToQString(constants::kDocumentsBridgeNamespace)},
-      {QStringLiteral("methods"),
+       {QStringLiteral("methods"),
        QVariantList{
            ToQString(constants::kBridgeMethodGetBridgeInfo),
            ToQString(constants::kBridgeMethodGetInitialDocument),
            ToQString(constants::kBridgeMethodListDocuments),
            ToQString(constants::kBridgeMethodCreateDocument),
            ToQString(constants::kBridgeMethodCreateChildDocument),
+           ToQString(constants::kBridgeMethodRenameDocument),
            ToQString(constants::kBridgeMethodLoadDocument),
            ToQString(constants::kBridgeMethodOpenDocument),
            ToQString(constants::kBridgeMethodUpdateSnapshot),
@@ -410,6 +411,61 @@ QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
     return ErrorResponse(QStringLiteral("create_failed"),
+                         QString::fromStdString(save_result.error->message));
+  }
+
+  return SuccessResponse(QVariantMap{
+      {QStringLiteral("id"), QString::fromStdString(record.metadata.id)},
+      {QStringLiteral("title"), QString::fromStdString(record.metadata.title)},
+      {QStringLiteral("parentId"), OptionalStringToVariant(record.metadata.parent_id)},
+      {QStringLiteral("sortOrder"), record.metadata.sort_order},
+      {QStringLiteral("createdAt"), QString::fromStdString(record.metadata.created_at)},
+      {QStringLiteral("updatedAt"), QString::fromStdString(record.metadata.updated_at)},
+  });
+}
+
+QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString& title) {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+
+  if (page_id.isEmpty()) {
+    return ErrorResponse(QStringLiteral("invalid_document"),
+                         QStringLiteral("Document id is required."));
+  }
+
+  const auto trimmed_title = title.trimmed();
+  if (trimmed_title.isEmpty()) {
+    return ErrorResponse(QStringLiteral("invalid_title"),
+                         QStringLiteral("Document title cannot be empty."));
+  }
+
+  auto loaded_or_error = LoadDocumentRecord(repository_, page_id);
+  if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
+    return std::get<QVariantMap>(std::move(loaded_or_error));
+  }
+
+  auto record = std::move(std::get<storage::DocumentRecord>(loaded_or_error));
+  record.metadata.title = trimmed_title.toStdString();
+  record.metadata.updated_at = CurrentUtcTimestamp();
+  record.snapshot.title = record.metadata.title;
+
+  auto blocks_or_error = ExtractBlocks(QByteArray::fromStdString(record.raw_snapshot_json));
+  if (std::holds_alternative<QString>(blocks_or_error)) {
+    return ErrorResponse(QStringLiteral("invalid_stored_snapshot"),
+                         std::get<QString>(blocks_or_error));
+  }
+
+  const auto blocks = std::get<QJsonArray>(std::move(blocks_or_error));
+  const auto raw_snapshot_json =
+      MakeDocumentSnapshotJson(record.metadata.id, record.metadata.title, blocks);
+  record.raw_snapshot_json =
+      std::string(raw_snapshot_json.constData(), static_cast<std::size_t>(raw_snapshot_json.size()));
+
+  const auto save_result = repository_->SaveDocument(record);
+  if (save_result.error) {
+    return ErrorResponse(QStringLiteral("rename_failed"),
                          QString::fromStdString(save_result.error->message));
   }
 

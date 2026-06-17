@@ -17,6 +17,8 @@ qt_add_executable(cppwiki_app
     document/document.h
     document/document_validator.cc
     document/document_validator.h
+    gui/document_context_menu.cc
+    gui/document_context_menu.h
     gui/document_tree_item_delegate.cc
     gui/document_tree_item_delegate.h
     gui/document_tree_model.cc

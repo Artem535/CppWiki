@@ -2,6 +2,7 @@
 #define CPPWIKI_SRC_GUI_DOCUMENT_TREE_VIEW_H_
 
 #include <QModelIndex>
+#include <QPersistentModelIndex>
 #include <QTreeView>
 
 namespace cppwiki::gui {
@@ -32,7 +33,7 @@ class DocumentTreeView final : public QTreeView {
   void clearTrackedIndexes();
 
   QModelIndex hovered_index_;
-  QModelIndex pressed_add_child_index_;
+  QPersistentModelIndex pressed_add_child_index_;
 };
 
 }  // namespace cppwiki::gui

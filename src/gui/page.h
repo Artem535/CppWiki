@@ -47,8 +47,11 @@ class Page final : public QWidget, public IPage {
   void PopulatePageList();
   void CreateNewDocument();
   void CreateChildDocument(const QModelIndex& parent_index);
+  void RenameDocument(const QModelIndex& index);
   void DeleteDocument(const QModelIndex& index);
   void MoveDocument(const QModelIndex& index, int delta);
+  void MoveDocumentToPlacement(const QString& source_document_id, const QString& target_parent_id,
+                               bool has_parent_id, int target_sort_order);
   void HandleCreatedDocument(const QVariantMap& response);
   void SelectDocumentById(const QString& page_id);
   void SetupTreeView();

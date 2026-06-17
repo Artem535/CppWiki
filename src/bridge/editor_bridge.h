@@ -29,6 +29,7 @@ class QEditorBridge final : public QObject {
   Q_INVOKABLE QVariantMap listDocuments();
   Q_INVOKABLE QVariantMap createDocument();
   Q_INVOKABLE QVariantMap createChildDocument(const QString& parent_id);
+  Q_INVOKABLE QVariantMap renameDocument(const QString& page_id, const QString& title);
   QVariantMap updateDocumentPlacement(const QString& page_id, const QString& parent_id,
                                       bool has_parent_id, int sort_order);
   QVariantMap deleteDocument(const QString& page_id);

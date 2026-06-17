@@ -1,6 +1,7 @@
 #include "gui/document_tree_model.h"
 
 #include <QIcon>
+#include <QMimeData>
 
 #include <algorithm>
 #include <functional>
@@ -197,7 +198,92 @@ Qt::ItemFlags DocumentTreeModel::flags(const QModelIndex& index) const {
     return Qt::NoItemFlags;
   }
 
-  return QAbstractItemModel::flags(index) | Qt::ItemIsSelectable | Qt::ItemIsEnabled;
+  auto flags = QAbstractItemModel::flags(index) | Qt::ItemIsSelectable | Qt::ItemIsEnabled;
+  auto* item = static_cast<DocumentTreeItem*>(index.internalPointer());
+  if (item != nullptr && !item->isAction()) {
+    flags |= Qt::ItemIsDragEnabled | Qt::ItemIsDropEnabled;
+  }
+  return flags;
+}
+
+QStringList DocumentTreeModel::mimeTypes() const {
+  return {QString::fromLatin1(kDocumentIdMimeType)};
+}
+
+QMimeData* DocumentTreeModel::mimeData(const QModelIndexList& indexes) const {
+  auto* mime_data = new QMimeData();
+  for (const auto& index : indexes) {
+    const auto doc_id = documentId(index);
+    if (!doc_id) {
+      continue;
+    }
+    mime_data->setData(QString::fromLatin1(kDocumentIdMimeType),
+                       QByteArray::fromStdString(*doc_id));
+    break;
+  }
+  return mime_data;
+}
+
+bool DocumentTreeModel::canDropMimeData(const QMimeData* data, Qt::DropAction action, int row,
+                                        int column, const QModelIndex& parent) const {
+  Q_UNUSED(row)
+  Q_UNUSED(column)
+
+  if (action != Qt::MoveAction || data == nullptr ||
+      !data->hasFormat(QString::fromLatin1(kDocumentIdMimeType))) {
+    return false;
+  }
+
+  if (parent.isValid()) {
+    const auto* item = static_cast<DocumentTreeItem*>(parent.internalPointer());
+    if (item == nullptr || item->isAction()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool DocumentTreeModel::dropMimeData(const QMimeData* data, Qt::DropAction action, int row,
+                                     int column, const QModelIndex& parent) {
+  Q_UNUSED(column)
+
+  if (!canDropMimeData(data, action, row, column, parent)) {
+    return false;
+  }
+
+  const auto raw_id = data->data(QString::fromLatin1(kDocumentIdMimeType));
+  const auto source_document_id = QString::fromUtf8(raw_id);
+  if (source_document_id.isEmpty()) {
+    return false;
+  }
+
+  QString target_parent_id;
+  bool has_parent_id = false;
+  int target_sort_order = row;
+
+  if (parent.isValid()) {
+    const auto* item = static_cast<DocumentTreeItem*>(parent.internalPointer());
+    if (item == nullptr || item->isAction()) {
+      return false;
+    }
+
+    target_parent_id = QString::fromStdString(item->id());
+    has_parent_id = true;
+
+    if (row < 0) {
+      target_sort_order = item->rowCount();
+    }
+  } else if (row < 0) {
+    target_sort_order = rowCount(QModelIndex{});
+  }
+
+  emit documentMoveRequested(source_document_id, target_parent_id, has_parent_id, target_sort_order);
+  return true;
+}
+
+Qt::DropActions DocumentTreeModel::supportedDropActions() const {
+  return Qt::MoveAction;
 }
 
 void DocumentTreeModel::setDocuments(const std::vector<storage::DocumentSummary>& documents) {

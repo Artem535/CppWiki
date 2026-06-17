@@ -14,12 +14,12 @@ namespace cppwiki {
 namespace {
 
 auto DefaultAppDataDirectory() -> QString {
-  auto directory = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+  auto directory = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
   if (!directory.isEmpty()) {
-    return directory;
+    return QDir(directory).filePath(ToQString(constants::kApplicationName));
   }
 
-  directory = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+  directory = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
   if (!directory.isEmpty()) {
     return QDir(directory).filePath(ToQString(constants::kApplicationName));
   }

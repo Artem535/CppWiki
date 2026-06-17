@@ -114,6 +114,8 @@ auto TestBridgeInfo() -> void {
           "missing create document method");
   Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodCreateChildDocument)),
           "missing create child document method");
+  Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodRenameDocument)),
+          "missing rename document method");
   Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodLoadDocument)),
           "missing load document method");
   Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodOpenDocument)),
@@ -247,6 +249,35 @@ auto TestCreateDocumentDoesNotHijackAutosaveSelection() -> void {
           "autosave should still apply to the previously opened document");
 }
 
+auto TestRenameDocumentUpdatesTitle() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed);
+  const auto page_id =
+      listed.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("id")).toString();
+
+  const auto renamed = bridge.renameDocument(page_id, QStringLiteral("Renamed title"));
+  RequireSuccessEnvelope(renamed);
+  Require(renamed.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
+              QStringLiteral("Renamed title"),
+          "rename should return the updated title");
+
+  const auto reloaded = bridge.loadDocument(page_id);
+  RequireSuccessEnvelope(reloaded);
+  Require(reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
+              QStringLiteral("Renamed title"),
+          "rename should persist in loadDocument");
+
+  const auto relisted = bridge.listDocuments();
+  RequireSuccessEnvelope(relisted);
+  Require(relisted.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("title")).toString() ==
+              QStringLiteral("Renamed title"),
+          "rename should persist in listDocuments");
+}
+
 auto TestDeleteDocumentRemovesItFromList() -> void {
   auto repository = std::make_shared<FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
@@ -358,6 +389,7 @@ auto main() -> int {
   TestCreateDocument();
   TestCreateDocumentLoadsEmptyAndSaves();
   TestCreateDocumentDoesNotHijackAutosaveSelection();
+  TestRenameDocumentUpdatesTitle();
   TestDeleteDocumentRemovesItFromList();
   TestOpenDocumentReturnsLoadedDocument();
   TestValidSnapshot();
