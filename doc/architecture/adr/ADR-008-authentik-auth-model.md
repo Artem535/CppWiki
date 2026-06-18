@@ -51,7 +51,7 @@ Desktop Callback
     ↓
 Access Token / Refresh Token
     ↓
-Drogon API + Sync Gateway
+oat++ API + Sync Gateway
 ```
 
 ---

@@ -376,20 +376,22 @@ Replace the proof-of-connection UI with a minimal Qt-owned wiki workspace shell.
 
 ## Goal
 
-Introduce backend infrastructure only after local document editing works.
+Start the server phase only after local document editing works and the native shell is stable enough to consume backend configuration.
 
 ## Scope
 
-- Add Drogon server target.
+- Replace the legacy server dependency plan with `oat++`.
+- Add `oat++` server target.
 - Add health endpoint.
 - Add structured logging.
-- Add placeholder JWT middleware.
+- Add placeholder auth middleware and explicit public/protected route separation.
 - Add lock API stubs:
   - acquire lock;
   - heartbeat;
   - release lock;
   - force release placeholder.
 - Add presence WebSocket stub.
+- Add DTO/controller layout for future workspace, page and lock APIs.
 - Add integration tests for health and lock stubs if feasible.
 
 ## Exit Gate
@@ -398,6 +400,8 @@ Introduce backend infrastructure only after local document editing works.
 - Health endpoint works.
 - Lock endpoints return stable JSON envelopes.
 - Desktop app can be configured with backend URL without requiring it for local editing.
+- Server module layout is compatible with expanding into authenticated page APIs in the next phase.
+- Public routes remain accessible without JWT while protected routes have a clear boundary.
 
 ## Do Not Include
 
@@ -421,7 +425,7 @@ Validate the Authentik desktop login path without entangling it with sync.
 - Store tokens in system keyring.
 - Refresh token flow.
 - Logout flow.
-- Backend JWT validation path.
+- Backend JWT validation middleware.
 - Never expose tokens to the web editor.
 
 ## Exit Gate
@@ -633,12 +637,12 @@ Some work can run in parallel after the first vertical slice is stable.
 | Workstream | Can Start After | Notes |
 | :--- | :--- | :--- |
 | UI shell polish | Phase 1 | Qt-owned shell only; must not fake unavailable sync/auth states as working |
-| Backend skeleton | Phase 3 | Keep desktop local editing independent |
-| Auth spike | Phase 5 | Keep tokens out of editor runtime |
+| Backend skeleton | Phase 5 | Keep desktop local editing independent |
+| Auth spike | Phase 6 | Keep tokens out of editor runtime |
 | RenderService | Phase 2 | Can start once DTO shape is stable |
 | Confluence fixtures | Phase 9 | Needs canonical AST/rendering conventions |
 | Plugin runtime | Phase 9 | Safer after rendering boundary exists |
-| Sync spike | Phase 6 | Needs auth path and local persistence |
+| Sync spike | Phase 8 | Needs auth path and local persistence |
 
 ---
 

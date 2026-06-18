@@ -12,7 +12,7 @@
 The project currently has:
 
 - Qt/C++ project skeleton with CMake presets.
-- vcpkg manifest for reflect-cpp, spdlog and Drogon.
+- vcpkg manifest for `reflectcpp`, `spdlog`, `oatpp`, `oatpp-websocket`, `oatpp-swagger`, `cli11` and `yaml-cpp`.
 - Qt is resolved from the system or external Qt installation, not from vcpkg.
 - `cppwiki::Application` and `cppwiki::MainWindow`.
 - Qlementine wired as the desktop Qt style.
@@ -27,6 +27,7 @@ The project currently has:
 - UUID helper for generated document IDs.
 - Native Qt navigation tree with add-child affordance, context menu actions, delete, move up/down and drag-and-drop reordering.
 - Dedicated popup widget for document row actions instead of `QMenu`.
+- Server scaffold now exists under `src/server/app`, `config`, `dto`, `http` and `openapi`, with reflect-cpp YAML config, CLI11 parsing, structured logging and a swagger-enabled health endpoint.
 - Architecture and project-structure documentation.
 
 The current UI is a minimal working shell, not the final native product shell. The navigation surface is moving from the temporary list view toward the native tree view and row actions.
@@ -130,24 +131,29 @@ Exit criteria:
 - editor is the primary screen, not a landing page;
 - UI layout remains stable during resize.
 
+Server work starts after this milestone, with only small Phase 3.5 shell fixes allowed in parallel.
+
 ---
 
 # 3. Medium-Term Milestones
 
-## Milestone 6: Auth Spike
+## Milestone 6: Server Skeleton
+
+- add `oat++` application target.
+- health endpoint.
+- auth middleware placeholder and public/protected route split.
+- lock and presence API stubs.
+- typed DTO/controller baseline for future page APIs.
+- structured logging with spdlog and configurable log level.
+
+## Milestone 7: Auth Spike
 
 - Authentik OIDC Authorization Code Flow with PKCE.
-- System browser login.
+- system browser login.
 - token storage in system keyring.
-- backend JWT validation path.
-
-## Milestone 7: Backend Skeleton
-
-- Drogon application target.
-- health endpoint.
-- auth middleware placeholder.
-- lock and presence API stubs.
-- structured logging with spdlog.
+- refresh/logout flow.
+- backend JWT validation middleware.
+- editor never gets token access.
 
 ## Milestone 8: Sync Spike
 
@@ -197,14 +203,14 @@ Exit criteria:
 | Frontend package manager | Tentative | npm is used now; can revisit if workspace tooling changes |
 | Document hash / dirty check | Deferred | Not required for current autosave loop. Revisit for Phase 3.5 when adding conflict detection, skip-save optimization or sync |
 | Page navigation shape | Tree migration underway | Current UI has native Qt navigation and row actions. Tree view is now the active path; list-only navigation is no longer the target shape |
+| Server framework migration | Active decision | `oat++` is the chosen backend framework; dependency manifest and server skeleton are now aligned |
 
 ---
 
 # 6. Immediate Next Actions
 
-1. Exercise the Phase 3 path manually: empty repository -> default page -> select page -> edit -> autosave -> restart -> load.
-2. Finish Phase 3.5 hardening around navigation state: preserve selection across reloads, avoid tree flicker on updates, and keep context actions stable.
-3. Decide whether document hash belongs in Phase 3.5 after the autosave loop is stable.
-4. Add Qt-owned light/dark theme switching through Qlementine and propagate the active theme into the WebView editor.
-5. Add a native settings dialog backed by QSettings and Qlementine widgets for font size and database folder access.
-6. Add a small user-visible save/error state in the desktop shell.
+1. Close the remaining Phase 3.5 shell polish items: stable selection/highlight behavior, context actions, and visual cleanup around the page tree.
+2. Keep the server skeleton limited to health, logging, config and route separation until auth lands.
+3. Expand the server module layout into auth, locks and presence once the skeleton is stable.
+4. Add backend configuration wiring in the desktop app without making local editing depend on the server.
+5. Add a small user-visible save/error state in the desktop shell before auth and sync phases expand.

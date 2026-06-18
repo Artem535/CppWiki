@@ -64,6 +64,11 @@ src/
   render/
   confluence/
   server/
+    app/
+    config/
+    dto/
+    http/
+    openapi/
 ```
 
 Use `include/` only when a target intentionally exposes public headers to other targets or external consumers. Internal headers stay beside implementation files in `src/<module>/`.
@@ -182,7 +187,11 @@ Current manifest dependencies:
 
 - `reflectcpp`;
 - `spdlog`;
-- `drogon` without default features.
+- `oatpp`;
+- `oatpp-websocket`;
+- `oatpp-swagger`;
+- `cli11`;
+- `yaml-cpp`;
 
 Wasmtime is part of the architecture baseline, but it is not listed in `vcpkg.json` until a supported vcpkg port or overlay port is selected.
 
