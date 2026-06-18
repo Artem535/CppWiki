@@ -1,50 +1,48 @@
 #include "server/app/server_application.h"
 
-#include <memory>
+#include <spdlog/spdlog.h>
+#include <userver/components/minimal_server_component_list.hpp>
+#include <userver/components/run.hpp>
+
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <optional>
 #include <string>
 #include <utility>
 
-#include <spdlog/spdlog.h>
-
-#include "oatpp/network/Address.hpp"
-#include "oatpp/network/Server.hpp"
-#include "oatpp/network/tcp/server/ConnectionProvider.hpp"
-#include "oatpp/parser/json/mapping/ObjectMapper.hpp"
-#include "oatpp/web/server/HttpConnectionHandler.hpp"
-#include "oatpp/web/server/HttpRouter.hpp"
-#include "server/http/health_controller.h"
-#include "server/openapi/swagger.h"
+#include "core/logging.h"
+#include "server/components/cppwiki_server_component.h"
 
 namespace cppwiki::server {
 
-ServerApplication::ServerApplication(ServerConfig config) : config_(std::move(config)) {}
+namespace {
+
+auto SaveStaticConfig(const std::string& yaml) -> std::filesystem::path {
+  auto path = std::filesystem::temp_directory_path() / "cppwiki_server_static_config.yaml";
+  std::ofstream out(path);
+  out << yaml;
+  return path;
+}
+
+}  // namespace
+
+ServerApplication::ServerApplication(config::RuntimeConfig config) : config_(std::move(config)) {}
 
 auto ServerApplication::Run() const -> int {
-  auto router = oatpp::web::server::HttpRouter::createShared();
-  auto object_mapper = oatpp::parser::json::mapping::ObjectMapper::createShared();
+  cppwiki::logging::ConfigureBaseLogging();
+  cppwiki::logging::ConfigureLogLevel(config_.LogLevel());
 
-  auto health_controller = std::make_shared<HealthController>(object_mapper);
-  oatpp::web::server::api::Endpoints endpoints = health_controller->getEndpoints();
-  router->addController(health_controller);
-  RegisterSwaggerEndpoints(router, endpoints, config_);
+  const auto static_config = config_.ToStaticConfigYaml();
+  const auto config_path = SaveStaticConfig(static_config);
 
-  auto connection_handler =
-      oatpp::web::server::HttpConnectionHandler::createShared(router);
-
-  const auto address = oatpp::network::Address(
-      config_.BindHost().c_str(), config_.Port(), oatpp::network::Address::IP_4);
-  auto connection_provider =
-      oatpp::network::tcp::server::ConnectionProvider::createShared(address);
-
-  spdlog::info("Starting cppwiki-server on http://{}:{}/api/v1/health", config_.BindHost(),
+  spdlog::info("Starting cppwiki-server on http://{}:{}/api/v1/health", config_.Host(),
                config_.Port());
-  if (config_.SwaggerEnabled()) {
-    spdlog::info("Swagger UI enabled on http://{}:{}/swagger/ui", config_.BindHost(),
-                 config_.Port());
-  }
 
-  oatpp::network::Server server(connection_provider, connection_handler);
-  server.run();
+  auto component_list = userver::components::MinimalServerComponentList();
+  components::RegisterCppWikiComponents(component_list);
+
+  userver::components::Run(config_path.string(), std::nullopt, std::nullopt, component_list);
   return 0;
 }
 
