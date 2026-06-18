@@ -3,11 +3,12 @@
   "version-string": "0.1.0",
   "description": "Desktop-first offline-first wiki platform built with Qt and C++20.",
   "dependencies": [
+    "cli11",
     "reflectcpp",
     "spdlog",
-    {
-      "name": "drogon",
-      "default-features": false
-    }
+    "oatpp",
+    "oatpp-swagger",
+    "oatpp-websocket",
+    "yaml-cpp"
   ]
 }

@@ -161,3 +161,58 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
     COMMAND cppwiki_cblite_cpp_smoke_tests
   )
 endif()
+
+if(CPPWIKI_BUILD_SERVER)
+  add_executable(cppwiki_server_config_tests
+    server/config/server_config_test.cc
+    ${CMAKE_SOURCE_DIR}/src/server/config/server_config.cc
+    ${CMAKE_SOURCE_DIR}/src/server/config/server_config.h
+    ${CMAKE_SOURCE_DIR}/src/server/config/server_config_dto.h
+    ${CMAKE_SOURCE_DIR}/src/core/constants.h
+    ${CMAKE_SOURCE_DIR}/src/core/logging.cc
+    ${CMAKE_SOURCE_DIR}/src/core/logging.h
+  )
+
+  target_include_directories(cppwiki_server_config_tests
+    PRIVATE
+      ${CMAKE_SOURCE_DIR}/src
+  )
+
+  target_link_libraries(cppwiki_server_config_tests
+    PRIVATE
+      spdlog::spdlog
+      yaml-cpp::yaml-cpp
+      reflectcpp::reflectcpp
+  )
+
+  cppwiki_apply_common_options(cppwiki_server_config_tests)
+
+  add_test(
+    NAME cppwiki_server_config_tests
+    COMMAND cppwiki_server_config_tests
+  )
+
+  add_executable(cppwiki_server_health_dto_tests
+    server/dto/health_dto_test.cc
+    ${CMAKE_SOURCE_DIR}/src/server/dto/api_dto.h
+    ${CMAKE_SOURCE_DIR}/src/core/constants.h
+  )
+
+  target_include_directories(cppwiki_server_health_dto_tests
+    PRIVATE
+      ${CMAKE_SOURCE_DIR}/src
+  )
+
+  target_link_libraries(cppwiki_server_health_dto_tests
+    PRIVATE
+      spdlog::spdlog
+      oatpp::oatpp
+  )
+
+  cppwiki_apply_common_options(cppwiki_server_health_dto_tests)
+
+  add_test(
+    NAME cppwiki_server_health_dto_tests
+    COMMAND cppwiki_server_health_dto_tests
+  )
+endif()

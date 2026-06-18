@@ -20,6 +20,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(CPPWIKI_BUILD_TESTS "Build CppWiki tests" ON)
+option(CPPWIKI_BUILD_SERVER "Build CppWiki oat++ server" ON)
 option(CPPWIKI_ENABLE_CLANG_TIDY "Enable clang-tidy when available" OFF)
 option(CPPWIKI_ENABLE_CBLITE_STORAGE "Enable Couchbase Lite storage adapter" OFF)
 option(
@@ -35,9 +36,16 @@ find_package(
   Qt6 6.5 REQUIRED
   COMPONENTS Core Gui Widgets WebChannel WebEngineWidgets Svg
 )
-find_package(Drogon CONFIG REQUIRED)
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+
+if(CPPWIKI_BUILD_SERVER)
+  find_package(CLI11 CONFIG REQUIRED)
+  find_package(oatpp CONFIG REQUIRED)
+  find_package(oatpp-swagger CONFIG REQUIRED)
+  find_package(oatpp-websocket CONFIG REQUIRED)
+  find_package(yaml-cpp CONFIG REQUIRED)
+endif()
 
 if(CPPWIKI_ENABLE_CBLITE_STORAGE)
   find_package(CBLite REQUIRED)

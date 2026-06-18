@@ -1,6 +1,7 @@
 #ifndef CPPWIKI_SRC_CORE_CONSTANTS_H_
 #define CPPWIKI_SRC_CORE_CONSTANTS_H_
 
+#include <cstdint>
 #include <string_view>
 
 namespace cppwiki::constants {
@@ -41,6 +42,16 @@ inline constexpr std::string_view kQlementineDarkThemePath =
     "third_party/qlementine/showcase/resources/themes/dark.json";
 inline constexpr std::string_view kApplicationQssPath = "src/app/cppwiki.qss";
 inline constexpr std::string_view kEditorFallbackHtmlPath = "src/app/editor_fallback.html";
+inline constexpr int kServerApiVersion = 1;
+inline constexpr std::string_view kServerServiceName = "cppwiki-server";
+inline constexpr std::string_view kDefaultServerBindHost = "127.0.0.1";
+inline constexpr std::uint16_t kDefaultServerPort = 8080;
+inline constexpr bool kDefaultServerSwaggerEnabled = true;
+inline constexpr std::string_view kDefaultServerLogLevel = "info";
+inline constexpr std::string_view kDefaultServerConfigPath = "config/server.yaml";
+inline constexpr std::string_view kDefaultSwaggerTitle = "CppWiki Server API";
+inline constexpr std::string_view kDefaultSwaggerDescription =
+    "CppWiki local/backend service API.";
 
 inline constexpr std::string_view kSettingsAppDataDirectoryKey = "paths/appDataDirectory";
 inline constexpr std::string_view kSettingsDatabaseDirectoryKey = "paths/databaseDirectory";
