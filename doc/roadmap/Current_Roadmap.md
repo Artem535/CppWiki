@@ -28,8 +28,9 @@ The project currently has:
 - Native Qt navigation tree with add-child affordance, context menu actions, delete, move up/down and drag-and-drop reordering.
 - Dedicated popup widget for document row actions instead of `QMenu`.
 - Architecture and project-structure documentation.
+- Phase 3.5 navigation hardening is complete: native tree view, row actions, selection preservation, and document lifecycle are stable.
 
-The current UI is a minimal working shell, not the final native product shell. The navigation surface is moving from the temporary list view toward the native tree view and row actions.
+The current UI is a minimal working shell. Phase 3.5 is closed; the remaining Phase 4 product-shell work is now tracked as the immediate backlog below.
 
 ---
 
@@ -200,11 +201,16 @@ Exit criteria:
 
 ---
 
-# 6. Immediate Next Actions
+# 6. Current Phase 4 Backlog
 
-1. Exercise the Phase 3 path manually: empty repository -> default page -> select page -> edit -> autosave -> restart -> load.
-2. Finish Phase 3.5 hardening around navigation state: preserve selection across reloads, avoid tree flicker on updates, and keep context actions stable.
-3. Decide whether document hash belongs in Phase 3.5 after the autosave loop is stable.
-4. Add Qt-owned light/dark theme switching through Qlementine and propagate the active theme into the WebView editor.
-5. Add a native settings dialog backed by QSettings and Qlementine widgets for font size and database folder access.
-6. Add a small user-visible save/error state in the desktop shell.
+Phase 3.5 is closed. The remaining work is the Phase 4 Minimal Product Shell backlog.
+
+1. Add native document title area in Qt (above the editor).
+2. Add editor save status UI in Qt.
+3. Add offline/online and sync status placeholders in the Qt status bar and clearly mark them as non-functional.
+4. Reload application context when the database folder changes in settings so the new path takes effect without an app restart.
+
+## Deferred
+
+- Light/dark theme switching and WebView theme propagation (keep current dark-only baseline).
+- Document hash / dirty check (revisit with sync/conflict detection work).

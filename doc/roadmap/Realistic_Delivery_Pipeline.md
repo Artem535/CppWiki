@@ -298,8 +298,8 @@ Stabilize the Phase 3 document lifecycle and harden the native navigation shell 
   - move up/down;
   - drag-and-drop reparenting and reordering.
 - Add application theme state owned by C++/Qt.
-- Add light/dark theme switching through Qlementine.
-- Propagate the active theme to the WebView editor so BlockNote uses matching colors.
+- ~~Add light/dark theme switching through Qlementine.~~ Deferred out of Phase 3.5; keep current dark theme baseline.
+- ~~Propagate the active theme to the WebView editor so BlockNote uses matching colors.~~ Deferred together with theme switching.
 - Decide whether to store a document hash for quick dirty checks.
 - Add skip-save behavior only if it measurably simplifies autosave or sync preparation.
 - Add manual QA checklist for empty repository, first page, selection, autosave, restart and corrupted document cases.
@@ -311,8 +311,8 @@ Stabilize the Phase 3 document lifecycle and harden the native navigation shell 
 - Navigation selection is owned by C++/Qt, not by React application state.
 - Tree view can be introduced without changing the stored document snapshot payload.
 - Row actions work consistently through click targets, context menu and drag-and-drop.
-- Light/dark switching has a single source of truth in the Qt application layer.
-- The WebView editor background and text colors match the active Qlementine theme.
+- ~~Light/dark switching has a single source of truth in the Qt application layer.~~ Deferred.
+- ~~The WebView editor background and text colors match the active Qlementine theme.~~ Deferred.
 - Dirty-state behavior is explicit: either hash-based or snapshot-comparison based.
 - Native tree navigation is stable enough to replace React-owned chrome.
 - Page navigation data model can evolve from list view to tree view without changing stored document payloads.
@@ -334,22 +334,30 @@ Stabilize the Phase 3 document lifecycle and harden the native navigation shell 
 
 Replace the proof-of-connection UI with a minimal Qt-owned wiki workspace shell.
 
-## Scope
+## Status
 
-- Add page tree placeholder as a Qt widget.
-- Start from list view if hierarchy metadata is still incomplete.
-- Add document title area in Qt.
-- Add editor save status in Qt.
-- Add offline/online status placeholder in Qt.
-- Add sync status placeholder in Qt.
-- Add settings dialog in Qt using Qlementine widgets for font size and database folder access.
-- Add remaining settings/action placeholders in Qt.
-- Remove or hide frontend demo navigation/sidebar from the product view.
-- Keep the JavaScript bundle focused on the BlockNote editor surface.
-- Keep editor as the primary surface.
-- Keep layout stable during resize.
-- Keep Qlementine as the application style baseline unless a stronger Qt theme decision replaces it.
-- Expose theme switching from the native shell, not from the editor bundle.
+Phase 4 is partially complete. The native tree navigation, row actions, settings dialog and editor-only bundle are already in place after Phase 3.5. The remaining work below is tracked as the active backlog.
+
+## Completed in earlier phases
+
+- Native Qt page tree (`DocumentTreeView`, `DocumentTreeModel`, `DocumentTreeItemDelegate`) with hierarchy support.
+- Inline add-child affordance, context menu, rename, delete, move up/down, drag-and-drop reparenting/reordering.
+- Native settings dialog using Qlementine widgets for font size and database folder access.
+- Editor bundle contains only the BlockNote surface; no React-owned workspace navigation.
+- Qlementine dark theme wired as the application style baseline.
+
+## Remaining scope
+
+- Add native document title area in Qt (above the editor).
+- Add editor save status UI in Qt.
+- Add offline/online status placeholder in Qt status bar.
+- Add sync status placeholder in Qt status bar.
+- Clearly mark placeholder statuses as non-functional in the UI.
+- Reload application context when the database folder changes in settings so the new path takes effect without restart.
+
+## Deferred out of Phase 4
+
+- Light/dark theme switching and WebView theme propagation (keep current dark-only baseline).
 
 ## Exit Gate
 
@@ -359,8 +367,8 @@ Replace the proof-of-connection UI with a minimal Qt-owned wiki workspace shell.
 - The shell does not imply unfinished features are working.
 - Page tree, title and status are native Qt UI, not React application chrome.
 - The web view contains the editor widget, not the application shell.
-- Switching between light and dark themes updates both Qt widgets and the WebView editor.
 - Native settings dialog uses Qlementine widgets instead of plain Qt form controls and only exposes the current user-facing appearance/runtime actions.
+- Changing the database folder in settings recreates the repository and refreshes the page tree without requiring an app restart.
 
 ## Do Not Include
 
@@ -369,6 +377,7 @@ Replace the proof-of-connection UI with a minimal Qt-owned wiki workspace shell.
 - Real account menu.
 - Plugin manager.
 - React-owned workspace navigation.
+- Light/dark theme switching.
 
 ---
 
@@ -644,12 +653,14 @@ Some work can run in parallel after the first vertical slice is stable.
 
 # 17. Recommended Immediate Backlog
 
-1. Define minimal document DTO with `schema_version`, page ID and block IDs.
-2. Add fixture tests for valid and invalid starter documents.
-3. Route `wiki.documents.updateSnapshot` through document validation.
-4. Add local repository interface before implementing real persistence.
-5. Keep Couchbase Lite behind the storage boundary and build option.
-6. Move product navigation/status out of the frontend demo when the Qt shell phase starts.
+The backlog below reflects the current state after Phase 3.5. Items 1-4 are the remaining Phase 4 product-shell tasks; items 5-6 are preconditions for Phase 5.
+
+1. Add native document title area in Qt (above the editor).
+2. Add editor save status UI in Qt.
+3. Add offline/online and sync status placeholders in Qt status bar and clearly mark them as non-functional.
+4. Reload application context when the database folder changes in settings so the new path takes effect without an app restart.
+5. (Phase 5 prep) Add Drogon server target and health endpoint.
+6. (Phase 5 prep) Keep desktop local editing independent of the backend.
 
 ---
 

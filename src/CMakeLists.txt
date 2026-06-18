@@ -47,6 +47,8 @@ qt_add_executable(cppwiki_app
     storage/repository_factory.h
 )
 
+add_subdirectory(server)
+
 target_include_directories(cppwiki_app
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
