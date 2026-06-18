@@ -59,6 +59,7 @@ This document does not replace ADRs. If a choice becomes controversial or change
 | Confluence integration | Confluence REST API v2/v1 | Accepted | Required for Cloud and Data Center support |
 | Serialization / JSON library | reflect-cpp | Selected default | Typed C++ reflection-based serialization for document payloads, API DTOs and config contracts |
 | Logging | spdlog | Selected default | Structured, fast, widely used C++ logging |
+| Observability / tracing | OpenTelemetry C++ | Planned baseline | Standard traces and metrics layer; exporter wiring can be phased in after the server skeleton is stable |
 | Build system | CMake | Accepted | Cross-platform C++ build and target organization |
 | Compiler baseline | clang++ | Accepted default | Tooling, diagnostics, clang-tidy and compile_commands.json |
 
@@ -188,6 +189,7 @@ Backend owns:
 - placeholder auth middleware and public/protected route separation in the server skeleton;
 - JWT validation middleware in the auth phase;
 - Sync Gateway provisioning and diagnostics;
+- OpenTelemetry request/trace/metrics boundaries once observability is wired in;
 - future collaboration gateway integration.
 
 The backend must not become the canonical editor renderer for MVP unless the C++ RenderService is explicitly reused server-side.
@@ -335,7 +337,19 @@ Rules:
 - sync/auth/plugin/confluence failures must be observable;
 - plugin crashes and timeouts must include plugin ID and version.
 
-## 5.4. Frontend Build
+## 5.4. Observability
+
+Use OpenTelemetry C++ as the standard observability contract for traces and metrics.
+
+Rules:
+
+- keep the exporter boundary configurable rather than hard-coded;
+- include request IDs and trace context in server-side logs where available;
+- do not couple the editor runtime to the observability backend;
+- keep `spdlog` as the developer-facing log sink even when OpenTelemetry export is enabled;
+- add telemetry incrementally, starting with request spans and latency measurement in the server skeleton.
+
+## 5.5. Frontend Build
 
 The editor bundle is a local web asset loaded by QWebEngine.
 

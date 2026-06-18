@@ -137,6 +137,7 @@ Planned additions should stay narrow and explicit:
 src/server/
   auth/
   middleware/
+  observability/
   locks/
   presence/
   service/
@@ -406,6 +407,18 @@ Do not log:
 - refresh tokens;
 - raw confidential document content;
 - browser callback secrets.
+
+## 10.1. OpenTelemetry baseline
+
+Use OpenTelemetry C++ as the tracing and metrics contract for the server.
+
+The initial observability shape should be:
+
+- request IDs on every HTTP request;
+- trace/span context available in backend logs;
+- exporter configuration kept external to business code;
+- `spdlog` retained as the local developer log sink;
+- no dependency from the web editor to the telemetry backend.
 
 The current health endpoint is the minimum liveness check. Future routes should return structured errors and logs that can be correlated with user-facing problems.
 

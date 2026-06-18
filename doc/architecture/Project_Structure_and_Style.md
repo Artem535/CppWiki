@@ -68,6 +68,7 @@ src/
     config/
     dto/
     http/
+    observability/
     openapi/
 ```
 

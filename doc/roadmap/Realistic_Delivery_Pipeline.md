@@ -384,6 +384,7 @@ Start the server phase only after local document editing works and the native sh
 - Add `oat++` server target.
 - Add health endpoint.
 - Add structured logging.
+- Add OpenTelemetry-ready observability boundaries: request IDs, trace/span hooks and exporter configuration points.
 - Add placeholder auth middleware and explicit public/protected route separation.
 - Add lock API stubs:
   - acquire lock;
@@ -398,6 +399,7 @@ Start the server phase only after local document editing works and the native sh
 
 - Backend starts independently.
 - Health endpoint works.
+- Observability configuration can be wired without touching editor code.
 - Lock endpoints return stable JSON envelopes.
 - Desktop app can be configured with backend URL without requiring it for local editing.
 - Server module layout is compatible with expanding into authenticated page APIs in the next phase.

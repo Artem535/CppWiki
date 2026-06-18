@@ -28,6 +28,7 @@ The project currently has:
 - Native Qt navigation tree with add-child affordance, context menu actions, delete, move up/down and drag-and-drop reordering.
 - Dedicated popup widget for document row actions instead of `QMenu`.
 - Server scaffold now exists under `src/server/app`, `config`, `dto`, `http` and `openapi`, with reflect-cpp YAML config, CLI11 parsing, structured logging and a swagger-enabled health endpoint.
+- Observability is being laid in as an OpenTelemetry-ready boundary on top of the current logging layer.
 - Architecture and project-structure documentation.
 
 The current UI is a minimal working shell, not the final native product shell. The navigation surface is moving from the temporary list view toward the native tree view and row actions.
@@ -204,6 +205,7 @@ Server work starts after this milestone, with only small Phase 3.5 shell fixes a
 | Document hash / dirty check | Deferred | Not required for current autosave loop. Revisit for Phase 3.5 when adding conflict detection, skip-save optimization or sync |
 | Page navigation shape | Tree migration underway | Current UI has native Qt navigation and row actions. Tree view is now the active path; list-only navigation is no longer the target shape |
 | Server framework migration | Active decision | `oat++` is the chosen backend framework; dependency manifest and server skeleton are now aligned |
+| Observability baseline | Active decision | OpenTelemetry is the backend observability contract; exporter wiring stays decoupled from business code and editor runtime |
 
 ---
 
@@ -211,6 +213,7 @@ Server work starts after this milestone, with only small Phase 3.5 shell fixes a
 
 1. Close the remaining Phase 3.5 shell polish items: stable selection/highlight behavior, context actions, and visual cleanup around the page tree.
 2. Keep the server skeleton limited to health, logging, config and route separation until auth lands.
-3. Expand the server module layout into auth, locks and presence once the skeleton is stable.
-4. Add backend configuration wiring in the desktop app without making local editing depend on the server.
-5. Add a small user-visible save/error state in the desktop shell before auth and sync phases expand.
+3. Add OpenTelemetry request-span and metrics wiring without coupling the editor to the telemetry backend.
+4. Expand the server module layout into auth, locks and presence once the skeleton is stable.
+5. Add backend configuration wiring in the desktop app without making local editing depend on the server.
+6. Add a small user-visible save/error state in the desktop shell before auth and sync phases expand.
