@@ -75,6 +75,8 @@ struct ComponentsConfig final {
   ServerConfig server;
   rfl::Rename<"handler-health", PublicHandlerConfig> handler_health;
   rfl::Rename<"handler-options", PublicHandlerConfig> handler_options;
+  rfl::Rename<"handler-openapi", PublicHandlerConfig> handler_openapi;
+  rfl::Rename<"handler-swagger-ui", PublicHandlerConfig> handler_swagger_ui;
   rfl::Rename<"handler-locks", ProtectedHandlerConfig> handler_locks;
   rfl::Rename<"handler-presence", ProtectedHandlerConfig> handler_presence;
   rfl::Rename<"handler-protected-page", ProtectedHandlerConfig> handler_protected_page;
@@ -199,6 +201,16 @@ auto MakeStaticConfig(const std::string& host, const std::uint16_t port,
                           PublicHandlerConfig{
                               .path = "/api/v1/health",
                               .method = "OPTIONS",
+                          },
+                      .handler_openapi =
+                          PublicHandlerConfig{
+                              .path = "/api/v1/openapi.json",
+                              .method = "GET",
+                          },
+                      .handler_swagger_ui =
+                          PublicHandlerConfig{
+                              .path = "/swagger/",
+                              .method = "GET",
                           },
                       .handler_locks =
                           ProtectedHandlerConfig{

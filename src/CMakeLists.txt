@@ -138,6 +138,8 @@ if (CPPWIKI_BUILD_SERVER)
             server/components/cppwiki_server_component.h
             server/handlers/health_handler.cc
             server/handlers/health_handler.h
+            server/handlers/openapi_handler.cc
+            server/handlers/openapi_handler.h
             server/handlers/options_handler.cc
             server/handlers/options_handler.h
             server/handlers/lock_handler.cc
@@ -146,6 +148,8 @@ if (CPPWIKI_BUILD_SERVER)
             server/handlers/presence_handler.h
             server/handlers/protected_page_handler.cc
             server/handlers/protected_page_handler.h
+            server/handlers/swagger_ui_handler.cc
+            server/handlers/swagger_ui_handler.h
             server/middleware/auth_checker_impl.cc
             server/middleware/auth_checker_impl.h
             server/middleware/logging_middleware.cc

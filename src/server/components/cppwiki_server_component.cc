@@ -7,9 +7,11 @@
 
 #include "server/handlers/health_handler.h"
 #include "server/handlers/lock_handler.h"
+#include "server/handlers/openapi_handler.h"
 #include "server/handlers/options_handler.h"
 #include "server/handlers/presence_handler.h"
 #include "server/handlers/protected_page_handler.h"
+#include "server/handlers/swagger_ui_handler.h"
 #include "server/middleware/auth_checker_impl.h"
 
 namespace cppwiki::server::components {
@@ -39,6 +41,8 @@ auto RegisterCppWikiComponents(userver::components::ComponentList& component_lis
     -> userver::components::ComponentList& {
   component_list.Append<handlers::HealthHandler>();
   component_list.Append<handlers::OptionsHandler>();
+  component_list.Append<handlers::OpenApiHandler>();
+  component_list.Append<handlers::SwaggerUiHandler>();
   component_list.Append<handlers::LockHandler>();
   component_list.Append<handlers::PresenceHandler>();
   component_list.Append<handlers::ProtectedPageHandler>();
