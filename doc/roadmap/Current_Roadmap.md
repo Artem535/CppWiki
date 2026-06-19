@@ -12,7 +12,7 @@
 The project currently has:
 
 - Qt/C++ project skeleton with CMake presets.
-- vcpkg manifest for `reflectcpp`, `spdlog`, `oatpp`, `oatpp-websocket`, `oatpp-swagger`, `cli11` and `yaml-cpp`.
+- vcpkg manifest for `reflectcpp`, `spdlog` and `cli11`.
 - Qt is resolved from the system or external Qt installation, not from vcpkg.
 - `cppwiki::Application` and `cppwiki::MainWindow`.
 - Qlementine wired as the desktop Qt style.
@@ -27,7 +27,7 @@ The project currently has:
 - UUID helper for generated document IDs.
 - Native Qt navigation tree with add-child affordance, context menu actions, delete, move up/down and drag-and-drop reordering.
 - Dedicated popup widget for document row actions instead of `QMenu`.
-- Server scaffold now exists under `src/server/app`, `config`, `dto`, `http` and `openapi`, with reflect-cpp YAML config, CLI11 parsing, structured logging and a swagger-enabled health endpoint.
+- Server scaffold now exists under `src/server/{app,components,config,handlers,middleware,service,dto}`, with userver, reflect-cpp YAML runtime config, generated userver static config, CLI11 parsing, structured logging and a health endpoint with CORS preflight.
 - Observability is being laid in as an OpenTelemetry-ready boundary on top of the current logging layer.
 - Architecture and project-structure documentation.
 
@@ -140,12 +140,13 @@ Server work starts after this milestone, with only small Phase 3.5 shell fixes a
 
 ## Milestone 6: Server Skeleton
 
-- add `oat++` application target.
-- health endpoint.
-- auth middleware placeholder and public/protected route split.
+- add `userver` application target (`cppwiki_server`).
+- health endpoint and CORS preflight.
+- runtime config -> userver static-config generation.
+- auth checker placeholder rejecting all traffic and public/protected route split.
 - lock and presence API stubs.
-- typed DTO/controller baseline for future page APIs.
-- structured logging with spdlog and configurable log level.
+- typed DTO/handler/service baseline for future page APIs.
+- structured logging with spdlog and userver span tags; configurable log level.
 
 ## Milestone 7: Auth Spike
 
@@ -204,7 +205,7 @@ Server work starts after this milestone, with only small Phase 3.5 shell fixes a
 | Frontend package manager | Tentative | npm is used now; can revisit if workspace tooling changes |
 | Document hash / dirty check | Deferred | Not required for current autosave loop. Revisit for Phase 3.5 when adding conflict detection, skip-save optimization or sync |
 | Page navigation shape | Tree migration underway | Current UI has native Qt navigation and row actions. Tree view is now the active path; list-only navigation is no longer the target shape |
-| Server framework migration | Active decision | `oat++` is the chosen backend framework; dependency manifest and server skeleton are now aligned |
+| Server framework migration | Closed (Phase 5) | `userver` is the chosen backend framework; dependency manifest and server skeleton are now aligned. ADR-009 records the rationale. |
 | Observability baseline | Active decision | OpenTelemetry is the backend observability contract; exporter wiring stays decoupled from business code and editor runtime |
 
 ---

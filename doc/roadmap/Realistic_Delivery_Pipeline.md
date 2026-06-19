@@ -380,20 +380,20 @@ Start the server phase only after local document editing works and the native sh
 
 ## Scope
 
-- Replace the legacy server dependency plan with `oat++`.
-- Add `oat++` server target.
-- Add health endpoint.
-- Add structured logging.
-- Add OpenTelemetry-ready observability boundaries: request IDs, trace/span hooks and exporter configuration points.
-- Add placeholder auth middleware and explicit public/protected route separation.
+- Replace the legacy `oat++` server with `userver`.
+- Add `userver` server target (`cppwiki_server`).
+- Add health endpoint and CORS preflight.
+- Add structured logging with `spdlog` and userver span tags.
+- Add OpenTelemetry-ready observability boundaries: request IDs, trace/span hooks and OTLP configuration point.
+- Add placeholder auth checker and explicit public/protected route separation (`401` on protected routes).
 - Add lock API stubs:
   - acquire lock;
   - heartbeat;
   - release lock;
   - force release placeholder.
-- Add presence WebSocket stub.
-- Add DTO/controller layout for future workspace, page and lock APIs.
-- Add integration tests for health and lock stubs if feasible.
+- Add presence HTTP stub.
+- Add DTO/handler/service layout for future workspace, page and lock APIs.
+- Add integration tests for health, lock stubs and auth checker.
 
 ## Exit Gate
 

@@ -165,9 +165,8 @@ endif()
 if(CPPWIKI_BUILD_SERVER)
   add_executable(cppwiki_server_config_tests
     server/config/server_config_test.cc
-    ${CMAKE_SOURCE_DIR}/src/server/config/server_config.cc
-    ${CMAKE_SOURCE_DIR}/src/server/config/server_config.h
-    ${CMAKE_SOURCE_DIR}/src/server/config/server_config_dto.h
+    ${CMAKE_SOURCE_DIR}/src/server/config/runtime_config.cc
+    ${CMAKE_SOURCE_DIR}/src/server/config/runtime_config.h
     ${CMAKE_SOURCE_DIR}/src/core/constants.h
     ${CMAKE_SOURCE_DIR}/src/core/logging.cc
     ${CMAKE_SOURCE_DIR}/src/core/logging.h
@@ -180,8 +179,8 @@ if(CPPWIKI_BUILD_SERVER)
 
   target_link_libraries(cppwiki_server_config_tests
     PRIVATE
+      CLI11::CLI11
       spdlog::spdlog
-      yaml-cpp::yaml-cpp
       reflectcpp::reflectcpp
   )
 
@@ -192,27 +191,84 @@ if(CPPWIKI_BUILD_SERVER)
     COMMAND cppwiki_server_config_tests
   )
 
-  add_executable(cppwiki_server_health_dto_tests
-    server/dto/health_dto_test.cc
-    ${CMAKE_SOURCE_DIR}/src/server/dto/api_dto.h
+  add_executable(cppwiki_server_health_handler_tests
+    server/http/health_handler_test.cc
+    ${CMAKE_SOURCE_DIR}/src/server/dto/health_response.cc
+    ${CMAKE_SOURCE_DIR}/src/server/dto/health_response.h
+    ${CMAKE_SOURCE_DIR}/src/server/dto/response_envelope.cc
+    ${CMAKE_SOURCE_DIR}/src/server/dto/response_envelope.h
     ${CMAKE_SOURCE_DIR}/src/core/constants.h
+    ${CMAKE_SOURCE_DIR}/src/core/logging.cc
+    ${CMAKE_SOURCE_DIR}/src/core/logging.h
   )
 
-  target_include_directories(cppwiki_server_health_dto_tests
+  target_include_directories(cppwiki_server_health_handler_tests
     PRIVATE
       ${CMAKE_SOURCE_DIR}/src
   )
 
-  target_link_libraries(cppwiki_server_health_dto_tests
+  target_link_libraries(cppwiki_server_health_handler_tests
     PRIVATE
       spdlog::spdlog
-      oatpp::oatpp
+      reflectcpp::reflectcpp
+      userver::core
   )
 
-  cppwiki_apply_common_options(cppwiki_server_health_dto_tests)
+  cppwiki_apply_common_options(cppwiki_server_health_handler_tests)
 
   add_test(
-    NAME cppwiki_server_health_dto_tests
-    COMMAND cppwiki_server_health_dto_tests
+    NAME cppwiki_server_health_handler_tests
+    COMMAND cppwiki_server_health_handler_tests
+  )
+
+  add_executable(cppwiki_server_lock_stub_tests
+    server/http/lock_stub_test.cc
+    ${CMAKE_SOURCE_DIR}/src/server/service/lock_service.cc
+    ${CMAKE_SOURCE_DIR}/src/server/service/lock_service.h
+    ${CMAKE_SOURCE_DIR}/src/core/logging.cc
+    ${CMAKE_SOURCE_DIR}/src/core/logging.h
+  )
+
+  target_include_directories(cppwiki_server_lock_stub_tests
+    PRIVATE
+      ${CMAKE_SOURCE_DIR}/src
+  )
+
+  target_link_libraries(cppwiki_server_lock_stub_tests
+    PRIVATE
+      spdlog::spdlog
+  )
+
+  cppwiki_apply_common_options(cppwiki_server_lock_stub_tests)
+
+  add_test(
+    NAME cppwiki_server_lock_stub_tests
+    COMMAND cppwiki_server_lock_stub_tests
+  )
+
+  add_executable(cppwiki_server_auth_checker_tests
+    server/middleware/auth_checker_test.cc
+    ${CMAKE_SOURCE_DIR}/src/server/middleware/auth_checker_impl.cc
+    ${CMAKE_SOURCE_DIR}/src/server/middleware/auth_checker_impl.h
+    ${CMAKE_SOURCE_DIR}/src/core/logging.cc
+    ${CMAKE_SOURCE_DIR}/src/core/logging.h
+  )
+
+  target_include_directories(cppwiki_server_auth_checker_tests
+    PRIVATE
+      ${CMAKE_SOURCE_DIR}/src
+  )
+
+  target_link_libraries(cppwiki_server_auth_checker_tests
+    PRIVATE
+      spdlog::spdlog
+      userver::core
+  )
+
+  cppwiki_apply_common_options(cppwiki_server_auth_checker_tests)
+
+  add_test(
+    NAME cppwiki_server_auth_checker_tests
+    COMMAND cppwiki_server_auth_checker_tests
   )
 endif()

@@ -1,6 +1,5 @@
 bind_host: 127.0.0.1
 port: 8080
-enable_swagger: true
 log_level: info
 
 # telemetry:

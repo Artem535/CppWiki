@@ -121,13 +121,36 @@ if(CPPWIKI_BUILD_SERVER)
     server/app/main.cc
     server/app/server_application.cc
     server/app/server_application.h
-    server/config/server_config.cc
-    server/config/server_config.h
-    server/config/server_config_dto.h
-    server/dto/api_dto.h
-    server/http/health_controller.h
-    server/openapi/swagger.cc
-    server/openapi/swagger.h
+    server/config/runtime_config.cc
+    server/config/runtime_config.h
+    server/components/cppwiki_server_component.cc
+    server/components/cppwiki_server_component.h
+    server/handlers/health_handler.cc
+    server/handlers/health_handler.h
+    server/handlers/options_handler.cc
+    server/handlers/options_handler.h
+    server/handlers/lock_handler.cc
+    server/handlers/lock_handler.h
+    server/handlers/presence_handler.cc
+    server/handlers/presence_handler.h
+    server/handlers/protected_page_handler.cc
+    server/handlers/protected_page_handler.h
+    server/middleware/auth_checker_impl.cc
+    server/middleware/auth_checker_impl.h
+    server/middleware/logging_middleware.cc
+    server/middleware/logging_middleware.h
+    server/service/lock_service.cc
+    server/service/lock_service.h
+    server/service/presence_service.cc
+    server/service/presence_service.h
+    server/dto/response_envelope.cc
+    server/dto/response_envelope.h
+    server/dto/health_response.cc
+    server/dto/health_response.h
+    server/dto/lock_response.cc
+    server/dto/lock_response.h
+    server/dto/presence_response.cc
+    server/dto/presence_response.h
     core/constants.h
     core/logging.cc
     core/logging.h
@@ -143,30 +166,7 @@ if(CPPWIKI_BUILD_SERVER)
       CLI11::CLI11
       spdlog::spdlog
       reflectcpp::reflectcpp
-      oatpp::oatpp
-      oatpp::oatpp-swagger
-      oatpp::oatpp-websocket
-      yaml-cpp::yaml-cpp
-  )
-
-  get_target_property(OATPP_SWAGGER_INCLUDE_DIRS oatpp::oatpp-swagger
-                      INTERFACE_INCLUDE_DIRECTORIES)
-  set(OATPP_SWAGGER_RES_PATH "")
-  foreach(OATPP_SWAGGER_INCLUDE_DIR IN LISTS OATPP_SWAGGER_INCLUDE_DIRS)
-    if(OATPP_SWAGGER_INCLUDE_DIR MATCHES "/oatpp-swagger$")
-      string(REGEX REPLACE "/oatpp-swagger$" "/bin/oatpp-swagger/res"
-                           OATPP_SWAGGER_RES_PATH "${OATPP_SWAGGER_INCLUDE_DIR}")
-      break()
-    endif()
-  endforeach()
-
-  if(NOT OATPP_SWAGGER_RES_PATH)
-    message(FATAL_ERROR "Could not resolve oatpp-swagger resources path")
-  endif()
-
-  target_compile_definitions(cppwiki_server
-    PRIVATE
-      OATPP_SWAGGER_RES_PATH="${OATPP_SWAGGER_RES_PATH}"
+      userver::core
   )
 
   set_target_properties(cppwiki_server

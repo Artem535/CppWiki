@@ -1,15 +1,15 @@
 # Server and Realtime Editing Architecture
 
 **Product:** CppWiki / Wiki Platform v9 - Block Document Edition  
-**Status:** Draft / aligned with the selected `oat++` backend  
+**Status:** Draft / aligned with the selected `userver` backend  
 **Date:** 2026-06-18  
-**Related docs:** `doc/PRD_v9_Block_Document_Edition.md`, `doc/roadmap/Current_Roadmap.md`, `doc/roadmap/Realistic_Delivery_Pipeline.md`, `doc/architecture/Architecture_Baseline_Libraries_and_Approaches.md`, `doc/architecture/adr/ADR-003-collaboration-strategy.md`, `doc/architecture/adr/ADR-008-authentik-auth-model.md`
+**Related docs:** `doc/PRD_v9_Block_Document_Edition.md`, `doc/roadmap/Current_Roadmap.md`, `doc/roadmap/Realistic_Delivery_Pipeline.md`, `doc/architecture/Architecture_Baseline_Libraries_and_Approaches.md`, `doc/architecture/adr/ADR-003-collaboration-strategy.md`, `doc/architecture/adr/ADR-008-authentik-auth-model.md`, `doc/architecture/adr/ADR-009-server-framework.md`
 
 ---
 
 # 1. Purpose
 
-This document fixes the backend architecture for CppWiki after the framework decision has been settled on `oat++`.
+This document fixes the backend architecture for CppWiki after the framework decision has been settled on `userver`.
 
 The goal is to keep the server useful without making it the center of the product too early. The desktop app must keep working offline. The backend must be optional in the early phases, but the architecture must already support:
 
@@ -30,11 +30,13 @@ The backend must not become a hidden second editor. It coordinates access and co
 
 Use these libraries and tools for the server layer:
 
-- `oat++` for HTTP endpoints and future WebSocket services;
-- `oatpp-swagger` for local API documentation;
+- `userver` for HTTP endpoints and future WebSocket/websocket handler support;
 - `CLI11` for command-line overrides;
-- `reflect-cpp` for typed YAML config loading and DTO mapping;
-- `spdlog` for structured logging.
+- `reflect-cpp` for typed YAML runtime config loading (server static config is generated, not manually edited);
+- `spdlog` for developer-facing structured logging;
+- userver span tags / tracing for OpenTelemetry-ready observability.
+
+Swagger/OpenAPI UI is intentionally deferred in Phase 5; it can be reintroduced later with userver tooling or an external spec.
 
 ## 2.2. Collaboration model
 
@@ -79,7 +81,7 @@ BlockNote Editor in QWebEngine
   - emit snapshot updates
   - receive initial document and read-only state
 
-Desktop App <---- HTTP/WebSocket ----> oat++ Backend
+Desktop App <---- HTTP/WebSocket ----> userver Backend
   - health
   - locks
   - presence
@@ -102,7 +104,7 @@ Responsibility split:
 
 # 4. Current Server Layout
 
-The current code layout is intentionally small and maps cleanly to the phase 5 skeleton:
+The current code layout maps to the phase 5 skeleton:
 
 ```text
 src/server/
@@ -110,38 +112,64 @@ src/server/
     main.cc
     server_application.cc
     server_application.h
+  components/
+    cppwiki_server_component.cc
+    cppwiki_server_component.h
   config/
-    server_config.cc
-    server_config.h
-    server_config_dto.h
+    runtime_config.cc
+    runtime_config.h
   dto/
-    api_dto.h
-  http/
-    health_controller.h
-  openapi/
-    swagger.cc
-    swagger.h
+    health_response.cc
+    health_response.h
+    lock_response.cc
+    lock_response.h
+    presence_response.cc
+    presence_response.h
+    response_envelope.cc
+    response_envelope.h
+  handlers/
+    health_handler.cc
+    health_handler.h
+    lock_handler.cc
+    lock_handler.h
+    options_handler.cc
+    options_handler.h
+    presence_handler.cc
+    presence_handler.h
+    protected_page_handler.cc
+    protected_page_handler.h
+  middleware/
+    auth_checker_impl.cc
+    auth_checker_impl.h
+    logging_middleware.cc
+    logging_middleware.h
+  service/
+    lock_service.cc
+    lock_service.h
+    presence_service.cc
+    presence_service.h
 ```
 
 Current responsibilities:
 
-- `main.cc` parses CLI options, loads YAML config and configures logging.
-- `server_config.*` loads typed config from YAML and applies overrides.
-- `health_controller.h` exposes the health endpoint and CORS preflight.
-- `swagger.*` registers API docs when Swagger is enabled.
-- `server_application.*` wires the router, controllers and network server.
+- `main.cc` parses CLI options and starts the application.
+- `runtime_config.*` parses CLI + YAML overrides and generates userver static config.
+- `server_application.*` wires logging and runs the userver components manager.
+- `cppwiki_server_component.*` registers handlers and the auth-checker factory.
+- `health_handler.*` exposes public health endpoint and CORS headers.
+- `options_handler.*` exposes CORS preflight for public/protected routes.
+- `lock_handler.*` and `presence_handler.*` expose protected stub APIs.
+- `auth_checker_impl.*` enforces the Phase 5 "reject all" boundary on protected routes.
+- `logging_middleware.*` attaches request_id / component / operation / document_id tags.
 
 Planned additions should stay narrow and explicit:
 
 ```text
 src/server/
-  auth/
-  middleware/
-  observability/
-  locks/
-  presence/
-  service/
-  realtime/
+  auth/       # real JWT validation (Phase 6)
+  locks/      # authoritative lock service with persistence (Phase 7)
+  presence/   # persistent presence / websocket broadcaster
+  realtime/   # Yjs/WebSocket integration (Phase 8+)
 ```
 
 If a new server feature cannot fit in one of those boundaries, it probably needs a smaller boundary first.
@@ -154,21 +182,20 @@ If a new server feature cannot fit in one of those boundaries, it probably needs
 
 Startup order:
 
-1. initialize oatpp runtime;
-2. configure base logging;
-3. parse CLI overrides;
-4. load YAML config through `reflect-cpp`;
-5. apply CLI overrides on top of config;
-6. configure log level;
-7. build router and register controllers;
-8. start the server.
+1. configure base logging (`spdlog`);
+2. parse CLI overrides (`CLI11`);
+3. load YAML runtime config through `reflect-cpp`;
+4. apply CLI overrides on top of config;
+5. configure log level;
+6. generate userver static config YAML;
+7. register userver components (handlers, auth-checker factory);
+8. start the userver components manager.
 
-The current config contract is intentionally small:
+The runtime config contract is intentionally small:
 
 ```yaml
 bind_host: 127.0.0.1
 port: 8080
-enable_swagger: true
 log_level: info
 ```
 
@@ -178,12 +205,14 @@ CLI overrides remain available for local development and tests:
 - `--bind-host`
 - `--port`
 - `--log-level`
-- `--swagger`
-- `--no-swagger`
+- `--swagger` (ignored placeholder)
+- `--no-swagger` (ignored placeholder)
+
+Generated static config includes the server listener, logging, handlers and auth checker definitions.
 
 ## 5.2. Middleware meaning
 
-Middleware is code that runs before a controller handles the request.
+Middleware is code that runs before or around a handler.
 
 Its job is to:
 
@@ -201,17 +230,19 @@ Use explicit route layers:
 
 ### Public routes
 
-- `/api/v1/health`
-- `/swagger/*` when enabled
+- `GET /api/v1/health`
+- `OPTIONS /api/v1/health`
 - later: login callback or public metadata endpoints if needed
 
 ### Protected routes
 
+Protected APIs return a 401 in Phase 5 because the auth checker rejects all traffic. The boundary is the important part; real JWT validation lands in Phase 6.
+
+- `GET/POST/PUT/DELETE /api/v1/locks/{document_id}`
+- `GET/POST /api/v1/presence/{workspace_id}`
 - workspace APIs
 - page APIs
 - document metadata APIs
-- lock APIs
-- presence APIs
 - audit or admin APIs
 
 The public layer must remain reachable without JWT. The protected layer must be the only place where authentication and authorization are enforced.
@@ -232,7 +263,18 @@ Keep the response shape explicit and stable:
 }
 ```
 
-Errors should use the same outer envelope with an error payload instead of ad hoc string responses.
+Errors use the same outer envelope with an error payload:
+
+```json
+{
+  "apiVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "method_not_allowed",
+    "message": "Method not allowed"
+  }
+}
+```
 
 ## 6.2. DTO rules
 
@@ -241,7 +283,8 @@ Use typed DTOs for transport payloads.
 Rules:
 
 - transport DTOs are not domain models;
-- typed config and DTO parsing should use `reflect-cpp`;
+- typed runtime config parsing uses `reflect-cpp`;
+- handler JSON uses `userver/formats/json` (not raw dynamic JSON);
 - raw JSON should be preserved only where the editor snapshot must remain lossless;
 - document IDs and block IDs must stay stable;
 - API contracts must be versioned.
@@ -300,7 +343,7 @@ That future layer should:
 - keep editor implementation details out of the transport protocol;
 - preserve fallback lock-based behavior for environments that do not use realtime co-editing.
 
-The realtime path may live inside `oat++` or as a separate collaboration service if protocol complexity grows. The architecture should not force that decision too early.
+The realtime path may live inside `userver` (WebSocket handlers) or as a separate collaboration service if protocol complexity grows. The architecture should not force that decision too early.
 
 ---
 
@@ -323,7 +366,7 @@ When auth lands, the server should:
 Recommended request chain for protected routes:
 
 1. request ID middleware;
-2. logging middleware;
+2. logging middleware (userver span tags);
 3. auth middleware;
 4. permission or role checks;
 5. controller handler;
@@ -410,13 +453,13 @@ Do not log:
 
 ## 10.1. OpenTelemetry baseline
 
-Use OpenTelemetry C++ as the tracing and metrics contract for the server.
+Use OpenTelemetry as the tracing and metrics contract for the server.
 
 The initial observability shape should be:
 
 - request IDs on every HTTP request;
-- trace/span context available in backend logs;
-- exporter configuration kept external to business code;
+- trace/span context available in backend logs through userver span tags;
+- exporter configuration kept external to business code (USERVER_FEATURE_OTLP);
 - `spdlog` retained as the local developer log sink;
 - no dependency from the web editor to the telemetry backend.
 
@@ -428,13 +471,12 @@ The current health endpoint is the minimum liveness check. Future routes should 
 
 Minimum server tests:
 
-- config load and override tests;
-- health endpoint test;
-- Swagger registration test;
-- protected/public route separation test;
-- lock acquire/release/heartbeat tests;
+- runtime config load, override and static-config generation tests;
+- health endpoint JSON envelope test;
+- protected/public route separation test (auth checker rejects);
+- lock acquire/release/heartbeat/force-release tests;
 - presence stub test;
-- auth middleware test when phase 6 lands;
+- auth checker unit test;
 - integration test that the backend starts with the configured port and log level.
 
 Minimum architecture tests for the product flow:
@@ -454,11 +496,11 @@ Implement the server skeleton:
 
 - health endpoint;
 - logging;
-- YAML config;
+- runtime config + userver static-config generation;
 - CLI11 overrides;
-- Swagger;
-- public/protected route split;
-- lock and presence stubs.
+- public/protected route split (auth checker stub returns 401);
+- lock and presence stubs;
+- CORS preflight.
 
 ## Phase 6
 
@@ -493,4 +535,4 @@ Add sync and then realtime collaboration:
 
 Any future change that affects the backend framework, the auth model, the lock model, the WebSocket protocol or the request envelope requires an ADR update.
 
-The `oat++` choice is fixed for the current architecture.
+The `userver` choice is fixed for the current architecture.

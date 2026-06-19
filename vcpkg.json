@@ -6,9 +6,10 @@
     "cli11",
     "reflectcpp",
     "spdlog",
-    "oatpp",
-    "oatpp-swagger",
-    "oatpp-websocket",
-    "yaml-cpp"
-  ]
+    "openssl",
+    "grpc",
+    "protobuf",
+    "curl"
+  ],
+  "builtin-baseline": "195276f71622bc41392db5c5c5c5141c95ff9a36"
 }

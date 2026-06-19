@@ -51,7 +51,7 @@ This document does not replace ADRs. If a choice becomes controversial or change
 | Future realtime collaboration | Yjs | Accepted for future phase | CRDT ecosystem compatible with Tiptap/ProseMirror |
 | Local database | Couchbase Lite | Accepted | Offline-first local storage and replication model |
 | Sync | Couchbase Sync Gateway | Accepted | Replication, channels and OIDC-compatible access control |
-| Backend | oat++ | Accepted | C++ HTTP/WebSocket backend with explicit DTO/controller structure and better fit for typed service boundaries |
+| Backend | userver | Accepted | C++20 coroutine-native backend with explicit components_manager/static config, built-in handlers, auth extensibility and OpenTelemetry-ready spans |
 | Plugin runtime | Wasmtime | Accepted | WASM sandbox with host-controlled capabilities |
 | Plugin SDK language | C++20 | Accepted | Native developer experience for extension authors |
 | Identity provider | Authentik | Accepted | Self-hosted OIDC/OAuth2/SAML/LDAP-capable identity platform |
@@ -179,14 +179,14 @@ Sync rules:
 
 ## 4.5. Backend
 
-Use oat++ for the backend API and WebSocket services.
+Use userver for the backend API and WebSocket services.
 
 Backend owns:
 
 - authoritative document locks;
 - presence and lock notifications;
 - REST APIs for workspaces, pages, permissions, plugins, Confluence sync and audit logs;
-- placeholder auth middleware and public/protected route separation in the server skeleton;
+- placeholder auth checker and public/protected route separation in the server skeleton;
 - JWT validation middleware in the auth phase;
 - Sync Gateway provisioning and diagnostics;
 - OpenTelemetry request/trace/metrics boundaries once observability is wired in;
