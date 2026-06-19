@@ -1,11 +1,16 @@
 #ifndef CPPWIKI_SRC_SERVER_DTO_HEALTH_RESPONSE_H_
 #define CPPWIKI_SRC_SERVER_DTO_HEALTH_RESPONSE_H_
 
-#include <userver/formats/json/value.hpp>
+#include <string>
 
 namespace cppwiki::server::dto {
 
-auto MakeHealthResult() -> userver::formats::json::Value;
+struct HealthResult final {
+  std::string service;
+  std::string status;
+};
+
+auto MakeHealthResult() -> HealthResult;
 
 }  // namespace cppwiki::server::dto
 

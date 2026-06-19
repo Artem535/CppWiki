@@ -1,10 +1,10 @@
 #ifndef CPPWIKI_SRC_SERVER_DTO_LOCK_RESPONSE_H_
 #define CPPWIKI_SRC_SERVER_DTO_LOCK_RESPONSE_H_
 
+#include <rfl/Rename.hpp>
+
 #include <optional>
 #include <string>
-
-#include <userver/formats/json/value.hpp>
 
 namespace cppwiki::server::dto {
 
@@ -17,9 +17,28 @@ struct LockActionResult final {
   std::optional<std::string> document_id;
 };
 
-auto MakeLockResultJson(const LockActionResult& result) -> userver::formats::json::Value;
-auto MakeLockOwnerResultJson(const std::string& document_id,
-                             const std::optional<std::string>& owner) -> userver::formats::json::Value;
+struct LockRequestDto final {
+  std::optional<std::string> owner;
+};
+
+struct LockResultDto final {
+  bool acquired = false;
+  bool released = false;
+  bool heartbeat = false;
+  rfl::Rename<"forceReleased", bool> force_released{false};
+  std::optional<std::string> owner;
+  rfl::Rename<"documentId", std::optional<std::string>> document_id{std::nullopt};
+};
+
+struct LockOwnerResultDto final {
+  rfl::Rename<"documentId", std::string> document_id;
+  bool locked = false;
+  std::optional<std::string> owner;
+};
+
+auto MakeLockResult(const LockActionResult& result) -> LockResultDto;
+auto MakeLockOwnerResult(const std::string& document_id,
+                         const std::optional<std::string>& owner) -> LockOwnerResultDto;
 
 }  // namespace cppwiki::server::dto
 

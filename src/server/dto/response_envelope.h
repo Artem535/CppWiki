@@ -1,9 +1,13 @@
 #ifndef CPPWIKI_SRC_SERVER_DTO_RESPONSE_ENVELOPE_H_
 #define CPPWIKI_SRC_SERVER_DTO_RESPONSE_ENVELOPE_H_
 
-#include <string>
+#include <rfl/Rename.hpp>
+#include <rfl/json/write.hpp>
 
-#include <userver/formats/json/value_builder.hpp>
+#include <string>
+#include <utility>
+
+#include <userver/formats/json.hpp>
 
 namespace cppwiki::server::dto {
 
@@ -15,21 +19,41 @@ struct ErrorDto final {
 };
 
 template <typename T>
-struct ResponseEnvelope final {
+struct SuccessEnvelope final {
+  rfl::Rename<"apiVersion", int> api_version{kApiVersion};
   bool ok = true;
-  T result{};
+  T result;
+};
+
+struct ErrorEnvelope final {
+  rfl::Rename<"apiVersion", int> api_version{kApiVersion};
+  bool ok = false;
+  ErrorDto error;
 };
 
 template <typename T>
-auto MakeSuccessEnvelopeJson(int api_version, const T& result_json) -> userver::formats::json::Value;
-
-auto MakeErrorEnvelopeJson(int api_version, const ErrorDto& error) -> userver::formats::json::Value;
+auto ToJsonValue(const T& value) -> userver::formats::json::Value {
+  return userver::formats::json::FromString(rfl::json::write(value));
+}
 
 template <typename T>
-auto MakeResult(const T& value) -> userver::formats::json::Value {
-  userver::formats::json::ValueBuilder builder;
-  builder = value;
-  return builder.ExtractValue();
+auto MakeSuccessEnvelope(int api_version, T result) -> SuccessEnvelope<T> {
+  return SuccessEnvelope<T>{
+      .api_version = api_version,
+      .ok = true,
+      .result = std::move(result),
+  };
+}
+
+auto MakeErrorEnvelope(int api_version, ErrorDto error) -> ErrorEnvelope;
+
+template <typename T>
+auto MakeSuccessEnvelopeJson(int api_version, T result) -> userver::formats::json::Value {
+  return ToJsonValue(MakeSuccessEnvelope(api_version, std::move(result)));
+}
+
+inline auto MakeErrorEnvelopeJson(int api_version, ErrorDto error) -> userver::formats::json::Value {
+  return ToJsonValue(MakeErrorEnvelope(api_version, std::move(error)));
 }
 
 }  // namespace cppwiki::server::dto

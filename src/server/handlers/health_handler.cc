@@ -2,7 +2,6 @@
 
 #include <spdlog/spdlog.h>
 
-#include <userver/formats/json.hpp>
 #include <userver/server/http/http_response.hpp>
 
 #include "core/constants.h"
