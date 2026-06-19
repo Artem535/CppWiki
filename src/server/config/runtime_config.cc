@@ -1,11 +1,10 @@
 #include "server/config/runtime_config.h"
 
-#include <rfl/yaml/read.hpp>
-
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
+#include <rfl/yaml/read.hpp>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -25,9 +24,8 @@ struct RuntimeConfigFile final {
 
 auto Normalize(std::string_view value) -> std::string {
   std::string out(value);
-  std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
+  std::transform(out.begin(), out.end(), out.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return out;
 }
 
@@ -50,10 +48,10 @@ auto ConvertToUint16(const std::string& value) -> std::uint16_t {
 }
 
 auto ConvertLevel(const std::string& level) -> std::string {
-  const auto normalized = Normalize(level);
-  if (normalized == "trace" || normalized == "debug" || normalized == "info" ||
-      normalized == "warn" || normalized == "error" || normalized == "critical" ||
-      normalized == "off" || normalized == "warning") {
+  if (const auto normalized = Normalize(level); normalized == "trace" || normalized == "debug" ||
+                                                normalized == "info" || normalized == "warn" ||
+                                                normalized == "error" || normalized == "critical" ||
+                                                normalized == "off" || normalized == "warning") {
     return normalized;
   }
   throw std::invalid_argument("Unsupported log level: " + level);
