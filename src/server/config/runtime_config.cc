@@ -1,10 +1,11 @@
 #include "server/config/runtime_config.h"
 
+#include <rfl/yaml/read.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
-#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -15,6 +16,12 @@
 namespace cppwiki::server::config {
 
 namespace {
+
+struct RuntimeConfigFile final {
+  std::optional<std::string> bind_host;
+  std::optional<std::uint16_t> port;
+  std::optional<std::string> log_level;
+};
 
 auto Normalize(std::string_view value) -> std::string {
   std::string out(value);
@@ -52,46 +59,23 @@ auto ConvertLevel(const std::string& level) -> std::string {
   throw std::invalid_argument("Unsupported log level: " + level);
 }
 
-auto Trim(std::string_view value) -> std::string_view {
-  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) {
-    value.remove_prefix(1);
-  }
-  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) {
-    value.remove_suffix(1);
-  }
-  return value;
-}
-
-auto Unquote(std::string_view value) -> std::string {
-  value = Trim(value);
-  if (value.size() >= 2 &&
-      ((value.front() == '\'' && value.back() == '\'') ||
-       (value.front() == '"' && value.back() == '"'))) {
-    value.remove_prefix(1);
-    value.remove_suffix(1);
-  }
-  return std::string(value);
-}
-
-auto FindYamlScalar(std::string_view yaml, std::string_view key) -> std::optional<std::string> {
-  std::istringstream input{std::string(yaml)};
-  std::string line;
-  const std::string prefix = std::string(key) + ":";
-  while (std::getline(input, line)) {
-    const auto comment_pos = line.find('#');
-    if (comment_pos != std::string::npos) {
-      line.erase(comment_pos);
-    }
-
-    const auto trimmed = Trim(line);
-    if (!trimmed.starts_with(prefix)) {
-      continue;
-    }
-
-    return Unquote(trimmed.substr(prefix.size()));
+auto LoadRuntimeConfigFile(const std::string& path) -> RuntimeConfigFile {
+  const auto yaml = ReadFile(path);
+  auto parsed = rfl::yaml::read<RuntimeConfigFile>(yaml);
+  if (!parsed) {
+    throw std::runtime_error("Could not parse server config: " + path + ": " +
+                             parsed.error().what());
   }
 
-  return std::nullopt;
+  auto file_config = parsed.value();
+  if (file_config.port) {
+    file_config.port = ConvertToUint16(std::to_string(*file_config.port));
+  }
+  if (file_config.log_level) {
+    file_config.log_level = ConvertLevel(*file_config.log_level);
+  }
+
+  return file_config;
 }
 
 }  // namespace
@@ -108,16 +92,18 @@ auto RuntimeConfig::FromDefaults() -> RuntimeConfig {
 
 auto RuntimeConfig::FromCli(int argc, char* argv[]) -> RuntimeConfig {
   RuntimeConfig cfg = FromDefaults();
+  std::optional<std::string> cli_bind_host;
+  std::optional<int> parsed_port;
+  std::optional<std::string> cli_log_level;
 
   CLI::App app("CppWiki userver server");
   app.add_option("-c,--config", cfg.config_path, "Path to YAML server config file");
-  app.add_option("--bind-host", cfg.bind_host, "Bind host override");
+  app.add_option("--bind-host", cli_bind_host, "Bind host override");
 
-  std::optional<int> parsed_port;
   auto* port_option = app.add_option("--port", parsed_port, "Port override");
   port_option->check(CLI::Range(1, 65535));
 
-  app.add_option("--log-level", cfg.log_level,
+  app.add_option("--log-level", cli_log_level,
                  "Log level override: trace, debug, info, warn, error, critical, off");
 
   bool swagger_enabled = false;
@@ -127,8 +113,23 @@ auto RuntimeConfig::FromCli(int argc, char* argv[]) -> RuntimeConfig {
 
   app.parse(argc, argv);
 
+  if (!cfg.config_path.empty() && cfg.config_path != "-") {
+    const auto file_config = LoadRuntimeConfigFile(cfg.config_path);
+    cfg.bind_host = file_config.bind_host;
+    cfg.port = file_config.port;
+    cfg.log_level = file_config.log_level;
+  }
+
+  if (cli_bind_host) {
+    cfg.bind_host = std::move(cli_bind_host);
+  }
+
   if (parsed_port) {
     cfg.port = static_cast<std::uint16_t>(*parsed_port);
+  }
+
+  if (cli_log_level) {
+    cfg.log_level = ConvertLevel(*cli_log_level);
   }
 
   if (swagger_enabled && swagger_disabled) {
@@ -209,18 +210,6 @@ auto RuntimeConfig::Host() const -> const std::string& {
     return *bind_host;
   }
 
-  if (!config_path.empty() && config_path != "-") {
-    try {
-      const auto yaml = ReadFile(config_path);
-      if (const auto parsed = FindYamlScalar(yaml, "bind_host")) {
-        const_cast<RuntimeConfig*>(this)->bind_host = *parsed;
-        return *bind_host;
-      }
-    } catch (const std::exception&) {
-      // Fall through to defaults.
-    }
-  }
-
   static const std::string kDefaultHost(cppwiki::constants::kDefaultServerBindHost);
   return kDefaultHost;
 }
@@ -230,36 +219,12 @@ auto RuntimeConfig::Port() const -> std::uint16_t {
     return *port;
   }
 
-  if (!config_path.empty() && config_path != "-") {
-    try {
-      const auto yaml = ReadFile(config_path);
-      if (const auto parsed = FindYamlScalar(yaml, "port")) {
-        const_cast<RuntimeConfig*>(this)->port = ConvertToUint16(*parsed);
-        return *port;
-      }
-    } catch (const std::exception&) {
-      // Fall through to defaults.
-    }
-  }
-
   return cppwiki::constants::kDefaultServerPort;
 }
 
 auto RuntimeConfig::LogLevel() const -> const std::string& {
   if (log_level) {
     return *log_level;
-  }
-
-  if (!config_path.empty() && config_path != "-") {
-    try {
-      const auto yaml = ReadFile(config_path);
-      if (const auto parsed = FindYamlScalar(yaml, "log_level")) {
-        const_cast<RuntimeConfig*>(this)->log_level = ConvertLevel(*parsed);
-        return *log_level;
-      }
-    } catch (const std::exception&) {
-      // Fall through to defaults.
-    }
   }
 
   static const std::string kDefaultLevel(cppwiki::constants::kDefaultServerLogLevel);
