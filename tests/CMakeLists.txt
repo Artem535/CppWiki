@@ -182,6 +182,7 @@ if(CPPWIKI_BUILD_SERVER)
       CLI11::CLI11
       spdlog::spdlog
       reflectcpp::reflectcpp
+      yaml-cpp
   )
 
   cppwiki_apply_common_options(cppwiki_server_config_tests)

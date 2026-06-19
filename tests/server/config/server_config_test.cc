@@ -45,7 +45,7 @@ log_level: WARN # reflect-cpp should ignore this comment and we normalize the va
   std::string config_arg = config_path.string();
   char app_name[] = "cppwiki-server";
   char config_flag[] = "--config";
-  auto* argv[] = {app_name, config_flag, config_arg.data()};
+  char* argv[] = {app_name, config_flag, config_arg.data()};
 
   const auto cfg = cppwiki::server::config::RuntimeConfig::FromCli(3, argv);
   Require(cfg.Host() == "0.0.0.0", "yaml bind host should be applied");
@@ -81,6 +81,8 @@ auto TestStaticConfigGeneration() -> void {
   Require(yaml.find("listener:") != std::string::npos, "static config must contain listener");
   Require(yaml.find("port: 8081") != std::string::npos,
           "static config must contain configured port");
+  Require(yaml.find("\n        default\n") == std::string::npos,
+          "static config must not contain malformed logger entries");
 }
 
 }  // namespace

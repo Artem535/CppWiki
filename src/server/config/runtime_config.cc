@@ -4,11 +4,14 @@
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
+#include <optional>
 #include <rfl/yaml/read.hpp>
+#include <rfl/yaml/write.hpp>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/constants.h"
 
@@ -20,6 +23,92 @@ struct RuntimeConfigFile final {
   std::optional<std::string> bind_host;
   std::optional<std::uint16_t> port;
   std::optional<std::string> log_level;
+};
+
+struct LoggerDefaultConfig final {
+  rfl::Rename<"file_path", std::string> file_path{"@null"};
+  std::string level;
+  rfl::Rename<"overflow_behavior", std::string> overflow_behavior{"discard"};
+};
+
+struct LoggingConfig final {
+  rfl::Rename<"fs-task-processor", std::string> fs_task_processor{"fs-task-processor"};
+  struct Loggers final {
+    rfl::Rename<"default", LoggerDefaultConfig> default_logger;
+  } loggers;
+};
+
+struct ConnectionConfig final {
+  rfl::Rename<"in_buffer_size", int> in_buffer_size{32768};
+};
+
+struct ListenerConfig final {
+  std::uint16_t port;
+  std::string address;
+  rfl::Rename<"task_processor", std::string> task_processor{"main-task-processor"};
+  ConnectionConfig connection{};
+};
+
+struct ServerConfig final {
+  ListenerConfig listener;
+};
+
+struct HandlerAuthConfig final {
+  std::vector<std::string> types;
+};
+
+struct PublicHandlerConfig final {
+  std::string path;
+  std::string method;
+  rfl::Rename<"task_processor", std::string> task_processor{"main-task-processor"};
+};
+
+struct ProtectedHandlerConfig final {
+  std::string path;
+  std::string method;
+  rfl::Rename<"task_processor", std::string> task_processor{"main-task-processor"};
+  HandlerAuthConfig auth;
+};
+
+struct ComponentsConfig final {
+  LoggingConfig logging;
+  ServerConfig server;
+  rfl::Rename<"handler-health", PublicHandlerConfig> handler_health;
+  rfl::Rename<"handler-options", PublicHandlerConfig> handler_options;
+  rfl::Rename<"handler-locks", ProtectedHandlerConfig> handler_locks;
+  rfl::Rename<"handler-presence", ProtectedHandlerConfig> handler_presence;
+  rfl::Rename<"handler-protected-page", ProtectedHandlerConfig> handler_protected_page;
+};
+
+struct MainTaskProcessorConfig final {
+  rfl::Rename<"worker_threads", int> worker_threads{4};
+  rfl::Rename<"thread_name", std::string> thread_name{"main-worker"};
+};
+
+struct TaskProcessorsConfig final {
+  rfl::Rename<"main-task-processor", MainTaskProcessorConfig> main_task_processor{};
+  rfl::Rename<"fs-task-processor", MainTaskProcessorConfig> fs_task_processor{
+      MainTaskProcessorConfig{
+          .worker_threads = 2,
+          .thread_name = "fs-worker",
+      }};
+};
+
+struct CoroPoolConfig final {
+  rfl::Rename<"initial_size", int> initial_size{4};
+  rfl::Rename<"max_size", int> max_size{128};
+};
+
+struct ComponentsManagerConfig final {
+  rfl::Rename<"coro_pool", CoroPoolConfig> coro_pool{};
+  rfl::Rename<"task_processors", TaskProcessorsConfig> task_processors{};
+  rfl::Rename<"default_task_processor", std::string> default_task_processor{
+      "main-task-processor"};
+  ComponentsConfig components;
+};
+
+struct StaticConfig final {
+  rfl::Rename<"components_manager", ComponentsManagerConfig> components_manager;
 };
 
 auto Normalize(std::string_view value) -> std::string {
@@ -74,6 +163,73 @@ auto LoadRuntimeConfigFile(const std::string& path) -> RuntimeConfigFile {
   }
 
   return file_config;
+}
+
+auto MakeStaticConfig(const std::string& host, const std::uint16_t port,
+                      const std::string& log_level) -> StaticConfig {
+  return StaticConfig{
+      .components_manager =
+          ComponentsManagerConfig{
+              .components =
+                  ComponentsConfig{
+                      .logging =
+                          LoggingConfig{
+                              .loggers =
+                                  LoggingConfig::Loggers{
+                                      .default_logger =
+                                          LoggerDefaultConfig{
+                                              .level = log_level,
+                                          },
+                                  },
+                          },
+                      .server =
+                          ServerConfig{
+                              .listener =
+                                  ListenerConfig{
+                                      .port = port,
+                                      .address = host,
+                                  },
+                          },
+                      .handler_health =
+                          PublicHandlerConfig{
+                              .path = "/api/v1/health",
+                              .method = "GET",
+                          },
+                      .handler_options =
+                          PublicHandlerConfig{
+                              .path = "/api/v1/health",
+                              .method = "OPTIONS",
+                          },
+                      .handler_locks =
+                          ProtectedHandlerConfig{
+                              .path = "/api/v1/locks/{document_id}",
+                              .method = "GET,POST,PUT,DELETE",
+                              .auth =
+                                  HandlerAuthConfig{
+                                      .types = {"cppwiki-auth-checker"},
+                                  },
+                          },
+                      .handler_presence =
+                          ProtectedHandlerConfig{
+                              .path = "/api/v1/presence/{workspace_id}",
+                              .method = "GET,POST",
+                              .auth =
+                                  HandlerAuthConfig{
+                                      .types = {"cppwiki-auth-checker"},
+                                  },
+                          },
+                      .handler_protected_page =
+                          ProtectedHandlerConfig{
+                              .path = "/api/v1/protected",
+                              .method = "GET",
+                              .auth =
+                                  HandlerAuthConfig{
+                                      .types = {"cppwiki-auth-checker"},
+                                  },
+                          },
+                  },
+          },
+  };
 }
 
 }  // namespace
@@ -143,64 +299,8 @@ auto RuntimeConfig::FromCli(int argc, char* argv[]) -> RuntimeConfig {
 }
 
 auto RuntimeConfig::ToStaticConfigYaml() const -> std::string {
-  std::string host = Host();
-  if (host == "0.0.0.0") {
-    host = "0.0.0.0";
-  }
-
-  std::ostringstream out;
-  out << "# Auto-generated userver static config for CppWiki server\n";
-  out << "components_manager:\n";
-  out << "  coro_pool:\n";
-  out << "    initial_size: 4\n";
-  out << "    max_size: 128\n";
-  out << "  task_processors:\n";
-  out << "    main-task-processor:\n";
-  out << "      worker_threads: 4\n";
-  out << "      thread_name: main-worker\n";
-  out << "  default_task_processor: main-task-processor\n";
-  out << "  components:\n";
-  out << "    logging:\n";
-  out << "      fs_task_processor: main-task-processor\n";
-  out << "      loggers:\n";
-  out << "        default:\n";
-  out << "          file_path: '@null'\n";
-  out << "          level: " << LogLevel() << "\n";
-  out << "          overflow_behavior: discard\n";
-  out << "        default\n";
-  out << "    server:\n";
-  out << "      listener:\n";
-  out << "        port: " << Port() << "\n";
-  out << "        address: '" << host << "'\n";
-  out << "        task_processor: main-task-processor\n";
-  out << "        connection:\n";
-  out << "          in_buffer_size: 32768\n";
-  out << "          out_buffer_size: 32768\n";
-  out << "    handler-health:\n";
-  out << "      path: /api/v1/health\n";
-  out << "      method: GET\n";
-  out << "      task_processor: main-task-processor\n";
-  out << "    handler-options:\n";
-  out << "      path: /api/v1/health\n";
-  out << "      method: OPTIONS\n";
-  out << "      task_processor: main-task-processor\n";
-  out << "    handler-locks:\n";
-  out << "      path: /api/v1/locks/{document_id}\n";
-  out << "      method: '*'\n";
-  out << "      task_processor: main-task-processor\n";
-  out << "    handler-presence:\n";
-  out << "      path: /api/v1/presence/{workspace_id}\n";
-  out << "      method: '*'\n";
-  out << "      task_processor: main-task-processor\n";
-  out << "    auth-checker:\n";
-  out << "      path: /api/v1/locks/{document_id}\n";
-  out << "      method: '*'\n";
-  out << "    auth-checker-presence:\n";
-  out << "      path: /api/v1/presence/{workspace_id}\n";
-  out << "      method: '*'\n";
-  out << "...\n";
-
-  return out.str();
+  const auto config = MakeStaticConfig(Host(), Port(), LogLevel());
+  return rfl::yaml::write(config) + "\n";
 }
 
 auto RuntimeConfig::Host() const -> const std::string& {
