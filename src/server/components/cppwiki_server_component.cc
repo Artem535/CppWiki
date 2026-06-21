@@ -20,9 +20,7 @@ namespace {
 
 class AuthCheckerFactory final : public userver::server::handlers::auth::AuthCheckerFactoryBase {
  public:
-  static constexpr std::string_view kAuthType = "cppwiki-auth-checker";
-
-  explicit AuthCheckerFactory(const userver::components::ComponentContext&) {}
+  using userver::server::handlers::auth::AuthCheckerFactoryBase::AuthCheckerFactoryBase;
 
   [[nodiscard]] userver::server::handlers::auth::AuthCheckerBasePtr MakeAuthChecker(
       const userver::server::handlers::auth::HandlerAuthConfig&) const override {
@@ -31,11 +29,6 @@ class AuthCheckerFactory final : public userver::server::handlers::auth::AuthChe
 };
 
 }  // namespace
-
-auto GetStaticConfigComponentName() -> const std::string& {
-  static const std::string kName("cppwiki-static-config");
-  return kName;
-}
 
 auto RegisterCppWikiComponents(userver::components::ComponentList& component_list)
     -> userver::components::ComponentList& {

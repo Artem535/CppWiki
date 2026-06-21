@@ -5,15 +5,7 @@
 
 namespace cppwiki::server {
 
-class ServerApplication final {
- public:
-  explicit ServerApplication(config::RuntimeConfig config);
-
-  [[nodiscard]] auto Run() const -> int;
-
- private:
-  config::RuntimeConfig config_;
-};
+[[nodiscard]] auto RunServer(const config::RuntimeConfig& config) -> int;
 
 }  // namespace cppwiki::server
 

@@ -11,8 +11,7 @@
 auto main(int argc, char* argv[]) -> int {
   try {
     const auto config = cppwiki::server::config::RuntimeConfig::FromCli(argc, argv);
-    const cppwiki::server::ServerApplication application(config);
-    return application.Run();
+    return cppwiki::server::RunServer(config);
   } catch (const std::exception& exception) {
     spdlog::error("cppwiki-server failed: {}", exception.what());
   } catch (...) {

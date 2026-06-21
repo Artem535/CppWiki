@@ -27,17 +27,15 @@ auto SaveStaticConfig(const std::string& yaml) -> std::filesystem::path {
 
 }  // namespace
 
-ServerApplication::ServerApplication(config::RuntimeConfig config) : config_(std::move(config)) {}
-
-auto ServerApplication::Run() const -> int {
+auto RunServer(const config::RuntimeConfig& config) -> int {
   cppwiki::logging::ConfigureBaseLogging();
-  cppwiki::logging::ConfigureLogLevel(config_.LogLevel());
+  cppwiki::logging::ConfigureLogLevel(config.LogLevel());
 
-  const auto static_config = config_.ToStaticConfigYaml();
+  const auto static_config = config.ToStaticConfigYaml();
   const auto config_path = SaveStaticConfig(static_config);
 
-  spdlog::info("Starting cppwiki-server on http://{}:{}/api/v1/health", config_.Host(),
-               config_.Port());
+  spdlog::info("Starting cppwiki-server on http://{}:{}/api/v1/health", config.Host(),
+               config.Port());
 
   auto component_list = userver::components::MinimalServerComponentList();
   components::RegisterCppWikiComponents(component_list);
