@@ -167,6 +167,8 @@ if(CPPWIKI_BUILD_SERVER)
     server/config/server_config_test.cc
     ${CMAKE_SOURCE_DIR}/src/server/config/runtime_config.cc
     ${CMAKE_SOURCE_DIR}/src/server/config/runtime_config.h
+    ${CMAKE_SOURCE_DIR}/src/server/config/static_config_factory.cc
+    ${CMAKE_SOURCE_DIR}/src/server/config/static_config_factory.h
     ${CMAKE_SOURCE_DIR}/src/core/constants.h
     ${CMAKE_SOURCE_DIR}/src/core/logging.cc
     ${CMAKE_SOURCE_DIR}/src/core/logging.h

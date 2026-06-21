@@ -134,10 +134,16 @@ if (CPPWIKI_BUILD_SERVER)
             server/app/server_application.h
             server/config/runtime_config.cc
             server/config/runtime_config.h
+            server/config/static_config_factory.cc
+            server/config/static_config_factory.h
+            server/assets/openapi_spec.h
+            server/assets/swagger_ui_page.h
             server/components/cppwiki_server_component.cc
             server/components/cppwiki_server_component.h
             server/handlers/health_handler.cc
             server/handlers/health_handler.h
+            server/handlers/handler_utils.cc
+            server/handlers/handler_utils.h
             server/handlers/openapi_handler.cc
             server/handlers/openapi_handler.h
             server/handlers/options_handler.cc
@@ -158,6 +164,7 @@ if (CPPWIKI_BUILD_SERVER)
             server/service/lock_service.h
             server/service/presence_service.cc
             server/service/presence_service.h
+            server/dto/json_adapter.h
             server/dto/response_envelope.cc
             server/dto/response_envelope.h
             server/dto/health_response.cc

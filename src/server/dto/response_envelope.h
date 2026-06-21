@@ -2,12 +2,11 @@
 #define CPPWIKI_SRC_SERVER_DTO_RESPONSE_ENVELOPE_H_
 
 #include <rfl/Rename.hpp>
-#include <rfl/json/write.hpp>
 
 #include <string>
 #include <utility>
 
-#include <userver/formats/json.hpp>
+#include "server/dto/json_adapter.h"
 
 namespace cppwiki::server::dto {
 
@@ -30,11 +29,6 @@ struct ErrorEnvelope final {
   bool ok = false;
   ErrorDto error;
 };
-
-template <typename T>
-auto ToJsonValue(const T& value) -> userver::formats::json::Value {
-  return userver::formats::json::FromString(rfl::json::write(value));
-}
 
 template <typename T>
 auto MakeSuccessEnvelope(int api_version, T result) -> SuccessEnvelope<T> {

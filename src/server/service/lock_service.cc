@@ -6,12 +6,27 @@
 
 namespace cppwiki::server::service {
 
+auto LockService::FindLock(const std::string& document_id)
+    -> std::unordered_map<std::string, LockInfo>::iterator {
+  return locks_.find(document_id);
+}
+
+auto LockService::FindLock(const std::string& document_id) const
+    -> std::unordered_map<std::string, LockInfo>::const_iterator {
+  return locks_.find(document_id);
+}
+
+auto LockService::IsOwnedBy(const std::unordered_map<std::string, LockInfo>::const_iterator& it,
+                            const std::string& owner) const -> bool {
+  return it != locks_.end() && it->second.owner == owner;
+}
+
 auto LockService::Acquire(const std::string& document_id, const std::string& owner) -> bool {
   const auto now = std::chrono::steady_clock::now();
   std::lock_guard lock(mutex_);
 
-  if (auto it = locks_.find(document_id); it != locks_.end()) {
-    if (it->second.owner != owner) {
+  if (auto it = FindLock(document_id); it != locks_.end()) {
+    if (!IsOwnedBy(it, owner)) {
       return false;
     }
     it->second.heartbeat_at = now;
@@ -27,10 +42,7 @@ auto LockService::Heartbeat(const std::string& document_id, const std::string& o
   const auto now = std::chrono::steady_clock::now();
   std::lock_guard lock(mutex_);
 
-  if (auto it = locks_.find(document_id); it != locks_.end()) {
-    if (it->second.owner != owner) {
-      return false;
-    }
+  if (auto it = FindLock(document_id); IsOwnedBy(it, owner)) {
     it->second.heartbeat_at = now;
     return true;
   }
@@ -41,10 +53,7 @@ auto LockService::Heartbeat(const std::string& document_id, const std::string& o
 auto LockService::Release(const std::string& document_id, const std::string& owner) -> bool {
   std::lock_guard lock(mutex_);
 
-  if (auto it = locks_.find(document_id); it != locks_.end()) {
-    if (it->second.owner != owner) {
-      return false;
-    }
+  if (auto it = FindLock(document_id); IsOwnedBy(it, owner)) {
     locks_.erase(it);
     return true;
   }
@@ -59,12 +68,12 @@ auto LockService::ForceRelease(const std::string& document_id) -> bool {
 
 auto LockService::IsLocked(const std::string& document_id) const -> bool {
   std::lock_guard lock(mutex_);
-  return locks_.find(document_id) != locks_.end();
+  return FindLock(document_id) != locks_.end();
 }
 
 auto LockService::GetOwner(const std::string& document_id) const -> std::optional<std::string> {
   std::lock_guard lock(mutex_);
-  if (auto it = locks_.find(document_id); it != locks_.end()) {
+  if (auto it = FindLock(document_id); it != locks_.end()) {
     return it->second.owner;
   }
   return std::nullopt;

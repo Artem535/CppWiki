@@ -25,7 +25,6 @@ class LockHandler final : public userver::server::handlers::HttpHandlerJsonBase 
  private:
   mutable service::LockService lock_service_;
 
-  static void ApplyCorsHeaders(userver::server::http::HttpResponse& response);
   [[nodiscard]] static auto ExtractOwner(const userver::formats::json::Value& request_body,
                                          const userver::server::http::HttpRequest& request)
       -> std::string;

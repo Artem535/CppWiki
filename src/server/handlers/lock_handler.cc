@@ -1,31 +1,15 @@
 #include "server/handlers/lock_handler.h"
 
-#include <rfl/json/read.hpp>
-
-#include <optional>
 #include <string>
 
 #include <spdlog/spdlog.h>
-#include <userver/formats/json.hpp>
-#include <userver/server/http/http_response.hpp>
 
+#include "server/dto/json_adapter.h"
 #include "server/dto/lock_response.h"
 #include "server/dto/response_envelope.h"
-#include "server/middleware/logging_middleware.h"
+#include "server/handlers/handler_utils.h"
 
 namespace cppwiki::server::handlers {
-
-namespace {
-
-auto ParseLockRequest(const userver::formats::json::Value& request_body) -> std::optional<dto::LockRequestDto> {
-  auto parsed = rfl::json::read<dto::LockRequestDto>(userver::formats::json::ToString(request_body));
-  if (!parsed) {
-    return std::nullopt;
-  }
-  return parsed.value();
-}
-
-}  // namespace
 
 LockHandler::LockHandler(const userver::components::ComponentConfig& config,
                          const userver::components::ComponentContext& context)
@@ -36,8 +20,7 @@ auto LockHandler::HandleRequestJsonThrow(const userver::server::http::HttpReques
                                          userver::server::request::RequestContext&) const
     -> userver::formats::json::Value {
   auto& response = request.GetHttpResponse();
-  ApplyCorsHeaders(response);
-  middleware::AttachRequestTags(const_cast<userver::server::http::HttpRequest&>(request));
+  PrepareJsonResponse(request, "GET, POST, PUT, DELETE, OPTIONS");
 
   const auto document_id = std::string(request.GetPathArg("document_id"));
   const auto owner = ExtractOwner(request_body, request);
@@ -77,17 +60,10 @@ auto LockHandler::HandleRequestJsonThrow(const userver::server::http::HttpReques
   return dto::MakeSuccessEnvelopeJson(dto::kApiVersion, dto::MakeLockResult(result));
 }
 
-void LockHandler::ApplyCorsHeaders(userver::server::http::HttpResponse& response) {
-  response.SetHeader(std::string_view{"Access-Control-Allow-Origin"}, "*");
-  response.SetHeader(std::string_view{"Access-Control-Allow-Methods"},
-                     "GET, POST, PUT, DELETE, OPTIONS");
-  response.SetHeader(std::string_view{"Access-Control-Allow-Headers"},
-                     "Content-Type, Authorization");
-}
-
 auto LockHandler::ExtractOwner(const userver::formats::json::Value& request_body,
                                const userver::server::http::HttpRequest& request) -> std::string {
-  if (const auto parsed = ParseLockRequest(request_body); parsed && parsed->owner) {
+  if (const auto parsed = dto::ParseJsonBody<dto::LockRequestDto>(request_body);
+      parsed && parsed->owner) {
     return *parsed->owner;
   }
   const auto header = request.GetHeader("x-lock-owner");

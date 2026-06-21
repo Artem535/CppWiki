@@ -17,9 +17,6 @@ class SwaggerUiHandler final : public userver::server::handlers::HttpHandlerBase
   [[nodiscard]] auto HandleRequestThrow(
       const userver::server::http::HttpRequest& request,
       userver::server::request::RequestContext& context) const -> std::string override;
-
- private:
-  static void ApplyHeaders(userver::server::http::HttpResponse& response);
 };
 
 }  // namespace cppwiki::server::handlers

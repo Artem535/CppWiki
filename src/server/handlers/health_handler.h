@@ -19,9 +19,6 @@ class HealthHandler final : public userver::server::handlers::HttpHandlerJsonBas
       const userver::formats::json::Value& /*request_body*/,
       userver::server::request::RequestContext& context) const
       -> userver::formats::json::Value override;
-
- private:
-  static void ApplyCorsHeaders(userver::server::http::HttpResponse& response);
 };
 
 }  // namespace cppwiki::server::handlers

@@ -24,8 +24,6 @@ class PresenceHandler final : public userver::server::handlers::HttpHandlerJsonB
 
  private:
   mutable service::PresenceService presence_service_;
-
-  static void ApplyCorsHeaders(userver::server::http::HttpResponse& response);
 };
 
 }  // namespace cppwiki::server::handlers

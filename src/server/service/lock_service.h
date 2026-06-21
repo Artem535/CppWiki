@@ -27,6 +27,14 @@ class LockService final {
   [[nodiscard]] auto GetOwner(const std::string& document_id) const -> std::optional<std::string>;
 
  private:
+  [[nodiscard]] auto FindLock(const std::string& document_id)
+      -> std::unordered_map<std::string, LockInfo>::iterator;
+  [[nodiscard]] auto FindLock(const std::string& document_id) const
+      -> std::unordered_map<std::string, LockInfo>::const_iterator;
+  [[nodiscard]] auto IsOwnedBy(
+      const std::unordered_map<std::string, LockInfo>::const_iterator& it,
+      const std::string& owner) const -> bool;
+
   mutable std::mutex mutex_;
   std::unordered_map<std::string, LockInfo> locks_;
 };

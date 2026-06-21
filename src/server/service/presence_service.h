@@ -25,8 +25,10 @@ class PresenceService final {
   [[nodiscard]] auto GetPresence(const std::string& workspace_id) const -> std::vector<PresenceInfo>;
 
  private:
+  using WorkspacePresenceMap = std::unordered_map<std::string, PresenceInfo>;
+
   mutable std::mutex mutex_;
-  std::unordered_map<std::string, PresenceInfo> presence_;
+  std::unordered_map<std::string, WorkspacePresenceMap> presence_by_workspace_;
 };
 
 }  // namespace cppwiki::server::service
