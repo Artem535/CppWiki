@@ -581,6 +581,8 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
                          QStringLiteral("No document is selected."));
   }
 
+  emit saveStatusChanged(current_page_id_, true, QStringLiteral("Saving..."));
+
   const auto snapshot_bytes = snapshot_json.toUtf8();
   const auto validation = document::DocumentValidator::ParseAndValidateSnapshot(snapshot_bytes);
   if (validation.error) {

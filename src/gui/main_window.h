@@ -4,6 +4,11 @@
 #include <QMainWindow>
 
 class QLabel;
+class QWidget;
+
+namespace oclero::qlementine {
+class StatusBadgeWidget;
+}
 
 namespace cppwiki {
 
@@ -30,9 +35,15 @@ class MainWindow final : public QMainWindow {
   void CreateInitialPage();
   void ShowSettingsDialog();
   void UpdateBackendStatus();
+  void UpdateDocumentStatus(const QString& message, bool is_error);
 
   AppContext* context_ = nullptr;
   IPage* current_page_ = nullptr;
+  QWidget* document_status_widget_ = nullptr;
+  oclero::qlementine::StatusBadgeWidget* document_status_badge_ = nullptr;
+  QLabel* document_status_label_ = nullptr;
+  QWidget* backend_status_widget_ = nullptr;
+  oclero::qlementine::StatusBadgeWidget* backend_status_badge_ = nullptr;
   QLabel* backend_status_label_ = nullptr;
 };
 

@@ -44,6 +44,7 @@ class Page final : public QWidget, public IPage {
 
  signals:
   void settingsRequested();
+  void documentStatusChanged(const QString& message, bool is_error);
 
  private:
   void BuildUi();
@@ -62,7 +63,7 @@ class Page final : public QWidget, public IPage {
   void SetupTreeView();
   void OnTreePressed(const QModelIndex& index);
   void ShowContextMenu(const QPoint& position);
-  void HandleDocumentSaved(const QString& page_id, bool success);
+  void HandleDocumentSaved(const QString& page_id, bool success, const QString& message);
   [[nodiscard]] std::set<std::string> CaptureExpandedDocumentIds() const;
   void RestoreExpandedDocumentIds(const std::set<std::string>& expanded_ids);
   void ExpandAncestors(const QString& page_id);

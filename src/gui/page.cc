@@ -293,8 +293,12 @@ void Page::SetupTreeView() {
                                     target_sort_order);
           });
   connect(editor_bridge_, &bridge::QEditorBridge::saveStatusChanged, this,
-          [this](const QString& page_id, bool success, const QString&) {
-            HandleDocumentSaved(page_id, success);
+          [this](const QString& page_id, bool success, const QString& message) {
+            HandleDocumentSaved(page_id, success, message);
+          });
+  connect(editor_bridge_, &bridge::QEditorBridge::documentLoadFailed, this,
+          [this](const QString&, const QString& message) {
+            emit documentStatusChanged(QStringLiteral("Load error: %1").arg(message), true);
           });
 }
 
@@ -712,8 +716,15 @@ void Page::ShowContextMenu(const QPoint& position) {
   menu->ShowAt(page_tree_->mapToGlobal(position));
 }
 
-void Page::HandleDocumentSaved(const QString& page_id, bool success) {
-  if (!success || selected_page_id_.isEmpty() || page_id != selected_page_id_) {
+void Page::HandleDocumentSaved(const QString& page_id, bool success, const QString& message) {
+  if (selected_page_id_.isEmpty() || page_id != selected_page_id_) {
+    return;
+  }
+
+  emit documentStatusChanged(success ? message : QStringLiteral("Save error: %1").arg(message),
+                             !success);
+
+  if (!success || message != QStringLiteral("Saved")) {
     return;
   }
 

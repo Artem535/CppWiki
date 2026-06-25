@@ -1,13 +1,15 @@
 #include "gui/main_window.h"
 
-#include <QAction>
 #include <QDialog>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QMenuBar>
+#include <QSettings>
 #include <QStatusBar>
 #include <QString>
 #include <QWidget>
-#include <QSettings>
+
+#include <oclero/qlementine/widgets/StatusBadgeWidget.hpp>
 
 #include "app/app_context.h"
 #include "app/program_settings.h"
@@ -17,6 +19,28 @@
 #include "gui/page.h"
 
 namespace cppwiki {
+
+namespace {
+
+auto MakeStatusWidget(const QString& initial_text, QWidget* parent)
+    -> std::tuple<QWidget*, oclero::qlementine::StatusBadgeWidget*, QLabel*> {
+  auto* container = new QWidget(parent);
+  auto* layout = new QHBoxLayout(container);
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(6);
+
+  auto* badge = new oclero::qlementine::StatusBadgeWidget(
+      oclero::qlementine::StatusBadge::Info, oclero::qlementine::StatusBadgeSize::Small,
+      container);
+  auto* label = new QLabel(initial_text, container);
+
+  layout->addWidget(badge, 0, Qt::AlignVCenter);
+  layout->addWidget(label, 0, Qt::AlignVCenter);
+
+  return {container, badge, label};
+}
+
+}  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   BuildUi();
@@ -34,16 +58,20 @@ void MainWindow::CreateInitialPage() {
   if (context_ == nullptr) {
     setCentralWidget(nullptr);
     setWindowTitle(QStringLiteral("CppWiki"));
+    UpdateDocumentStatus(QStringLiteral("Document: unavailable"), true);
     return;
   }
 
   // Create the main page with the application context
   auto* page = new Page(*context_, this);
   connect(page, &Page::settingsRequested, this, [this]() { ShowSettingsDialog(); });
+  connect(page, &Page::documentStatusChanged, this,
+          [this](const QString& message, bool is_error) { UpdateDocumentStatus(message, is_error); });
   current_page_ = page;
 
   setCentralWidget(current_page_->Widget());
   setWindowTitle(QStringLiteral("CppWiki - %1").arg(current_page_->Title()));
+  UpdateDocumentStatus(QStringLiteral("Document: ready"), false);
 }
 
 void MainWindow::ShowSettingsDialog() {
@@ -71,23 +99,55 @@ void MainWindow::BuildUi() {
   setWindowTitle(QStringLiteral("CppWiki"));
   resize(constants::kInitialWindowWidth, constants::kInitialWindowHeight);
   statusBar()->showMessage(QStringLiteral("Ready"));
-  backend_status_label_ = new QLabel(QStringLiteral("Backend: local only"), this);
-  statusBar()->addPermanentWidget(backend_status_label_);
+  std::tie(document_status_widget_, document_status_badge_, document_status_label_) =
+      MakeStatusWidget(QStringLiteral("Document: ready"), this);
+  std::tie(backend_status_widget_, backend_status_badge_, backend_status_label_) =
+      MakeStatusWidget(QStringLiteral("Backend: local only"), this);
+  statusBar()->addPermanentWidget(document_status_widget_);
+  statusBar()->addPermanentWidget(backend_status_widget_);
   menuBar()->hide();
 }
 
 void MainWindow::UpdateBackendStatus() {
-  if (backend_status_label_ == nullptr) {
+  if (backend_status_label_ == nullptr || backend_status_badge_ == nullptr) {
     return;
   }
 
   if (context_ == nullptr || !context_->settings.BackendEnabled()) {
     backend_status_label_->setText(QStringLiteral("Backend: local only"));
+    backend_status_badge_->setBadge(oclero::qlementine::StatusBadge::Info);
     return;
   }
 
   backend_status_label_->setText(
       QStringLiteral("Backend: %1").arg(context_->settings.BackendBaseUrl()));
+  backend_status_badge_->setBadge(oclero::qlementine::StatusBadge::Success);
+}
+
+void MainWindow::UpdateDocumentStatus(const QString& message, bool is_error) {
+  if (document_status_label_ == nullptr || document_status_badge_ == nullptr) {
+    return;
+  }
+
+  document_status_label_->setText(message);
+  document_status_label_->setStyleSheet(QString{});
+
+  if (is_error) {
+    document_status_badge_->setBadge(oclero::qlementine::StatusBadge::Error);
+    return;
+  }
+
+  if (message.contains(QStringLiteral("Saved"), Qt::CaseInsensitive)) {
+    document_status_badge_->setBadge(oclero::qlementine::StatusBadge::Success);
+    return;
+  }
+
+  if (message.contains(QStringLiteral("unavailable"), Qt::CaseInsensitive)) {
+    document_status_badge_->setBadge(oclero::qlementine::StatusBadge::Warning);
+    return;
+  }
+
+  document_status_badge_->setBadge(oclero::qlementine::StatusBadge::Info);
 }
 
 }  // namespace cppwiki
