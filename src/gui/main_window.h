@@ -4,6 +4,7 @@
 #include <QMainWindow>
 
 class QLabel;
+class QToolButton;
 class QWidget;
 
 namespace oclero::qlementine {
@@ -39,6 +40,7 @@ class MainWindow final : public QMainWindow {
 
   AppContext* context_ = nullptr;
   IPage* current_page_ = nullptr;
+  QToolButton* backend_refresh_button_ = nullptr;
   QWidget* document_status_widget_ = nullptr;
   oclero::qlementine::StatusBadgeWidget* document_status_badge_ = nullptr;
   QLabel* document_status_label_ = nullptr;

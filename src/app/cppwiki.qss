@@ -13,6 +13,11 @@ QPushButton#sidebarSettingsButton {
   color: palette(text);
 }
 
+QToolButton#statusLineButton {
+  padding: 4px;
+  color: palette(text);
+}
+
 QFrame#profilePlaceholderCard {
   background-color: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);

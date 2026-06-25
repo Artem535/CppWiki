@@ -7,6 +7,7 @@
 #include <QSettings>
 #include <QStatusBar>
 #include <QString>
+#include <QToolButton>
 #include <QWidget>
 
 #include <oclero/qlementine/widgets/StatusBadgeWidget.hpp>
@@ -111,10 +112,21 @@ void MainWindow::BuildUi() {
   setWindowTitle(QStringLiteral("CppWiki"));
   resize(constants::kInitialWindowWidth, constants::kInitialWindowHeight);
   statusBar()->showMessage(QStringLiteral("Ready"));
+  backend_refresh_button_ = new QToolButton(this);
+  backend_refresh_button_->setObjectName(QStringLiteral("statusLineButton"));
+  backend_refresh_button_->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
+  backend_refresh_button_->setToolTip(QStringLiteral("Check backend now"));
+  backend_refresh_button_->setAutoRaise(true);
+  connect(backend_refresh_button_, &QToolButton::clicked, this, [this]() {
+    if (context_ != nullptr && context_->backend_client != nullptr) {
+      context_->backend_client->RefreshHealth();
+    }
+  });
   std::tie(document_status_widget_, document_status_badge_, document_status_label_) =
       MakeStatusWidget(QStringLiteral("Document: ready"), this);
   std::tie(backend_status_widget_, backend_status_badge_, backend_status_label_) =
       MakeStatusWidget(QStringLiteral("Backend: local only"), this);
+  statusBar()->addPermanentWidget(backend_refresh_button_);
   statusBar()->addPermanentWidget(document_status_widget_);
   statusBar()->addPermanentWidget(backend_status_widget_);
   menuBar()->hide();
