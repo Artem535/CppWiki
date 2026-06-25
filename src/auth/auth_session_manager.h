@@ -13,6 +13,8 @@ class ProgramSettings;
 
 namespace cppwiki::auth {
 
+class AuthTokenStore;
+
 enum class AuthSessionState {
   kDisabled,
   kSignedOut,
@@ -40,8 +42,10 @@ class AuthSessionManager final : public QObject {
 
  signals:
   void sessionChanged();
+  void accessTokenChanged(const QString& access_token);
 
  private:
+  void PersistCurrentTokens();
   void RebuildOAuthFlow();
   void ResetOAuthArtifacts();
   void SetUiState(AuthSessionState state, QString title, QString subtitle, QString action_label,
@@ -53,9 +57,11 @@ class AuthSessionManager final : public QObject {
   QString token_url_;
   QString client_id_;
   QString redirect_uri_;
+  QString id_token_;
   QString title_ = QStringLiteral("Auth disabled");
   QString subtitle_ = QStringLiteral("Enable auth in settings to use browser login.");
   QString action_label_ = QStringLiteral("Sign in");
+  AuthTokenStore* token_store_ = nullptr;
   QOAuth2AuthorizationCodeFlow* oauth_flow_ = nullptr;
   QOAuthHttpServerReplyHandler* reply_handler_ = nullptr;
   AuthSessionState state_ = AuthSessionState::kDisabled;

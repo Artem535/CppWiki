@@ -2,6 +2,7 @@ QWidget#pagePanel {
   background-color: palette(base);
 }
 
+
 QFrame#sidebarFooter {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -41,4 +42,24 @@ QLabel#profilePlaceholderHint {
 QPushButton#profileActionButton {
   padding: 6px 10px;
   border-radius: 8px;
+  text-align: center;
+  min-height: 32px;
+  background-color: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: palette(text);
+}
+
+QPushButton#profileActionButton:hover {
+  background-color: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+QPushButton#profileActionButton:pressed {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+QPushButton#profileActionButton:disabled {
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.35);
 }

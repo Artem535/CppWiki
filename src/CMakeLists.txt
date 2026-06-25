@@ -13,8 +13,11 @@ qt_add_executable(cppwiki_app
         app/cppwiki.qss
         app/program_settings.cc
         app/program_settings.h
+        auth/auth_token_bundle.h
         auth/auth_session_manager.cc
         auth/auth_session_manager.h
+        auth/auth_token_store.cc
+        auth/auth_token_store.h
         backend/backend_client.cc
         backend/backend_client.h
         bridge/editor_bridge.cc
@@ -72,6 +75,7 @@ target_link_libraries(cppwiki_app
         Qt6::Widgets
         Qt6::WebChannel
         Qt6::WebEngineWidgets
+        qt6keychain
         qlementine
         spdlog::spdlog
         reflectcpp::reflectcpp

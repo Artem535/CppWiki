@@ -188,15 +188,19 @@ void Page::BuildUi() {
   auto* profile_card = new QFrame(sidebar_footer);
   profile_card->setObjectName(QStringLiteral("profilePlaceholderCard"));
   profile_card->setFrameShape(QFrame::NoFrame);
-  auto* profile_card_layout = new QHBoxLayout(profile_card);
+  auto* profile_card_layout = new QVBoxLayout(profile_card);
   profile_card_layout->setContentsMargins(12, 12, 12, 12);
   profile_card_layout->setSpacing(10);
+
+  auto* profile_header_layout = new QHBoxLayout();
+  profile_header_layout->setContentsMargins(0, 0, 0, 0);
+  profile_header_layout->setSpacing(10);
 
   profile_avatar_label_ = new QLabel(QStringLiteral("A"), profile_card);
   profile_avatar_label_->setObjectName(QStringLiteral("profilePlaceholderAvatar"));
   profile_avatar_label_->setAlignment(Qt::AlignCenter);
   profile_avatar_label_->setFixedSize(32, 32);
-  profile_card_layout->addWidget(profile_avatar_label_, 0, Qt::AlignTop);
+  profile_header_layout->addWidget(profile_avatar_label_, 0, Qt::AlignTop);
 
   auto* profile_text_layout = new QVBoxLayout();
   profile_text_layout->setContentsMargins(0, 0, 0, 0);
@@ -211,10 +215,13 @@ void Page::BuildUi() {
   profile_hint_label_->setObjectName(QStringLiteral("profilePlaceholderHint"));
   profile_hint_label_->setWordWrap(true);
   profile_text_layout->addWidget(profile_hint_label_);
+  profile_header_layout->addLayout(profile_text_layout, 1);
 
   profile_action_button_ = new QPushButton(QStringLiteral("Sign in"), profile_card);
   profile_action_button_->setObjectName(QStringLiteral("profileActionButton"));
   profile_action_button_->setCursor(Qt::PointingHandCursor);
+  profile_action_button_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+  profile_action_button_->setMinimumHeight(32);
   connect(profile_action_button_, &QPushButton::clicked, this, [this]() {
     if (context_.auth_session_manager == nullptr) {
       return;
@@ -229,8 +236,8 @@ void Page::BuildUi() {
       context_.auth_session_manager->StartSignIn();
     }
   });
-  profile_text_layout->addWidget(profile_action_button_, 0, Qt::AlignLeft);
-  profile_card_layout->addLayout(profile_text_layout, 1);
+  profile_card_layout->addLayout(profile_header_layout);
+  profile_card_layout->addWidget(profile_action_button_);
 
   sidebar_footer_layout->addWidget(profile_card);
   page_panel_layout->addWidget(sidebar_footer, 0);

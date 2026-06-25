@@ -48,6 +48,8 @@ Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   QApplication::setStyle(new oclero::qlementine::QlementineStyle(&qt_application_));
   auth_session_manager_ = std::make_unique<auth::AuthSessionManager>(&qt_application_);
   backend_client_ = std::make_unique<backend::BackendClient>(&qt_application_);
+  QObject::connect(auth_session_manager_.get(), &auth::AuthSessionManager::accessTokenChanged,
+                   backend_client_.get(), &backend::BackendClient::SetAccessToken);
 
   ReloadContext();
 

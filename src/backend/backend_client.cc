@@ -17,9 +17,10 @@ constexpr int kHealthRequestTimeoutMs = 2000;
 
 }  // namespace
 
-BackendClient::BackendClient(QObject* parent) : QObject(parent) {
-  network_manager_ = new QNetworkAccessManager(this);
-  refresh_timer_ = new QTimer(this);
+BackendClient::BackendClient(QObject* parent)
+    : QObject(parent),
+      network_manager_(new QNetworkAccessManager(this)),
+      refresh_timer_(new QTimer(this)) {
   refresh_timer_->setInterval(kHealthRefreshIntervalMs);
   connect(refresh_timer_, &QTimer::timeout, this, &BackendClient::RefreshHealth);
 }
@@ -65,6 +66,10 @@ void BackendClient::RefreshHealth() {
 
   QNetworkRequest request{QUrl{HealthUrl()}};
   request.setTransferTimeout(kHealthRequestTimeoutMs);
+  if (!access_token_.trimmed().isEmpty()) {
+    request.setRawHeader("Authorization",
+                         QStringLiteral("Bearer %1").arg(access_token_.trimmed()).toUtf8());
+  }
   in_flight_reply_ = network_manager_->get(request);
 
   connect(in_flight_reply_, &QNetworkReply::finished, this, [this]() {
@@ -74,18 +79,17 @@ void BackendClient::RefreshHealth() {
 
     auto* reply = in_flight_reply_;
     in_flight_reply_ = nullptr;
-    const auto status_code =
-        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    const bool ok = reply->error() == QNetworkReply::NoError && status_code >= 200 &&
-                    status_code < 300;
+    const auto status_code = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool ok =
+        reply->error() == QNetworkReply::NoError && status_code >= 200 && status_code < 300;
 
     if (ok) {
       SetStatus(BackendConnectionState::kReachable,
                 QStringLiteral("Backend: reachable at %1").arg(base_url_));
     } else {
-      const auto error_text =
-          reply->error() == QNetworkReply::NoError ? QStringLiteral("HTTP %1").arg(status_code)
-                                                   : reply->errorString();
+      const auto error_text = reply->error() == QNetworkReply::NoError
+                                  ? QStringLiteral("HTTP %1").arg(status_code)
+                                  : reply->errorString();
       SetStatus(BackendConnectionState::kUnavailable,
                 QStringLiteral("Backend: unavailable (%1)").arg(error_text));
     }
@@ -104,6 +108,10 @@ auto BackendClient::BaseUrl() const -> const QString& {
 
 auto BackendClient::StatusText() const -> const QString& {
   return status_text_;
+}
+
+void BackendClient::SetAccessToken(QString access_token) {
+  access_token_ = std::move(access_token);
 }
 
 void BackendClient::SetStatus(BackendConnectionState state, QString status_text) {

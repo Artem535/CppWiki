@@ -10,12 +10,68 @@
 #include <QUrl>
 
 #include "app/program_settings.h"
+#include "auth/auth_token_store.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
 
 namespace cppwiki::auth {
 
-AuthSessionManager::AuthSessionManager(QObject* parent) : QObject(parent) {}
+AuthSessionManager::AuthSessionManager(QObject* parent) : QObject(parent) {
+  token_store_ = new AuthTokenStore(ToQString(constants::kApplicationName), this);
+
+  connect(token_store_, &AuthTokenStore::tokensLoaded, this,
+          [this](const QString& access_token, const QString& refresh_token,
+                 const QString& id_token) {
+            if (!auth_enabled_ || oauth_flow_ == nullptr) {
+              return;
+            }
+
+            if (access_token.trimmed().isEmpty()) {
+              SetUiState(AuthSessionState::kError, QStringLiteral("Stored session is invalid"),
+                         QStringLiteral("The restored auth session does not contain an access token."),
+                         QStringLiteral("Sign in"), true, false);
+              return;
+            }
+
+            oauth_flow_->setToken(access_token);
+            oauth_flow_->setRefreshToken(refresh_token);
+            id_token_ = id_token;
+            emit accessTokenChanged(access_token);
+            SetUiState(AuthSessionState::kAuthenticated, QStringLiteral("Signed in"),
+                       QStringLiteral("Restored desktop auth session from the system keyring."),
+                       QStringLiteral("Sign out"), false, true);
+          });
+
+  connect(token_store_, &AuthTokenStore::tokensMissing, this, [this]() {
+    if (!auth_enabled_ || oauth_flow_ == nullptr) {
+      return;
+    }
+
+    SetUiState(AuthSessionState::kSignedOut, QStringLiteral("Signed out"),
+               QStringLiteral("Ready to start desktop browser login."),
+               QStringLiteral("Sign in"), true, false);
+  });
+
+  connect(token_store_, &AuthTokenStore::storageError, this,
+          [this](const QString& operation, const QString& message) {
+            if (operation == QStringLiteral("save")) {
+              if (state_ == AuthSessionState::kAuthenticated) {
+                subtitle_ = QStringLiteral("Signed in, but keyring save failed: %1").arg(message);
+                emit sessionChanged();
+              }
+              return;
+            }
+
+            if (operation == QStringLiteral("clear")) {
+              return;
+            }
+
+            SetUiState(AuthSessionState::kError, QStringLiteral("Keyring error"),
+                       QStringLiteral("Could not %1 the desktop auth session: %2")
+                           .arg(operation, message),
+                       QStringLiteral("Sign in"), true, false);
+          });
+}
 
 void AuthSessionManager::ApplySettings(const ProgramSettings& settings) {
   auth_enabled_ = settings.AuthEnabled();
@@ -23,7 +79,9 @@ void AuthSessionManager::ApplySettings(const ProgramSettings& settings) {
   token_url_ = settings.AuthTokenUrl().trimmed();
   client_id_ = settings.AuthClientId().trimmed();
   redirect_uri_ = settings.AuthRedirectUri().trimmed();
+  id_token_.clear();
   ResetOAuthArtifacts();
+  emit accessTokenChanged(QString{});
 
   if (!auth_enabled_) {
     SetUiState(AuthSessionState::kDisabled, QStringLiteral("Auth disabled"),
@@ -52,8 +110,9 @@ void AuthSessionManager::ApplySettings(const ProgramSettings& settings) {
   }
 
   SetUiState(AuthSessionState::kSignedOut, QStringLiteral("Signed out"),
-             QStringLiteral("Ready to start desktop browser login."),
+             QStringLiteral("Ready to start desktop browser login. Stored session will be checked in the background."),
              QStringLiteral("Sign in"), true, false);
+  token_store_->Load();
 }
 
 void AuthSessionManager::StartSignIn() {
@@ -94,6 +153,9 @@ void AuthSessionManager::StartSignIn() {
 
 void AuthSessionManager::SignOut() {
   ResetOAuthArtifacts();
+  id_token_.clear();
+  token_store_->Clear();
+  emit accessTokenChanged(QString{});
 
   if (!auth_enabled_) {
     SetUiState(AuthSessionState::kDisabled, QStringLiteral("Auth disabled"),
@@ -163,6 +225,23 @@ auto AuthSessionManager::HasRequiredConfig() const -> bool {
          !redirect_uri_.isEmpty();
 }
 
+void AuthSessionManager::PersistCurrentTokens() {
+  if (token_store_ == nullptr || oauth_flow_ == nullptr) {
+    return;
+  }
+
+  const auto access_token = oauth_flow_->token().trimmed();
+  if (access_token.isEmpty()) {
+    return;
+  }
+
+  token_store_->Save(AuthTokenBundle{
+      .access_token = access_token.toStdString(),
+      .refresh_token = oauth_flow_->refreshToken().trimmed().toStdString(),
+      .id_token = id_token_.trimmed().toStdString(),
+  });
+}
+
 void AuthSessionManager::RebuildOAuthFlow() {
   ResetOAuthArtifacts();
 
@@ -177,16 +256,16 @@ void AuthSessionManager::RebuildOAuthFlow() {
     return;
   }
 
-  reply_handler_ = new QOAuthHttpServerReplyHandler(this);
+  reply_handler_ = new QOAuthHttpServerReplyHandler(static_cast<quint16>(port), this);
   reply_handler_->setCallbackHost(redirect_url.host());
   reply_handler_->setCallbackPath(redirect_url.path());
   reply_handler_->setCallbackText(
       QStringLiteral("<html><body><h3>CppWiki</h3><p>Desktop login finished. You can close this window.</p></body></html>"));
 
-  const auto listen_address = host == QStringLiteral("localhost") ? QHostAddress::LocalHost
-                                                                  : QHostAddress::LocalHost;
-  if (!reply_handler_->listen(listen_address, static_cast<quint16>(port))) {
-    const auto error_message = QStringLiteral("Could not bind localhost callback port %1.")
+  if (!reply_handler_->isListening()) {
+    const auto error_message = QStringLiteral(
+                                   "Could not bind %1:%2 for the desktop callback listener.")
+                                   .arg(redirect_url.host())
                                    .arg(port);
     ResetOAuthArtifacts();
     SetUiState(AuthSessionState::kError, QStringLiteral("Failed to start callback listener"),
@@ -221,9 +300,29 @@ void AuthSessionManager::RebuildOAuthFlow() {
           });
 
   connect(oauth_flow_, &QAbstractOAuth::granted, this, [this]() {
+    id_token_ = oauth_flow_->idToken().trimmed();
+    PersistCurrentTokens();
+    emit accessTokenChanged(oauth_flow_->token().trimmed());
     SetUiState(AuthSessionState::kAuthenticated, QStringLiteral("Signed in"),
                QStringLiteral("Access token acquired through Qt NetworkAuth."),
                QStringLiteral("Sign out"), false, true);
+  });
+
+  connect(oauth_flow_, &QAbstractOAuth::tokenChanged, this, [this](const QString& access_token) {
+    if (access_token.trimmed().isEmpty()) {
+      return;
+    }
+    PersistCurrentTokens();
+    emit accessTokenChanged(access_token.trimmed());
+  });
+
+  connect(oauth_flow_, &QAbstractOAuth2::refreshTokenChanged, this, [this](const QString&) {
+    PersistCurrentTokens();
+  });
+
+  connect(oauth_flow_, &QAbstractOAuth2::idTokenChanged, this, [this](const QString& id_token) {
+    id_token_ = id_token.trimmed();
+    PersistCurrentTokens();
   });
 
   connect(oauth_flow_, &QAbstractOAuth::requestFailed, this,

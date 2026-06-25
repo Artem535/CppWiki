@@ -31,19 +31,30 @@ option(
 
 include(cmake/ProjectOptions.cmake)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(FetchContent)
 
 find_package(
         Qt6 6.5 REQUIRED
-        COMPONENTS Core Gui NetworkAuth Widgets WebChannel WebEngineWidgets Svg
+        COMPONENTS Core DBus Gui NetworkAuth Widgets WebChannel WebEngineWidgets Svg
 )
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
+set(BUILD_WITH_QT6 ON CACHE BOOL "Build qtkeychain with Qt 6" FORCE)
+set(BUILD_TEST_APPLICATION OFF CACHE BOOL "Disable qtkeychain test app" FORCE)
+set(BUILD_TRANSLATIONS OFF CACHE BOOL "Disable qtkeychain translations" FORCE)
+set(LIBSECRET_SUPPORT ON CACHE BOOL "Enable qtkeychain libsecret backend" FORCE)
+FetchContent_Declare(
+        qtkeychain
+        GIT_REPOSITORY https://github.com/frankosterfeld/qtkeychain.git
+        GIT_TAG 0.16.0
+        GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(qtkeychain)
+
 if (CPPWIKI_BUILD_SERVER)
     find_package(CLI11 CONFIG REQUIRED)
     find_package(OpenSSL REQUIRED)
-
-    include(FetchContent)
     set(USERVER_FEATURE_CORE ON CACHE BOOL "" FORCE)
     set(USERVER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(USERVER_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
