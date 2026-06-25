@@ -13,6 +13,8 @@ qt_add_executable(cppwiki_app
         app/cppwiki.qss
         app/program_settings.cc
         app/program_settings.h
+        backend/backend_client.cc
+        backend/backend_client.h
         bridge/editor_bridge.cc
         bridge/editor_bridge.h
         core/constants.h
@@ -63,6 +65,7 @@ target_link_libraries(cppwiki_app
         PRIVATE
         Qt6::Core
         Qt6::Gui
+        Qt6::Network
         Qt6::Widgets
         Qt6::WebChannel
         Qt6::WebEngineWidgets

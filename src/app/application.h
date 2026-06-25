@@ -7,6 +7,7 @@
 
 #include "app/app_context.h"
 #include "app/program_settings.h"
+#include "backend/backend_client.h"
 #include "gui/main_window.h"
 
 namespace cppwiki {
@@ -26,6 +27,7 @@ class Application final {
 
   QApplication qt_application_;
   std::optional<ProgramSettings> settings_;
+  std::unique_ptr<backend::BackendClient> backend_client_;
   std::unique_ptr<AppContext> context_;
   MainWindow main_window_;
 };

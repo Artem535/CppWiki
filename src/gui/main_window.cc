@@ -11,8 +11,11 @@
 
 #include <oclero/qlementine/widgets/StatusBadgeWidget.hpp>
 
+#include <tuple>
+
 #include "app/app_context.h"
 #include "app/program_settings.h"
+#include "backend/backend_client.h"
 #include "core/constants.h"
 #include "gui/i_page.h"
 #include "gui/settings_dialog.h"
@@ -50,6 +53,15 @@ MainWindow::~MainWindow() = default;
 
 void MainWindow::SetContext(AppContext* context) {
   context_ = context;
+  if (context_ != nullptr && context_->backend_client != nullptr) {
+    connect(context_->backend_client, &backend::BackendClient::statusChanged, this,
+            [this](backend::BackendConnectionState state, const QString& status_text) {
+              UpdateBackendStatus();
+              if (state == backend::BackendConnectionState::kUnavailable) {
+                statusBar()->showMessage(status_text, 3000);
+              }
+            });
+  }
   CreateInitialPage();
   UpdateBackendStatus();
 }
@@ -113,15 +125,32 @@ void MainWindow::UpdateBackendStatus() {
     return;
   }
 
-  if (context_ == nullptr || !context_->settings.BackendEnabled()) {
-    backend_status_label_->setText(QStringLiteral("Backend: local only"));
-    backend_status_badge_->setBadge(oclero::qlementine::StatusBadge::Info);
+  if (context_ == nullptr || context_->backend_client == nullptr) {
+    backend_status_label_->setText(QStringLiteral("Backend: unavailable"));
+    backend_status_badge_->setBadge(oclero::qlementine::StatusBadge::Warning);
     return;
   }
 
-  backend_status_label_->setText(
-      QStringLiteral("Backend: %1").arg(context_->settings.BackendBaseUrl()));
-  backend_status_badge_->setBadge(oclero::qlementine::StatusBadge::Success);
+  const auto state = context_->backend_client->State();
+  backend_status_label_->setText(context_->backend_client->StatusText());
+
+  switch (state) {
+    case backend::BackendConnectionState::kLocalOnly:
+      backend_status_badge_->setBadge(oclero::qlementine::StatusBadge::Info);
+      break;
+
+    case backend::BackendConnectionState::kChecking:
+      backend_status_badge_->setBadge(oclero::qlementine::StatusBadge::Warning);
+      break;
+
+    case backend::BackendConnectionState::kReachable:
+      backend_status_badge_->setBadge(oclero::qlementine::StatusBadge::Success);
+      break;
+
+    case backend::BackendConnectionState::kUnavailable:
+      backend_status_badge_->setBadge(oclero::qlementine::StatusBadge::Error);
+      break;
+  }
 }
 
 void MainWindow::UpdateDocumentStatus(const QString& message, bool is_error) {
