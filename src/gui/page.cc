@@ -32,6 +32,7 @@
 #include <QWebEngineView>
 #include <utility>
 
+#include "auth/auth_session_manager.h"
 #include "bridge/editor_bridge.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
@@ -191,24 +192,44 @@ void Page::BuildUi() {
   profile_card_layout->setContentsMargins(12, 12, 12, 12);
   profile_card_layout->setSpacing(10);
 
-  auto* profile_avatar = new QLabel(QStringLiteral("U"), profile_card);
-  profile_avatar->setObjectName(QStringLiteral("profilePlaceholderAvatar"));
-  profile_avatar->setAlignment(Qt::AlignCenter);
-  profile_avatar->setFixedSize(32, 32);
-  profile_card_layout->addWidget(profile_avatar, 0, Qt::AlignTop);
+  profile_avatar_label_ = new QLabel(QStringLiteral("A"), profile_card);
+  profile_avatar_label_->setObjectName(QStringLiteral("profilePlaceholderAvatar"));
+  profile_avatar_label_->setAlignment(Qt::AlignCenter);
+  profile_avatar_label_->setFixedSize(32, 32);
+  profile_card_layout->addWidget(profile_avatar_label_, 0, Qt::AlignTop);
 
   auto* profile_text_layout = new QVBoxLayout();
   profile_text_layout->setContentsMargins(0, 0, 0, 0);
   profile_text_layout->setSpacing(2);
 
-  auto* profile_name = new QLabel(QStringLiteral("Local user"), profile_card);
-  profile_name->setObjectName(QStringLiteral("profilePlaceholderName"));
-  profile_text_layout->addWidget(profile_name);
+  profile_name_label_ = new QLabel(QStringLiteral("Auth disabled"), profile_card);
+  profile_name_label_->setObjectName(QStringLiteral("profilePlaceholderName"));
+  profile_text_layout->addWidget(profile_name_label_);
 
-  auto* profile_hint = new QLabel(QStringLiteral("Profile placeholder"), profile_card);
-  profile_hint->setObjectName(QStringLiteral("profilePlaceholderHint"));
-  profile_hint->setWordWrap(true);
-  profile_text_layout->addWidget(profile_hint);
+  profile_hint_label_ =
+      new QLabel(QStringLiteral("Enable auth in settings to use browser login."), profile_card);
+  profile_hint_label_->setObjectName(QStringLiteral("profilePlaceholderHint"));
+  profile_hint_label_->setWordWrap(true);
+  profile_text_layout->addWidget(profile_hint_label_);
+
+  profile_action_button_ = new QPushButton(QStringLiteral("Sign in"), profile_card);
+  profile_action_button_->setObjectName(QStringLiteral("profileActionButton"));
+  profile_action_button_->setCursor(Qt::PointingHandCursor);
+  connect(profile_action_button_, &QPushButton::clicked, this, [this]() {
+    if (context_.auth_session_manager == nullptr) {
+      return;
+    }
+
+    if (context_.auth_session_manager->CanSignOut()) {
+      context_.auth_session_manager->SignOut();
+      return;
+    }
+
+    if (context_.auth_session_manager->CanStartSignIn()) {
+      context_.auth_session_manager->StartSignIn();
+    }
+  });
+  profile_text_layout->addWidget(profile_action_button_, 0, Qt::AlignLeft);
   profile_card_layout->addLayout(profile_text_layout, 1);
 
   sidebar_footer_layout->addWidget(profile_card);
@@ -223,8 +244,14 @@ void Page::BuildUi() {
 
   layout->addWidget(splitter, 1);
 
+  if (context_.auth_session_manager != nullptr) {
+    connect(context_.auth_session_manager, &auth::AuthSessionManager::sessionChanged, this,
+            [this]() { UpdateAuthCard(); });
+  }
+
   LoadEditor();
   PopulatePageList();
+  UpdateAuthCard();
 }
 
 void Page::SetupTreeView() {
@@ -814,6 +841,29 @@ storage::DocumentSummary Page::SummaryFromVariantMap(const QVariantMap& document
   summary.updated_at = StringFromFirstExistingKey(
       document, {QStringLiteral("updatedAt"), QStringLiteral("updated_at")}).toStdString();
   return summary;
+}
+
+void Page::UpdateAuthCard() {
+  if (profile_avatar_label_ == nullptr || profile_name_label_ == nullptr ||
+      profile_hint_label_ == nullptr || profile_action_button_ == nullptr) {
+    return;
+  }
+
+  if (context_.auth_session_manager == nullptr) {
+    profile_avatar_label_->setText(QStringLiteral("A"));
+    profile_name_label_->setText(QStringLiteral("Auth unavailable"));
+    profile_hint_label_->setText(QStringLiteral("Auth session manager is not available."));
+    profile_action_button_->setText(QStringLiteral("Sign in"));
+    profile_action_button_->setEnabled(false);
+    return;
+  }
+
+  const auto* auth = context_.auth_session_manager;
+  profile_avatar_label_->setText(QStringLiteral("A"));
+  profile_name_label_->setText(auth->Title());
+  profile_hint_label_->setText(auth->Subtitle());
+  profile_action_button_->setText(auth->ActionLabel());
+  profile_action_button_->setEnabled(auth->CanStartSignIn() || auth->CanSignOut());
 }
 
 }  // namespace cppwiki

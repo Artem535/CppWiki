@@ -10,6 +10,7 @@
 #include "core/constants.h"
 #include "core/qt_string.h"
 #include "app/application_stylesheet.h"
+#include "auth/auth_session_manager.h"
 #include "backend/backend_client.h"
 #include "gui/page.h"
 #include "storage/repository_factory.h"
@@ -45,6 +46,7 @@ Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   QCoreApplication::setOrganizationName(ToQString(constants::kOrganizationName));
   QApplication::setQuitOnLastWindowClosed(true);
   QApplication::setStyle(new oclero::qlementine::QlementineStyle(&qt_application_));
+  auth_session_manager_ = std::make_unique<auth::AuthSessionManager>(&qt_application_);
   backend_client_ = std::make_unique<backend::BackendClient>(&qt_application_);
 
   ReloadContext();
@@ -61,6 +63,9 @@ Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
     }
     if (backend_client_) {
       backend_client_->ApplySettings(*settings_);
+    }
+    if (auth_session_manager_) {
+      auth_session_manager_->ApplySettings(*settings_);
     }
     ApplyAppearanceFromSettings(*settings_);
   });
@@ -80,10 +85,12 @@ void Application::ReloadContext() {
 
   // Create document repository using factory (CBLite if available, otherwise file-based)
   auto repository = storage::RepositoryFactory::Create(*settings_);
+  auth_session_manager_->ApplySettings(*settings_);
   backend_client_->ApplySettings(*settings_);
 
   // Create application context
-  context_ = std::make_unique<AppContext>(*settings_, std::move(repository), backend_client_.get());
+  context_ = std::make_unique<AppContext>(*settings_, std::move(repository),
+                                          backend_client_.get(), auth_session_manager_.get());
 
   main_window_.SetContext(context_.get());
 }

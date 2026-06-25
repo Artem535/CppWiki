@@ -35,7 +35,7 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
     : QDialog(parent), current_settings_(settings) {
   setWindowTitle(QStringLiteral("Settings"));
   setModal(true);
-  resize(640, 280);
+  resize(680, 460);
 
   auto* root_layout = new QVBoxLayout(this);
   root_layout->setContentsMargins(16, 16, 16, 16);
@@ -47,7 +47,7 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   root_layout->addWidget(title);
 
   auto* hint = new oclero::qlementine::Label(
-      QStringLiteral("Adjust desktop appearance, inspect local storage and prepare optional backend connection settings."),
+      QStringLiteral("Adjust desktop appearance, inspect local storage and prepare optional backend and auth settings."),
       oclero::qlementine::TextRole::Caption, this);
   hint->setWordWrap(true);
   root_layout->addWidget(hint);
@@ -76,6 +76,43 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   connect(backend_enabled_checkbox_, &QCheckBox::toggled, backend_base_url_edit_,
           &QWidget::setEnabled);
   form_layout_->addRow(QStringLiteral("Backend URL"), backend_base_url_edit_);
+
+  auth_enabled_checkbox_ = new QCheckBox(QStringLiteral("Use desktop auth spike"), this);
+  auth_enabled_checkbox_->setChecked(current_settings_.AuthEnabled());
+  form_layout_->addRow(QStringLiteral("Auth"), auth_enabled_checkbox_);
+
+  auth_authorization_url_edit_ = new oclero::qlementine::LineEdit(this);
+  auth_authorization_url_edit_->setText(current_settings_.AuthAuthorizationUrl());
+  auth_authorization_url_edit_->setPlaceholderText(
+      QStringLiteral("https://auth.example/application/o/authorize/"));
+  auth_authorization_url_edit_->setEnabled(current_settings_.AuthEnabled());
+  form_layout_->addRow(QStringLiteral("Auth URL"), auth_authorization_url_edit_);
+
+  auth_token_url_edit_ = new oclero::qlementine::LineEdit(this);
+  auth_token_url_edit_->setText(current_settings_.AuthTokenUrl());
+  auth_token_url_edit_->setPlaceholderText(
+      QStringLiteral("https://auth.example/application/o/token/"));
+  auth_token_url_edit_->setEnabled(current_settings_.AuthEnabled());
+  form_layout_->addRow(QStringLiteral("Auth token URL"), auth_token_url_edit_);
+
+  auth_client_id_edit_ = new oclero::qlementine::LineEdit(this);
+  auth_client_id_edit_->setText(current_settings_.AuthClientId());
+  auth_client_id_edit_->setPlaceholderText(QStringLiteral("cppwiki-desktop"));
+  auth_client_id_edit_->setEnabled(current_settings_.AuthEnabled());
+  form_layout_->addRow(QStringLiteral("Auth client ID"), auth_client_id_edit_);
+
+  auth_redirect_uri_edit_ = new oclero::qlementine::LineEdit(this);
+  auth_redirect_uri_edit_->setText(current_settings_.AuthRedirectUri());
+  auth_redirect_uri_edit_->setPlaceholderText(QStringLiteral("http://127.0.0.1:38080/auth/callback"));
+  auth_redirect_uri_edit_->setEnabled(current_settings_.AuthEnabled());
+  form_layout_->addRow(QStringLiteral("Auth redirect URI"), auth_redirect_uri_edit_);
+
+  connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_authorization_url_edit_,
+          &QWidget::setEnabled);
+  connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_token_url_edit_, &QWidget::setEnabled);
+  connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_client_id_edit_, &QWidget::setEnabled);
+  connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_redirect_uri_edit_,
+          &QWidget::setEnabled);
 
   database_directory_edit_ = MakeReadOnlyPathLineEdit(current_settings_.DatabaseDirectory(), this);
   auto* open_folder_action =
@@ -112,12 +149,19 @@ auto SettingsDialog::BuildProgramSettings() const -> ProgramSettings {
   const auto backend_base_url = backend_base_url_edit_->text().trimmed().isEmpty()
                                     ? current_settings_.BackendBaseUrl()
                                     : backend_base_url_edit_->text().trimmed();
+  const auto auth_authorization_url = auth_authorization_url_edit_->text().trimmed();
+  const auto auth_token_url = auth_token_url_edit_->text().trimmed();
+  const auto auth_client_id = auth_client_id_edit_->text().trimmed();
+  const auto auth_redirect_uri = auth_redirect_uri_edit_->text().trimmed().isEmpty()
+                                     ? current_settings_.AuthRedirectUri()
+                                     : auth_redirect_uri_edit_->text().trimmed();
 
   return ProgramSettings(
       current_settings_.ApplicationName(), current_settings_.ApplicationVersion(),
       current_settings_.OrganizationName(), current_settings_.AppDataDirectory(),
       current_settings_.DatabaseDirectory(), current_settings_.EditorDistDirectory(),
-      backend_base_url, backend_enabled_checkbox_->isChecked(),
+      backend_base_url, backend_enabled_checkbox_->isChecked(), auth_authorization_url,
+      auth_token_url, auth_client_id, auth_redirect_uri, auth_enabled_checkbox_->isChecked(),
       font_size_spinbox_->value());
 }
 

@@ -58,11 +58,19 @@ inline constexpr std::string_view kSettingsDatabaseDirectoryKey = "paths/databas
 inline constexpr std::string_view kSettingsEditorDistDirectoryKey = "paths/editorDistDirectory";
 inline constexpr std::string_view kSettingsBackendEnabledKey = "backend/enabled";
 inline constexpr std::string_view kSettingsBackendBaseUrlKey = "backend/baseUrl";
+inline constexpr std::string_view kSettingsAuthEnabledKey = "auth/enabled";
+inline constexpr std::string_view kSettingsAuthAuthorizationUrlKey = "auth/authorizationUrl";
+inline constexpr std::string_view kSettingsAuthTokenUrlKey = "auth/tokenUrl";
+inline constexpr std::string_view kSettingsAuthClientIdKey = "auth/clientId";
+inline constexpr std::string_view kSettingsAuthRedirectUriKey = "auth/redirectUri";
 inline constexpr std::string_view kSettingsApplicationFontPointSizeKey =
     "appearance/applicationFontPointSize";
 
 inline constexpr std::string_view kDocumentsCollectionName = "documents";
 inline constexpr std::string_view kDocumentsIndexDocumentId = "cppwiki-document-index";
+inline constexpr std::string_view kDefaultAuthRedirectUri =
+    "http://127.0.0.1:38080/auth/callback";
+inline constexpr std::string_view kDefaultAuthScopes = "openid profile email offline_access";
 }  // namespace cppwiki::constants
 
 #endif  // CPPWIKI_SRC_CORE_CONSTANTS_H_

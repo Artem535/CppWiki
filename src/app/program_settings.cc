@@ -50,6 +50,9 @@ ProgramSettings::ProgramSettings(QString application_name, QString application_v
                                  QString organization_name, QString app_data_directory,
                                  QString database_directory, QString editor_dist_directory,
                                  QString backend_base_url, bool backend_enabled,
+                                 QString auth_authorization_url, QString auth_token_url,
+                                 QString auth_client_id, QString auth_redirect_uri,
+                                 bool auth_enabled,
                                  int application_font_point_size)
     : application_name_(std::move(application_name)),
       application_version_(std::move(application_version)),
@@ -59,6 +62,11 @@ ProgramSettings::ProgramSettings(QString application_name, QString application_v
       editor_dist_directory_(std::move(editor_dist_directory)),
       backend_base_url_(std::move(backend_base_url)),
       backend_enabled_(backend_enabled),
+      auth_authorization_url_(std::move(auth_authorization_url)),
+      auth_token_url_(std::move(auth_token_url)),
+      auth_client_id_(std::move(auth_client_id)),
+      auth_redirect_uri_(std::move(auth_redirect_uri)),
+      auth_enabled_(auth_enabled),
       application_font_point_size_(application_font_point_size) {}
 
 auto ProgramSettings::FromDefaults() -> ProgramSettings {
@@ -86,6 +94,17 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
       settings, constants::kSettingsBackendBaseUrlKey, DefaultBackendBaseUrl());
   const auto backend_enabled =
       settings.value(ToQString(constants::kSettingsBackendEnabledKey), false).toBool();
+  const auto auth_authorization_url =
+      settings.value(ToQString(constants::kSettingsAuthAuthorizationUrlKey)).toString().trimmed();
+  const auto auth_token_url =
+      settings.value(ToQString(constants::kSettingsAuthTokenUrlKey)).toString().trimmed();
+  const auto auth_client_id =
+      settings.value(ToQString(constants::kSettingsAuthClientIdKey)).toString().trimmed();
+  const auto auth_redirect_uri = SettingsValueOrDefault(
+      settings, constants::kSettingsAuthRedirectUriKey,
+      ToQString(constants::kDefaultAuthRedirectUri));
+  const auto auth_enabled =
+      settings.value(ToQString(constants::kSettingsAuthEnabledKey), false).toBool();
 
   const auto application_font_point_size_value =
       settings.value(ToQString(constants::kSettingsApplicationFontPointSizeKey),
@@ -99,7 +118,8 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
                          ToQString(constants::kApplicationVersion),
                          ToQString(constants::kOrganizationName), app_data_directory,
                          database_directory, editor_dist_directory, backend_base_url,
-                         backend_enabled,
+                         backend_enabled, auth_authorization_url, auth_token_url, auth_client_id,
+                         auth_redirect_uri, auth_enabled,
                          application_font_point_size);
 }
 
@@ -109,6 +129,12 @@ void ProgramSettings::SaveToSettings(QSettings& settings) const {
   settings.setValue(ToQString(constants::kSettingsEditorDistDirectoryKey), editor_dist_directory_);
   settings.setValue(ToQString(constants::kSettingsBackendBaseUrlKey), backend_base_url_);
   settings.setValue(ToQString(constants::kSettingsBackendEnabledKey), backend_enabled_);
+  settings.setValue(ToQString(constants::kSettingsAuthAuthorizationUrlKey),
+                    auth_authorization_url_);
+  settings.setValue(ToQString(constants::kSettingsAuthTokenUrlKey), auth_token_url_);
+  settings.setValue(ToQString(constants::kSettingsAuthClientIdKey), auth_client_id_);
+  settings.setValue(ToQString(constants::kSettingsAuthRedirectUriKey), auth_redirect_uri_);
+  settings.setValue(ToQString(constants::kSettingsAuthEnabledKey), auth_enabled_);
   settings.setValue(ToQString(constants::kSettingsApplicationFontPointSizeKey),
                     application_font_point_size_);
 }
@@ -143,6 +169,26 @@ auto ProgramSettings::BackendBaseUrl() const -> const QString& {
 
 auto ProgramSettings::BackendEnabled() const -> bool {
   return backend_enabled_;
+}
+
+auto ProgramSettings::AuthAuthorizationUrl() const -> const QString& {
+  return auth_authorization_url_;
+}
+
+auto ProgramSettings::AuthTokenUrl() const -> const QString& {
+  return auth_token_url_;
+}
+
+auto ProgramSettings::AuthClientId() const -> const QString& {
+  return auth_client_id_;
+}
+
+auto ProgramSettings::AuthRedirectUri() const -> const QString& {
+  return auth_redirect_uri_;
+}
+
+auto ProgramSettings::AuthEnabled() const -> bool {
+  return auth_enabled_;
 }
 
 auto ProgramSettings::ApplicationFontPointSize() const -> int {

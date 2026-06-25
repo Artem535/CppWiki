@@ -15,6 +15,7 @@ class QWebChannel;
 class QWebEngineView;
 class QTreeView;
 class QPushButton;
+class QLabel;
 class QModelIndex;
 class QWidget;
 
@@ -70,11 +71,16 @@ class Page final : public QWidget, public IPage {
   [[nodiscard]] std::vector<storage::DocumentSummary> FetchDocumentSummaries() const;
   [[nodiscard]] std::optional<std::string> MapToParentDocumentId(const QModelIndex& index) const;
   [[nodiscard]] storage::DocumentSummary SummaryFromVariantMap(const QVariantMap& document) const;
+  void UpdateAuthCard();
 
   const AppContext& context_;
   QWidget* page_panel_ = nullptr;
   QPushButton* new_document_button_ = nullptr;
   QPushButton* settings_button_ = nullptr;
+  QLabel* profile_avatar_label_ = nullptr;
+  QLabel* profile_name_label_ = nullptr;
+  QLabel* profile_hint_label_ = nullptr;
+  QPushButton* profile_action_button_ = nullptr;
   QWebEngineView* editor_view_ = nullptr;
   QTreeView* page_tree_ = nullptr;
   std::unique_ptr<gui::DocumentTreeModel> tree_model_;

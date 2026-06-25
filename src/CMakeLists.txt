@@ -13,6 +13,8 @@ qt_add_executable(cppwiki_app
         app/cppwiki.qss
         app/program_settings.cc
         app/program_settings.h
+        auth/auth_session_manager.cc
+        auth/auth_session_manager.h
         backend/backend_client.cc
         backend/backend_client.h
         bridge/editor_bridge.cc
@@ -66,6 +68,7 @@ target_link_libraries(cppwiki_app
         Qt6::Core
         Qt6::Gui
         Qt6::Network
+        Qt6::NetworkAuth
         Qt6::Widgets
         Qt6::WebChannel
         Qt6::WebEngineWidgets

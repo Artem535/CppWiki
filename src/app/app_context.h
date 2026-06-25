@@ -10,6 +10,10 @@ namespace cppwiki::backend {
 class BackendClient;
 }
 
+namespace cppwiki::auth {
+class AuthSessionManager;
+}
+
 namespace cppwiki {
 
 // Application context that provides access to shared services and configuration.
@@ -18,13 +22,16 @@ struct AppContext {
   ProgramSettings settings;
   std::shared_ptr<storage::LocalDocumentRepository> document_repository;
   backend::BackendClient* backend_client;
+  auth::AuthSessionManager* auth_session_manager;
 
   AppContext(ProgramSettings settings,
              std::shared_ptr<storage::LocalDocumentRepository> repository,
-             backend::BackendClient* backend_client)
+             backend::BackendClient* backend_client,
+             auth::AuthSessionManager* auth_session_manager)
       : settings(std::move(settings)),
         document_repository(std::move(repository)),
-        backend_client(backend_client) {}
+        backend_client(backend_client),
+        auth_session_manager(auth_session_manager) {}
 };
 
 }  // namespace cppwiki

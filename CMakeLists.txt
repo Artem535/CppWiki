@@ -34,7 +34,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 find_package(
         Qt6 6.5 REQUIRED
-        COMPONENTS Core Gui Widgets WebChannel WebEngineWidgets Svg
+        COMPONENTS Core Gui NetworkAuth Widgets WebChannel WebEngineWidgets Svg
 )
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
