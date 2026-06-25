@@ -14,7 +14,7 @@ auto MutableResponse(const userver::server::http::HttpRequest& request)
 void ApplyCorsHeaders(userver::server::http::HttpResponse& response,
                       std::string_view allowed_methods) {
   response.SetHeader(std::string_view{"Access-Control-Allow-Origin"}, "*");
-  response.SetHeader(std::string_view{"Access-Control-Allow-Methods"}, allowed_methods);
+  response.SetHeader(std::string_view{"Access-Control-Allow-Methods"}, std::string{allowed_methods});
   response.SetHeader(std::string_view{"Access-Control-Allow-Headers"},
                      "Content-Type, Authorization");
 }

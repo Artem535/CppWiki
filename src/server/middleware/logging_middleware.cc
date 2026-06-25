@@ -3,7 +3,6 @@
 #include <spdlog/spdlog.h>
 
 #include <string_view>
-
 #include <userver/server/http/http_request.hpp>
 #include <userver/tracing/span.hpp>
 
@@ -16,7 +15,7 @@ constexpr std::string_view kRequestIdHeader = "x-request-id";
 }  // namespace
 
 void AttachRequestTags(userver::server::http::HttpRequest& request) {
-  const auto request_id = request.GetHeader(kRequestIdHeader);
+  const auto& request_id = request.GetHeader(kRequestIdHeader);
   if (!request_id.empty()) {
     request.GetHttpResponse().SetHeader(kRequestIdHeader, std::string(request_id));
   }
@@ -28,12 +27,12 @@ void AttachRequestTags(userver::server::http::HttpRequest& request) {
     span.AddTag("request_id", request_id);
   }
 
-  const auto document_id = request.GetPathArg("document_id");
+  const auto& document_id = request.GetPathArg("document_id");
   if (!document_id.empty()) {
     span.AddTag("document_id", document_id);
   }
 
-  const auto workspace_id = request.GetPathArg("workspace_id");
+  const auto& workspace_id = request.GetPathArg("workspace_id");
   if (!workspace_id.empty()) {
     span.AddTag("workspace_id", workspace_id);
   }

@@ -29,32 +29,43 @@ auto LockHandler::HandleRequestJsonThrow(const userver::server::http::HttpReques
   dto::LockActionResult result;
   result.document_id = document_id;
 
-  if (method == userver::server::http::HttpMethod::kPost) {
-    result.acquired = lock_service_.Acquire(document_id, owner);
-    result.owner = result.acquired ? std::optional(owner) : lock_service_.GetOwner(document_id);
-    spdlog::info("Lock acquire document_id={} owner={} acquired={}", document_id, owner,
-                 result.acquired);
-  } else if (method == userver::server::http::HttpMethod::kPut) {
-    result.heartbeat = lock_service_.Heartbeat(document_id, owner);
-    result.owner = lock_service_.GetOwner(document_id);
-    spdlog::info("Lock heartbeat document_id={} owner={} ok={}", document_id, owner,
-                 result.heartbeat);
-  } else if (method == userver::server::http::HttpMethod::kDelete) {
-    if (request.GetArg("force") == "true") {
-      result.force_released = lock_service_.ForceRelease(document_id);
-      spdlog::info("Lock force release document_id={} ok={}", document_id, result.force_released);
-    } else {
-      result.released = lock_service_.Release(document_id, owner);
-      spdlog::info("Lock release document_id={} owner={} ok={}", document_id, owner,
-                   result.released);
-    }
-  } else if (method == userver::server::http::HttpMethod::kGet) {
-    result.owner = lock_service_.GetOwner(document_id);
-    spdlog::info("Lock status document_id={} locked={}", document_id, result.owner.has_value());
-  } else {
-    response.SetStatus(userver::server::http::HttpStatus::kMethodNotAllowed);
-    return dto::MakeErrorEnvelopeJson(dto::kApiVersion, dto::ErrorDto{"method_not_allowed",
-                                                                        "Method not allowed"});
+  switch (method) {
+    case userver::server::http::HttpMethod::kPost:
+      result.acquired = lock_service_.Acquire(document_id, owner);
+      result.owner = result.acquired ? std::optional(owner) : lock_service_.GetOwner(document_id);
+      spdlog::info("Lock acquire document_id={} owner={} acquired={}", document_id, owner,
+                   result.acquired);
+      break;
+
+    case userver::server::http::HttpMethod::kPut:
+      result.heartbeat = lock_service_.Heartbeat(document_id, owner);
+      result.owner = lock_service_.GetOwner(document_id);
+      spdlog::info("Lock heartbeat document_id={} owner={} ok={}", document_id, owner,
+                   result.heartbeat);
+      break;
+
+    case userver::server::http::HttpMethod::kDelete:
+      if (request.GetArg("force") == "true") {
+        result.force_released = lock_service_.ForceRelease(document_id);
+        spdlog::info("Lock force release document_id={} ok={}", document_id,
+                     result.force_released);
+      } else {
+        result.released = lock_service_.Release(document_id, owner);
+        spdlog::info("Lock release document_id={} owner={} ok={}", document_id, owner,
+                     result.released);
+      }
+      break;
+
+    case userver::server::http::HttpMethod::kGet:
+      result.owner = lock_service_.GetOwner(document_id);
+      spdlog::info("Lock status document_id={} locked={}", document_id, result.owner.has_value());
+      break;
+
+    default:
+      response.SetStatus(userver::server::http::HttpStatus::kMethodNotAllowed);
+      return dto::MakeErrorEnvelopeJson(dto::kApiVersion,
+                                        dto::ErrorDto{"method_not_allowed",
+                                                      "Method not allowed"});
   }
 
   return dto::MakeSuccessEnvelopeJson(dto::kApiVersion, dto::MakeLockResult(result));

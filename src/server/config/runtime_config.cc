@@ -26,7 +26,7 @@ struct RuntimeConfigFile final {
 
 auto Normalize(std::string_view value) -> std::string {
   std::string out(value);
-  std::transform(out.begin(), out.end(), out.begin(),
+  std::ranges::transform(out, out.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return out;
 }

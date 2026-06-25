@@ -67,11 +67,10 @@ struct ComponentsConfig final {
   rfl::Rename<"handler-health", PublicHandlerConfig> handler_health;
   rfl::Rename<"handler-options", PublicHandlerConfig> handler_options;
   rfl::Rename<"handler-openapi", PublicHandlerConfig> handler_openapi;
+  rfl::Rename<"handler-swagger-ui", PublicHandlerConfig> handler_swagger_ui;
   rfl::Rename<"handler-locks", ProtectedHandlerConfig> handler_locks;
   rfl::Rename<"handler-presence", ProtectedHandlerConfig> handler_presence;
   rfl::Rename<"handler-protected-page", ProtectedHandlerConfig> handler_protected_page;
-  std::optional<rfl::Rename<"handler-swagger-ui", PublicHandlerConfig>> handler_swagger_ui{
-      std::nullopt};
 };
 
 struct MainTaskProcessorConfig final {
@@ -146,22 +145,18 @@ auto MakeProtectedHandler(std::string path, std::string method) -> ProtectedHand
 }
 
 auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::string& log_level,
-                      bool swagger_enabled) -> StaticConfig {
+                      bool /*swagger_enabled*/) -> StaticConfig {
   ComponentsConfig components{
       .logging = MakeLoggingConfig(log_level),
       .server = MakeServerConfig(host, port),
       .handler_health = MakePublicHandler("/api/v1/health", "GET"),
       .handler_options = MakePublicHandler("/api/v1/health", "OPTIONS"),
       .handler_openapi = MakePublicHandler("/api/v1/openapi.json", "GET"),
+      .handler_swagger_ui = MakePublicHandler("/swagger/", "GET"),
       .handler_locks = MakeProtectedHandler("/api/v1/locks/{document_id}", "GET,POST,PUT,DELETE"),
       .handler_presence = MakeProtectedHandler("/api/v1/presence/{workspace_id}", "GET,POST"),
       .handler_protected_page = MakeProtectedHandler("/api/v1/protected", "GET"),
   };
-
-  if (swagger_enabled) {
-    components.handler_swagger_ui = rfl::Rename<"handler-swagger-ui", PublicHandlerConfig>{
-        MakePublicHandler("/swagger/", "GET")};
-  }
 
   return StaticConfig{
       .components_manager =

@@ -1,7 +1,6 @@
 #include "server/components/cppwiki_server_component.h"
 
 #include <memory>
-
 #include <userver/server/handlers/auth/auth_checker_factory.hpp>
 #include <userver/server/handlers/auth/handler_auth_config.hpp>
 
@@ -20,10 +19,12 @@ namespace {
 
 class AuthCheckerFactory final : public userver::server::handlers::auth::AuthCheckerFactoryBase {
  public:
-  using userver::server::handlers::auth::AuthCheckerFactoryBase::AuthCheckerFactoryBase;
+  static constexpr std::string_view kAuthType = "cppwiki-auth-checker";
 
-  [[nodiscard]] userver::server::handlers::auth::AuthCheckerBasePtr MakeAuthChecker(
-      const userver::server::handlers::auth::HandlerAuthConfig&) const override {
+  explicit AuthCheckerFactory(const userver::components::ComponentContext&) {}
+
+  [[nodiscard]] auto MakeAuthChecker(const userver::server::handlers::auth::HandlerAuthConfig&)
+      const -> userver::server::handlers::auth::AuthCheckerBasePtr override {
     return std::make_shared<middleware::AuthCheckerImpl>();
   }
 };
