@@ -56,6 +56,8 @@ inline constexpr std::string_view kDefaultSwaggerDescription =
 inline constexpr std::string_view kSettingsAppDataDirectoryKey = "paths/appDataDirectory";
 inline constexpr std::string_view kSettingsDatabaseDirectoryKey = "paths/databaseDirectory";
 inline constexpr std::string_view kSettingsEditorDistDirectoryKey = "paths/editorDistDirectory";
+inline constexpr std::string_view kSettingsBackendEnabledKey = "backend/enabled";
+inline constexpr std::string_view kSettingsBackendBaseUrlKey = "backend/baseUrl";
 inline constexpr std::string_view kSettingsApplicationFontPointSizeKey =
     "appearance/applicationFontPointSize";
 

@@ -11,7 +11,8 @@ class ProgramSettings final {
  public:
   ProgramSettings(QString application_name, QString application_version, QString organization_name,
                   QString app_data_directory, QString database_directory,
-                  QString editor_dist_directory, int application_font_point_size);
+                  QString editor_dist_directory, QString backend_base_url, bool backend_enabled,
+                  int application_font_point_size);
 
   [[nodiscard]] static auto FromDefaults() -> ProgramSettings;
   [[nodiscard]] static auto FromSettings(const QSettings& settings) -> ProgramSettings;
@@ -23,6 +24,8 @@ class ProgramSettings final {
   [[nodiscard]] auto AppDataDirectory() const -> const QString&;
   [[nodiscard]] auto DatabaseDirectory() const -> const QString&;
   [[nodiscard]] auto EditorDistDirectory() const -> const QString&;
+  [[nodiscard]] auto BackendBaseUrl() const -> const QString&;
+  [[nodiscard]] auto BackendEnabled() const -> bool;
   [[nodiscard]] auto ApplicationFontPointSize() const -> int;
 
  private:
@@ -32,6 +35,8 @@ class ProgramSettings final {
   QString app_data_directory_;
   QString database_directory_;
   QString editor_dist_directory_;
+  QString backend_base_url_;
+  bool backend_enabled_;
   int application_font_point_size_;
 };
 

@@ -3,6 +3,8 @@
 
 #include <QMainWindow>
 
+class QLabel;
+
 namespace cppwiki {
 
 struct AppContext;
@@ -27,9 +29,11 @@ class MainWindow final : public QMainWindow {
   void BuildUi();
   void CreateInitialPage();
   void ShowSettingsDialog();
+  void UpdateBackendStatus();
 
   AppContext* context_ = nullptr;
   IPage* current_page_ = nullptr;
+  QLabel* backend_status_label_ = nullptr;
 };
 
 }  // namespace cppwiki

@@ -1,3 +1,34 @@
 QWidget#pagePanel {
   background-color: palette(base);
 }
+
+QFrame#sidebarFooter {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+QPushButton#sidebarSettingsButton {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: palette(text);
+}
+
+QFrame#profilePlaceholderCard {
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+QLabel#profilePlaceholderAvatar {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  font-weight: 700;
+}
+
+QLabel#profilePlaceholderName {
+  font-weight: 600;
+}
+
+QLabel#profilePlaceholderHint {
+  color: rgba(255, 255, 255, 0.65);
+}

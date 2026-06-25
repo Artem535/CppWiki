@@ -2,6 +2,7 @@
 
 #include <QAction>
 #include <QDialog>
+#include <QLabel>
 #include <QMenuBar>
 #include <QStatusBar>
 #include <QString>
@@ -26,6 +27,7 @@ MainWindow::~MainWindow() = default;
 void MainWindow::SetContext(AppContext* context) {
   context_ = context;
   CreateInitialPage();
+  UpdateBackendStatus();
 }
 
 void MainWindow::CreateInitialPage() {
@@ -37,6 +39,7 @@ void MainWindow::CreateInitialPage() {
 
   // Create the main page with the application context
   auto* page = new Page(*context_, this);
+  connect(page, &Page::settingsRequested, this, [this]() { ShowSettingsDialog(); });
   current_page_ = page;
 
   setCentralWidget(current_page_->Widget());
@@ -58,6 +61,8 @@ void MainWindow::ShowSettingsDialog() {
   updated_settings.SaveToSettings(settings);
   settings.sync();
 
+  context_->settings = updated_settings;
+  UpdateBackendStatus();
   statusBar()->showMessage(QStringLiteral("Settings saved."), 3000);
   emit settingsChanged();
 }
@@ -66,13 +71,23 @@ void MainWindow::BuildUi() {
   setWindowTitle(QStringLiteral("CppWiki"));
   resize(constants::kInitialWindowWidth, constants::kInitialWindowHeight);
   statusBar()->showMessage(QStringLiteral("Ready"));
+  backend_status_label_ = new QLabel(QStringLiteral("Backend: local only"), this);
+  statusBar()->addPermanentWidget(backend_status_label_);
+  menuBar()->hide();
+}
 
-  auto* settings_menu = menuBar()->addMenu(QStringLiteral("Settings"));
-  auto* preferences_action =
-      settings_menu->addAction(QIcon::fromTheme(QStringLiteral("settings-configure")),
-                               QStringLiteral("Preferences..."));
-  preferences_action->setShortcut(QKeySequence::Preferences);
-  connect(preferences_action, &QAction::triggered, this, [this]() { ShowSettingsDialog(); });
+void MainWindow::UpdateBackendStatus() {
+  if (backend_status_label_ == nullptr) {
+    return;
+  }
+
+  if (context_ == nullptr || !context_->settings.BackendEnabled()) {
+    backend_status_label_->setText(QStringLiteral("Backend: local only"));
+    return;
+  }
+
+  backend_status_label_->setText(
+      QStringLiteral("Backend: %1").arg(context_->settings.BackendBaseUrl()));
 }
 
 }  // namespace cppwiki

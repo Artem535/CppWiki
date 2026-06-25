@@ -31,6 +31,12 @@ auto DefaultApplicationFontPointSize() -> int {
   return constants::kDefaultApplicationFontPointSize;
 }
 
+auto DefaultBackendBaseUrl() -> QString {
+  return QStringLiteral("http://%1:%2")
+      .arg(ToQString(constants::kDefaultServerBindHost))
+      .arg(constants::kDefaultServerPort);
+}
+
 auto SettingsValueOrDefault(const QSettings& settings, std::string_view key,
                             const QString& fallback) -> QString {
   const auto value = settings.value(ToQString(key), fallback).toString();
@@ -43,6 +49,7 @@ auto SettingsValueOrDefault(const QSettings& settings, std::string_view key,
 ProgramSettings::ProgramSettings(QString application_name, QString application_version,
                                  QString organization_name, QString app_data_directory,
                                  QString database_directory, QString editor_dist_directory,
+                                 QString backend_base_url, bool backend_enabled,
                                  int application_font_point_size)
     : application_name_(std::move(application_name)),
       application_version_(std::move(application_version)),
@@ -50,6 +57,8 @@ ProgramSettings::ProgramSettings(QString application_name, QString application_v
       app_data_directory_(std::move(app_data_directory)),
       database_directory_(std::move(database_directory)),
       editor_dist_directory_(std::move(editor_dist_directory)),
+      backend_base_url_(std::move(backend_base_url)),
+      backend_enabled_(backend_enabled),
       application_font_point_size_(application_font_point_size) {}
 
 auto ProgramSettings::FromDefaults() -> ProgramSettings {
@@ -73,6 +82,11 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
       SettingsValueOrDefault(settings, constants::kSettingsEditorDistDirectoryKey,
                              QStringLiteral(CPPWIKI_EDITOR_DIST_DIR));
 
+  const auto backend_base_url = SettingsValueOrDefault(
+      settings, constants::kSettingsBackendBaseUrlKey, DefaultBackendBaseUrl());
+  const auto backend_enabled =
+      settings.value(ToQString(constants::kSettingsBackendEnabledKey), false).toBool();
+
   const auto application_font_point_size_value =
       settings.value(ToQString(constants::kSettingsApplicationFontPointSizeKey),
                      DefaultApplicationFontPointSize())
@@ -84,7 +98,8 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
   return ProgramSettings(ToQString(constants::kApplicationName),
                          ToQString(constants::kApplicationVersion),
                          ToQString(constants::kOrganizationName), app_data_directory,
-                         database_directory, editor_dist_directory,
+                         database_directory, editor_dist_directory, backend_base_url,
+                         backend_enabled,
                          application_font_point_size);
 }
 
@@ -92,6 +107,8 @@ void ProgramSettings::SaveToSettings(QSettings& settings) const {
   settings.setValue(ToQString(constants::kSettingsAppDataDirectoryKey), app_data_directory_);
   settings.setValue(ToQString(constants::kSettingsDatabaseDirectoryKey), database_directory_);
   settings.setValue(ToQString(constants::kSettingsEditorDistDirectoryKey), editor_dist_directory_);
+  settings.setValue(ToQString(constants::kSettingsBackendBaseUrlKey), backend_base_url_);
+  settings.setValue(ToQString(constants::kSettingsBackendEnabledKey), backend_enabled_);
   settings.setValue(ToQString(constants::kSettingsApplicationFontPointSizeKey),
                     application_font_point_size_);
 }
@@ -118,6 +135,14 @@ auto ProgramSettings::DatabaseDirectory() const -> const QString& {
 
 auto ProgramSettings::EditorDistDirectory() const -> const QString& {
   return editor_dist_directory_;
+}
+
+auto ProgramSettings::BackendBaseUrl() const -> const QString& {
+  return backend_base_url_;
+}
+
+auto ProgramSettings::BackendEnabled() const -> bool {
+  return backend_enabled_;
 }
 
 auto ProgramSettings::ApplicationFontPointSize() const -> int {

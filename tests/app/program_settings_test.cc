@@ -36,6 +36,9 @@ auto TestDefaultSettings() -> void {
           "database directory should end with configured directory name");
   Require(settings.EditorDistDirectory().endsWith(QStringLiteral("frontend/editor/dist")),
           "editor dist directory should point to frontend/editor/dist");
+  Require(settings.BackendBaseUrl() == QStringLiteral("http://127.0.0.1:8080"),
+          "backend url should default to the local server endpoint");
+  Require(!settings.BackendEnabled(), "backend should be disabled by default");
   Require(settings.ApplicationFontPointSize() > 0, "font size should be positive");
 }
 
@@ -49,6 +52,7 @@ auto TestSettingsOverrides() -> void {
   const auto app_data_directory = temporary_directory.filePath(QStringLiteral("app-data"));
   const auto database_directory = temporary_directory.filePath(QStringLiteral("database-override"));
   const auto editor_dist_directory = temporary_directory.filePath(QStringLiteral("editor-dist"));
+  const auto backend_base_url = QStringLiteral("http://localhost:9000");
 
   settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsAppDataDirectoryKey),
                     app_data_directory);
@@ -56,6 +60,9 @@ auto TestSettingsOverrides() -> void {
                     database_directory);
   settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsEditorDistDirectoryKey),
                     editor_dist_directory);
+  settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsBackendBaseUrlKey),
+                    backend_base_url);
+  settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsBackendEnabledKey), true);
   settings.setValue(
       cppwiki::ToQString(cppwiki::constants::kSettingsApplicationFontPointSizeKey), 15);
 
@@ -67,6 +74,9 @@ auto TestSettingsOverrides() -> void {
           "database directory should be read from QSettings");
   Require(program_settings.EditorDistDirectory() == editor_dist_directory,
           "editor dist directory should be read from QSettings");
+  Require(program_settings.BackendBaseUrl() == backend_base_url,
+          "backend base url should be read from QSettings");
+  Require(program_settings.BackendEnabled(), "backend enabled flag should be read from QSettings");
   Require(program_settings.ApplicationFontPointSize() == 15,
           "font size should be read from QSettings");
 }
@@ -80,13 +90,15 @@ auto TestSettingsRoundTrip() -> void {
 
   const auto app_data_directory = temporary_directory.filePath(QStringLiteral("app-data-roundtrip"));
   const auto database_directory = temporary_directory.filePath(QStringLiteral("database-roundtrip"));
-  const auto editor_dist_directory = temporary_directory.filePath(QStringLiteral("editor-dist-roundtrip"));
+  const auto editor_dist_directory =
+      temporary_directory.filePath(QStringLiteral("editor-dist-roundtrip"));
+  const auto backend_base_url = QStringLiteral("https://cppwiki.internal:9443");
 
   const cppwiki::ProgramSettings program_settings(
       cppwiki::ToQString(cppwiki::constants::kApplicationName),
       cppwiki::ToQString(cppwiki::constants::kApplicationVersion),
       cppwiki::ToQString(cppwiki::constants::kOrganizationName), app_data_directory,
-      database_directory, editor_dist_directory, 15);
+      database_directory, editor_dist_directory, backend_base_url, true, 15);
   program_settings.SaveToSettings(settings);
   settings.sync();
 
@@ -97,6 +109,9 @@ auto TestSettingsRoundTrip() -> void {
           "saved database directory should round-trip through QSettings");
   Require(reloaded.EditorDistDirectory() == editor_dist_directory,
           "saved editor dist directory should round-trip through QSettings");
+  Require(reloaded.BackendBaseUrl() == backend_base_url,
+          "saved backend base url should round-trip through QSettings");
+  Require(reloaded.BackendEnabled(), "saved backend enabled flag should round-trip through QSettings");
   Require(reloaded.ApplicationFontPointSize() == 15,
           "saved font size should round-trip through QSettings");
 }

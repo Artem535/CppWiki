@@ -29,6 +29,8 @@ class DocumentTreeModel;
 namespace cppwiki {
 
 class Page final : public QWidget, public IPage {
+  Q_OBJECT
+
  public:
   explicit Page(const AppContext& context, QWidget* parent = nullptr);
 
@@ -39,6 +41,9 @@ class Page final : public QWidget, public IPage {
 
   [[nodiscard]] auto Title() const -> QString override;
   auto Widget() -> QWidget* override;
+
+ signals:
+  void settingsRequested();
 
  private:
   void BuildUi();
@@ -68,6 +73,7 @@ class Page final : public QWidget, public IPage {
   const AppContext& context_;
   QWidget* page_panel_ = nullptr;
   QPushButton* new_document_button_ = nullptr;
+  QPushButton* settings_button_ = nullptr;
   QWebEngineView* editor_view_ = nullptr;
   QTreeView* page_tree_ = nullptr;
   std::unique_ptr<gui::DocumentTreeModel> tree_model_;

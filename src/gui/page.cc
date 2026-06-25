@@ -16,6 +16,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QInputDialog>
+#include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSize>
@@ -167,6 +168,52 @@ void Page::BuildUi() {
 
   page_panel_layout->addLayout(controls_layout);
   page_panel_layout->addWidget(page_tree_, 1);
+
+  auto* sidebar_footer = new QFrame(page_panel_);
+  sidebar_footer->setObjectName(QStringLiteral("sidebarFooter"));
+  sidebar_footer->setFrameShape(QFrame::NoFrame);
+  auto* sidebar_footer_layout = new QVBoxLayout(sidebar_footer);
+  sidebar_footer_layout->setContentsMargins(0, 10, 0, 0);
+  sidebar_footer_layout->setSpacing(10);
+
+  settings_button_ = new QPushButton(QStringLiteral("Settings"), sidebar_footer);
+  settings_button_->setObjectName(QStringLiteral("sidebarSettingsButton"));
+  settings_button_->setIcon(QIcon::fromTheme(QStringLiteral("settings-configure")));
+  settings_button_->setIconSize(QSize(16, 16));
+  settings_button_->setCursor(Qt::PointingHandCursor);
+  connect(settings_button_, &QPushButton::clicked, this, &Page::settingsRequested);
+  sidebar_footer_layout->addWidget(settings_button_);
+
+  auto* profile_card = new QFrame(sidebar_footer);
+  profile_card->setObjectName(QStringLiteral("profilePlaceholderCard"));
+  profile_card->setFrameShape(QFrame::NoFrame);
+  auto* profile_card_layout = new QHBoxLayout(profile_card);
+  profile_card_layout->setContentsMargins(12, 12, 12, 12);
+  profile_card_layout->setSpacing(10);
+
+  auto* profile_avatar = new QLabel(QStringLiteral("U"), profile_card);
+  profile_avatar->setObjectName(QStringLiteral("profilePlaceholderAvatar"));
+  profile_avatar->setAlignment(Qt::AlignCenter);
+  profile_avatar->setFixedSize(32, 32);
+  profile_card_layout->addWidget(profile_avatar, 0, Qt::AlignTop);
+
+  auto* profile_text_layout = new QVBoxLayout();
+  profile_text_layout->setContentsMargins(0, 0, 0, 0);
+  profile_text_layout->setSpacing(2);
+
+  auto* profile_name = new QLabel(QStringLiteral("Local user"), profile_card);
+  profile_name->setObjectName(QStringLiteral("profilePlaceholderName"));
+  profile_text_layout->addWidget(profile_name);
+
+  auto* profile_hint = new QLabel(QStringLiteral("Profile placeholder"), profile_card);
+  profile_hint->setObjectName(QStringLiteral("profilePlaceholderHint"));
+  profile_hint->setWordWrap(true);
+  profile_text_layout->addWidget(profile_hint);
+  profile_card_layout->addLayout(profile_text_layout, 1);
+
+  sidebar_footer_layout->addWidget(profile_card);
+  page_panel_layout->addWidget(sidebar_footer, 0);
+
   splitter->addWidget(page_panel_);
   splitter->addWidget(editor_view_);
   splitter->setStretchFactor(0, 0);

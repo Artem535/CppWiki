@@ -5,6 +5,7 @@
 #include <oclero/qlementine/widgets/LineEdit.hpp>
 
 #include <QAction>
+#include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QDesktopServices>
 #include <QFormLayout>
@@ -34,7 +35,7 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
     : QDialog(parent), current_settings_(settings) {
   setWindowTitle(QStringLiteral("Settings"));
   setModal(true);
-  resize(640, 220);
+  resize(640, 280);
 
   auto* root_layout = new QVBoxLayout(this);
   root_layout->setContentsMargins(16, 16, 16, 16);
@@ -46,7 +47,7 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   root_layout->addWidget(title);
 
   auto* hint = new oclero::qlementine::Label(
-      QStringLiteral("Adjust editor typography and open the local database folder."),
+      QStringLiteral("Adjust desktop appearance, inspect local storage and prepare optional backend connection settings."),
       oclero::qlementine::TextRole::Caption, this);
   hint->setWordWrap(true);
   root_layout->addWidget(hint);
@@ -63,6 +64,18 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   font_size_spinbox_->setSuffix(QStringLiteral(" pt"));
   font_size_spinbox_->setValue(current_settings_.ApplicationFontPointSize());
   form_layout_->addRow(QStringLiteral("Font size"), font_size_spinbox_);
+
+  backend_enabled_checkbox_ = new QCheckBox(QStringLiteral("Use backend when available"), this);
+  backend_enabled_checkbox_->setChecked(current_settings_.BackendEnabled());
+  form_layout_->addRow(QStringLiteral("Backend"), backend_enabled_checkbox_);
+
+  backend_base_url_edit_ = new oclero::qlementine::LineEdit(this);
+  backend_base_url_edit_->setText(current_settings_.BackendBaseUrl());
+  backend_base_url_edit_->setPlaceholderText(QStringLiteral("http://127.0.0.1:8080"));
+  backend_base_url_edit_->setEnabled(current_settings_.BackendEnabled());
+  connect(backend_enabled_checkbox_, &QCheckBox::toggled, backend_base_url_edit_,
+          &QWidget::setEnabled);
+  form_layout_->addRow(QStringLiteral("Backend URL"), backend_base_url_edit_);
 
   database_directory_edit_ = MakeReadOnlyPathLineEdit(current_settings_.DatabaseDirectory(), this);
   auto* open_folder_action =
@@ -96,10 +109,15 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
 }
 
 auto SettingsDialog::BuildProgramSettings() const -> ProgramSettings {
+  const auto backend_base_url = backend_base_url_edit_->text().trimmed().isEmpty()
+                                    ? current_settings_.BackendBaseUrl()
+                                    : backend_base_url_edit_->text().trimmed();
+
   return ProgramSettings(
       current_settings_.ApplicationName(), current_settings_.ApplicationVersion(),
       current_settings_.OrganizationName(), current_settings_.AppDataDirectory(),
       current_settings_.DatabaseDirectory(), current_settings_.EditorDistDirectory(),
+      backend_base_url, backend_enabled_checkbox_->isChecked(),
       font_size_spinbox_->value());
 }
 
