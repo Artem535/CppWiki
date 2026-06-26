@@ -13,7 +13,10 @@
 #include <QOAuthHttpServerReplyHandler>
 #include <QSet>
 #include <QTimeZone>
+#include <QTimer>
 #include <QUrl>
+
+#include <limits>
 
 #include "app/program_settings.h"
 #include "auth/auth_token_store.h"
@@ -25,6 +28,7 @@ namespace cppwiki::auth {
 namespace {
 
 constexpr auto kRefreshLeadTime = std::chrono::seconds(60);
+constexpr auto kMinimumWatchdogDelay = std::chrono::milliseconds(500);
 
 auto DecodeJwtExpiration(const QString& access_token) -> QDateTime {
   const auto segments = access_token.split(QLatin1Char('.'));
@@ -109,6 +113,10 @@ auto MakeAvatarText(const QString& profile_name) -> QString {
 
 AuthSessionManager::AuthSessionManager(QObject* parent) : QObject(parent) {
   token_store_ = new AuthTokenStore(ToQString(constants::kApplicationName), this);
+  token_watchdog_ = new QTimer(this);
+  token_watchdog_->setSingleShot(true);
+  connect(token_watchdog_, &QTimer::timeout, this,
+          [this]() { HandleTokenWatchdogTimeout(); });
 
   connect(token_store_, &AuthTokenStore::tokensLoaded, this,
           [this](const QString& access_token, const QString& refresh_token,
@@ -156,6 +164,7 @@ void AuthSessionManager::ApplySettings(const ProgramSettings& settings) {
   redirect_uri_ = settings.AuthRedirectUri().trimmed();
   id_token_.clear();
   ResetOAuthArtifacts();
+  StopTokenWatchdog();
   emit accessTokenChanged(QString{});
 
   if (!auth_enabled_) {
@@ -234,6 +243,7 @@ void AuthSessionManager::StartSignIn() {
 
 void AuthSessionManager::SignOut() {
   ResetOAuthArtifacts();
+  StopTokenWatchdog();
   id_token_.clear();
   ResetProfile();
   token_store_->Clear();
@@ -343,6 +353,7 @@ void AuthSessionManager::HandleStoredTokensLoaded(const QString& access_token,
 }
 
 void AuthSessionManager::HandleSessionRefreshFailure(const QString& message) {
+  StopTokenWatchdog();
   id_token_.clear();
   ResetProfile();
   token_store_->Clear();
@@ -357,6 +368,63 @@ void AuthSessionManager::HandleSessionRefreshFailure(const QString& message) {
   RebuildOAuthFlow();
   SetUiState(AuthSessionState::kSignedOut, QStringLiteral("Signed out"), message,
              QStringLiteral("Sign in"), true, false);
+}
+
+void AuthSessionManager::ScheduleTokenWatchdog() {
+  if (token_watchdog_ == nullptr || oauth_flow_ == nullptr) {
+    return;
+  }
+
+  token_watchdog_->stop();
+  const auto expiration = DecodeJwtExpiration(oauth_flow_->token().trimmed());
+  if (!expiration.isValid()) {
+    return;
+  }
+
+  const auto refresh_at = expiration.addSecs(-std::chrono::duration_cast<std::chrono::seconds>(
+                                                 kRefreshLeadTime)
+                                                 .count());
+  qint64 delay = QDateTime::currentDateTimeUtc().msecsTo(refresh_at);
+  if (delay <= 0) {
+    delay = static_cast<qint64>(kMinimumWatchdogDelay.count());
+  }
+
+  token_watchdog_->start(static_cast<int>(std::min<qint64>(
+      delay, std::numeric_limits<int>::max())));
+}
+
+void AuthSessionManager::StopTokenWatchdog() {
+  if (token_watchdog_ != nullptr) {
+    token_watchdog_->stop();
+  }
+}
+
+void AuthSessionManager::HandleTokenWatchdogTimeout() {
+  if (oauth_flow_ == nullptr) {
+    return;
+  }
+
+  const auto expiration = DecodeJwtExpiration(oauth_flow_->token().trimmed());
+  if (!expiration.isValid()) {
+    return;
+  }
+
+  if (oauth_flow_->refreshToken().trimmed().isEmpty()) {
+    HandleSessionRefreshFailure(
+        QStringLiteral("Desktop access token expired and no refresh token is available."));
+    return;
+  }
+
+  if (expiration <= QDateTime::currentDateTimeUtc()) {
+    SetUiState(AuthSessionState::kRefreshing, QStringLiteral("Refreshing session"),
+               QStringLiteral("Access token expired. Requesting a fresh access token."),
+               QStringLiteral("Sign out"), false, true);
+  } else {
+    SetUiState(AuthSessionState::kRefreshing, QStringLiteral("Refreshing session"),
+               QStringLiteral("Access token is about to expire. Refreshing it in the background."),
+               QStringLiteral("Sign out"), false, true);
+  }
+  oauth_flow_->refreshTokens();
 }
 
 void AuthSessionManager::ResetProfile() {
@@ -407,6 +475,7 @@ void AuthSessionManager::UpdateAuthenticatedUi(const QString& message_prefix) {
   }
 
   UpdateProfileFromTokens();
+  ScheduleTokenWatchdog();
   SetUiState(AuthSessionState::kAuthenticated, QStringLiteral("Signed in"),
              FormatTokenExpirySubtitle(message_prefix, oauth_flow_->token().trimmed()),
              QStringLiteral("Sign out"), false, true);
@@ -586,6 +655,7 @@ void AuthSessionManager::RebuildOAuthFlow() {
 }
 
 void AuthSessionManager::ResetOAuthArtifacts() {
+  StopTokenWatchdog();
   if (oauth_flow_ != nullptr) {
     oauth_flow_->setToken(QString{});
     oauth_flow_->setRefreshToken(QString{});

@@ -6,6 +6,7 @@
 
 class QOAuth2AuthorizationCodeFlow;
 class QOAuthHttpServerReplyHandler;
+class QTimer;
 
 namespace cppwiki {
 class ProgramSettings;
@@ -52,6 +53,9 @@ class AuthSessionManager final : public QObject {
   void HandleStoredTokensLoaded(const QString& access_token, const QString& refresh_token,
                                 const QString& id_token);
   void HandleSessionRefreshFailure(const QString& message);
+  void ScheduleTokenWatchdog();
+  void StopTokenWatchdog();
+  void HandleTokenWatchdogTimeout();
   void ResetProfile();
   void UpdateProfileFromTokens();
   void UpdateAuthenticatedUi(const QString& message_prefix = QStringLiteral("Signed in."));
@@ -77,6 +81,7 @@ class AuthSessionManager final : public QObject {
   AuthTokenStore* token_store_ = nullptr;
   QOAuth2AuthorizationCodeFlow* oauth_flow_ = nullptr;
   QOAuthHttpServerReplyHandler* reply_handler_ = nullptr;
+  QTimer* token_watchdog_ = nullptr;
   AuthSessionState state_ = AuthSessionState::kDisabled;
   bool auth_enabled_ = false;
   bool can_start_sign_in_ = false;
