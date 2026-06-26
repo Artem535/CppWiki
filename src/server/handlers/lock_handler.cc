@@ -8,6 +8,7 @@
 #include "server/dto/lock_response.h"
 #include "server/dto/response_envelope.h"
 #include "server/handlers/handler_utils.h"
+#include "server/middleware/auth_checker_impl.h"
 
 namespace cppwiki::server::handlers {
 
@@ -17,13 +18,13 @@ LockHandler::LockHandler(const userver::components::ComponentConfig& config,
 
 auto LockHandler::HandleRequestJsonThrow(const userver::server::http::HttpRequest& request,
                                          const userver::formats::json::Value& request_body,
-                                         userver::server::request::RequestContext&) const
+                                         userver::server::request::RequestContext& context) const
     -> userver::formats::json::Value {
   auto& response = request.GetHttpResponse();
   PrepareJsonResponse(request, "GET, POST, PUT, DELETE, OPTIONS");
 
   const auto document_id = std::string(request.GetPathArg("document_id"));
-  const auto owner = ExtractOwner(request_body, request);
+  const auto owner = ExtractOwner(request_body, request, context);
   const auto method = request.GetMethod();
 
   dto::LockActionResult result;
@@ -72,7 +73,9 @@ auto LockHandler::HandleRequestJsonThrow(const userver::server::http::HttpReques
 }
 
 auto LockHandler::ExtractOwner(const userver::formats::json::Value& request_body,
-                               const userver::server::http::HttpRequest& request) -> std::string {
+                               const userver::server::http::HttpRequest& request,
+                               const userver::server::request::RequestContext& context)
+    -> std::string {
   if (const auto parsed = dto::ParseJsonBody<dto::LockRequestDto>(request_body);
       parsed && parsed->owner) {
     return *parsed->owner;
@@ -80,6 +83,15 @@ auto LockHandler::ExtractOwner(const userver::formats::json::Value& request_body
   const auto header = request.GetHeader("x-lock-owner");
   if (!header.empty()) {
     return std::string(header);
+  }
+  if (const auto principal =
+          context.GetDataOptional<middleware::JwtPrincipal>(middleware::kJwtPrincipalContextKey)) {
+    if (!principal->preferred_username.empty()) {
+      return principal->preferred_username;
+    }
+    if (!principal->subject.empty()) {
+      return principal->subject;
+    }
   }
   return "anonymous";
 }

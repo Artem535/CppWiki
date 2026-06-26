@@ -26,7 +26,8 @@ class LockHandler final : public userver::server::handlers::HttpHandlerJsonBase 
   mutable service::LockService lock_service_;
 
   [[nodiscard]] static auto ExtractOwner(const userver::formats::json::Value& request_body,
-                                         const userver::server::http::HttpRequest& request)
+                                         const userver::server::http::HttpRequest& request,
+                                         const userver::server::request::RequestContext& context)
       -> std::string;
 };
 

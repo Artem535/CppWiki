@@ -7,6 +7,10 @@
 
 #include "server/service/presence_service.h"
 
+namespace cppwiki::server::dto {
+struct PresenceHeartbeatRequestDto;
+}
+
 namespace cppwiki::server::handlers {
 
 class PresenceHandler final : public userver::server::handlers::HttpHandlerJsonBase {
@@ -24,6 +28,10 @@ class PresenceHandler final : public userver::server::handlers::HttpHandlerJsonB
 
  private:
   mutable service::PresenceService presence_service_;
+
+  [[nodiscard]] static auto ExtractUserId(
+      const std::optional<dto::PresenceHeartbeatRequestDto>& heartbeat_request,
+      const userver::server::request::RequestContext& context) -> std::string;
 };
 
 }  // namespace cppwiki::server::handlers
