@@ -37,6 +37,7 @@ class MainWindow final : public QMainWindow {
   void ShowSettingsDialog();
   void UpdateBackendStatus();
   void UpdateDocumentStatus(const QString& message, bool is_error);
+  void UpdateCollaborationStatus(const QString& summary, const QString& details, bool is_warning);
 
   AppContext* context_ = nullptr;
   IPage* current_page_ = nullptr;
@@ -47,6 +48,9 @@ class MainWindow final : public QMainWindow {
   QWidget* backend_status_widget_ = nullptr;
   oclero::qlementine::StatusBadgeWidget* backend_status_badge_ = nullptr;
   QLabel* backend_status_label_ = nullptr;
+  QWidget* collaboration_status_widget_ = nullptr;
+  oclero::qlementine::StatusBadgeWidget* collaboration_status_badge_ = nullptr;
+  QLabel* collaboration_status_label_ = nullptr;
 };
 
 }  // namespace cppwiki

@@ -80,11 +80,17 @@ void MainWindow::CreateInitialPage() {
   connect(page, &Page::settingsRequested, this, [this]() { ShowSettingsDialog(); });
   connect(page, &Page::documentStatusChanged, this,
           [this](const QString& message, bool is_error) { UpdateDocumentStatus(message, is_error); });
+  connect(page, &Page::collaborationStatusChanged, this,
+          [this](const QString& summary, const QString& details, bool is_warning) {
+            UpdateCollaborationStatus(summary, details, is_warning);
+          });
   current_page_ = page;
 
   setCentralWidget(current_page_->Widget());
   setWindowTitle(QStringLiteral("CppWiki - %1").arg(current_page_->Title()));
   UpdateDocumentStatus(QStringLiteral("Document: ready"), false);
+  UpdateCollaborationStatus(QStringLiteral("Collab: idle"),
+                            QStringLiteral("Open a document to negotiate editing access."), false);
 }
 
 void MainWindow::ShowSettingsDialog() {
@@ -124,10 +130,13 @@ void MainWindow::BuildUi() {
   });
   std::tie(document_status_widget_, document_status_badge_, document_status_label_) =
       MakeStatusWidget(QStringLiteral("Document: ready"), this);
+  std::tie(collaboration_status_widget_, collaboration_status_badge_, collaboration_status_label_) =
+      MakeStatusWidget(QStringLiteral("Collab: idle"), this);
   std::tie(backend_status_widget_, backend_status_badge_, backend_status_label_) =
       MakeStatusWidget(QStringLiteral("Backend: local only"), this);
   statusBar()->addPermanentWidget(backend_refresh_button_);
   statusBar()->addPermanentWidget(document_status_widget_);
+  statusBar()->addPermanentWidget(collaboration_status_widget_);
   statusBar()->addPermanentWidget(backend_status_widget_);
   menuBar()->hide();
 }
@@ -189,6 +198,34 @@ void MainWindow::UpdateDocumentStatus(const QString& message, bool is_error) {
   }
 
   document_status_badge_->setBadge(oclero::qlementine::StatusBadge::Info);
+}
+
+void MainWindow::UpdateCollaborationStatus(const QString& summary, const QString& details,
+                                           bool is_warning) {
+  if (collaboration_status_label_ == nullptr || collaboration_status_badge_ == nullptr) {
+    return;
+  }
+
+  collaboration_status_label_->setText(
+      details.trimmed().isEmpty() ? summary : QStringLiteral("%1 (%2)").arg(summary, details));
+  collaboration_status_label_->setToolTip(details);
+
+  if (summary.contains(QStringLiteral("editing"), Qt::CaseInsensitive)) {
+    collaboration_status_badge_->setBadge(oclero::qlementine::StatusBadge::Success);
+    return;
+  }
+
+  if (summary.contains(QStringLiteral("local only"), Qt::CaseInsensitive)) {
+    collaboration_status_badge_->setBadge(oclero::qlementine::StatusBadge::Info);
+    return;
+  }
+
+  if (is_warning || summary.contains(QStringLiteral("read-only"), Qt::CaseInsensitive)) {
+    collaboration_status_badge_->setBadge(oclero::qlementine::StatusBadge::Warning);
+    return;
+  }
+
+  collaboration_status_badge_->setBadge(oclero::qlementine::StatusBadge::Info);
 }
 
 }  // namespace cppwiki

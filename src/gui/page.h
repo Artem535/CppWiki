@@ -43,9 +43,10 @@ class Page final : public QWidget, public IPage {
   [[nodiscard]] auto Title() const -> QString override;
   auto Widget() -> QWidget* override;
 
- signals:
+signals:
   void settingsRequested();
   void documentStatusChanged(const QString& message, bool is_error);
+  void collaborationStatusChanged(const QString& summary, const QString& details, bool is_warning);
 
  private:
   void BuildUi();

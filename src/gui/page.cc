@@ -266,6 +266,11 @@ void Page::BuildUi() {
 
               editor_bridge_->SetCurrentDocumentAccess(false, lock_owner, status_text);
               emit documentStatusChanged(status_text, false);
+              emit collaborationStatusChanged(QStringLiteral("Collab: read-only"),
+                                              lock_owner.trimmed().isEmpty()
+                                                  ? status_text
+                                                  : QStringLiteral("Locked by %1").arg(lock_owner),
+                                              true);
             });
   }
 
@@ -535,6 +540,8 @@ void Page::OpenDocumentWithAccess(const QString& page_id) {
     editor_bridge_->SetPendingDocumentAccess(true, QString{},
                                              QStringLiteral("Document: local-only editing"));
     emit documentStatusChanged(QStringLiteral("Document: local-only editing"), false);
+    emit collaborationStatusChanged(QStringLiteral("Collab: local only"),
+                                    QStringLiteral("Backend lock flow is not active."), false);
     editor_bridge_->RequestOpenDocument(page_id);
     return;
   }
@@ -548,6 +555,25 @@ void Page::OpenDocumentWithAccess(const QString& page_id) {
         editor_bridge_->SetPendingDocumentAccess(access_state.editable, access_state.lock_owner,
                                                  access_state.status_text);
         emit documentStatusChanged(access_state.status_text, false);
+        if (access_state.local_only) {
+          emit collaborationStatusChanged(QStringLiteral("Collab: local only"),
+                                          QStringLiteral("Backend lock flow is not active."),
+                                          false);
+        } else if (access_state.editable) {
+          emit collaborationStatusChanged(
+              QStringLiteral("Collab: editing"),
+              access_state.lock_owner.trimmed().isEmpty()
+                  ? QStringLiteral("Backend lock acquired.")
+                  : QStringLiteral("Owner: %1").arg(access_state.lock_owner),
+              false);
+        } else {
+          emit collaborationStatusChanged(
+              QStringLiteral("Collab: read-only"),
+              access_state.lock_owner.trimmed().isEmpty()
+                  ? access_state.status_text
+                  : QStringLiteral("Locked by %1").arg(access_state.lock_owner),
+              true);
+        }
         editor_bridge_->RequestOpenDocument(page_id);
       });
 }
