@@ -21,6 +21,10 @@ class QEditorBridge final : public QObject {
 
   // Set the document repository for persistence operations.
   void SetRepository(std::shared_ptr<storage::LocalDocumentRepository> repository);
+  void SetPendingDocumentAccess(bool editable, QString lock_owner = {},
+                                QString access_message = {});
+  void SetCurrentDocumentAccess(bool editable, QString lock_owner = {},
+                                QString access_message = {});
   void RequestOpenDocument(const QString& page_id);
   void ClearCurrentDocumentSelection();
 
@@ -42,11 +46,18 @@ signals:
   void documentLoaded(const QVariantMap& document);
   void documentLoadFailed(const QString& pageId, const QString& message);
   void documentSelectionCleared();
+  void documentAccessChanged(bool editable, const QString& lock_owner, const QString& access_message);
 
   // Emitted when document save status changes (for UI feedback).
   void saveStatusChanged(const QString& pageId, bool success, const QString& message);
 
  private:
+  bool pending_document_editable_ = true;
+  bool current_document_editable_ = true;
+  QString pending_lock_owner_;
+  QString current_lock_owner_;
+  QString pending_access_message_;
+  QString current_access_message_;
   std::shared_ptr<storage::LocalDocumentRepository> repository_;
   QString current_page_id_;
 };

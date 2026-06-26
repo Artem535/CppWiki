@@ -33,6 +33,7 @@
 #include <utility>
 
 #include "auth/auth_session_manager.h"
+#include "backend/backend_client.h"
 #include "bridge/editor_bridge.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
@@ -255,6 +256,18 @@ void Page::BuildUi() {
     connect(context_.auth_session_manager, &auth::AuthSessionManager::sessionChanged, this,
             [this]() { UpdateAuthCard(); });
   }
+  if (context_.backend_client != nullptr) {
+    connect(context_.backend_client, &backend::BackendClient::documentAccessInvalidated, this,
+            [this](const QString& document_id, const QString& lock_owner,
+                   const QString& status_text) {
+              if (document_id != selected_page_id_ || editor_bridge_ == nullptr) {
+                return;
+              }
+
+              editor_bridge_->SetCurrentDocumentAccess(false, lock_owner, status_text);
+              emit documentStatusChanged(status_text, false);
+            });
+  }
 
   LoadEditor();
   PopulatePageList();
@@ -400,7 +413,7 @@ void Page::OnTreePressed(const QModelIndex& index) {
   }
 
   selected_page_id_ = QString::fromStdString(*doc_id);
-  editor_bridge_->RequestOpenDocument(QString::fromStdString(*doc_id));
+  OpenDocumentWithAccess(selected_page_id_);
 }
 
 void Page::CreateNewDocument() {
@@ -466,7 +479,7 @@ void Page::HandleCreatedDocument(const QVariantMap& response) {
   selected_page_id_ = page_id;
   ExpandAncestors(page_id);
   SelectDocumentById(page_id);
-  editor_bridge_->RequestOpenDocument(page_id);
+  OpenDocumentWithAccess(page_id);
 }
 
 void Page::SelectDocumentById(const QString& page_id) {
@@ -501,13 +514,42 @@ void Page::DeleteDocument(const QModelIndex& index) {
   const auto summaries = FetchDocumentSummaries();
   if (summaries.empty()) {
     selected_page_id_.clear();
+    if (context_.backend_client != nullptr) {
+      context_.backend_client->CloseDocumentSession();
+    }
     editor_bridge_->ClearCurrentDocumentSelection();
     return;
   }
 
   selected_page_id_ = QString::fromStdString(summaries.front().id);
   SelectDocumentById(selected_page_id_);
-  editor_bridge_->RequestOpenDocument(selected_page_id_);
+  OpenDocumentWithAccess(selected_page_id_);
+}
+
+void Page::OpenDocumentWithAccess(const QString& page_id) {
+  if (editor_bridge_ == nullptr || page_id.isEmpty()) {
+    return;
+  }
+
+  if (context_.backend_client == nullptr) {
+    editor_bridge_->SetPendingDocumentAccess(true, QString{},
+                                             QStringLiteral("Document: local-only editing"));
+    emit documentStatusChanged(QStringLiteral("Document: local-only editing"), false);
+    editor_bridge_->RequestOpenDocument(page_id);
+    return;
+  }
+
+  context_.backend_client->OpenDocumentSession(
+      page_id, [this, page_id](backend::DocumentAccessState access_state) {
+        if (page_id != selected_page_id_ || editor_bridge_ == nullptr) {
+          return;
+        }
+
+        editor_bridge_->SetPendingDocumentAccess(access_state.editable, access_state.lock_owner,
+                                                 access_state.status_text);
+        emit documentStatusChanged(access_state.status_text, false);
+        editor_bridge_->RequestOpenDocument(page_id);
+      });
 }
 
 void Page::MoveDocument(const QModelIndex& index, int delta) {

@@ -28,6 +28,12 @@ type QtEditorBridgeObject = {
     connect(callback: (document: LoadedDocument) => void): void;
     disconnect(callback: (document: LoadedDocument) => void): void;
   };
+  documentAccessChanged: {
+    connect(callback: (editable: boolean, lockOwner: string, accessMessage: string) => void): void;
+    disconnect(
+      callback: (editable: boolean, lockOwner: string, accessMessage: string) => void,
+    ): void;
+  };
   documentLoadFailed: {
     connect(callback: (pageId: string, message: string) => void): void;
     disconnect(callback: (pageId: string, message: string) => void): void;
@@ -114,6 +120,13 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
       qtObject.documentLoaded.connect(callback);
       return () => {
         qtObject.documentLoaded.disconnect(callback);
+      };
+    },
+
+    onDocumentAccessChanged(callback) {
+      qtObject.documentAccessChanged.connect(callback);
+      return () => {
+        qtObject.documentAccessChanged.disconnect(callback);
       };
     },
 

@@ -30,6 +30,9 @@ export type LoadedDocument = {
   createdAt: string;
   updatedAt: string;
   blocks: InitialDocumentSnapshot;
+  editable: boolean;
+  lockOwner?: string | null;
+  accessMessage?: string | null;
 };
 
 export type BridgeInfo = {
@@ -47,6 +50,9 @@ export interface EditorBridge {
   updateSnapshot(snapshot: DocumentSnapshot): Promise<BridgeResult<void>>;
   onDocumentOpenRequested(callback: (pageId: string) => void): () => void;
   onDocumentLoaded(callback: (document: LoadedDocument) => void): () => void;
+  onDocumentAccessChanged(
+    callback: (editable: boolean, lockOwner: string, accessMessage: string) => void,
+  ): () => void;
   onDocumentLoadFailed(callback: (pageId: string, message: string) => void): () => void;
   onDocumentSelectionCleared(callback: () => void): () => void;
 }

@@ -330,12 +330,31 @@ void QEditorBridge::SetRepository(
   repository_ = std::move(repository);
 }
 
+void QEditorBridge::SetPendingDocumentAccess(bool editable, QString lock_owner,
+                                             QString access_message) {
+  pending_document_editable_ = editable;
+  pending_lock_owner_ = std::move(lock_owner);
+  pending_access_message_ = std::move(access_message);
+}
+
+void QEditorBridge::SetCurrentDocumentAccess(bool editable, QString lock_owner,
+                                             QString access_message) {
+  current_document_editable_ = editable;
+  current_lock_owner_ = std::move(lock_owner);
+  current_access_message_ = std::move(access_message);
+  emit documentAccessChanged(current_document_editable_, current_lock_owner_,
+                             current_access_message_);
+}
+
 void QEditorBridge::RequestOpenDocument(const QString& page_id) {
   emit documentOpenRequested(page_id);
 }
 
 void QEditorBridge::ClearCurrentDocumentSelection() {
   current_page_id_.clear();
+  current_document_editable_ = true;
+  current_lock_owner_.clear();
+  current_access_message_.clear();
   emit documentSelectionCleared();
 }
 
@@ -552,6 +571,9 @@ QVariantMap QEditorBridge::loadDocument(const QString& page_id) {
   }
 
   current_page_id_ = page_id;
+  current_document_editable_ = pending_document_editable_;
+  current_lock_owner_ = pending_lock_owner_;
+  current_access_message_ = pending_access_message_;
   return SuccessResponse(QVariantMap{
       {QStringLiteral("id"), QString::fromStdString(result.document->metadata.id)},
       {QStringLiteral("title"), QString::fromStdString(result.document->metadata.title)},
@@ -560,6 +582,9 @@ QVariantMap QEditorBridge::loadDocument(const QString& page_id) {
       {QStringLiteral("createdAt"), QString::fromStdString(result.document->metadata.created_at)},
       {QStringLiteral("updatedAt"), QString::fromStdString(result.document->metadata.updated_at)},
       {QStringLiteral("blocks"), std::get<QVariantList>(std::move(blocks))},
+      {QStringLiteral("editable"), current_document_editable_},
+      {QStringLiteral("lockOwner"), current_lock_owner_},
+      {QStringLiteral("accessMessage"), current_access_message_},
   });
 }
 
@@ -572,6 +597,8 @@ QVariantMap QEditorBridge::openDocument(const QString& page_id) {
   }
 
   emit documentLoaded(response.value(QStringLiteral("result")).toMap());
+  emit documentAccessChanged(current_document_editable_, current_lock_owner_,
+                             current_access_message_);
   return response;
 }
 
@@ -579,6 +606,17 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
   if (current_page_id_.isEmpty()) {
     return ErrorResponse(QStringLiteral("no_document_selected"),
                          QStringLiteral("No document is selected."));
+  }
+
+  if (!current_document_editable_) {
+    emit saveStatusChanged(current_page_id_, false,
+                           current_access_message_.isEmpty()
+                               ? QStringLiteral("Document is read-only.")
+                               : current_access_message_);
+    return ErrorResponse(QStringLiteral("document_read_only"),
+                         current_access_message_.isEmpty()
+                             ? QStringLiteral("Document is read-only.")
+                             : current_access_message_);
   }
 
   emit saveStatusChanged(current_page_id_, true, QStringLiteral("Saving..."));

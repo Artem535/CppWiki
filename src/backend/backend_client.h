@@ -1,8 +1,11 @@
 #ifndef CPPWIKI_SRC_BACKEND_BACKEND_CLIENT_H_
 #define CPPWIKI_SRC_BACKEND_BACKEND_CLIENT_H_
 
+#include <functional>
 #include <QObject>
 #include <QString>
+
+#include <cstdint>
 
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -21,6 +24,13 @@ enum class BackendConnectionState {
   kUnavailable,
 };
 
+struct DocumentAccessState final {
+  bool editable = true;
+  bool local_only = false;
+  QString lock_owner;
+  QString status_text;
+};
+
 class BackendClient final : public QObject {
   Q_OBJECT
 
@@ -30,26 +40,46 @@ class BackendClient final : public QObject {
   void ApplySettings(const ProgramSettings& settings);
   void RefreshHealth();
   void SetAccessToken(QString access_token);
+  void OpenDocumentSession(const QString& document_id,
+                           std::function<void(DocumentAccessState)> callback);
+  void CloseDocumentSession();
 
   [[nodiscard]] auto State() const -> BackendConnectionState;
   [[nodiscard]] auto BaseUrl() const -> const QString&;
   [[nodiscard]] auto StatusText() const -> const QString&;
 
- signals:
+signals:
   void statusChanged(cppwiki::backend::BackendConnectionState state, const QString& status_text);
+  void documentAccessInvalidated(const QString& document_id, const QString& lock_owner,
+                                 const QString& status_text);
 
  private:
   void SetStatus(BackendConnectionState state, QString status_text);
   void AbortInFlightRequest();
+  void AbortSessionRequest();
+  void AbortHeartbeatRequest();
+  void ReleaseDocumentLock(const QString& document_id, std::function<void()> continuation);
+  void AcquireDocumentLock(const QString& document_id,
+                           std::function<void(DocumentAccessState)> callback,
+                           std::uint64_t request_id);
+  void StartHeartbeat();
+  void StopHeartbeat();
+  void SendHeartbeat();
   [[nodiscard]] auto HealthUrl() const -> QString;
+  [[nodiscard]] auto ApiUrl(const QString& path) const -> QString;
 
   QNetworkAccessManager* network_manager_ = nullptr;
   QTimer* refresh_timer_ = nullptr;
+  QTimer* heartbeat_timer_ = nullptr;
   QNetworkReply* in_flight_reply_ = nullptr;
+  QNetworkReply* session_reply_ = nullptr;
+  QNetworkReply* heartbeat_reply_ = nullptr;
   QString access_token_;
   QString base_url_;
+  QString active_document_id_;
   QString status_text_ = QStringLiteral("Backend: local only");
   BackendConnectionState state_ = BackendConnectionState::kLocalOnly;
+  std::uint64_t session_request_id_ = 0;
   bool enabled_ = false;
 };
 

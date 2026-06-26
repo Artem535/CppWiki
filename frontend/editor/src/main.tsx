@@ -21,6 +21,7 @@ import {
 function EditorApp() {
   const [bridge, setBridge] = useState<EditorBridge | null>(null);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const [isEditable, setIsEditable] = useState(true);
   const [, setIsLoadingDocument] = useState(false);
   const [hasLoadedDocumentOnce, setHasLoadedDocumentOnce] = useState(false);
   const editorTheme: "dark" = "dark";
@@ -57,7 +58,7 @@ function EditorApp() {
   };
 
   const flushAutosave = async (activeBridge: EditorBridge | null) => {
-    if (!activeBridge || !selected_page_id.current) {
+    if (!activeBridge || !selected_page_id.current || !isEditable) {
       return;
     }
 
@@ -109,11 +110,18 @@ function EditorApp() {
         applyLoadedBlocks(document.blocks);
         selected_page_id.current = document.id;
         setSelectedPageId(document.id);
+        setIsEditable(document.editable);
         window.setTimeout(() => {
           replacing_document.current = false;
           setIsLoadingDocument(false);
         }, 0);
       });
+
+      const unsubscribeAccessChanged = created_bridge.onDocumentAccessChanged(
+        (editable) => {
+          setIsEditable(editable);
+        },
+      );
 
       const unsubscribeLoadFailed = created_bridge.onDocumentLoadFailed(
         (_pageId, message) => {
@@ -125,10 +133,12 @@ function EditorApp() {
         created_bridge.onDocumentSelectionCleared(() => {
           selected_page_id.current = null;
           setSelectedPageId(null);
+          setIsEditable(true);
           setIsLoadingDocument(false);
         });
       unsubscribers.push(
         unsubscribeLoaded,
+        unsubscribeAccessChanged,
         unsubscribeLoadFailed,
         unsubscribeSelectionCleared,
       );
@@ -152,7 +162,7 @@ function EditorApp() {
   }, [editor]);
 
   const handleEditorChange = () => {
-    if (!bridge || !selectedPageId || replacing_document.current) {
+    if (!bridge || !selectedPageId || !isEditable || replacing_document.current) {
       return;
     }
 
@@ -175,6 +185,7 @@ function EditorApp() {
           >
             <BlockNoteView
               editor={editor}
+              editable={isEditable}
               onChange={handleEditorChange}
               theme={editorTheme}
             />
