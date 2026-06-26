@@ -40,6 +40,9 @@ class AuthSessionManager final : public QObject {
   [[nodiscard]] auto ActionLabel() const -> const QString&;
   [[nodiscard]] auto CanStartSignIn() const -> bool;
   [[nodiscard]] auto CanSignOut() const -> bool;
+  [[nodiscard]] auto ProfileName() const -> const QString&;
+  [[nodiscard]] auto ProfileHint() const -> const QString&;
+  [[nodiscard]] auto ProfileAvatarText() const -> const QString&;
 
  signals:
   void sessionChanged();
@@ -49,6 +52,8 @@ class AuthSessionManager final : public QObject {
   void HandleStoredTokensLoaded(const QString& access_token, const QString& refresh_token,
                                 const QString& id_token);
   void HandleSessionRefreshFailure(const QString& message);
+  void ResetProfile();
+  void UpdateProfileFromTokens();
   void UpdateAuthenticatedUi(const QString& message_prefix = QStringLiteral("Signed in."));
   void PersistCurrentTokens();
   void RebuildOAuthFlow();
@@ -63,6 +68,9 @@ class AuthSessionManager final : public QObject {
   QString client_id_;
   QString redirect_uri_;
   QString id_token_;
+  QString profile_name_ = QStringLiteral("Auth unavailable");
+  QString profile_hint_ = QStringLiteral("Auth session is not available.");
+  QString profile_avatar_text_ = QStringLiteral("A");
   QString title_ = QStringLiteral("Auth disabled");
   QString subtitle_ = QStringLiteral("Enable auth in settings to use browser login.");
   QString action_label_ = QStringLiteral("Sign in");

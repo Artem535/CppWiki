@@ -8,6 +8,7 @@
 #include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <QOAuth2AuthorizationCodeFlow>
 #include <QOAuthHttpServerReplyHandler>
 #include <QSet>
@@ -64,6 +65,46 @@ auto FormatTokenExpirySubtitle(const QString& prefix, const QString& access_toke
            expiration.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss t")));
 }
 
+auto DecodeJwtObject(const QString& token) -> QJsonObject {
+  const auto segments = token.split(QLatin1Char('.'));
+  if (segments.size() != 3) {
+    return {};
+  }
+
+  auto payload = segments.at(1).toUtf8();
+  payload.replace('-', '+');
+  payload.replace('_', '/');
+  while (payload.size() % 4 != 0) {
+    payload.append('=');
+  }
+
+  const auto payload_json = QByteArray::fromBase64(payload, QByteArray::Base64Encoding);
+  const auto document = QJsonDocument::fromJson(payload_json);
+  return document.isObject() ? document.object() : QJsonObject{};
+}
+
+auto FirstNonEmptyClaim(const QJsonObject& object,
+                        std::initializer_list<const char*> keys) -> QString {
+  for (const char* key : keys) {
+    const auto value = object.value(QLatin1StringView(key));
+    if (value.isString()) {
+      const auto text = value.toString().trimmed();
+      if (!text.isEmpty()) {
+        return text;
+      }
+    }
+  }
+  return {};
+}
+
+auto MakeAvatarText(const QString& profile_name) -> QString {
+  const auto trimmed = profile_name.trimmed();
+  if (trimmed.isEmpty()) {
+    return QStringLiteral("A");
+  }
+  return trimmed.left(1).toUpper();
+}
+
 }  // namespace
 
 AuthSessionManager::AuthSessionManager(QObject* parent) : QObject(parent) {
@@ -80,6 +121,7 @@ AuthSessionManager::AuthSessionManager(QObject* parent) : QObject(parent) {
       return;
     }
 
+    ResetProfile();
     SetUiState(AuthSessionState::kSignedOut, QStringLiteral("Signed out"),
                QStringLiteral("Ready to start desktop browser login."),
                QStringLiteral("Sign in"), true, false);
@@ -117,6 +159,7 @@ void AuthSessionManager::ApplySettings(const ProgramSettings& settings) {
   emit accessTokenChanged(QString{});
 
   if (!auth_enabled_) {
+    ResetProfile();
     SetUiState(AuthSessionState::kDisabled, QStringLiteral("Auth disabled"),
                QStringLiteral("Enable auth in settings to use browser login."),
                QStringLiteral("Sign in"), false, false);
@@ -124,6 +167,7 @@ void AuthSessionManager::ApplySettings(const ProgramSettings& settings) {
   }
 
   if (!HasRequiredConfig()) {
+    ResetProfile();
     SetUiState(AuthSessionState::kError, QStringLiteral("Auth not configured"),
                QStringLiteral("Set authorization URL, token URL, client ID and redirect URI in settings."),
                QStringLiteral("Sign in"), false, false);
@@ -131,6 +175,7 @@ void AuthSessionManager::ApplySettings(const ProgramSettings& settings) {
   }
 
   if (!IsLoopbackRedirectUri()) {
+    ResetProfile();
     SetUiState(AuthSessionState::kError, QStringLiteral("Callback strategy not supported"),
                QStringLiteral("Current desktop spike implements only localhost callback handling."),
                QStringLiteral("Sign in"), false, false);
@@ -150,6 +195,7 @@ void AuthSessionManager::ApplySettings(const ProgramSettings& settings) {
 
 void AuthSessionManager::StartSignIn() {
   if (!auth_enabled_) {
+    ResetProfile();
     SetUiState(AuthSessionState::kDisabled, QStringLiteral("Auth disabled"),
                QStringLiteral("Enable auth in settings to use browser login."),
                QStringLiteral("Sign in"), false, false);
@@ -157,6 +203,7 @@ void AuthSessionManager::StartSignIn() {
   }
 
   if (!HasRequiredConfig()) {
+    ResetProfile();
     SetUiState(AuthSessionState::kError, QStringLiteral("Auth not configured"),
                QStringLiteral("Set authorization URL, token URL, client ID and redirect URI in settings."),
                QStringLiteral("Sign in"), false, false);
@@ -164,6 +211,7 @@ void AuthSessionManager::StartSignIn() {
   }
 
   if (!IsLoopbackRedirectUri()) {
+    ResetProfile();
     SetUiState(AuthSessionState::kError, QStringLiteral("Callback strategy not supported"),
                QStringLiteral("Current desktop spike implements only localhost callback handling."),
                QStringLiteral("Sign in"), false, false);
@@ -187,6 +235,7 @@ void AuthSessionManager::StartSignIn() {
 void AuthSessionManager::SignOut() {
   ResetOAuthArtifacts();
   id_token_.clear();
+  ResetProfile();
   token_store_->Clear();
   emit accessTokenChanged(QString{});
 
@@ -198,6 +247,7 @@ void AuthSessionManager::SignOut() {
   }
 
   if (!HasRequiredConfig()) {
+    ResetProfile();
     SetUiState(AuthSessionState::kError, QStringLiteral("Auth not configured"),
                QStringLiteral("Set authorization URL, token URL, client ID and redirect URI in settings."),
                QStringLiteral("Sign in"), false, false);
@@ -205,6 +255,7 @@ void AuthSessionManager::SignOut() {
   }
 
   if (!IsLoopbackRedirectUri()) {
+    ResetProfile();
     SetUiState(AuthSessionState::kError, QStringLiteral("Callback strategy not supported"),
                QStringLiteral("Current desktop spike implements only localhost callback handling."),
                QStringLiteral("Sign in"), false, false);
@@ -241,6 +292,18 @@ auto AuthSessionManager::CanSignOut() const -> bool {
   return can_sign_out_;
 }
 
+auto AuthSessionManager::ProfileName() const -> const QString& {
+  return profile_name_;
+}
+
+auto AuthSessionManager::ProfileHint() const -> const QString& {
+  return profile_hint_;
+}
+
+auto AuthSessionManager::ProfileAvatarText() const -> const QString& {
+  return profile_avatar_text_;
+}
+
 void AuthSessionManager::HandleStoredTokensLoaded(const QString& access_token,
                                                   const QString& refresh_token,
                                                   const QString& id_token) {
@@ -249,6 +312,7 @@ void AuthSessionManager::HandleStoredTokensLoaded(const QString& access_token,
   }
 
   if (access_token.trimmed().isEmpty()) {
+    ResetProfile();
     SetUiState(AuthSessionState::kError, QStringLiteral("Stored session is invalid"),
                QStringLiteral("The restored auth session does not contain an access token."),
                QStringLiteral("Sign in"), true, false);
@@ -280,6 +344,7 @@ void AuthSessionManager::HandleStoredTokensLoaded(const QString& access_token,
 
 void AuthSessionManager::HandleSessionRefreshFailure(const QString& message) {
   id_token_.clear();
+  ResetProfile();
   token_store_->Clear();
   emit accessTokenChanged(QString{});
 
@@ -294,11 +359,54 @@ void AuthSessionManager::HandleSessionRefreshFailure(const QString& message) {
              QStringLiteral("Sign in"), true, false);
 }
 
+void AuthSessionManager::ResetProfile() {
+  profile_name_ = auth_enabled_ ? QStringLiteral("Signed out") : QStringLiteral("Auth unavailable");
+  profile_hint_ = auth_enabled_ ? QStringLiteral("Desktop browser login is not active.")
+                                : QStringLiteral("Auth session is not available.");
+  profile_avatar_text_ = QStringLiteral("A");
+}
+
+void AuthSessionManager::UpdateProfileFromTokens() {
+  if (oauth_flow_ == nullptr) {
+    ResetProfile();
+    return;
+  }
+
+  const auto id_payload = DecodeJwtObject(id_token_);
+  const auto access_payload = DecodeJwtObject(oauth_flow_->token().trimmed());
+
+  const auto preferred_name = FirstNonEmptyClaim(
+      id_payload, {"preferred_username", "name", "email", "sub"});
+  const auto fallback_name = FirstNonEmptyClaim(
+      access_payload, {"preferred_username", "name", "email", "sub"});
+  profile_name_ = !preferred_name.isEmpty() ? preferred_name : fallback_name;
+  if (profile_name_.isEmpty()) {
+    profile_name_ = QStringLiteral("Signed in");
+  }
+
+  const auto email = FirstNonEmptyClaim(id_payload, {"email"});
+  const auto access_email = FirstNonEmptyClaim(access_payload, {"email"});
+  const auto subject = FirstNonEmptyClaim(access_payload, {"sub"});
+
+  if (!email.isEmpty()) {
+    profile_hint_ = email;
+  } else if (!access_email.isEmpty()) {
+    profile_hint_ = access_email;
+  } else if (!subject.isEmpty()) {
+    profile_hint_ = QStringLiteral("sub: %1").arg(subject);
+  } else {
+    profile_hint_ = QStringLiteral("Authenticated desktop session");
+  }
+
+  profile_avatar_text_ = MakeAvatarText(profile_name_);
+}
+
 void AuthSessionManager::UpdateAuthenticatedUi(const QString& message_prefix) {
   if (oauth_flow_ == nullptr) {
     return;
   }
 
+  UpdateProfileFromTokens();
   SetUiState(AuthSessionState::kAuthenticated, QStringLiteral("Signed in"),
              FormatTokenExpirySubtitle(message_prefix, oauth_flow_->token().trimmed()),
              QStringLiteral("Sign out"), false, true);
@@ -446,6 +554,7 @@ void AuthSessionManager::RebuildOAuthFlow() {
               return;
             }
 
+            ResetProfile();
             SetUiState(AuthSessionState::kError, QStringLiteral("Authentication failed"),
                        QStringLiteral("Qt OAuth request failed with error code %1.")
                            .arg(static_cast<int>(error)),
@@ -468,6 +577,7 @@ void AuthSessionManager::RebuildOAuthFlow() {
               return;
             }
 
+            ResetProfile();
             SetUiState(AuthSessionState::kError, QStringLiteral("Authentication failed"),
                        details.isEmpty() ? QStringLiteral("Identity provider reported an error.")
                                          : details,

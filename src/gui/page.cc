@@ -866,9 +866,9 @@ void Page::UpdateAuthCard() {
   }
 
   const auto* auth = context_.auth_session_manager;
-  profile_avatar_label_->setText(QStringLiteral("A"));
-  profile_name_label_->setText(auth->Title());
-  profile_hint_label_->setText(auth->Subtitle());
+  profile_avatar_label_->setText(auth->ProfileAvatarText());
+  profile_name_label_->setText(auth->ProfileName());
+  profile_hint_label_->setText(QStringLiteral("%1\n%2").arg(auth->ProfileHint(), auth->Subtitle()));
   profile_action_button_->setText(auth->ActionLabel());
   profile_action_button_->setEnabled(auth->CanStartSignIn() || auth->CanSignOut());
 }
