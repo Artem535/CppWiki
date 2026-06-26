@@ -18,10 +18,17 @@ namespace cppwiki::server::config {
 
 namespace {
 
+struct AuthConfigFile final {
+  std::optional<std::string> issuer;
+  std::optional<std::string> audience;
+  std::optional<std::string> jwks_url;
+};
+
 struct RuntimeConfigFile final {
   std::optional<std::string> bind_host;
   std::optional<std::uint16_t> port;
   std::optional<std::string> log_level;
+  std::optional<AuthConfigFile> auth;
 };
 
 auto Normalize(std::string_view value) -> std::string {
@@ -86,6 +93,9 @@ auto RuntimeConfig::FromDefaults() -> RuntimeConfig {
       .bind_host = std::nullopt,
       .port = std::nullopt,
       .log_level = std::nullopt,
+      .auth_issuer = std::nullopt,
+      .auth_audience = std::nullopt,
+      .auth_jwks_url = std::nullopt,
       .swagger = false,
   };
 }
@@ -118,6 +128,11 @@ auto RuntimeConfig::FromCli(int argc, char* argv[]) -> RuntimeConfig {
     cfg.bind_host = file_config.bind_host;
     cfg.port = file_config.port;
     cfg.log_level = file_config.log_level;
+    if (file_config.auth) {
+      cfg.auth_issuer = file_config.auth->issuer;
+      cfg.auth_audience = file_config.auth->audience;
+      cfg.auth_jwks_url = file_config.auth->jwks_url;
+    }
   }
 
   if (cli_bind_host) {
@@ -145,7 +160,14 @@ auto RuntimeConfig::FromCli(int argc, char* argv[]) -> RuntimeConfig {
 }
 
 auto RuntimeConfig::ToStaticConfigYaml() const -> std::string {
-  return MakeStaticConfigYaml(Host(), Port(), LogLevel(), swagger);
+  return MakeStaticConfigYaml(
+      Host(), Port(), LogLevel(),
+      ServerAuthConfig{
+          .issuer = auth_issuer,
+          .audience = auth_audience,
+          .jwks_url = auth_jwks_url,
+      },
+      swagger);
 }
 
 auto RuntimeConfig::Host() const -> const std::string& {

@@ -251,10 +251,7 @@ if(CPPWIKI_BUILD_SERVER)
 
   add_executable(cppwiki_server_auth_checker_tests
     server/middleware/auth_checker_test.cc
-    ${CMAKE_SOURCE_DIR}/src/server/middleware/auth_checker_impl.cc
     ${CMAKE_SOURCE_DIR}/src/server/middleware/auth_checker_impl.h
-    ${CMAKE_SOURCE_DIR}/src/core/logging.cc
-    ${CMAKE_SOURCE_DIR}/src/core/logging.h
   )
 
   target_include_directories(cppwiki_server_auth_checker_tests

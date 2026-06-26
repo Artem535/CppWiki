@@ -1,6 +1,7 @@
 #include "server/components/cppwiki_server_component.h"
 
 #include <memory>
+#include <userver/clients/http/component.hpp>
 #include <userver/server/handlers/auth/auth_checker_factory.hpp>
 #include <userver/server/handlers/auth/handler_auth_config.hpp>
 
@@ -21,12 +22,18 @@ class AuthCheckerFactory final : public userver::server::handlers::auth::AuthChe
  public:
   static constexpr std::string_view kAuthType = "cppwiki-auth-checker";
 
-  explicit AuthCheckerFactory(const userver::components::ComponentContext&) {}
+  explicit AuthCheckerFactory(const userver::components::ComponentContext& context)
+      : http_client_(context.FindComponent<userver::components::HttpClient>().GetHttpClient()) {}
 
-  [[nodiscard]] auto MakeAuthChecker(const userver::server::handlers::auth::HandlerAuthConfig&)
+  [[nodiscard]] auto MakeAuthChecker(
+      const userver::server::handlers::auth::HandlerAuthConfig& config)
       const -> userver::server::handlers::auth::AuthCheckerBasePtr override {
-    return std::make_shared<middleware::AuthCheckerImpl>();
+    return std::make_shared<middleware::AuthCheckerImpl>(
+        http_client_, middleware::JwtAuthConfig::FromHandlerAuthConfig(config));
   }
+
+ private:
+  userver::clients::http::Client& http_client_;
 };
 
 }  // namespace

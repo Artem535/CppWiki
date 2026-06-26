@@ -25,6 +25,8 @@ inline constexpr std::string_view kSwaggerUiHtml = R"html(<!doctype html>
         url: "/api/v1/openapi.json",
         dom_id: "#swagger-ui",
         deepLinking: true,
+        persistAuthorization: true,
+        displayRequestDuration: true,
         presets: [SwaggerUIBundle.presets.apis]
       });
     </script>

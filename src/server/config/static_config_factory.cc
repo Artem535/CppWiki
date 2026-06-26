@@ -46,6 +46,9 @@ struct ServerConfig final {
 
 struct HandlerAuthConfig final {
   std::vector<std::string> types;
+  std::string issuer;
+  std::string audience;
+  rfl::Rename<"jwks_url", std::string> jwks_url;
 };
 
 struct PublicHandlerConfig final {
@@ -61,7 +64,30 @@ struct ProtectedHandlerConfig final {
   HandlerAuthConfig auth;
 };
 
+struct HttpClientMiddlewarePipelineConfig final {
+  struct Middlewares final {} middlewares{};
+};
+
+struct HttpClientConfig final {
+  rfl::Rename<"core-component", std::string> core_component{"http-client-core"};
+};
+
+struct HttpClientCoreConfig final {
+  rfl::Rename<"thread-name-prefix", std::string> thread_name_prefix{"http-client"};
+  int threads{2};
+  rfl::Rename<"fs-task-processor", std::string> fs_task_processor{"fs-task-processor"};
+};
+
+struct DnsClientConfig final {
+  rfl::Rename<"fs-task-processor", std::string> fs_task_processor{"fs-task-processor"};
+};
+
 struct ComponentsConfig final {
+  rfl::Rename<"http-client-middleware-pipeline", HttpClientMiddlewarePipelineConfig>
+      http_client_middleware_pipeline{};
+  rfl::Rename<"http-client", HttpClientConfig> http_client{};
+  rfl::Rename<"http-client-core", HttpClientCoreConfig> http_client_core{};
+  rfl::Rename<"dns-client", DnsClientConfig> dns_client{};
   LoggingConfig logging;
   ServerConfig server;
   rfl::Rename<"handler-health", PublicHandlerConfig> handler_health;
@@ -133,19 +159,23 @@ auto MakePublicHandler(std::string path, std::string method) -> PublicHandlerCon
   };
 }
 
-auto MakeProtectedHandler(std::string path, std::string method) -> ProtectedHandlerConfig {
+auto MakeProtectedHandler(std::string path, std::string method,
+                          const ServerAuthConfig& auth_config) -> ProtectedHandlerConfig {
   return ProtectedHandlerConfig{
       .path = std::move(path),
       .method = std::move(method),
       .auth =
           HandlerAuthConfig{
               .types = {std::string(kAuthCheckerType)},
+              .issuer = auth_config.issuer.value_or(""),
+              .audience = auth_config.audience.value_or(""),
+              .jwks_url = auth_config.jwks_url.value_or(""),
           },
   };
 }
 
 auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::string& log_level,
-                      bool /*swagger_enabled*/) -> StaticConfig {
+                      const ServerAuthConfig& auth_config, bool /*swagger_enabled*/) -> StaticConfig {
   ComponentsConfig components{
       .logging = MakeLoggingConfig(log_level),
       .server = MakeServerConfig(host, port),
@@ -153,9 +183,11 @@ auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::st
       .handler_options = MakePublicHandler("/api/v1/health", "OPTIONS"),
       .handler_openapi = MakePublicHandler("/api/v1/openapi.json", "GET"),
       .handler_swagger_ui = MakePublicHandler("/swagger/", "GET"),
-      .handler_locks = MakeProtectedHandler("/api/v1/locks/{document_id}", "GET,POST,PUT,DELETE"),
-      .handler_presence = MakeProtectedHandler("/api/v1/presence/{workspace_id}", "GET,POST"),
-      .handler_protected_page = MakeProtectedHandler("/api/v1/protected", "GET"),
+      .handler_locks =
+          MakeProtectedHandler("/api/v1/locks/{document_id}", "GET,POST,PUT,DELETE", auth_config),
+      .handler_presence =
+          MakeProtectedHandler("/api/v1/presence/{workspace_id}", "GET,POST", auth_config),
+      .handler_protected_page = MakeProtectedHandler("/api/v1/protected", "GET", auth_config),
   };
 
   return StaticConfig{
@@ -169,8 +201,9 @@ auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::st
 }  // namespace
 
 auto MakeStaticConfigYaml(const std::string& host, std::uint16_t port, const std::string& log_level,
-                          bool swagger_enabled) -> std::string {
-  return rfl::yaml::write(MakeStaticConfig(host, port, log_level, swagger_enabled)) + "\n";
+                          const ServerAuthConfig& auth_config, bool swagger_enabled) -> std::string {
+  return rfl::yaml::write(MakeStaticConfig(host, port, log_level, auth_config, swagger_enabled)) +
+         "\n";
 }
 
 }  // namespace cppwiki::server::config

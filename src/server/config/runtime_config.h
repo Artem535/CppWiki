@@ -14,6 +14,9 @@ struct RuntimeConfig final {
   std::optional<std::string> bind_host;
   std::optional<std::uint16_t> port;
   std::optional<std::string> log_level;
+  std::optional<std::string> auth_issuer;
+  std::optional<std::string> auth_audience;
+  std::optional<std::string> auth_jwks_url;
   bool swagger{false};
 
   [[nodiscard]] static auto FromDefaults() -> RuntimeConfig;

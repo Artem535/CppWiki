@@ -39,6 +39,10 @@ auto TestRuntimeConfigFromYaml() -> void {
     output << R"(bind_host: "0.0.0.0"
 port: 9091
 log_level: WARN # reflect-cpp should ignore this comment and we normalize the value
+auth:
+  issuer: "http://localhost:9000/application/o/cpp-wiki/"
+  audience: "cppwiki-desktop"
+  jwks_url: "http://localhost:9000/application/o/cpp-wiki/jwks/"
 )";
   }
 
@@ -51,6 +55,13 @@ log_level: WARN # reflect-cpp should ignore this comment and we normalize the va
   Require(cfg.Host() == "0.0.0.0", "yaml bind host should be applied");
   Require(cfg.Port() == 9091, "yaml port should be applied");
   Require(cfg.LogLevel() == "warn", "yaml log level should be applied");
+  Require(cfg.auth_issuer == std::optional<std::string>{"http://localhost:9000/application/o/cpp-wiki/"},
+          "yaml auth issuer should be applied");
+  Require(cfg.auth_audience == std::optional<std::string>{"cppwiki-desktop"},
+          "yaml auth audience should be applied");
+  Require(cfg.auth_jwks_url ==
+              std::optional<std::string>{"http://localhost:9000/application/o/cpp-wiki/jwks/"},
+          "yaml auth jwks url should be applied");
 
   std::filesystem::remove(config_path);
 }
@@ -73,6 +84,9 @@ auto TestStaticConfigGeneration() -> void {
   cfg.bind_host = "127.0.0.1";
   cfg.port = 8081;
   cfg.log_level = "info";
+  cfg.auth_issuer = "http://localhost:9000/application/o/cpp-wiki/";
+  cfg.auth_audience = "cppwiki-desktop";
+  cfg.auth_jwks_url = "http://localhost:9000/application/o/cpp-wiki/jwks/";
 
   const auto yaml = cfg.ToStaticConfigYaml();
   Require(!yaml.empty(), "static config YAML must not be empty");
@@ -81,6 +95,12 @@ auto TestStaticConfigGeneration() -> void {
   Require(yaml.find("listener:") != std::string::npos, "static config must contain listener");
   Require(yaml.find("port: 8081") != std::string::npos,
           "static config must contain configured port");
+  Require(yaml.find("http-client:") != std::string::npos,
+          "static config must include http-client component");
+  Require(yaml.find("issuer: http://localhost:9000/application/o/cpp-wiki/") != std::string::npos,
+          "static config must contain jwt issuer");
+  Require(yaml.find("audience: cppwiki-desktop") != std::string::npos,
+          "static config must contain jwt audience");
   Require(yaml.find("\n        default\n") == std::string::npos,
           "static config must not contain malformed logger entries");
 }

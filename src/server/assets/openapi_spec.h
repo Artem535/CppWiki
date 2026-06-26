@@ -12,6 +12,31 @@ inline constexpr std::string_view kOpenApiJson = R"json({
     "version": "0.1.0",
     "description": "CppWiki local/backend service API."
   },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Paste an Authentik access token."
+      }
+    },
+    "schemas": {
+      "LockRequest": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string", "example": "artem" }
+        }
+      },
+      "PresenceHeartbeatRequest": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string", "example": "artem" },
+          "scope": { "type": "string", "example": "edit" }
+        }
+      }
+    }
+  },
   "paths": {
     "/api/v1/health": {
       "get": {
@@ -24,73 +49,113 @@ inline constexpr std::string_view kOpenApiJson = R"json({
     "/api/v1/locks/{document_id}": {
       "get": {
         "summary": "Get document lock",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
-          { "name": "document_id", "in": "path", "required": true, "schema": { "type": "string" } }
+          { "name": "document_id", "in": "path", "required": true, "schema": { "type": "string" }, "example": "welcome-page" }
         ],
         "responses": {
           "200": { "description": "Lock state returned" },
-          "401": { "description": "Unauthorized" }
+          "401": { "description": "Missing or invalid bearer token" }
         }
       },
       "post": {
         "summary": "Acquire document lock",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
-          { "name": "document_id", "in": "path", "required": true, "schema": { "type": "string" } }
+          { "name": "document_id", "in": "path", "required": true, "schema": { "type": "string" }, "example": "welcome-page" }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LockRequest" }
+            }
+          }
+        },
         "responses": {
           "200": { "description": "Lock acquired" },
-          "401": { "description": "Unauthorized" }
+          "401": { "description": "Missing or invalid bearer token" }
         }
       },
       "put": {
         "summary": "Heartbeat document lock",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
-          { "name": "document_id", "in": "path", "required": true, "schema": { "type": "string" } }
+          { "name": "document_id", "in": "path", "required": true, "schema": { "type": "string" }, "example": "welcome-page" }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LockRequest" }
+            }
+          }
+        },
         "responses": {
           "200": { "description": "Lock heartbeat accepted" },
-          "401": { "description": "Unauthorized" }
+          "401": { "description": "Missing or invalid bearer token" }
         }
       },
       "delete": {
         "summary": "Release document lock",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
-          { "name": "document_id", "in": "path", "required": true, "schema": { "type": "string" } }
+          { "name": "document_id", "in": "path", "required": true, "schema": { "type": "string" }, "example": "welcome-page" },
+          { "name": "force", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Force release without owner match" }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LockRequest" }
+            }
+          }
+        },
         "responses": {
           "200": { "description": "Lock released" },
-          "401": { "description": "Unauthorized" }
+          "401": { "description": "Missing or invalid bearer token" }
         }
       }
     },
     "/api/v1/presence/{workspace_id}": {
       "get": {
         "summary": "Get workspace presence",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
-          { "name": "workspace_id", "in": "path", "required": true, "schema": { "type": "string" } }
+          { "name": "workspace_id", "in": "path", "required": true, "schema": { "type": "string" }, "example": "main-workspace" }
         ],
         "responses": {
           "200": { "description": "Presence state returned" },
-          "401": { "description": "Unauthorized" }
+          "401": { "description": "Missing or invalid bearer token" }
         }
       },
       "post": {
         "summary": "Update workspace presence",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
-          { "name": "workspace_id", "in": "path", "required": true, "schema": { "type": "string" } }
+          { "name": "workspace_id", "in": "path", "required": true, "schema": { "type": "string" }, "example": "main-workspace" }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PresenceHeartbeatRequest" }
+            }
+          }
+        },
         "responses": {
           "200": { "description": "Presence updated" },
-          "401": { "description": "Unauthorized" }
+          "401": { "description": "Missing or invalid bearer token" }
         }
       }
     },
     "/api/v1/protected": {
       "get": {
-        "summary": "Protected smoke endpoint",
+        "summary": "Protected JWT smoke endpoint",
+        "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": { "description": "Protected route reached" },
-          "401": { "description": "Unauthorized" }
+          "401": { "description": "Missing or invalid bearer token" }
         }
       }
     }

@@ -2,6 +2,11 @@ bind_host: 127.0.0.1
 port: 8080
 log_level: info
 
+auth:
+   issuer: http://localhost:9000/application/o/cpp-wiki/
+   audience: cpp-wiki
+   jwks_url: http://localhost:9000/application/o/cpp-wiki/jwks/
+
 # telemetry:
 #   enabled: false
 #   service_name: cppwiki-server

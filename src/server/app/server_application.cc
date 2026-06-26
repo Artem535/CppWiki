@@ -1,6 +1,8 @@
 #include "server/app/server_application.h"
 
 #include <spdlog/spdlog.h>
+#include <userver/clients/dns/component.hpp>
+#include <userver/clients/http/component_list.hpp>
 #include <userver/components/minimal_server_component_list.hpp>
 #include <userver/components/run.hpp>
 
@@ -38,6 +40,8 @@ auto RunServer(const config::RuntimeConfig& config) -> int {
                config.Port());
 
   auto component_list = userver::components::MinimalServerComponentList();
+  component_list.Append<userver::clients::dns::Component>();
+  component_list.AppendComponentList(userver::clients::http::ComponentList());
   components::RegisterCppWikiComponents(component_list);
 
   userver::components::Run(config_path.string(), std::nullopt, std::nullopt, component_list);
