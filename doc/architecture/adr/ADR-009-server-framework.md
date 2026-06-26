@@ -43,8 +43,8 @@ The desktop app, Qt/main event loop and local editing path remain untouched by t
   - `RuntimeConfig` parsed from CLI and optional YAML (reflect-cpp remains for the YAML contract);
   - generated userver static config passed to `components::Run`.
 - Handlers, middleware, services and DTOs now live in `src/server/{app,components,config,handlers,middleware,service,dto}`.
-- Swagger/OpenAPI UI is **deferred** from the MVP; it can be reintroduced later via userver tooling or external documentation.
-- Auth checker is implemented as a stub rejecting all traffic on protected routes, giving a 401 boundary for Phase 6 development.
+- Swagger/OpenAPI UI is kept as a lightweight manual verification surface for the backend contract, including bearer-token testing of protected routes.
+- Auth checker is implemented as a custom JWT validator for protected routes, backed by Authentik-issued bearer tokens and JWKS verification.
 
 ## Alternatives Considered
 
@@ -63,5 +63,5 @@ The desktop app, Qt/main event loop and local editing path remain untouched by t
 ## Migration Notes
 
 - All oat++ source files under `src/server/` were removed.
-- `config/server.yaml` remains reflect-cpp-parseable but loses the `enable_swagger` field.
+- `config/server.yaml` remains reflect-cpp-parseable and now also carries backend JWT settings (`issuer`, `audience`, `jwks_url`) for protected-route validation.
 - Health endpoint contract preserved: `{ apiVersion, ok, result }`.

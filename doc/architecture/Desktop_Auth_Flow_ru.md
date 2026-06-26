@@ -401,20 +401,17 @@ Protected endpoints должны работать по следующему пр
 - auth settings в desktop shell;
 - отдельный `AuthSessionManager`;
 - UI-карточка auth/profile в sidebar;
-- authorize URL сборка;
-- PKCE `verifier/challenge`;
-- запуск system browser login.
-
-Пока ещё отсутствуют:
-
-- callback receiver;
+- запуск system browser login;
+- localhost callback receiver;
 - token endpoint exchange;
 - keyring integration;
 - authenticated backend calls;
 - refresh flow;
-- полноценный logout flow.
+- logout flow;
+- backend JWT validation для protected routes;
+- runtime token-expiry handling без перезапуска приложения.
 
-Иными словами, текущая реализация — это auth skeleton для Phase 6, а не завершённая authentication subsystem.
+Текущая реализация уже достаточна, чтобы считать `Phase 6` закрытой на dev-стенде. Это ещё не окончательная долгосрочная authentication subsystem, но это уже не просто skeleton.
 
 ---
 
@@ -422,12 +419,10 @@ Protected endpoints должны работать по следующему пр
 
 После этого этапа следующий разумный порядок такой:
 
-1. выбрать callback strategy;
-2. добавить callback receiver;
-3. добавить token exchange client;
-4. добавить keyring adapter;
-5. подключить bearer auth к backend client;
-6. после этого включать backend JWT validation integration.
+1. использовать authenticated identity в collaboration flows вроде lock ownership и presence;
+2. сделать backend lock ownership авторитативным для write-доступа редактора;
+3. ввести read-only fallback в desktop editor, если lock принадлежит другому пользователю;
+4. только после этого переходить к authenticated replication и sync behavior.
 
 ---
 

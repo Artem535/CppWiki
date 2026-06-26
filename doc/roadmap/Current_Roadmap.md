@@ -143,10 +143,11 @@ Server work starts after this milestone, with only small Phase 3.5 shell fixes a
 - add `userver` application target (`cppwiki_server`).
 - health endpoint and CORS preflight.
 - runtime config -> userver static-config generation.
-- auth checker placeholder rejecting all traffic and public/protected route split.
+- public/protected route split and JWT-ready auth boundary.
 - lock and presence API stubs.
 - typed DTO/handler/service baseline for future page APIs.
 - structured logging with spdlog and userver span tags; configurable log level.
+- Swagger/OpenAPI page for manual protected-route verification.
 
 ## Milestone 7: Auth Spike
 
@@ -156,6 +157,8 @@ Server work starts after this milestone, with only small Phase 3.5 shell fixes a
 - refresh/logout flow.
 - backend JWT validation middleware.
 - editor never gets token access.
+- protected backend routes verified with real Authentik access tokens.
+- desktop shell shows authenticated user identity and handles token expiry without restart.
 
 ## Milestone 8: Sync Spike
 
@@ -206,15 +209,16 @@ Server work starts after this milestone, with only small Phase 3.5 shell fixes a
 | Document hash / dirty check | Deferred | Not required for current autosave loop. Revisit for Phase 3.5 when adding conflict detection, skip-save optimization or sync |
 | Page navigation shape | Tree migration underway | Current UI has native Qt navigation and row actions. Tree view is now the active path; list-only navigation is no longer the target shape |
 | Server framework migration | Closed (Phase 5) | `userver` is the chosen backend framework; dependency manifest and server skeleton are now aligned. ADR-009 records the rationale. |
+| Auth spike | Closed (Phase 6) | Desktop OIDC login, keyring persistence, refresh flow, server JWT validation and protected-route verification are now working on the dev setup. |
 | Observability baseline | Active decision | OpenTelemetry is the backend observability contract; exporter wiring stays decoupled from business code and editor runtime |
 
 ---
 
 # 6. Immediate Next Actions
 
-1. Close the remaining Phase 3.5 shell polish items: stable selection/highlight behavior, context actions, and visual cleanup around the page tree.
-2. Keep the server skeleton limited to health, logging, config and route separation until auth lands.
-3. Add OpenTelemetry request-span and metrics wiring without coupling the editor to the telemetry backend.
-4. Expand the server module layout into auth, locks and presence once the skeleton is stable.
-5. Add backend configuration wiring in the desktop app without making local editing depend on the server.
-6. Add a small user-visible save/error state in the desktop shell before auth and sync phases expand.
+1. Start Phase 7 and make the backend lock owner authoritative instead of treating lock/presence endpoints as authenticated stubs.
+2. Wire desktop editing flow to acquire/release locks and send heartbeat while the editor is active.
+3. Enforce read-only fallback in the desktop editor bridge when another user owns the lock.
+4. Surface lock owner and presence state in the desktop shell using the authenticated identity that now comes from JWT.
+5. Add OpenTelemetry request-span and metrics wiring without coupling the editor to the telemetry backend.
+6. Keep local editing and local persistence operational when the backend is unavailable.

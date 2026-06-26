@@ -236,7 +236,7 @@ Use explicit route layers:
 
 ### Protected routes
 
-Protected APIs return a 401 in Phase 5 because the auth checker rejects all traffic. The boundary is the important part; real JWT validation lands in Phase 6.
+Protected APIs use JWT validation starting in Phase 6. The public/private boundary is still important, but protected routes are no longer stubbed: they already validate bearer tokens against Authentik JWKS and place the validated principal into request context.
 
 - `GET/POST/PUT/DELETE /api/v1/locks/{document_id}`
 - `GET/POST /api/v1/presence/{workspace_id}`
@@ -498,7 +498,7 @@ Implement the server skeleton:
 - logging;
 - runtime config + userver static-config generation;
 - CLI11 overrides;
-- public/protected route split (auth checker stub returns 401);
+- public/protected route split;
 - lock and presence stubs;
 - CORS preflight.
 
@@ -509,7 +509,10 @@ Add auth:
 - OIDC flow;
 - keyring token storage;
 - JWT validation middleware;
-- protected API enforcement.
+- protected API enforcement;
+- Swagger/OpenAPI bearer-token verification path;
+- desktop identity shown in the native shell;
+- refresh and runtime token-expiry handling.
 
 ## Phase 7
 
@@ -518,7 +521,9 @@ Make the lock model authoritative:
 - lock ownership;
 - heartbeat;
 - read-only fallback;
-- force release.
+- force release;
+- authenticated identity becomes the default lock/presence owner;
+- desktop edit flow depends on successful lock acquisition.
 
 ## Phase 8 and later
 

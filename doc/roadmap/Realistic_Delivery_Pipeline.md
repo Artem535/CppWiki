@@ -436,6 +436,7 @@ Validate the Authentik desktop login path without entangling it with sync.
 - Refresh works.
 - Logout clears local token state.
 - Protected backend endpoint rejects invalid tokens.
+- Protected backend endpoint accepts a valid Authentik access token and exposes authenticated identity.
 - Editor has no token access.
 
 ## Do Not Include
@@ -460,6 +461,8 @@ Close the Single Writer / Multi Reader path before sync.
 - Open editor in read-only mode when another user owns the lock.
 - Show lock owner and lock status.
 - Add force release for authorized users as a backend-audited action.
+- Drive lock and presence identity from authenticated desktop JWT state.
+- Replace `anonymous` collaboration identities with authenticated default principals.
 - Add presence display placeholder.
 
 ## Exit Gate
@@ -468,6 +471,7 @@ Close the Single Writer / Multi Reader path before sync.
 - Lock timeout makes stale locks recoverable.
 - Read-only mode is enforced through the editor bridge.
 - Lock takeover is logged.
+- Lock owner shown in the desktop UI matches authenticated backend identity.
 
 ## Do Not Include
 

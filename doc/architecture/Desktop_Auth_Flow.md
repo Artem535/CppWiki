@@ -401,20 +401,17 @@ The current code already contains:
 - auth settings in the desktop shell;
 - a dedicated `AuthSessionManager`;
 - an auth/profile card in the sidebar;
-- authorize URL construction;
-- PKCE `verifier/challenge`;
-- system-browser login launch.
-
-Still missing:
-
-- callback receiver;
+- system-browser login;
+- localhost callback receiver;
 - token endpoint exchange;
 - keyring integration;
 - authenticated backend calls;
 - refresh flow;
-- complete logout flow.
+- logout flow;
+- backend JWT validation for protected routes;
+- runtime token-expiry handling without application restart.
 
-In other words, the current implementation is an auth skeleton for Phase 6, not a finished authentication subsystem.
+The current implementation is sufficient to consider Phase 6 complete on the development setup. It is still not the final long-term auth subsystem, but it is no longer only a skeleton.
 
 ---
 
@@ -422,12 +419,10 @@ In other words, the current implementation is an auth skeleton for Phase 6, not 
 
 After this stage, the next reasonable order is:
 
-1. choose a callback strategy;
-2. add callback receiver;
-3. add token exchange client;
-4. add keyring adapter;
-5. connect bearer auth to the backend client;
-6. only then enable backend JWT validation integration.
+1. use authenticated identity in collaboration flows such as lock ownership and presence;
+2. make backend lock ownership authoritative for editor write access;
+3. enforce read-only fallback in the desktop editor when another user owns the lock;
+4. then move on to authenticated replication and sync behavior.
 
 ---
 
