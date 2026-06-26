@@ -19,6 +19,7 @@ enum class AuthSessionState {
   kDisabled,
   kSignedOut,
   kAwaitingCallback,
+  kRefreshing,
   kAuthenticated,
   kError,
 };
@@ -45,6 +46,10 @@ class AuthSessionManager final : public QObject {
   void accessTokenChanged(const QString& access_token);
 
  private:
+  void HandleStoredTokensLoaded(const QString& access_token, const QString& refresh_token,
+                                const QString& id_token);
+  void HandleSessionRefreshFailure(const QString& message);
+  void UpdateAuthenticatedUi(const QString& message_prefix = QStringLiteral("Signed in."));
   void PersistCurrentTokens();
   void RebuildOAuthFlow();
   void ResetOAuthArtifacts();

@@ -3,10 +3,15 @@
 #include <QDesktopServices>
 #include <QAbstractOAuth>
 #include <QAbstractOAuth2>
+#include <QByteArray>
+#include <QDateTime>
 #include <QHostAddress>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QOAuth2AuthorizationCodeFlow>
 #include <QOAuthHttpServerReplyHandler>
 #include <QSet>
+#include <QTimeZone>
 #include <QUrl>
 
 #include "app/program_settings.h"
@@ -16,30 +21,58 @@
 
 namespace cppwiki::auth {
 
+namespace {
+
+constexpr auto kRefreshLeadTime = std::chrono::seconds(60);
+
+auto DecodeJwtExpiration(const QString& access_token) -> QDateTime {
+  const auto segments = access_token.split(QLatin1Char('.'));
+  if (segments.size() != 3) {
+    return {};
+  }
+
+  auto payload = segments.at(1).toUtf8();
+  payload.replace('-', '+');
+  payload.replace('_', '/');
+  while (payload.size() % 4 != 0) {
+    payload.append('=');
+  }
+
+  const auto payload_json = QByteArray::fromBase64(payload, QByteArray::Base64Encoding);
+  const auto document = QJsonDocument::fromJson(payload_json);
+  if (!document.isObject()) {
+    return {};
+  }
+
+  const auto expiration = document.object().value(QStringLiteral("exp"));
+  if (!expiration.isDouble()) {
+    return {};
+  }
+
+  return QDateTime::fromSecsSinceEpoch(static_cast<qint64>(expiration.toDouble()),
+                                       QTimeZone::UTC);
+}
+
+auto FormatTokenExpirySubtitle(const QString& prefix, const QString& access_token) -> QString {
+  const auto expiration = DecodeJwtExpiration(access_token);
+  if (!expiration.isValid()) {
+    return prefix;
+  }
+
+  return QStringLiteral("%1 Access token expires at %2.")
+      .arg(prefix,
+           expiration.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss t")));
+}
+
+}  // namespace
+
 AuthSessionManager::AuthSessionManager(QObject* parent) : QObject(parent) {
   token_store_ = new AuthTokenStore(ToQString(constants::kApplicationName), this);
 
   connect(token_store_, &AuthTokenStore::tokensLoaded, this,
           [this](const QString& access_token, const QString& refresh_token,
                  const QString& id_token) {
-            if (!auth_enabled_ || oauth_flow_ == nullptr) {
-              return;
-            }
-
-            if (access_token.trimmed().isEmpty()) {
-              SetUiState(AuthSessionState::kError, QStringLiteral("Stored session is invalid"),
-                         QStringLiteral("The restored auth session does not contain an access token."),
-                         QStringLiteral("Sign in"), true, false);
-              return;
-            }
-
-            oauth_flow_->setToken(access_token);
-            oauth_flow_->setRefreshToken(refresh_token);
-            id_token_ = id_token;
-            emit accessTokenChanged(access_token);
-            SetUiState(AuthSessionState::kAuthenticated, QStringLiteral("Signed in"),
-                       QStringLiteral("Restored desktop auth session from the system keyring."),
-                       QStringLiteral("Sign out"), false, true);
+            HandleStoredTokensLoaded(access_token, refresh_token, id_token);
           });
 
   connect(token_store_, &AuthTokenStore::tokensMissing, this, [this]() {
@@ -208,6 +241,69 @@ auto AuthSessionManager::CanSignOut() const -> bool {
   return can_sign_out_;
 }
 
+void AuthSessionManager::HandleStoredTokensLoaded(const QString& access_token,
+                                                  const QString& refresh_token,
+                                                  const QString& id_token) {
+  if (!auth_enabled_ || oauth_flow_ == nullptr) {
+    return;
+  }
+
+  if (access_token.trimmed().isEmpty()) {
+    SetUiState(AuthSessionState::kError, QStringLiteral("Stored session is invalid"),
+               QStringLiteral("The restored auth session does not contain an access token."),
+               QStringLiteral("Sign in"), true, false);
+    return;
+  }
+
+  oauth_flow_->setToken(access_token.trimmed());
+  oauth_flow_->setRefreshToken(refresh_token.trimmed());
+  id_token_ = id_token.trimmed();
+
+  const auto expiration = DecodeJwtExpiration(access_token);
+  if (expiration.isValid() && expiration <= QDateTime::currentDateTimeUtc()) {
+    if (refresh_token.trimmed().isEmpty()) {
+      HandleSessionRefreshFailure(
+          QStringLiteral("Stored desktop session expired and no refresh token is available."));
+      return;
+    }
+
+    SetUiState(AuthSessionState::kRefreshing, QStringLiteral("Refreshing session"),
+               QStringLiteral("Stored desktop session expired. Requesting a fresh access token."),
+               QStringLiteral("Sign out"), false, true);
+    oauth_flow_->refreshTokens();
+    return;
+  }
+
+  emit accessTokenChanged(access_token.trimmed());
+  UpdateAuthenticatedUi(QStringLiteral("Restored desktop auth session from the system keyring."));
+}
+
+void AuthSessionManager::HandleSessionRefreshFailure(const QString& message) {
+  id_token_.clear();
+  token_store_->Clear();
+  emit accessTokenChanged(QString{});
+
+  if (!auth_enabled_ || !HasRequiredConfig() || !IsLoopbackRedirectUri()) {
+    SetUiState(AuthSessionState::kError, QStringLiteral("Authentication failed"), message,
+               QStringLiteral("Sign in"), true, false);
+    return;
+  }
+
+  RebuildOAuthFlow();
+  SetUiState(AuthSessionState::kSignedOut, QStringLiteral("Signed out"), message,
+             QStringLiteral("Sign in"), true, false);
+}
+
+void AuthSessionManager::UpdateAuthenticatedUi(const QString& message_prefix) {
+  if (oauth_flow_ == nullptr) {
+    return;
+  }
+
+  SetUiState(AuthSessionState::kAuthenticated, QStringLiteral("Signed in"),
+             FormatTokenExpirySubtitle(message_prefix, oauth_flow_->token().trimmed()),
+             QStringLiteral("Sign out"), false, true);
+}
+
 void AuthSessionManager::SetUiState(AuthSessionState state, QString title, QString subtitle,
                                     QString action_label, bool can_start_sign_in,
                                     bool can_sign_out) {
@@ -279,6 +375,8 @@ void AuthSessionManager::RebuildOAuthFlow() {
   oauth_flow_->setClientIdentifier(client_id_);
   oauth_flow_->setReplyHandler(reply_handler_);
   oauth_flow_->setPkceMethod(QOAuth2AuthorizationCodeFlow::PkceMethod::S256);
+  oauth_flow_->setAutoRefresh(true);
+  oauth_flow_->setRefreshLeadTime(kRefreshLeadTime);
   oauth_flow_->setRequestedScopeTokens(
       QSet<QByteArray>{QByteArrayLiteral("openid"), QByteArrayLiteral("profile"),
                        QByteArrayLiteral("email"), QByteArrayLiteral("offline_access")});
@@ -303,9 +401,7 @@ void AuthSessionManager::RebuildOAuthFlow() {
     id_token_ = oauth_flow_->idToken().trimmed();
     PersistCurrentTokens();
     emit accessTokenChanged(oauth_flow_->token().trimmed());
-    SetUiState(AuthSessionState::kAuthenticated, QStringLiteral("Signed in"),
-               QStringLiteral("Access token acquired through Qt NetworkAuth."),
-               QStringLiteral("Sign out"), false, true);
+    UpdateAuthenticatedUi(QStringLiteral("Access token acquired through Qt NetworkAuth."));
   });
 
   connect(oauth_flow_, &QAbstractOAuth::tokenChanged, this, [this](const QString& access_token) {
@@ -314,6 +410,9 @@ void AuthSessionManager::RebuildOAuthFlow() {
     }
     PersistCurrentTokens();
     emit accessTokenChanged(access_token.trimmed());
+    if (state_ == AuthSessionState::kRefreshing || state_ == AuthSessionState::kAuthenticated) {
+      UpdateAuthenticatedUi(QStringLiteral("Desktop auth session is active."));
+    }
   });
 
   connect(oauth_flow_, &QAbstractOAuth2::refreshTokenChanged, this, [this](const QString&) {
@@ -325,8 +424,28 @@ void AuthSessionManager::RebuildOAuthFlow() {
     PersistCurrentTokens();
   });
 
+  connect(oauth_flow_, &QAbstractOAuth2::accessTokenAboutToExpire, this, [this]() {
+    SetUiState(AuthSessionState::kRefreshing, QStringLiteral("Refreshing session"),
+               QStringLiteral("Access token is about to expire. Refreshing it in the background."),
+               QStringLiteral("Sign out"), false, true);
+  });
+
+  connect(oauth_flow_, &QAbstractOAuth2::expirationAtChanged, this, [this](const QDateTime&) {
+    if (state_ == AuthSessionState::kAuthenticated) {
+      UpdateAuthenticatedUi(QStringLiteral("Desktop auth session is active."));
+    }
+  });
+
   connect(oauth_flow_, &QAbstractOAuth::requestFailed, this,
           [this](QAbstractOAuth::Error error) {
+            if (state_ == AuthSessionState::kRefreshing ||
+                state_ == AuthSessionState::kAuthenticated) {
+              HandleSessionRefreshFailure(
+                  QStringLiteral("Stored desktop session expired and refresh failed with Qt OAuth error code %1.")
+                      .arg(static_cast<int>(error)));
+              return;
+            }
+
             SetUiState(AuthSessionState::kError, QStringLiteral("Authentication failed"),
                        QStringLiteral("Qt OAuth request failed with error code %1.")
                            .arg(static_cast<int>(error)),
@@ -339,6 +458,16 @@ void AuthSessionManager::RebuildOAuthFlow() {
                                      ? error.trimmed()
                                      : QStringLiteral("%1: %2").arg(error.trimmed(),
                                                                     description.trimmed());
+            if (state_ == AuthSessionState::kRefreshing ||
+                state_ == AuthSessionState::kAuthenticated) {
+              HandleSessionRefreshFailure(
+                  details.isEmpty()
+                      ? QStringLiteral("Stored desktop session expired and refresh failed.")
+                      : QStringLiteral("Stored desktop session expired and refresh failed: %1")
+                            .arg(details));
+              return;
+            }
+
             SetUiState(AuthSessionState::kError, QStringLiteral("Authentication failed"),
                        details.isEmpty() ? QStringLiteral("Identity provider reported an error.")
                                          : details,
