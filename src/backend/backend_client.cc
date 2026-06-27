@@ -1,6 +1,7 @@
 #include "backend/backend_client.h"
 
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -20,6 +21,8 @@ constexpr int kHealthRefreshIntervalMs = 15000;
 constexpr int kHealthRequestTimeoutMs = 2000;
 constexpr int kLockHeartbeatIntervalMs = 10000;
 constexpr int kLockRequestTimeoutMs = 3000;
+constexpr int kPresenceHeartbeatIntervalMs = 10000;
+constexpr int kPresenceRequestTimeoutMs = 3000;
 
 auto MakeRequest(QUrl url, int timeout_ms, const QString& access_token) -> QNetworkRequest {
   QNetworkRequest request{std::move(url)};
@@ -62,28 +65,69 @@ auto EnvelopeResult(const QJsonObject& object) -> QJsonObject {
   return object.value(QStringLiteral("result")).toObject();
 }
 
+auto DecodeJwtObject(const QString& token) -> QJsonObject {
+  const auto segments = token.split(QLatin1Char('.'));
+  if (segments.size() != 3) {
+    return {};
+  }
+
+  auto payload = segments.at(1).toUtf8();
+  payload.replace('-', '+');
+  payload.replace('_', '/');
+  while (payload.size() % 4 != 0) {
+    payload.append('=');
+  }
+
+  const auto payload_json = QByteArray::fromBase64(payload, QByteArray::Base64Encoding);
+  const auto document = QJsonDocument::fromJson(payload_json);
+  return document.isObject() ? document.object() : QJsonObject{};
+}
+
+auto FirstNonEmptyString(const QJsonObject& object,
+                         std::initializer_list<const char*> keys) -> QString {
+  for (const char* key : keys) {
+    const auto value = object.value(QLatin1StringView(key));
+    if (!value.isString()) {
+      continue;
+    }
+    const auto text = value.toString().trimmed();
+    if (!text.isEmpty()) {
+      return text;
+    }
+  }
+  return {};
+}
+
 }  // namespace
 
 BackendClient::BackendClient(QObject* parent)
     : QObject(parent),
       network_manager_(new QNetworkAccessManager(this)),
       refresh_timer_(new QTimer(this)),
-      heartbeat_timer_(new QTimer(this)) {
+      heartbeat_timer_(new QTimer(this)),
+      presence_timer_(new QTimer(this)) {
   refresh_timer_->setInterval(kHealthRefreshIntervalMs);
   connect(refresh_timer_, &QTimer::timeout, this, &BackendClient::RefreshHealth);
 
   heartbeat_timer_->setInterval(kLockHeartbeatIntervalMs);
   connect(heartbeat_timer_, &QTimer::timeout, this, &BackendClient::SendHeartbeat);
+
+  presence_timer_->setInterval(kPresenceHeartbeatIntervalMs);
+  connect(presence_timer_, &QTimer::timeout, this, &BackendClient::SendPresenceHeartbeat);
 }
 
 void BackendClient::ApplySettings(const ProgramSettings& settings) {
   enabled_ = settings.BackendEnabled();
   base_url_ = settings.BackendBaseUrl().trimmed();
+  demo_collaboration_user_id_ = settings.DemoCollaborationEnabled()
+                                    ? settings.DemoCollaborationUserId().trimmed()
+                                    : QString{};
 
   if (!enabled_) {
     refresh_timer_->stop();
     AbortInFlightRequest();
     CloseDocumentSession();
+    StopPresence();
     SetStatus(BackendConnectionState::kLocalOnly, QStringLiteral("Backend: local only"));
     return;
   }
@@ -92,6 +136,7 @@ void BackendClient::ApplySettings(const ProgramSettings& settings) {
     refresh_timer_->stop();
     AbortInFlightRequest();
     CloseDocumentSession();
+    StopPresence();
     SetStatus(BackendConnectionState::kUnavailable, QStringLiteral("Backend: URL missing"));
     return;
   }
@@ -154,6 +199,7 @@ void BackendClient::OpenDocumentSession(const QString& document_id,
   const auto request_id = session_request_id_;
 
   if (document_id.trimmed().isEmpty()) {
+    StopPresence();
     callback(DocumentAccessState{
         .editable = true,
         .local_only = true,
@@ -165,6 +211,7 @@ void BackendClient::OpenDocumentSession(const QString& document_id,
 
   if (!enabled_ || state_ == BackendConnectionState::kLocalOnly) {
     CloseDocumentSession();
+    StopPresence();
     callback(DocumentAccessState{
         .editable = true,
         .local_only = true,
@@ -176,6 +223,7 @@ void BackendClient::OpenDocumentSession(const QString& document_id,
 
   if (state_ != BackendConnectionState::kReachable) {
     CloseDocumentSession();
+    StopPresence();
     callback(DocumentAccessState{
         .editable = true,
         .local_only = true,
@@ -186,6 +234,7 @@ void BackendClient::OpenDocumentSession(const QString& document_id,
   }
 
   if (active_document_id_ == document_id && heartbeat_timer_->isActive()) {
+    StartPresence(document_id, true);
     callback(DocumentAccessState{
         .editable = true,
         .local_only = false,
@@ -213,6 +262,7 @@ void BackendClient::CloseDocumentSession() {
   StopHeartbeat();
   AbortSessionRequest();
   AbortHeartbeatRequest();
+  StopPresence();
 
   if (active_document_id_.isEmpty()) {
     return;
@@ -278,6 +328,17 @@ void BackendClient::AbortHeartbeatRequest() {
   heartbeat_reply_ = nullptr;
 }
 
+void BackendClient::AbortPresenceRequest() {
+  if (presence_reply_ == nullptr) {
+    return;
+  }
+
+  disconnect(presence_reply_, nullptr, this, nullptr);
+  presence_reply_->abort();
+  presence_reply_->deleteLater();
+  presence_reply_ = nullptr;
+}
+
 void BackendClient::ReleaseDocumentLock(const QString& document_id,
                                         std::function<void()> continuation) {
   AbortSessionRequest();
@@ -290,7 +351,13 @@ void BackendClient::ReleaseDocumentLock(const QString& document_id,
   const auto request =
       MakeRequest(QUrl{ApiUrl(QStringLiteral("/api/v1/locks/%1").arg(document_id))},
                   kLockRequestTimeoutMs, access_token_);
-  session_reply_ = network_manager_->sendCustomRequest(request, "DELETE", QByteArrayLiteral("{}"));
+  QJsonObject body;
+  const auto owner = CurrentCollaborationUserId();
+  if (!owner.isEmpty()) {
+    body.insert(QStringLiteral("owner"), owner);
+  }
+  session_reply_ = network_manager_->sendCustomRequest(
+      request, "DELETE", QJsonDocument(body).toJson(QJsonDocument::Compact));
 
   connect(session_reply_, &QNetworkReply::finished, this,
           [this, continuation = std::move(continuation)]() mutable {
@@ -314,7 +381,12 @@ void BackendClient::AcquireDocumentLock(const QString& document_id,
   const auto request =
       MakeRequest(QUrl{ApiUrl(QStringLiteral("/api/v1/locks/%1").arg(document_id))},
                   kLockRequestTimeoutMs, access_token_);
-  session_reply_ = network_manager_->post(request, QByteArrayLiteral("{}"));
+  QJsonObject body;
+  const auto owner = CurrentCollaborationUserId();
+  if (!owner.isEmpty()) {
+    body.insert(QStringLiteral("owner"), owner);
+  }
+  session_reply_ = network_manager_->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
 
   connect(session_reply_, &QNetworkReply::finished, this,
           [this, document_id, callback = std::move(callback), request_id]() mutable {
@@ -367,6 +439,7 @@ void BackendClient::AcquireDocumentLock(const QString& document_id,
             if (acquired) {
               active_document_id_ = document_id;
               StartHeartbeat();
+              StartPresence(document_id, true);
               callback(DocumentAccessState{
                   .editable = true,
                   .local_only = false,
@@ -376,6 +449,7 @@ void BackendClient::AcquireDocumentLock(const QString& document_id,
               return;
             }
 
+            StartPresence(document_id, false);
             callback(DocumentAccessState{
                 .editable = false,
                 .local_only = false,
@@ -397,6 +471,28 @@ void BackendClient::StopHeartbeat() {
   heartbeat_timer_->stop();
 }
 
+void BackendClient::StartPresence(const QString& document_id, bool editable) {
+  if (document_id.trimmed().isEmpty() || state_ != BackendConnectionState::kReachable) {
+    StopPresence();
+    return;
+  }
+
+  presence_document_id_ = document_id;
+  presence_scope_ = editable ? QStringLiteral("edit") : QStringLiteral("view");
+  SendPresenceHeartbeat();
+  if (!presence_timer_->isActive()) {
+    presence_timer_->start();
+  }
+}
+
+void BackendClient::StopPresence() {
+  presence_timer_->stop();
+  AbortPresenceRequest();
+  presence_document_id_.clear();
+  presence_scope_.clear();
+  emit presenceUpdated(QString{}, false, {});
+}
+
 void BackendClient::SendHeartbeat() {
   if (active_document_id_.isEmpty() || state_ != BackendConnectionState::kReachable) {
     return;
@@ -407,7 +503,13 @@ void BackendClient::SendHeartbeat() {
   const auto request =
       MakeRequest(QUrl{ApiUrl(QStringLiteral("/api/v1/locks/%1").arg(document_id))},
                   kLockRequestTimeoutMs, access_token_);
-  heartbeat_reply_ = network_manager_->sendCustomRequest(request, "PUT", QByteArrayLiteral("{}"));
+  QJsonObject body;
+  const auto owner = CurrentCollaborationUserId();
+  if (!owner.isEmpty()) {
+    body.insert(QStringLiteral("owner"), owner);
+  }
+  heartbeat_reply_ = network_manager_->sendCustomRequest(
+      request, "PUT", QJsonDocument(body).toJson(QJsonDocument::Compact));
 
   connect(heartbeat_reply_, &QNetworkReply::finished, this, [this, document_id]() {
     if (heartbeat_reply_ == nullptr) {
@@ -461,6 +563,101 @@ void BackendClient::SendHeartbeat() {
               : QStringLiteral("Document: read-only, locked by %1").arg(owner));
     }
   });
+}
+
+void BackendClient::SendPresenceHeartbeat() {
+  if (presence_document_id_.isEmpty() || state_ != BackendConnectionState::kReachable) {
+    return;
+  }
+
+  AbortPresenceRequest();
+
+  QJsonObject body;
+  const auto user_id = CurrentCollaborationUserId();
+  if (!user_id.isEmpty()) {
+    body.insert(QStringLiteral("userId"), user_id);
+  }
+  if (!presence_scope_.trimmed().isEmpty()) {
+    body.insert(QStringLiteral("scope"), presence_scope_);
+  }
+
+  const auto request =
+      MakeRequest(QUrl{ApiUrl(QStringLiteral("/api/v1/presence/%1").arg(presence_document_id_))},
+                  kPresenceRequestTimeoutMs, access_token_);
+  presence_reply_ = network_manager_->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+
+  connect(presence_reply_, &QNetworkReply::finished, this, [this]() {
+    if (presence_reply_ == nullptr) {
+      return;
+    }
+
+    auto* reply = presence_reply_;
+    presence_reply_ = nullptr;
+    const auto error_text = ReplyErrorText(reply);
+    if (!error_text.isEmpty()) {
+      reply->deleteLater();
+      emit presenceUpdated(QString{}, false, {});
+      return;
+    }
+
+    const auto payload = ParseJsonObject(reply);
+    reply->deleteLater();
+    HandlePresencePayload(payload);
+  });
+}
+
+void BackendClient::HandlePresencePayload(const QJsonObject& payload) {
+  if (!payload.value(QStringLiteral("ok")).toBool()) {
+    emit presenceUpdated(QString{}, false, {});
+    return;
+  }
+
+  const auto result = EnvelopeResult(payload);
+  const auto users = result.value(QStringLiteral("users")).toArray();
+  const auto self_user_id = CurrentPresenceUserId();
+
+  QString editor_user_id;
+  bool editor_is_self = false;
+  QStringList viewer_user_ids;
+
+  for (const auto& user_value : users) {
+    const auto user = user_value.toObject();
+    const auto user_id = user.value(QStringLiteral("userId")).toString().trimmed();
+    const auto scope = user.value(QStringLiteral("scope")).toString().trimmed();
+    if (user_id.isEmpty()) {
+      continue;
+    }
+
+    const bool is_self = !self_user_id.isEmpty() && user_id == self_user_id;
+    if (scope == QStringLiteral("edit")) {
+      editor_user_id = user_id;
+      editor_is_self = is_self;
+      continue;
+    }
+
+    if (!is_self) {
+      viewer_user_ids.push_back(user_id);
+    }
+  }
+
+  emit presenceUpdated(editor_user_id, editor_is_self, viewer_user_ids);
+}
+
+auto BackendClient::CurrentPresenceUserId() const -> QString {
+  if (!demo_collaboration_user_id_.isEmpty()) {
+    return demo_collaboration_user_id_;
+  }
+
+  if (access_token_.trimmed().isEmpty()) {
+    return {};
+  }
+
+  const auto payload = DecodeJwtObject(access_token_);
+  return FirstNonEmptyString(payload, {"preferred_username", "email", "sub"});
+}
+
+auto BackendClient::CurrentCollaborationUserId() const -> QString {
+  return CurrentPresenceUserId();
 }
 
 auto BackendClient::HealthUrl() const -> QString {

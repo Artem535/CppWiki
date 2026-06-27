@@ -21,7 +21,6 @@
 #include <QPushButton>
 #include <QSize>
 #include <QVBoxLayout>
-#include <QSplitter>
 #include <QTreeView>
 #include <QUrl>
 #include <QWebChannel>
@@ -121,14 +120,18 @@ QString Page::Title() const {
 }
 
 QWidget* Page::Widget() {
-  return this;
+  return content_widget_;
+}
+
+QWidget* Page::SidebarWidget() const {
+  return page_panel_;
+}
+
+QWidget* Page::ContentWidget() const {
+  return content_widget_;
 }
 
 void Page::BuildUi() {
-  auto* layout = new QVBoxLayout(this);
-  layout->setContentsMargins(0, 0, 0, 0);
-  layout->setSpacing(0);
-
   // Create the QWebEngineView and QWebChannel.
   channel_ = new QWebChannel(this);
   editor_bridge_ = new bridge::QEditorBridge(this);
@@ -144,13 +147,17 @@ void Page::BuildUi() {
   // Create tree view with custom model and delegate
   SetupTreeView();
 
-  auto* splitter = new QSplitter(Qt::Horizontal, this);
   page_panel_ = new QWidget(this);
   page_panel_->setObjectName(QStringLiteral("pagePanel"));
   page_panel_->setAttribute(Qt::WA_StyledBackground, true);
+  page_panel_->setFixedWidth(constants::kPageListInitialWidth);
   auto* page_panel_layout = new QVBoxLayout(page_panel_);
   page_panel_layout->setContentsMargins(12, 12, 12, 12);
   page_panel_layout->setSpacing(8);
+
+  auto* app_title_label = new QLabel(ToQString(constants::kApplicationName), page_panel_);
+  app_title_label->setObjectName(QStringLiteral("globalSidebarTitle"));
+  page_panel_layout->addWidget(app_title_label, 0, Qt::AlignLeft);
 
   auto* controls_layout = new QHBoxLayout();
   controls_layout->setContentsMargins(0, 0, 0, 0);
@@ -243,14 +250,12 @@ void Page::BuildUi() {
   sidebar_footer_layout->addWidget(profile_card);
   page_panel_layout->addWidget(sidebar_footer, 0);
 
-  splitter->addWidget(page_panel_);
-  splitter->addWidget(editor_view_);
-  splitter->setStretchFactor(0, 0);
-  splitter->setStretchFactor(1, 1);
-  splitter->setSizes({constants::kPageListInitialWidth,
-                      width() - constants::kPageListInitialWidth});
-
-  layout->addWidget(splitter, 1);
+  content_widget_ = new QWidget(this);
+  content_widget_->setObjectName(QStringLiteral("pageContentHost"));
+  auto* content_layout = new QVBoxLayout(content_widget_);
+  content_layout->setContentsMargins(0, 0, 0, 0);
+  content_layout->setSpacing(0);
+  content_layout->addWidget(editor_view_, 1);
 
   if (context_.auth_session_manager != nullptr) {
     connect(context_.auth_session_manager, &auth::AuthSessionManager::sessionChanged, this,

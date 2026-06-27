@@ -43,6 +43,8 @@ qt_add_executable(cppwiki_app
         gui/i_page.h
         gui/main_window.cc
         gui/main_window.h
+        gui/presence_strip_widget.cc
+        gui/presence_strip_widget.h
         gui/settings_dialog.cc
         gui/settings_dialog.h
         gui/page.cc

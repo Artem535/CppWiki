@@ -42,6 +42,8 @@ class Page final : public QWidget, public IPage {
 
   [[nodiscard]] auto Title() const -> QString override;
   auto Widget() -> QWidget* override;
+  [[nodiscard]] auto SidebarWidget() const -> QWidget*;
+  [[nodiscard]] auto ContentWidget() const -> QWidget*;
 
 signals:
   void settingsRequested();
@@ -77,6 +79,7 @@ signals:
 
   const AppContext& context_;
   QWidget* page_panel_ = nullptr;
+  QWidget* content_widget_ = nullptr;
   QPushButton* new_document_button_ = nullptr;
   QPushButton* settings_button_ = nullptr;
   QLabel* profile_avatar_label_ = nullptr;

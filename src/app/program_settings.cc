@@ -52,7 +52,8 @@ ProgramSettings::ProgramSettings(QString application_name, QString application_v
                                  QString backend_base_url, bool backend_enabled,
                                  QString auth_authorization_url, QString auth_token_url,
                                  QString auth_client_id, QString auth_redirect_uri,
-                                 bool auth_enabled,
+                                 bool auth_enabled, bool demo_collaboration_enabled,
+                                 QString demo_collaboration_user_id,
                                  int application_font_point_size)
     : application_name_(std::move(application_name)),
       application_version_(std::move(application_version)),
@@ -67,6 +68,8 @@ ProgramSettings::ProgramSettings(QString application_name, QString application_v
       auth_client_id_(std::move(auth_client_id)),
       auth_redirect_uri_(std::move(auth_redirect_uri)),
       auth_enabled_(auth_enabled),
+      demo_collaboration_enabled_(demo_collaboration_enabled),
+      demo_collaboration_user_id_(std::move(demo_collaboration_user_id)),
       application_font_point_size_(application_font_point_size) {}
 
 auto ProgramSettings::FromDefaults() -> ProgramSettings {
@@ -105,6 +108,12 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
       ToQString(constants::kDefaultAuthRedirectUri));
   const auto auth_enabled =
       settings.value(ToQString(constants::kSettingsAuthEnabledKey), false).toBool();
+  const auto demo_collaboration_enabled =
+      settings.value(ToQString(constants::kSettingsDemoCollaborationEnabledKey), false).toBool();
+  const auto demo_collaboration_user_id =
+      settings.value(ToQString(constants::kSettingsDemoCollaborationUserIdKey))
+          .toString()
+          .trimmed();
 
   const auto application_font_point_size_value =
       settings.value(ToQString(constants::kSettingsApplicationFontPointSizeKey),
@@ -119,7 +128,8 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
                          ToQString(constants::kOrganizationName), app_data_directory,
                          database_directory, editor_dist_directory, backend_base_url,
                          backend_enabled, auth_authorization_url, auth_token_url, auth_client_id,
-                         auth_redirect_uri, auth_enabled,
+                         auth_redirect_uri, auth_enabled, demo_collaboration_enabled,
+                         demo_collaboration_user_id,
                          application_font_point_size);
 }
 
@@ -135,6 +145,10 @@ void ProgramSettings::SaveToSettings(QSettings& settings) const {
   settings.setValue(ToQString(constants::kSettingsAuthClientIdKey), auth_client_id_);
   settings.setValue(ToQString(constants::kSettingsAuthRedirectUriKey), auth_redirect_uri_);
   settings.setValue(ToQString(constants::kSettingsAuthEnabledKey), auth_enabled_);
+  settings.setValue(ToQString(constants::kSettingsDemoCollaborationEnabledKey),
+                    demo_collaboration_enabled_);
+  settings.setValue(ToQString(constants::kSettingsDemoCollaborationUserIdKey),
+                    demo_collaboration_user_id_);
   settings.setValue(ToQString(constants::kSettingsApplicationFontPointSizeKey),
                     application_font_point_size_);
 }
@@ -189,6 +203,14 @@ auto ProgramSettings::AuthRedirectUri() const -> const QString& {
 
 auto ProgramSettings::AuthEnabled() const -> bool {
   return auth_enabled_;
+}
+
+auto ProgramSettings::DemoCollaborationEnabled() const -> bool {
+  return demo_collaboration_enabled_;
+}
+
+auto ProgramSettings::DemoCollaborationUserId() const -> const QString& {
+  return demo_collaboration_user_id_;
 }
 
 auto ProgramSettings::ApplicationFontPointSize() const -> int {

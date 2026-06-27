@@ -34,6 +34,8 @@ class SettingsDialog final : public QDialog {
   oclero::qlementine::LineEdit* auth_token_url_edit_ = nullptr;
   oclero::qlementine::LineEdit* auth_client_id_edit_ = nullptr;
   oclero::qlementine::LineEdit* auth_redirect_uri_edit_ = nullptr;
+  QCheckBox* demo_collaboration_enabled_checkbox_ = nullptr;
+  oclero::qlementine::LineEdit* demo_collaboration_user_id_edit_ = nullptr;
   oclero::qlementine::LineEdit* database_directory_edit_ = nullptr;
 };
 

@@ -1,6 +1,8 @@
 #include "gui/main_window.h"
 
 #include <QDialog>
+#include <QFrame>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenuBar>
@@ -8,6 +10,7 @@
 #include <QStatusBar>
 #include <QString>
 #include <QToolButton>
+#include <QVBoxLayout>
 #include <QWidget>
 
 #include <oclero/qlementine/widgets/StatusBadgeWidget.hpp>
@@ -18,7 +21,8 @@
 #include "app/program_settings.h"
 #include "backend/backend_client.h"
 #include "core/constants.h"
-#include "gui/i_page.h"
+#include "core/qt_string.h"
+#include "gui/presence_strip_widget.h"
 #include "gui/settings_dialog.h"
 #include "gui/page.h"
 
@@ -62,6 +66,25 @@ void MainWindow::SetContext(AppContext* context) {
                 statusBar()->showMessage(status_text, 3000);
               }
             });
+    connect(context_->backend_client, &backend::BackendClient::presenceUpdated, this,
+            [this](const QString& editor_user_id, bool editor_is_self,
+                   const QStringList& viewer_user_ids) {
+              if (presence_strip_widget_ == nullptr) {
+                return;
+              }
+
+              if (editor_user_id.trimmed().isEmpty()) {
+                if (fallback_editor_user_id_.trimmed().isEmpty()) {
+                  presence_strip_widget_->ClearEditor();
+                } else {
+                  presence_strip_widget_->SetEditor(fallback_editor_user_id_,
+                                                   fallback_editor_is_self_);
+                }
+              } else {
+                presence_strip_widget_->SetEditor(editor_user_id, editor_is_self);
+              }
+              presence_strip_widget_->SetViewers(viewer_user_ids);
+            });
   }
   CreateInitialPage();
   UpdateBackendStatus();
@@ -69,10 +92,20 @@ void MainWindow::SetContext(AppContext* context) {
 
 void MainWindow::CreateInitialPage() {
   if (context_ == nullptr) {
-    setCentralWidget(nullptr);
     setWindowTitle(QStringLiteral("CppWiki"));
     UpdateDocumentStatus(QStringLiteral("Document: unavailable"), true);
     return;
+  }
+
+  if (current_sidebar_widget_ != nullptr && shell_layout_ != nullptr) {
+    shell_layout_->removeWidget(current_sidebar_widget_);
+    current_sidebar_widget_->deleteLater();
+    current_sidebar_widget_ = nullptr;
+  }
+  if (current_content_widget_ != nullptr && shell_layout_ != nullptr) {
+    shell_layout_->removeWidget(current_content_widget_);
+    current_content_widget_->deleteLater();
+    current_content_widget_ = nullptr;
   }
 
   // Create the main page with the application context
@@ -85,8 +118,13 @@ void MainWindow::CreateInitialPage() {
             UpdateCollaborationStatus(summary, details, is_warning);
           });
   current_page_ = page;
+  current_sidebar_widget_ = current_page_->SidebarWidget();
+  current_content_widget_ = current_page_->ContentWidget();
 
-  setCentralWidget(current_page_->Widget());
+  if (shell_layout_ != nullptr) {
+    shell_layout_->addWidget(current_sidebar_widget_, 0, 0, 2, 1);
+    shell_layout_->addWidget(current_content_widget_, 1, 1);
+  }
   setWindowTitle(QStringLiteral("CppWiki - %1").arg(current_page_->Title()));
   UpdateDocumentStatus(QStringLiteral("Document: ready"), false);
   UpdateCollaborationStatus(QStringLiteral("Collab: idle"),
@@ -118,6 +156,21 @@ void MainWindow::BuildUi() {
   setWindowTitle(QStringLiteral("CppWiki"));
   resize(constants::kInitialWindowWidth, constants::kInitialWindowHeight);
   statusBar()->showMessage(QStringLiteral("Ready"));
+
+  shell_widget_ = new QWidget(this);
+  shell_layout_ = new QGridLayout(shell_widget_);
+  shell_layout_->setContentsMargins(0, 0, 0, 0);
+  shell_layout_->setSpacing(0);
+  shell_layout_->setColumnStretch(0, 0);
+  shell_layout_->setColumnStretch(1, 1);
+  shell_layout_->setRowStretch(0, 0);
+  shell_layout_->setRowStretch(1, 1);
+
+  auto* header_row = new QWidget(shell_widget_);
+  header_row->setObjectName(QStringLiteral("shellHeaderRow"));
+  auto* header_layout = new QHBoxLayout(header_row);
+  header_layout->setContentsMargins(12, 12, 12, 8);
+  header_layout->setSpacing(12);
   backend_refresh_button_ = new QToolButton(this);
   backend_refresh_button_->setObjectName(QStringLiteral("statusLineButton"));
   backend_refresh_button_->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
@@ -128,12 +181,18 @@ void MainWindow::BuildUi() {
       context_->backend_client->RefreshHealth();
     }
   });
+  presence_strip_widget_ = new gui::PresenceStripWidget(header_row);
   std::tie(document_status_widget_, document_status_badge_, document_status_label_) =
       MakeStatusWidget(QStringLiteral("Document: ready"), this);
   std::tie(collaboration_status_widget_, collaboration_status_badge_, collaboration_status_label_) =
       MakeStatusWidget(QStringLiteral("Collab: idle"), this);
   std::tie(backend_status_widget_, backend_status_badge_, backend_status_label_) =
       MakeStatusWidget(QStringLiteral("Backend: local only"), this);
+  header_layout->addWidget(presence_strip_widget_, 1);
+
+  shell_layout_->addWidget(header_row, 0, 1);
+
+  setCentralWidget(shell_widget_);
   statusBar()->addPermanentWidget(backend_refresh_button_);
   statusBar()->addPermanentWidget(document_status_widget_);
   statusBar()->addPermanentWidget(collaboration_status_widget_);
@@ -209,6 +268,26 @@ void MainWindow::UpdateCollaborationStatus(const QString& summary, const QString
   collaboration_status_label_->setText(
       details.trimmed().isEmpty() ? summary : QStringLiteral("%1 (%2)").arg(summary, details));
   collaboration_status_label_->setToolTip(details);
+
+  if (presence_strip_widget_ != nullptr) {
+    if (summary.contains(QStringLiteral("editing"), Qt::CaseInsensitive)) {
+      fallback_editor_user_id_ = QStringLiteral("You");
+      fallback_editor_is_self_ = true;
+      presence_strip_widget_->SetEditor(QStringLiteral("You"), true);
+    } else if (summary.contains(QStringLiteral("read-only"), Qt::CaseInsensitive)) {
+      auto owner = details.trimmed();
+      if (owner.startsWith(QStringLiteral("Locked by "), Qt::CaseInsensitive)) {
+        owner.remove(0, QStringLiteral("Locked by ").size());
+      }
+      fallback_editor_user_id_ = owner;
+      fallback_editor_is_self_ = false;
+      presence_strip_widget_->SetEditor(owner, false);
+    } else {
+      fallback_editor_user_id_.clear();
+      fallback_editor_is_self_ = false;
+      presence_strip_widget_->ClearEditor();
+    }
+  }
 
   if (summary.contains(QStringLiteral("editing"), Qt::CaseInsensitive)) {
     collaboration_status_badge_->setBadge(oclero::qlementine::StatusBadge::Success);

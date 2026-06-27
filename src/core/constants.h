@@ -63,6 +63,10 @@ inline constexpr std::string_view kSettingsAuthAuthorizationUrlKey = "auth/autho
 inline constexpr std::string_view kSettingsAuthTokenUrlKey = "auth/tokenUrl";
 inline constexpr std::string_view kSettingsAuthClientIdKey = "auth/clientId";
 inline constexpr std::string_view kSettingsAuthRedirectUriKey = "auth/redirectUri";
+inline constexpr std::string_view kSettingsDemoCollaborationEnabledKey =
+    "demo/collaborationEnabled";
+inline constexpr std::string_view kSettingsDemoCollaborationUserIdKey =
+    "demo/collaborationUserId";
 inline constexpr std::string_view kSettingsApplicationFontPointSizeKey =
     "appearance/applicationFontPointSize";
 

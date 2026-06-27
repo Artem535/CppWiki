@@ -114,6 +114,19 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_redirect_uri_edit_,
           &QWidget::setEnabled);
 
+  demo_collaboration_enabled_checkbox_ =
+      new QCheckBox(QStringLiteral("Override collaboration identity for local testing"), this);
+  demo_collaboration_enabled_checkbox_->setChecked(current_settings_.DemoCollaborationEnabled());
+  form_layout_->addRow(QStringLiteral("Demo mode"), demo_collaboration_enabled_checkbox_);
+
+  demo_collaboration_user_id_edit_ = new oclero::qlementine::LineEdit(this);
+  demo_collaboration_user_id_edit_->setText(current_settings_.DemoCollaborationUserId());
+  demo_collaboration_user_id_edit_->setPlaceholderText(QStringLiteral("demo-alice"));
+  demo_collaboration_user_id_edit_->setEnabled(current_settings_.DemoCollaborationEnabled());
+  connect(demo_collaboration_enabled_checkbox_, &QCheckBox::toggled,
+          demo_collaboration_user_id_edit_, &QWidget::setEnabled);
+  form_layout_->addRow(QStringLiteral("Demo profile"), demo_collaboration_user_id_edit_);
+
   database_directory_edit_ = MakeReadOnlyPathLineEdit(current_settings_.DatabaseDirectory(), this);
   auto* open_folder_action =
       new QAction(QIcon::fromTheme(QStringLiteral("folder-open")),
@@ -155,6 +168,7 @@ auto SettingsDialog::BuildProgramSettings() const -> ProgramSettings {
   const auto auth_redirect_uri = auth_redirect_uri_edit_->text().trimmed().isEmpty()
                                      ? current_settings_.AuthRedirectUri()
                                      : auth_redirect_uri_edit_->text().trimmed();
+  const auto demo_collaboration_user_id = demo_collaboration_user_id_edit_->text().trimmed();
 
   return ProgramSettings(
       current_settings_.ApplicationName(), current_settings_.ApplicationVersion(),
@@ -162,6 +176,7 @@ auto SettingsDialog::BuildProgramSettings() const -> ProgramSettings {
       current_settings_.DatabaseDirectory(), current_settings_.EditorDistDirectory(),
       backend_base_url, backend_enabled_checkbox_->isChecked(), auth_authorization_url,
       auth_token_url, auth_client_id, auth_redirect_uri, auth_enabled_checkbox_->isChecked(),
+      demo_collaboration_enabled_checkbox_->isChecked(), demo_collaboration_user_id,
       font_size_spinbox_->value());
 }
 

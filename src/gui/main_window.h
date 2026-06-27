@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 
+class QGridLayout;
 class QLabel;
 class QToolButton;
 class QWidget;
@@ -11,10 +12,14 @@ namespace oclero::qlementine {
 class StatusBadgeWidget;
 }
 
+namespace cppwiki::gui {
+class PresenceStripWidget;
+}
+
 namespace cppwiki {
 
 struct AppContext;
-class IPage;
+class Page;
 
 class MainWindow final : public QMainWindow {
   Q_OBJECT
@@ -34,13 +39,20 @@ class MainWindow final : public QMainWindow {
  private:
   void BuildUi();
   void CreateInitialPage();
-  void ShowSettingsDialog();
+ void ShowSettingsDialog();
   void UpdateBackendStatus();
   void UpdateDocumentStatus(const QString& message, bool is_error);
   void UpdateCollaborationStatus(const QString& summary, const QString& details, bool is_warning);
 
   AppContext* context_ = nullptr;
-  IPage* current_page_ = nullptr;
+  Page* current_page_ = nullptr;
+  QWidget* shell_widget_ = nullptr;
+  QGridLayout* shell_layout_ = nullptr;
+  QWidget* current_sidebar_widget_ = nullptr;
+  QWidget* current_content_widget_ = nullptr;
+  gui::PresenceStripWidget* presence_strip_widget_ = nullptr;
+  QString fallback_editor_user_id_;
+  bool fallback_editor_is_self_ = false;
   QToolButton* backend_refresh_button_ = nullptr;
   QWidget* document_status_widget_ = nullptr;
   oclero::qlementine::StatusBadgeWidget* document_status_badge_ = nullptr;
