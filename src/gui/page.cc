@@ -259,7 +259,12 @@ void Page::BuildUi() {
 
   if (context_.auth_session_manager != nullptr) {
     connect(context_.auth_session_manager, &auth::AuthSessionManager::sessionChanged, this,
-            [this]() { UpdateAuthCard(); });
+            [this]() {
+              UpdateAuthCard();
+              if (!selected_page_id_.isEmpty()) {
+                OpenDocumentWithAccess(selected_page_id_);
+              }
+            });
   }
   if (context_.backend_client != nullptr) {
     connect(context_.backend_client, &backend::BackendClient::documentAccessInvalidated, this,
@@ -270,18 +275,19 @@ void Page::BuildUi() {
               }
 
               editor_bridge_->SetCurrentDocumentAccess(false, lock_owner, status_text);
-              emit documentStatusChanged(status_text, false);
-              emit collaborationStatusChanged(QStringLiteral("Collab: read-only"),
-                                              lock_owner.trimmed().isEmpty()
-                                                  ? status_text
-                                                  : QStringLiteral("Locked by %1").arg(lock_owner),
-                                              true);
+              ApplyDocumentAccessState(backend::DocumentAccessState{
+                  .editable = false,
+                  .local_only = false,
+                  .lock_owner = lock_owner,
+                  .status_text = status_text,
+              });
             });
   }
 
   LoadEditor();
   PopulatePageList();
   UpdateAuthCard();
+  UpdateEditModeControls();
 }
 
 void Page::SetupTreeView() {
@@ -551,7 +557,7 @@ void Page::OpenDocumentWithAccess(const QString& page_id) {
     return;
   }
 
-  context_.backend_client->OpenDocumentSession(
+  context_.backend_client->OpenDocumentViewSession(
       page_id, [this, page_id](backend::DocumentAccessState access_state) {
         if (page_id != selected_page_id_ || editor_bridge_ == nullptr) {
           return;
@@ -559,28 +565,107 @@ void Page::OpenDocumentWithAccess(const QString& page_id) {
 
         editor_bridge_->SetPendingDocumentAccess(access_state.editable, access_state.lock_owner,
                                                  access_state.status_text);
-        emit documentStatusChanged(access_state.status_text, false);
-        if (access_state.local_only) {
-          emit collaborationStatusChanged(QStringLiteral("Collab: local only"),
-                                          QStringLiteral("Backend lock flow is not active."),
-                                          false);
-        } else if (access_state.editable) {
-          emit collaborationStatusChanged(
-              QStringLiteral("Collab: editing"),
-              access_state.lock_owner.trimmed().isEmpty()
-                  ? QStringLiteral("Backend lock acquired.")
-                  : QStringLiteral("Owner: %1").arg(access_state.lock_owner),
-              false);
-        } else {
-          emit collaborationStatusChanged(
-              QStringLiteral("Collab: read-only"),
-              access_state.lock_owner.trimmed().isEmpty()
-                  ? access_state.status_text
-                  : QStringLiteral("Locked by %1").arg(access_state.lock_owner),
-              true);
-        }
+        ApplyDocumentAccessState(access_state);
         editor_bridge_->RequestOpenDocument(page_id);
       });
+}
+
+void Page::EnterEditMode() {
+  if (selected_page_id_.isEmpty() || context_.backend_client == nullptr || editor_bridge_ == nullptr) {
+    return;
+  }
+
+  context_.backend_client->EnterDocumentEditSession(
+      selected_page_id_, [this](backend::DocumentAccessState access_state) {
+        if (editor_bridge_ == nullptr) {
+          return;
+        }
+        editor_bridge_->SetCurrentDocumentAccess(access_state.editable, access_state.lock_owner,
+                                                 access_state.status_text);
+        ApplyDocumentAccessState(access_state);
+      });
+}
+
+void Page::ExitEditMode() {
+  if (selected_page_id_.isEmpty() || context_.backend_client == nullptr || editor_bridge_ == nullptr) {
+    return;
+  }
+
+  context_.backend_client->ExitDocumentEditSession(
+      selected_page_id_, [this](backend::DocumentAccessState access_state) {
+        if (editor_bridge_ == nullptr) {
+          return;
+        }
+        editor_bridge_->SetCurrentDocumentAccess(access_state.editable, access_state.lock_owner,
+                                                 access_state.status_text);
+        ApplyDocumentAccessState(access_state);
+      });
+}
+
+void Page::ToggleEditMode() {
+  switch (current_document_editable_) {
+    case true:
+      ExitEditMode();
+      break;
+
+    case false:
+      EnterEditMode();
+      break;
+  }
+}
+
+void Page::ApplyDocumentAccessState(const backend::DocumentAccessState& access_state) {
+  current_document_editable_ = access_state.editable;
+  current_document_local_only_ = access_state.local_only;
+  UpdateEditModeControls();
+
+  emit documentStatusChanged(access_state.status_text, false);
+  if (access_state.local_only) {
+    emit collaborationStatusChanged(QStringLiteral("Collab: local only"),
+                                    QStringLiteral("Backend lock flow is not active."), false);
+    return;
+  }
+
+  if (access_state.editable) {
+    emit collaborationStatusChanged(
+        QStringLiteral("Collab: editing"),
+        access_state.lock_owner.trimmed().isEmpty()
+            ? QStringLiteral("Backend lock acquired.")
+            : QStringLiteral("Owner: %1").arg(access_state.lock_owner),
+        false);
+    return;
+  }
+
+  if (access_state.status_text.contains(QStringLiteral("locked by"), Qt::CaseInsensitive)) {
+    emit collaborationStatusChanged(
+        QStringLiteral("Collab: read-only"),
+        access_state.lock_owner.trimmed().isEmpty()
+            ? access_state.status_text
+            : QStringLiteral("Locked by %1").arg(access_state.lock_owner),
+        true);
+    return;
+  }
+
+  emit collaborationStatusChanged(QStringLiteral("Collab: viewing"),
+                                  QStringLiteral("Enter edit mode to acquire the lock."), false);
+}
+
+void Page::UpdateEditModeControls() {
+  if (selected_page_id_.isEmpty()) {
+    emit editModeStateChanged(QStringLiteral("No document selected"), false, false);
+    return;
+  }
+
+  if (current_document_local_only_) {
+    emit editModeStateChanged(QStringLiteral("Local editing"), false, false);
+    return;
+  }
+
+  if (current_document_editable_) {
+    emit editModeStateChanged(QStringLiteral("Edit mode"), true, true);
+  } else {
+    emit editModeStateChanged(QStringLiteral("View mode"), false, true);
+  }
 }
 
 void Page::MoveDocument(const QModelIndex& index, int delta) {
@@ -825,6 +910,14 @@ void Page::ShowContextMenu(const QPoint& position) {
 
 void Page::HandleDocumentSaved(const QString& page_id, bool success, const QString& message) {
   if (selected_page_id_.isEmpty() || page_id != selected_page_id_) {
+    return;
+  }
+
+  const auto is_read_only_status =
+      message.contains(QStringLiteral("read-only"), Qt::CaseInsensitive) ||
+      message.contains(QStringLiteral("viewing"), Qt::CaseInsensitive);
+  if (!success && is_read_only_status) {
+    emit documentStatusChanged(message, false);
     return;
   }
 

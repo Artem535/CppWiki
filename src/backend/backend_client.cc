@@ -193,8 +193,72 @@ void BackendClient::SetAccessToken(QString access_token) {
   access_token_ = std::move(access_token);
 }
 
-void BackendClient::OpenDocumentSession(const QString& document_id,
-                                        std::function<void(DocumentAccessState)> callback) {
+void BackendClient::OpenDocumentViewSession(const QString& document_id,
+                                            std::function<void(DocumentAccessState)> callback) {
+  ++session_request_id_;
+  const auto request_id = session_request_id_;
+
+  if (document_id.trimmed().isEmpty()) {
+    StopPresence();
+    callback(DocumentAccessState{
+        .editable = true,
+        .local_only = true,
+        .lock_owner = {},
+        .status_text = QStringLiteral("Document: local only"),
+    });
+    return;
+  }
+
+  if (!enabled_ || state_ == BackendConnectionState::kLocalOnly) {
+    CloseDocumentSession();
+    StopPresence();
+    callback(DocumentAccessState{
+        .editable = true,
+        .local_only = true,
+        .lock_owner = {},
+        .status_text = QStringLiteral("Document: local-only editing"),
+    });
+    return;
+  }
+
+  if (state_ != BackendConnectionState::kReachable) {
+    CloseDocumentSession();
+    StopPresence();
+    callback(DocumentAccessState{
+        .editable = true,
+        .local_only = true,
+        .lock_owner = {},
+        .status_text = QStringLiteral("Document: backend unavailable, editing locally"),
+    });
+    return;
+  }
+
+  auto continue_with_view = [this, document_id, callback = std::move(callback), request_id]() mutable {
+    if (request_id != session_request_id_) {
+      return;
+    }
+    StartPresence(document_id, false);
+    callback(DocumentAccessState{
+        .editable = false,
+        .local_only = false,
+        .lock_owner = {},
+        .status_text = QStringLiteral("Document: viewing"),
+    });
+  };
+
+  if (!active_document_id_.isEmpty()) {
+    const auto document_id_to_release = active_document_id_;
+    StopHeartbeat();
+    active_document_id_.clear();
+    ReleaseDocumentLock(document_id_to_release, std::move(continue_with_view));
+    return;
+  }
+
+  continue_with_view();
+}
+
+void BackendClient::EnterDocumentEditSession(const QString& document_id,
+                                             std::function<void(DocumentAccessState)> callback) {
   ++session_request_id_;
   const auto request_id = session_request_id_;
 
@@ -255,6 +319,55 @@ void BackendClient::OpenDocumentSession(const QString& document_id,
   }
 
   continue_with_acquire();
+}
+
+void BackendClient::ExitDocumentEditSession(const QString& document_id,
+                                            std::function<void(DocumentAccessState)> callback) {
+  ++session_request_id_;
+  const auto request_id = session_request_id_;
+
+  if (document_id.trimmed().isEmpty()) {
+    StopPresence();
+    callback(DocumentAccessState{
+        .editable = false,
+        .local_only = false,
+        .lock_owner = {},
+        .status_text = QStringLiteral("Document: viewing"),
+    });
+    return;
+  }
+
+  if (!enabled_ || state_ == BackendConnectionState::kLocalOnly) {
+    callback(DocumentAccessState{
+        .editable = true,
+        .local_only = true,
+        .lock_owner = {},
+        .status_text = QStringLiteral("Document: local-only editing"),
+    });
+    return;
+  }
+
+  auto continue_with_view = [this, document_id, callback = std::move(callback), request_id]() mutable {
+    if (request_id != session_request_id_) {
+      return;
+    }
+    StartPresence(document_id, false);
+    callback(DocumentAccessState{
+        .editable = false,
+        .local_only = false,
+        .lock_owner = {},
+        .status_text = QStringLiteral("Document: viewing"),
+    });
+  };
+
+  if (active_document_id_ == document_id) {
+    StopHeartbeat();
+    active_document_id_.clear();
+    ReleaseDocumentLock(document_id, std::move(continue_with_view));
+    return;
+  }
+
+  continue_with_view();
 }
 
 void BackendClient::CloseDocumentSession() {

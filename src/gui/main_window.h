@@ -10,6 +10,7 @@ class QWidget;
 
 namespace oclero::qlementine {
 class StatusBadgeWidget;
+class Switch;
 }
 
 namespace cppwiki::gui {
@@ -37,12 +38,13 @@ class MainWindow final : public QMainWindow {
   void settingsChanged();
 
  private:
-  void BuildUi();
+ void BuildUi();
   void CreateInitialPage();
- void ShowSettingsDialog();
+  void ShowSettingsDialog();
   void UpdateBackendStatus();
   void UpdateDocumentStatus(const QString& message, bool is_error);
   void UpdateCollaborationStatus(const QString& summary, const QString& details, bool is_warning);
+  void UpdateEditModeUi(const QString& label, bool checked, bool enabled);
 
   AppContext* context_ = nullptr;
   Page* current_page_ = nullptr;
@@ -51,6 +53,9 @@ class MainWindow final : public QMainWindow {
   QWidget* current_sidebar_widget_ = nullptr;
   QWidget* current_content_widget_ = nullptr;
   gui::PresenceStripWidget* presence_strip_widget_ = nullptr;
+  QLabel* edit_mode_label_ = nullptr;
+  QLabel* save_state_label_ = nullptr;
+  oclero::qlementine::Switch* edit_mode_switch_ = nullptr;
   QString fallback_editor_user_id_;
   bool fallback_editor_is_self_ = false;
   QToolButton* backend_refresh_button_ = nullptr;

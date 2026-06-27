@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "app/app_context.h"
+#include "backend/backend_client.h"
 #include "gui/i_page.h"
 
 class QWebChannel;
@@ -44,11 +45,13 @@ class Page final : public QWidget, public IPage {
   auto Widget() -> QWidget* override;
   [[nodiscard]] auto SidebarWidget() const -> QWidget*;
   [[nodiscard]] auto ContentWidget() const -> QWidget*;
+  void ToggleEditMode();
 
 signals:
   void settingsRequested();
   void documentStatusChanged(const QString& message, bool is_error);
   void collaborationStatusChanged(const QString& summary, const QString& details, bool is_warning);
+  void editModeStateChanged(const QString& label, bool checked, bool enabled);
 
  private:
   void BuildUi();
@@ -60,6 +63,10 @@ signals:
   void RenameDocument(const QModelIndex& index);
   void DeleteDocument(const QModelIndex& index);
   void OpenDocumentWithAccess(const QString& page_id);
+  void EnterEditMode();
+  void ExitEditMode();
+  void ApplyDocumentAccessState(const backend::DocumentAccessState& access_state);
+  void UpdateEditModeControls();
   void MoveDocument(const QModelIndex& index, int delta);
   void MoveDocumentToPlacement(const QString& source_document_id, const QString& target_parent_id,
                                bool has_parent_id, int target_sort_order);
@@ -92,6 +99,8 @@ signals:
   QWebChannel* channel_ = nullptr;
   bridge::QEditorBridge* editor_bridge_ = nullptr;
   QString selected_page_id_;
+  bool current_document_editable_ = false;
+  bool current_document_local_only_ = true;
 };
 
 }  // namespace cppwiki

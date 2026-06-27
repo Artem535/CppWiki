@@ -14,6 +14,7 @@
 #include <QWidget>
 
 #include <oclero/qlementine/widgets/StatusBadgeWidget.hpp>
+#include <oclero/qlementine/widgets/Switch.hpp>
 
 #include <tuple>
 
@@ -117,6 +118,7 @@ void MainWindow::CreateInitialPage() {
           [this](const QString& summary, const QString& details, bool is_warning) {
             UpdateCollaborationStatus(summary, details, is_warning);
           });
+  connect(page, &Page::editModeStateChanged, this, &MainWindow::UpdateEditModeUi);
   current_page_ = page;
   current_sidebar_widget_ = current_page_->SidebarWidget();
   current_content_widget_ = current_page_->ContentWidget();
@@ -171,6 +173,27 @@ void MainWindow::BuildUi() {
   auto* header_layout = new QHBoxLayout(header_row);
   header_layout->setContentsMargins(12, 12, 12, 8);
   header_layout->setSpacing(12);
+
+  auto* edit_mode_widget = new QWidget(header_row);
+  auto* edit_mode_layout = new QHBoxLayout(edit_mode_widget);
+  edit_mode_layout->setContentsMargins(0, 0, 0, 0);
+  edit_mode_layout->setSpacing(8);
+  edit_mode_label_ = new QLabel(QStringLiteral("No document selected"), edit_mode_widget);
+  edit_mode_label_->setObjectName(QStringLiteral("editModeLabel"));
+  edit_mode_layout->addWidget(edit_mode_label_, 0, Qt::AlignVCenter);
+  save_state_label_ = new QLabel(QStringLiteral(""), edit_mode_widget);
+  save_state_label_->setObjectName(QStringLiteral("saveStateLabel"));
+  edit_mode_layout->addWidget(save_state_label_, 0, Qt::AlignVCenter);
+  edit_mode_switch_ = new oclero::qlementine::Switch(edit_mode_widget);
+  edit_mode_switch_->setObjectName(QStringLiteral("editModeSwitch"));
+  edit_mode_switch_->setEnabled(false);
+  connect(edit_mode_switch_, &oclero::qlementine::Switch::toggled, this, [this](bool) {
+    if (current_page_ != nullptr) {
+      current_page_->ToggleEditMode();
+    }
+  });
+  edit_mode_layout->addWidget(edit_mode_switch_, 0, Qt::AlignVCenter);
+
   backend_refresh_button_ = new QToolButton(this);
   backend_refresh_button_->setObjectName(QStringLiteral("statusLineButton"));
   backend_refresh_button_->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
@@ -188,6 +211,7 @@ void MainWindow::BuildUi() {
       MakeStatusWidget(QStringLiteral("Collab: idle"), this);
   std::tie(backend_status_widget_, backend_status_badge_, backend_status_label_) =
       MakeStatusWidget(QStringLiteral("Backend: local only"), this);
+  header_layout->addWidget(edit_mode_widget, 0, Qt::AlignVCenter);
   header_layout->addWidget(presence_strip_widget_, 1);
 
   shell_layout_->addWidget(header_row, 0, 1);
@@ -240,6 +264,15 @@ void MainWindow::UpdateDocumentStatus(const QString& message, bool is_error) {
 
   document_status_label_->setText(message);
   document_status_label_->setStyleSheet(QString{});
+  if (save_state_label_ != nullptr) {
+    if (message.contains(QStringLiteral("Saving"), Qt::CaseInsensitive) ||
+        message.contains(QStringLiteral("Saved"), Qt::CaseInsensitive) ||
+        message.contains(QStringLiteral("Save error"), Qt::CaseInsensitive)) {
+      save_state_label_->setText(message);
+    } else {
+      save_state_label_->clear();
+    }
+  }
 
   if (is_error) {
     document_status_badge_->setBadge(oclero::qlementine::StatusBadge::Error);
@@ -305,6 +338,18 @@ void MainWindow::UpdateCollaborationStatus(const QString& summary, const QString
   }
 
   collaboration_status_badge_->setBadge(oclero::qlementine::StatusBadge::Info);
+}
+
+void MainWindow::UpdateEditModeUi(const QString& label, bool checked, bool enabled) {
+  if (edit_mode_label_ != nullptr) {
+    edit_mode_label_->setText(label);
+  }
+  if (edit_mode_switch_ != nullptr) {
+    const auto blocked = edit_mode_switch_->blockSignals(true);
+    edit_mode_switch_->setChecked(checked);
+    edit_mode_switch_->setEnabled(enabled);
+    edit_mode_switch_->blockSignals(blocked);
+  }
 }
 
 }  // namespace cppwiki

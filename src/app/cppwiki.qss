@@ -58,6 +58,24 @@ QLabel#avatarLabel {
   font-weight: 700;
 }
 
+QFrame#contentToolbar {
+  background-color: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+QLabel#editModeLabel {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+QLabel#saveStateLabel {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 QWidget#pagePanel {
   background-color: palette(base);
 }
