@@ -22,10 +22,13 @@ class PresenceService final {
   auto Heartbeat(const std::string& workspace_id, const std::string& user_id,
                  const std::string& scope) -> void;
 
-  [[nodiscard]] auto GetPresence(const std::string& workspace_id) const -> std::vector<PresenceInfo>;
+  [[nodiscard]] auto GetPresence(const std::string& workspace_id) -> std::vector<PresenceInfo>;
 
  private:
   using WorkspacePresenceMap = std::unordered_map<std::string, PresenceInfo>;
+  static constexpr auto kPresenceTtl = std::chrono::seconds(30);
+  static auto PruneExpired(WorkspacePresenceMap& workspace_presence,
+                           std::chrono::steady_clock::time_point now) -> void;
 
   mutable std::mutex mutex_;
   std::unordered_map<std::string, WorkspacePresenceMap> presence_by_workspace_;
