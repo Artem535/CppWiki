@@ -27,6 +27,8 @@ class PresenceStripWidget final : public QFrame {
 
   QHBoxLayout* root_layout_ = nullptr;
   QHBoxLayout* viewer_avatars_layout_ = nullptr;
+  QLabel* editor_caption_label_ = nullptr;
+  QLabel* viewers_caption_label_ = nullptr;
   QWidget* editor_avatar_ = nullptr;
   QLabel* editor_avatar_label_ = nullptr;
   QStringList viewers_;

@@ -18,14 +18,17 @@ PresenceStripWidget::PresenceStripWidget(QWidget* parent) : QFrame(parent) {
   setProperty("collaborationState", QStringLiteral("idle"));
 
   root_layout_ = new QHBoxLayout(this);
-  root_layout_->setContentsMargins(14, 8, 14, 8);
-  root_layout_->setSpacing(10);
-  root_layout_->addStretch(1);
+  root_layout_->setContentsMargins(0, 0, 0, 0);
+  root_layout_->setSpacing(12);
 
   auto* editor_section = new QWidget(this);
   auto* editor_layout = new QHBoxLayout(editor_section);
   editor_layout->setContentsMargins(0, 0, 0, 0);
-  editor_layout->setSpacing(0);
+  editor_layout->setSpacing(6);
+
+  editor_caption_label_ = new QLabel(QStringLiteral("Editor"), editor_section);
+  editor_caption_label_->setObjectName(QStringLiteral("presenceCaptionLabel"));
+  editor_layout->addWidget(editor_caption_label_, 0, Qt::AlignVCenter);
 
   editor_avatar_ = CreateAvatar(QStringLiteral("presenceEditorAvatar"), QStringLiteral("-"));
   editor_avatar_label_ = editor_avatar_->findChild<QLabel*>(QStringLiteral("avatarLabel"));
@@ -35,7 +38,11 @@ PresenceStripWidget::PresenceStripWidget(QWidget* parent) : QFrame(parent) {
   auto* viewers_section = new QWidget(this);
   auto* viewers_layout = new QHBoxLayout(viewers_section);
   viewers_layout->setContentsMargins(0, 0, 0, 0);
-  viewers_layout->setSpacing(0);
+  viewers_layout->setSpacing(6);
+
+  viewers_caption_label_ = new QLabel(QStringLiteral("Viewers"), viewers_section);
+  viewers_caption_label_->setObjectName(QStringLiteral("presenceCaptionLabel"));
+  viewers_layout->addWidget(viewers_caption_label_, 0, Qt::AlignVCenter);
 
   auto* viewers_avatars = new QWidget(viewers_section);
   viewer_avatars_layout_ = new QHBoxLayout(viewers_avatars);

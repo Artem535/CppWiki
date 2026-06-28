@@ -221,19 +221,16 @@ void MainWindow::BuildUi() {
   collaboration_panel_->setObjectName(QStringLiteral("collaborationPanel"));
   collaboration_panel_->setProperty("collaborationState", QStringLiteral("idle"));
   auto* collaboration_layout = new QHBoxLayout(collaboration_panel_);
-  collaboration_layout->setContentsMargins(14, 8, 14, 8);
-  collaboration_layout->setSpacing(12);
+  collaboration_layout->setContentsMargins(12, 6, 12, 6);
+  collaboration_layout->setSpacing(10);
 
   auto* edit_mode_widget = new QWidget(collaboration_panel_);
   auto* edit_mode_layout = new QHBoxLayout(edit_mode_widget);
   edit_mode_layout->setContentsMargins(0, 0, 0, 0);
-  edit_mode_layout->setSpacing(8);
+  edit_mode_layout->setSpacing(6);
   edit_mode_label_ = new QLabel(QStringLiteral("No document selected"), edit_mode_widget);
   edit_mode_label_->setObjectName(QStringLiteral("editModeLabel"));
   edit_mode_layout->addWidget(edit_mode_label_, 0, Qt::AlignVCenter);
-  save_state_label_ = new QLabel(QStringLiteral(""), edit_mode_widget);
-  save_state_label_->setObjectName(QStringLiteral("saveStateLabel"));
-  edit_mode_layout->addWidget(save_state_label_, 0, Qt::AlignVCenter);
   edit_mode_switch_ = new oclero::qlementine::Switch(edit_mode_widget);
   edit_mode_switch_->setObjectName(QStringLiteral("editModeSwitch"));
   edit_mode_switch_->setEnabled(false);
@@ -243,6 +240,10 @@ void MainWindow::BuildUi() {
     }
   });
   edit_mode_layout->addWidget(edit_mode_switch_, 0, Qt::AlignVCenter);
+  save_state_label_ = new QLabel(QStringLiteral(""), edit_mode_widget);
+  save_state_label_->setObjectName(QStringLiteral("saveStateLabel"));
+  save_state_label_->hide();
+  edit_mode_layout->addWidget(save_state_label_, 0, Qt::AlignVCenter);
 
   backend_refresh_button_ = new QToolButton(this);
   backend_refresh_button_->setObjectName(QStringLiteral("statusLineButton"));
@@ -260,7 +261,8 @@ void MainWindow::BuildUi() {
   std::tie(backend_status_widget_, backend_status_badge_, backend_status_label_) =
       MakeStatusWidget(QStringLiteral("Backend: local only"), this);
   collaboration_layout->addWidget(edit_mode_widget, 0, Qt::AlignVCenter);
-  collaboration_layout->addWidget(presence_strip_widget_, 1);
+  collaboration_layout->addStretch(1);
+  collaboration_layout->addWidget(presence_strip_widget_, 0, Qt::AlignVCenter);
   header_layout->addWidget(collaboration_panel_, 1);
 
   shell_layout_->addWidget(header_row, 0, 1);
@@ -443,20 +445,24 @@ void MainWindow::RefreshCollaborationSecondaryText() {
 
   if (IsHighPrioritySaveHint(save_state_hint_)) {
     save_state_label_->setText(save_state_hint_);
+    save_state_label_->show();
     return;
   }
 
   if (!auth_hint_.isEmpty()) {
     save_state_label_->setText(auth_hint_);
+    save_state_label_->show();
     return;
   }
 
   if (!collaboration_hint_.isEmpty()) {
     save_state_label_->setText(collaboration_hint_);
+    save_state_label_->show();
     return;
   }
 
   save_state_label_->setText(save_state_hint_);
+  save_state_label_->setVisible(!save_state_hint_.isEmpty());
 }
 
 }  // namespace cppwiki
