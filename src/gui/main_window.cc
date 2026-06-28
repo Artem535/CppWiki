@@ -9,6 +9,7 @@
 #include <QSettings>
 #include <QStatusBar>
 #include <QString>
+#include <QStyle>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -20,6 +21,7 @@
 
 #include "app/app_context.h"
 #include "app/program_settings.h"
+#include "auth/auth_session_manager.h"
 #include "backend/backend_client.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
@@ -57,6 +59,42 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
 MainWindow::~MainWindow() = default;
 
+namespace {
+
+auto IsHighPrioritySaveHint(const QString& text) -> bool {
+  return text.contains(QStringLiteral("Saving"), Qt::CaseInsensitive) ||
+         text.contains(QStringLiteral("Save error"), Qt::CaseInsensitive);
+}
+
+auto CompactAuthHint(const auth::AuthSessionManager* auth) -> QString {
+  if (auth == nullptr) {
+    return {};
+  }
+
+  switch (auth->State()) {
+    case auth::AuthSessionState::kRefreshing:
+      return QStringLiteral("Refreshing session...");
+    case auth::AuthSessionState::kAwaitingCallback:
+      return QStringLiteral("Completing browser sign-in...");
+    case auth::AuthSessionState::kSignedOut:
+    case auth::AuthSessionState::kError: {
+      const auto subtitle = auth->Subtitle();
+      if (subtitle.contains(QStringLiteral("expired"), Qt::CaseInsensitive) ||
+          subtitle.contains(QStringLiteral("refresh failed"), Qt::CaseInsensitive)) {
+        return QStringLiteral("Session expired. Sign in again.");
+      }
+      return {};
+    }
+    case auth::AuthSessionState::kDisabled:
+    case auth::AuthSessionState::kAuthenticated:
+      return {};
+  }
+
+  return {};
+}
+
+}  // namespace
+
 void MainWindow::SetContext(AppContext* context) {
   context_ = context;
   if (context_ != nullptr && context_->backend_client != nullptr) {
@@ -87,8 +125,13 @@ void MainWindow::SetContext(AppContext* context) {
               presence_strip_widget_->SetViewers(viewer_user_ids);
             });
   }
+  if (context_ != nullptr && context_->auth_session_manager != nullptr) {
+    connect(context_->auth_session_manager, &auth::AuthSessionManager::sessionChanged, this,
+            [this]() { UpdateAuthCollaborationHint(); });
+  }
   CreateInitialPage();
   UpdateBackendStatus();
+  UpdateAuthCollaborationHint();
 }
 
 void MainWindow::CreateInitialPage() {
@@ -174,7 +217,14 @@ void MainWindow::BuildUi() {
   header_layout->setContentsMargins(12, 12, 12, 8);
   header_layout->setSpacing(12);
 
-  auto* edit_mode_widget = new QWidget(header_row);
+  collaboration_panel_ = new QFrame(header_row);
+  collaboration_panel_->setObjectName(QStringLiteral("collaborationPanel"));
+  collaboration_panel_->setProperty("collaborationState", QStringLiteral("idle"));
+  auto* collaboration_layout = new QHBoxLayout(collaboration_panel_);
+  collaboration_layout->setContentsMargins(14, 8, 14, 8);
+  collaboration_layout->setSpacing(12);
+
+  auto* edit_mode_widget = new QWidget(collaboration_panel_);
   auto* edit_mode_layout = new QHBoxLayout(edit_mode_widget);
   edit_mode_layout->setContentsMargins(0, 0, 0, 0);
   edit_mode_layout->setSpacing(8);
@@ -204,22 +254,20 @@ void MainWindow::BuildUi() {
       context_->backend_client->RefreshHealth();
     }
   });
-  presence_strip_widget_ = new gui::PresenceStripWidget(header_row);
+  presence_strip_widget_ = new gui::PresenceStripWidget(collaboration_panel_);
   std::tie(document_status_widget_, document_status_badge_, document_status_label_) =
       MakeStatusWidget(QStringLiteral("Document: ready"), this);
-  std::tie(collaboration_status_widget_, collaboration_status_badge_, collaboration_status_label_) =
-      MakeStatusWidget(QStringLiteral("Collab: idle"), this);
   std::tie(backend_status_widget_, backend_status_badge_, backend_status_label_) =
       MakeStatusWidget(QStringLiteral("Backend: local only"), this);
-  header_layout->addWidget(edit_mode_widget, 0, Qt::AlignVCenter);
-  header_layout->addWidget(presence_strip_widget_, 1);
+  collaboration_layout->addWidget(edit_mode_widget, 0, Qt::AlignVCenter);
+  collaboration_layout->addWidget(presence_strip_widget_, 1);
+  header_layout->addWidget(collaboration_panel_, 1);
 
   shell_layout_->addWidget(header_row, 0, 1);
 
   setCentralWidget(shell_widget_);
   statusBar()->addPermanentWidget(backend_refresh_button_);
   statusBar()->addPermanentWidget(document_status_widget_);
-  statusBar()->addPermanentWidget(collaboration_status_widget_);
   statusBar()->addPermanentWidget(backend_status_widget_);
   menuBar()->hide();
 }
@@ -264,15 +312,14 @@ void MainWindow::UpdateDocumentStatus(const QString& message, bool is_error) {
 
   document_status_label_->setText(message);
   document_status_label_->setStyleSheet(QString{});
-  if (save_state_label_ != nullptr) {
-    if (message.contains(QStringLiteral("Saving"), Qt::CaseInsensitive) ||
-        message.contains(QStringLiteral("Saved"), Qt::CaseInsensitive) ||
-        message.contains(QStringLiteral("Save error"), Qt::CaseInsensitive)) {
-      save_state_label_->setText(message);
-    } else {
-      save_state_label_->clear();
-    }
+  if (message.contains(QStringLiteral("Saving"), Qt::CaseInsensitive) ||
+      message.contains(QStringLiteral("Saved"), Qt::CaseInsensitive) ||
+      message.contains(QStringLiteral("Save error"), Qt::CaseInsensitive)) {
+    save_state_hint_ = message;
+  } else {
+    save_state_hint_.clear();
   }
+  RefreshCollaborationSecondaryText();
 
   if (is_error) {
     document_status_badge_->setBadge(oclero::qlementine::StatusBadge::Error);
@@ -294,20 +341,34 @@ void MainWindow::UpdateDocumentStatus(const QString& message, bool is_error) {
 
 void MainWindow::UpdateCollaborationStatus(const QString& summary, const QString& details,
                                            bool is_warning) {
-  if (collaboration_status_label_ == nullptr || collaboration_status_badge_ == nullptr) {
-    return;
+  if (presence_strip_widget_ != nullptr) {
+    presence_strip_widget_->setToolTip(
+        details.trimmed().isEmpty() ? summary : QStringLiteral("%1\n%2").arg(summary, details));
   }
-
-  collaboration_status_label_->setText(
-      details.trimmed().isEmpty() ? summary : QStringLiteral("%1 (%2)").arg(summary, details));
-  collaboration_status_label_->setToolTip(details);
+  if (collaboration_panel_ != nullptr) {
+    collaboration_panel_->setToolTip(
+        details.trimmed().isEmpty() ? summary : QStringLiteral("%1\n%2").arg(summary, details));
+  }
 
   if (presence_strip_widget_ != nullptr) {
     if (summary.contains(QStringLiteral("editing"), Qt::CaseInsensitive)) {
+      if (collaboration_panel_ != nullptr) {
+        collaboration_panel_->setProperty("collaborationState", QStringLiteral("editing"));
+        collaboration_panel_->style()->unpolish(collaboration_panel_);
+        collaboration_panel_->style()->polish(collaboration_panel_);
+      }
+      presence_strip_widget_->SetCollaborationState(QStringLiteral("editing"));
       fallback_editor_user_id_ = QStringLiteral("You");
       fallback_editor_is_self_ = true;
       presence_strip_widget_->SetEditor(QStringLiteral("You"), true);
+      collaboration_hint_.clear();
     } else if (summary.contains(QStringLiteral("read-only"), Qt::CaseInsensitive)) {
+      if (collaboration_panel_ != nullptr) {
+        collaboration_panel_->setProperty("collaborationState", QStringLiteral("read-only"));
+        collaboration_panel_->style()->unpolish(collaboration_panel_);
+        collaboration_panel_->style()->polish(collaboration_panel_);
+      }
+      presence_strip_widget_->SetCollaborationState(QStringLiteral("read-only"));
       auto owner = details.trimmed();
       if (owner.startsWith(QStringLiteral("Locked by "), Qt::CaseInsensitive)) {
         owner.remove(0, QStringLiteral("Locked by ").size());
@@ -315,29 +376,47 @@ void MainWindow::UpdateCollaborationStatus(const QString& summary, const QString
       fallback_editor_user_id_ = owner;
       fallback_editor_is_self_ = false;
       presence_strip_widget_->SetEditor(owner, false);
-    } else {
+      collaboration_hint_ = details.trimmed();
+    } else if (summary.contains(QStringLiteral("local only"), Qt::CaseInsensitive)) {
+      if (collaboration_panel_ != nullptr) {
+        collaboration_panel_->setProperty("collaborationState", QStringLiteral("local-only"));
+        collaboration_panel_->style()->unpolish(collaboration_panel_);
+        collaboration_panel_->style()->polish(collaboration_panel_);
+      }
+      presence_strip_widget_->SetCollaborationState(QStringLiteral("local-only"));
       fallback_editor_user_id_.clear();
       fallback_editor_is_self_ = false;
       presence_strip_widget_->ClearEditor();
+      collaboration_hint_.clear();
+    } else if (summary.contains(QStringLiteral("lock lost"), Qt::CaseInsensitive) ||
+               summary.contains(QStringLiteral("session expired"), Qt::CaseInsensitive) ||
+               summary.contains(QStringLiteral("unavailable"), Qt::CaseInsensitive) ||
+               is_warning) {
+      if (collaboration_panel_ != nullptr) {
+        collaboration_panel_->setProperty("collaborationState", QStringLiteral("attention"));
+        collaboration_panel_->style()->unpolish(collaboration_panel_);
+        collaboration_panel_->style()->polish(collaboration_panel_);
+      }
+      presence_strip_widget_->SetCollaborationState(QStringLiteral("attention"));
+      fallback_editor_user_id_.clear();
+      fallback_editor_is_self_ = false;
+      presence_strip_widget_->ClearEditor();
+      collaboration_hint_ = details.trimmed().isEmpty() ? summary : details;
+    } else {
+      if (collaboration_panel_ != nullptr) {
+        collaboration_panel_->setProperty("collaborationState", QStringLiteral("viewing"));
+        collaboration_panel_->style()->unpolish(collaboration_panel_);
+        collaboration_panel_->style()->polish(collaboration_panel_);
+      }
+      presence_strip_widget_->SetCollaborationState(QStringLiteral("viewing"));
+      fallback_editor_user_id_.clear();
+      fallback_editor_is_self_ = false;
+      presence_strip_widget_->ClearEditor();
+      collaboration_hint_.clear();
     }
   }
 
-  if (summary.contains(QStringLiteral("editing"), Qt::CaseInsensitive)) {
-    collaboration_status_badge_->setBadge(oclero::qlementine::StatusBadge::Success);
-    return;
-  }
-
-  if (summary.contains(QStringLiteral("local only"), Qt::CaseInsensitive)) {
-    collaboration_status_badge_->setBadge(oclero::qlementine::StatusBadge::Info);
-    return;
-  }
-
-  if (is_warning || summary.contains(QStringLiteral("read-only"), Qt::CaseInsensitive)) {
-    collaboration_status_badge_->setBadge(oclero::qlementine::StatusBadge::Warning);
-    return;
-  }
-
-  collaboration_status_badge_->setBadge(oclero::qlementine::StatusBadge::Info);
+  RefreshCollaborationSecondaryText();
 }
 
 void MainWindow::UpdateEditModeUi(const QString& label, bool checked, bool enabled) {
@@ -350,6 +429,34 @@ void MainWindow::UpdateEditModeUi(const QString& label, bool checked, bool enabl
     edit_mode_switch_->setEnabled(enabled);
     edit_mode_switch_->blockSignals(blocked);
   }
+}
+
+void MainWindow::UpdateAuthCollaborationHint() {
+  auth_hint_ = CompactAuthHint(context_ != nullptr ? context_->auth_session_manager : nullptr);
+  RefreshCollaborationSecondaryText();
+}
+
+void MainWindow::RefreshCollaborationSecondaryText() {
+  if (save_state_label_ == nullptr) {
+    return;
+  }
+
+  if (IsHighPrioritySaveHint(save_state_hint_)) {
+    save_state_label_->setText(save_state_hint_);
+    return;
+  }
+
+  if (!auth_hint_.isEmpty()) {
+    save_state_label_->setText(auth_hint_);
+    return;
+  }
+
+  if (!collaboration_hint_.isEmpty()) {
+    save_state_label_->setText(collaboration_hint_);
+    return;
+  }
+
+  save_state_label_->setText(save_state_hint_);
 }
 
 }  // namespace cppwiki

@@ -19,6 +19,37 @@ QFrame#shellWidgetCell {
   min-height: 44px;
 }
 
+QFrame#collaborationPanel {
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+}
+
+QFrame#collaborationPanel[collaborationState="editing"] {
+  background-color: rgba(28, 201, 156, 0.08);
+  border: 1px solid rgba(28, 201, 156, 0.32);
+}
+
+QFrame#collaborationPanel[collaborationState="viewing"] {
+  background-color: rgba(65, 152, 255, 0.06);
+  border: 1px solid rgba(65, 152, 255, 0.18);
+}
+
+QFrame#collaborationPanel[collaborationState="read-only"] {
+  background-color: rgba(255, 193, 87, 0.08);
+  border: 1px solid rgba(255, 193, 87, 0.28);
+}
+
+QFrame#collaborationPanel[collaborationState="attention"] {
+  background-color: rgba(255, 107, 107, 0.08);
+  border: 1px solid rgba(255, 107, 107, 0.28);
+}
+
+QFrame#collaborationPanel[collaborationState="local-only"] {
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
 QFrame#presenceStripWidget {
   background-color: transparent;
   border: none;

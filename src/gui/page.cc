@@ -20,6 +20,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSize>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QTreeView>
 #include <QUrl>
@@ -257,6 +258,11 @@ void Page::BuildUi() {
   content_layout->setSpacing(0);
   content_layout->addWidget(editor_view_, 1);
 
+  edit_inactivity_timer_ = new QTimer(this);
+  edit_inactivity_timer_->setSingleShot(true);
+  edit_inactivity_timer_->setInterval(constants::kEditModeInactivityTimeoutMinutes * 60 * 1000);
+  connect(edit_inactivity_timer_, &QTimer::timeout, this, &Page::HandleEditInactivityTimeout);
+
   if (context_.auth_session_manager != nullptr) {
     connect(context_.auth_session_manager, &auth::AuthSessionManager::sessionChanged, this,
             [this]() {
@@ -357,6 +363,11 @@ void Page::SetupTreeView() {
           });
   connect(editor_bridge_, &bridge::QEditorBridge::saveStatusChanged, this,
           [this](const QString& page_id, bool success, const QString& message) {
+            if (page_id == selected_page_id_ &&
+                (message.contains(QStringLiteral("Saving"), Qt::CaseInsensitive) ||
+                 (success && message.contains(QStringLiteral("Saved"), Qt::CaseInsensitive)))) {
+              NoteEditActivity();
+            }
             HandleDocumentSaved(page_id, success, message);
           });
   connect(editor_bridge_, &bridge::QEditorBridge::documentLoadFailed, this,
@@ -548,6 +559,7 @@ void Page::OpenDocumentWithAccess(const QString& page_id) {
   }
 
   if (context_.backend_client == nullptr) {
+    StopEditInactivityTimer();
     editor_bridge_->SetPendingDocumentAccess(true, QString{},
                                              QStringLiteral("Document: local-only editing"));
     emit documentStatusChanged(QStringLiteral("Document: local-only editing"), false);
@@ -583,14 +595,19 @@ void Page::EnterEditMode() {
         editor_bridge_->SetCurrentDocumentAccess(access_state.editable, access_state.lock_owner,
                                                  access_state.status_text);
         ApplyDocumentAccessState(access_state);
+        if (access_state.editable) {
+          NoteEditActivity();
+        }
       });
 }
 
-void Page::ExitEditMode() {
+void Page::ExitEditMode(bool due_to_inactivity) {
   if (selected_page_id_.isEmpty() || context_.backend_client == nullptr || editor_bridge_ == nullptr) {
     return;
   }
 
+  StopEditInactivityTimer();
+  pending_inactivity_exit_notice_ = due_to_inactivity;
   context_.backend_client->ExitDocumentEditSession(
       selected_page_id_, [this](backend::DocumentAccessState access_state) {
         if (editor_bridge_ == nullptr) {
@@ -599,6 +616,18 @@ void Page::ExitEditMode() {
         editor_bridge_->SetCurrentDocumentAccess(access_state.editable, access_state.lock_owner,
                                                  access_state.status_text);
         ApplyDocumentAccessState(access_state);
+        if (pending_inactivity_exit_notice_ && !access_state.editable) {
+          emit documentStatusChanged(
+              QStringLiteral("Edit mode ended after %1 minutes of inactivity.")
+                  .arg(constants::kEditModeInactivityTimeoutMinutes),
+              false);
+          emit collaborationStatusChanged(
+              QStringLiteral("Collab: viewing"),
+              QStringLiteral("Edit mode timed out after %1 minutes without changes.")
+                  .arg(constants::kEditModeInactivityTimeoutMinutes),
+              false);
+        }
+        pending_inactivity_exit_notice_ = false;
       });
 }
 
@@ -617,6 +646,11 @@ void Page::ToggleEditMode() {
 void Page::ApplyDocumentAccessState(const backend::DocumentAccessState& access_state) {
   current_document_editable_ = access_state.editable;
   current_document_local_only_ = access_state.local_only;
+  if (current_document_editable_ && !current_document_local_only_) {
+    StartEditInactivityTimer();
+  } else {
+    StopEditInactivityTimer();
+  }
   UpdateEditModeControls();
 
   emit documentStatusChanged(access_state.status_text, false);
@@ -633,6 +667,31 @@ void Page::ApplyDocumentAccessState(const backend::DocumentAccessState& access_s
             ? QStringLiteral("Backend lock acquired.")
             : QStringLiteral("Owner: %1").arg(access_state.lock_owner),
         false);
+    return;
+  }
+
+  if (access_state.status_text.contains(QStringLiteral("lock lost"), Qt::CaseInsensitive) ||
+      access_state.status_text.contains(QStringLiteral("heartbeat failed"), Qt::CaseInsensitive)) {
+    emit collaborationStatusChanged(
+        QStringLiteral("Collab: lock lost"),
+        QStringLiteral("Editing access was lost. Re-enter edit mode when the backend is reachable."),
+        true);
+    return;
+  }
+
+  if (access_state.status_text.contains(QStringLiteral("unauthorized"), Qt::CaseInsensitive) ||
+      access_state.status_text.contains(QStringLiteral("expired"), Qt::CaseInsensitive)) {
+    emit collaborationStatusChanged(
+        QStringLiteral("Collab: session expired"),
+        QStringLiteral("Authentication expired. Sign in again to resume collaborative editing."),
+        true);
+    return;
+  }
+
+  if (access_state.status_text.contains(QStringLiteral("failed"), Qt::CaseInsensitive) ||
+      access_state.status_text.contains(QStringLiteral("rejected"), Qt::CaseInsensitive)) {
+    emit collaborationStatusChanged(QStringLiteral("Collab: unavailable"), access_state.status_text,
+                                    true);
     return;
   }
 
@@ -666,6 +725,34 @@ void Page::UpdateEditModeControls() {
   } else {
     emit editModeStateChanged(QStringLiteral("View mode"), false, true);
   }
+}
+
+void Page::StartEditInactivityTimer() {
+  if (edit_inactivity_timer_ == nullptr || current_document_local_only_ || !current_document_editable_) {
+    return;
+  }
+
+  edit_inactivity_timer_->start();
+}
+
+void Page::StopEditInactivityTimer() {
+  if (edit_inactivity_timer_ == nullptr) {
+    return;
+  }
+
+  edit_inactivity_timer_->stop();
+}
+
+void Page::NoteEditActivity() {
+  StartEditInactivityTimer();
+}
+
+void Page::HandleEditInactivityTimeout() {
+  if (!current_document_editable_ || current_document_local_only_) {
+    return;
+  }
+
+  ExitEditMode(true);
 }
 
 void Page::MoveDocument(const QModelIndex& index, int delta) {

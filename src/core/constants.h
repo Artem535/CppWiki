@@ -16,6 +16,7 @@ inline constexpr int kPageListInitialWidth = 280;
 inline constexpr int kPageListMinimumWidth = 220;
 inline constexpr int kPageListMaximumWidth = 360;
 inline constexpr int kDefaultApplicationFontPointSize = 11;
+inline constexpr int kEditModeInactivityTimeoutMinutes = 3;
 
 inline constexpr int kBridgeApiVersion = 1;
 inline constexpr std::string_view kDocumentsBridgeObjectName = "wikiDocuments";

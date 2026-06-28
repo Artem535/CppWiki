@@ -15,6 +15,7 @@ namespace cppwiki::gui {
 PresenceStripWidget::PresenceStripWidget(QWidget* parent) : QFrame(parent) {
   setObjectName(QStringLiteral("presenceStripWidget"));
   setFrameShape(QFrame::NoFrame);
+  setProperty("collaborationState", QStringLiteral("idle"));
 
   root_layout_ = new QHBoxLayout(this);
   root_layout_->setContentsMargins(14, 8, 14, 8);
@@ -48,6 +49,13 @@ PresenceStripWidget::PresenceStripWidget(QWidget* parent) : QFrame(parent) {
 
   ClearEditor();
   SetViewers({});
+}
+
+void PresenceStripWidget::SetCollaborationState(const QString& state) {
+  setProperty("collaborationState", state);
+  style()->unpolish(this);
+  style()->polish(this);
+  update();
 }
 
 void PresenceStripWidget::SetEditor(const QString& name, bool is_self) {

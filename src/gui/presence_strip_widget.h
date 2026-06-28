@@ -15,6 +15,7 @@ class PresenceStripWidget final : public QFrame {
  public:
   explicit PresenceStripWidget(QWidget* parent = nullptr);
 
+  void SetCollaborationState(const QString& state);
   void SetEditor(const QString& name, bool is_self);
   void ClearEditor();
   void SetViewers(const QStringList& names);

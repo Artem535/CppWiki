@@ -4,6 +4,7 @@
 #include <QMainWindow>
 
 class QGridLayout;
+class QFrame;
 class QLabel;
 class QToolButton;
 class QWidget;
@@ -45,6 +46,8 @@ class MainWindow final : public QMainWindow {
   void UpdateDocumentStatus(const QString& message, bool is_error);
   void UpdateCollaborationStatus(const QString& summary, const QString& details, bool is_warning);
   void UpdateEditModeUi(const QString& label, bool checked, bool enabled);
+  void UpdateAuthCollaborationHint();
+  void RefreshCollaborationSecondaryText();
 
   AppContext* context_ = nullptr;
   Page* current_page_ = nullptr;
@@ -52,10 +55,14 @@ class MainWindow final : public QMainWindow {
   QGridLayout* shell_layout_ = nullptr;
   QWidget* current_sidebar_widget_ = nullptr;
   QWidget* current_content_widget_ = nullptr;
+  QFrame* collaboration_panel_ = nullptr;
   gui::PresenceStripWidget* presence_strip_widget_ = nullptr;
   QLabel* edit_mode_label_ = nullptr;
   QLabel* save_state_label_ = nullptr;
   oclero::qlementine::Switch* edit_mode_switch_ = nullptr;
+  QString save_state_hint_;
+  QString collaboration_hint_;
+  QString auth_hint_;
   QString fallback_editor_user_id_;
   bool fallback_editor_is_self_ = false;
   QToolButton* backend_refresh_button_ = nullptr;
@@ -65,9 +72,6 @@ class MainWindow final : public QMainWindow {
   QWidget* backend_status_widget_ = nullptr;
   oclero::qlementine::StatusBadgeWidget* backend_status_badge_ = nullptr;
   QLabel* backend_status_label_ = nullptr;
-  QWidget* collaboration_status_widget_ = nullptr;
-  oclero::qlementine::StatusBadgeWidget* collaboration_status_badge_ = nullptr;
-  QLabel* collaboration_status_label_ = nullptr;
 };
 
 }  // namespace cppwiki

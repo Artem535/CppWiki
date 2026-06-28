@@ -18,6 +18,7 @@ class QTreeView;
 class QPushButton;
 class QLabel;
 class QModelIndex;
+class QTimer;
 class QWidget;
 
 namespace cppwiki::bridge {
@@ -64,9 +65,13 @@ signals:
   void DeleteDocument(const QModelIndex& index);
   void OpenDocumentWithAccess(const QString& page_id);
   void EnterEditMode();
-  void ExitEditMode();
+  void ExitEditMode(bool due_to_inactivity = false);
   void ApplyDocumentAccessState(const backend::DocumentAccessState& access_state);
   void UpdateEditModeControls();
+  void StartEditInactivityTimer();
+  void StopEditInactivityTimer();
+  void NoteEditActivity();
+  void HandleEditInactivityTimeout();
   void MoveDocument(const QModelIndex& index, int delta);
   void MoveDocumentToPlacement(const QString& source_document_id, const QString& target_parent_id,
                                bool has_parent_id, int target_sort_order);
@@ -101,6 +106,8 @@ signals:
   QString selected_page_id_;
   bool current_document_editable_ = false;
   bool current_document_local_only_ = true;
+  bool pending_inactivity_exit_notice_ = false;
+  QTimer* edit_inactivity_timer_ = nullptr;
 };
 
 }  // namespace cppwiki
