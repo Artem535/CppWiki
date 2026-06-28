@@ -116,6 +116,36 @@ auto AudienceMatches(const userver::formats::json::Value& payload, std::string_v
   return false;
 }
 
+auto ReadStringArrayClaim(const userver::formats::json::Value& payload, std::string_view key)
+    -> std::vector<std::string> {
+  const auto claim = payload[key];
+  if (claim.IsMissing()) {
+    return {};
+  }
+
+  if (claim.IsString()) {
+    const auto value = claim.As<std::string>();
+    return value.empty() ? std::vector<std::string>{} : std::vector<std::string>{value};
+  }
+
+  if (!claim.IsArray()) {
+    return {};
+  }
+
+  std::vector<std::string> values;
+  for (const auto& item : claim) {
+    if (!item.IsString()) {
+      continue;
+    }
+
+    auto value = item.As<std::string>();
+    if (!value.empty()) {
+      values.push_back(std::move(value));
+    }
+  }
+  return values;
+}
+
 auto ValidateClaims(const userver::formats::json::Value& payload, const JwtAuthConfig& config) -> JwtPrincipal {
   const auto issuer = payload["iss"].As<std::string>();
   if (issuer != config.issuer) {
@@ -142,6 +172,8 @@ auto ValidateClaims(const userver::formats::json::Value& payload, const JwtAuthC
       .preferred_username = payload["preferred_username"].As<std::string>(""),
       .email = payload["email"].As<std::string>(""),
       .issuer = issuer,
+      .roles = ReadStringArrayClaim(payload, "roles"),
+      .groups = ReadStringArrayClaim(payload, "groups"),
   };
 }
 

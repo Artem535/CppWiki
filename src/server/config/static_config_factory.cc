@@ -4,6 +4,7 @@
 #include <rfl/yaml/write.hpp>
 
 #include <optional>
+#include <map>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -64,6 +65,14 @@ struct ProtectedHandlerConfig final {
   HandlerAuthConfig auth;
 };
 
+struct SyncBootstrapComponentConfig final {
+  bool enabled{false};
+  rfl::Rename<"gateway_url", std::string> gateway_url;
+  rfl::Rename<"database_name", std::string> database_name{"cppwiki"};
+  rfl::Rename<"role_channels", std::map<std::string, std::vector<std::string>>> role_channels;
+  rfl::Rename<"group_channels", std::map<std::string, std::vector<std::string>>> group_channels;
+};
+
 struct HttpClientMiddlewarePipelineConfig final {
   struct Middlewares final {} middlewares{};
 };
@@ -96,7 +105,9 @@ struct ComponentsConfig final {
   rfl::Rename<"handler-swagger-ui", PublicHandlerConfig> handler_swagger_ui;
   rfl::Rename<"handler-locks", ProtectedHandlerConfig> handler_locks;
   rfl::Rename<"handler-presence", ProtectedHandlerConfig> handler_presence;
+  rfl::Rename<"handler-sync-config", ProtectedHandlerConfig> handler_sync_config;
   rfl::Rename<"handler-protected-page", ProtectedHandlerConfig> handler_protected_page;
+  rfl::Rename<"sync-config", SyncBootstrapComponentConfig> sync_config{};
 };
 
 struct MainTaskProcessorConfig final {
@@ -174,8 +185,19 @@ auto MakeProtectedHandler(std::string path, std::string method,
   };
 }
 
+auto MakeSyncBootstrapConfig(const ServerSyncConfig& sync_config) -> SyncBootstrapComponentConfig {
+  return SyncBootstrapComponentConfig{
+      .enabled = sync_config.enabled,
+      .gateway_url = sync_config.gateway_url.value_or(""),
+      .database_name = sync_config.database_name.value_or("cppwiki"),
+      .role_channels = sync_config.role_channels,
+      .group_channels = sync_config.group_channels,
+  };
+}
+
 auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::string& log_level,
-                      const ServerAuthConfig& auth_config, bool /*swagger_enabled*/) -> StaticConfig {
+                      const ServerAuthConfig& auth_config, const ServerSyncConfig& sync_config,
+                      bool /*swagger_enabled*/) -> StaticConfig {
   ComponentsConfig components{
       .logging = MakeLoggingConfig(log_level),
       .server = MakeServerConfig(host, port),
@@ -187,7 +209,9 @@ auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::st
           MakeProtectedHandler("/api/v1/locks/{document_id}", "GET,POST,PUT,DELETE", auth_config),
       .handler_presence =
           MakeProtectedHandler("/api/v1/presence/{workspace_id}", "GET,POST", auth_config),
+      .handler_sync_config = MakeProtectedHandler("/api/v1/sync/config", "GET", auth_config),
       .handler_protected_page = MakeProtectedHandler("/api/v1/protected", "GET", auth_config),
+      .sync_config = MakeSyncBootstrapConfig(sync_config),
   };
 
   return StaticConfig{
@@ -201,8 +225,10 @@ auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::st
 }  // namespace
 
 auto MakeStaticConfigYaml(const std::string& host, std::uint16_t port, const std::string& log_level,
-                          const ServerAuthConfig& auth_config, bool swagger_enabled) -> std::string {
-  return rfl::yaml::write(MakeStaticConfig(host, port, log_level, auth_config, swagger_enabled)) +
+                          const ServerAuthConfig& auth_config,
+                          const ServerSyncConfig& sync_config, bool swagger_enabled) -> std::string {
+  return rfl::yaml::write(
+             MakeStaticConfig(host, port, log_level, auth_config, sync_config, swagger_enabled)) +
          "\n";
 }
 

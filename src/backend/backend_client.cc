@@ -65,6 +65,39 @@ auto EnvelopeResult(const QJsonObject& object) -> QJsonObject {
   return object.value(QStringLiteral("result")).toObject();
 }
 
+auto StringArray(const QJsonObject& object, const QString& key) -> QStringList {
+  QStringList result;
+  const auto values = object.value(key).toArray();
+  result.reserve(values.size());
+  for (const auto& value : values) {
+    if (!value.isString()) {
+      continue;
+    }
+    const auto text = value.toString().trimmed();
+    if (!text.isEmpty()) {
+      result.append(text);
+    }
+  }
+  return result;
+}
+
+auto MakeSyncBootstrapStatus(QString text) -> QString {
+  const auto trimmed = text.trimmed();
+  if (trimmed.isEmpty()) {
+    return QStringLiteral("Sync: bootstrap unavailable");
+  }
+  if (trimmed.startsWith(QStringLiteral("Sync:"), Qt::CaseInsensitive)) {
+    return trimmed;
+  }
+  return QStringLiteral("Sync: %1").arg(trimmed);
+}
+
+auto MakeStatusOnlyBootstrap(QString status_text) -> sync::SyncBootstrap {
+  sync::SyncBootstrap bootstrap;
+  bootstrap.status_text = std::move(status_text);
+  return bootstrap;
+}
+
 auto DecodeJwtObject(const QString& token) -> QJsonObject {
   const auto segments = token.split(QLatin1Char('.'));
   if (segments.size() != 3) {
@@ -126,8 +159,10 @@ void BackendClient::ApplySettings(const ProgramSettings& settings) {
   if (!enabled_) {
     refresh_timer_->stop();
     AbortInFlightRequest();
+    AbortSyncBootstrapRequest();
     CloseDocumentSession();
     StopPresence();
+    SetSyncBootstrap(MakeStatusOnlyBootstrap(QStringLiteral("Sync: backend disabled")));
     SetStatus(BackendConnectionState::kLocalOnly, QStringLiteral("Backend: local only"));
     return;
   }
@@ -135,8 +170,10 @@ void BackendClient::ApplySettings(const ProgramSettings& settings) {
   if (base_url_.isEmpty()) {
     refresh_timer_->stop();
     AbortInFlightRequest();
+    AbortSyncBootstrapRequest();
     CloseDocumentSession();
     StopPresence();
+    SetSyncBootstrap(MakeStatusOnlyBootstrap(QStringLiteral("Sync: backend URL missing")));
     SetStatus(BackendConnectionState::kUnavailable, QStringLiteral("Backend: URL missing"));
     return;
   }
@@ -179,8 +216,11 @@ void BackendClient::RefreshHealth() {
     if (ok) {
       SetStatus(BackendConnectionState::kReachable,
                 QStringLiteral("Backend: reachable at %1").arg(base_url_));
+      RefreshSyncBootstrap();
     } else {
       const auto error_text = ReplyErrorText(reply);
+      SetSyncBootstrap(
+          MakeStatusOnlyBootstrap(QStringLiteral("Sync: waiting for backend (%1)").arg(error_text)));
       SetStatus(BackendConnectionState::kUnavailable,
                 QStringLiteral("Backend: unavailable (%1)").arg(error_text));
     }
@@ -191,6 +231,7 @@ void BackendClient::RefreshHealth() {
 
 void BackendClient::SetAccessToken(QString access_token) {
   access_token_ = std::move(access_token);
+  RefreshSyncBootstrap();
 }
 
 void BackendClient::OpenDocumentViewSession(const QString& document_id,
@@ -398,6 +439,31 @@ auto BackendClient::StatusText() const -> const QString& {
   return status_text_;
 }
 
+auto BackendClient::CurrentSyncBootstrap() const -> const sync::SyncBootstrap& {
+  return sync_bootstrap_;
+}
+
+void BackendClient::SetSyncBootstrap(sync::SyncBootstrap bootstrap) {
+  if (sync_bootstrap_.available == bootstrap.available &&
+      sync_bootstrap_.enabled == bootstrap.enabled &&
+      sync_bootstrap_.gateway_url == bootstrap.gateway_url &&
+      sync_bootstrap_.database_name == bootstrap.database_name &&
+      sync_bootstrap_.auth_mode == bootstrap.auth_mode &&
+      sync_bootstrap_.token_passthrough == bootstrap.token_passthrough &&
+      sync_bootstrap_.principal_subject == bootstrap.principal_subject &&
+      sync_bootstrap_.principal_username == bootstrap.principal_username &&
+      sync_bootstrap_.principal_email == bootstrap.principal_email &&
+      sync_bootstrap_.principal_roles == bootstrap.principal_roles &&
+      sync_bootstrap_.principal_groups == bootstrap.principal_groups &&
+      sync_bootstrap_.channels == bootstrap.channels &&
+      sync_bootstrap_.status_text == bootstrap.status_text) {
+    return;
+  }
+
+  sync_bootstrap_ = std::move(bootstrap);
+  emit syncBootstrapChanged();
+}
+
 void BackendClient::SetStatus(BackendConnectionState state, QString status_text) {
   if (state_ == state && status_text_ == status_text) {
     return;
@@ -450,6 +516,95 @@ void BackendClient::AbortPresenceRequest() {
   presence_reply_->abort();
   presence_reply_->deleteLater();
   presence_reply_ = nullptr;
+}
+
+void BackendClient::AbortSyncBootstrapRequest() {
+  if (sync_bootstrap_reply_ == nullptr) {
+    return;
+  }
+
+  disconnect(sync_bootstrap_reply_, nullptr, this, nullptr);
+  sync_bootstrap_reply_->abort();
+  sync_bootstrap_reply_->deleteLater();
+  sync_bootstrap_reply_ = nullptr;
+}
+
+void BackendClient::RefreshSyncBootstrap() {
+  AbortSyncBootstrapRequest();
+
+  if (!enabled_) {
+    SetSyncBootstrap(MakeStatusOnlyBootstrap(QStringLiteral("Sync: backend disabled")));
+    return;
+  }
+
+  if (state_ != BackendConnectionState::kReachable) {
+    SetSyncBootstrap(MakeStatusOnlyBootstrap(QStringLiteral("Sync: waiting for backend")));
+    return;
+  }
+
+  if (access_token_.trimmed().isEmpty()) {
+    SetSyncBootstrap(
+        MakeStatusOnlyBootstrap(QStringLiteral("Sync: waiting for authenticated session")));
+    return;
+  }
+
+  const auto request =
+      MakeRequest(QUrl{ApiUrl(QStringLiteral("/api/v1/sync/config"))}, kLockRequestTimeoutMs,
+                  access_token_);
+  sync_bootstrap_reply_ = network_manager_->get(request);
+
+  connect(sync_bootstrap_reply_, &QNetworkReply::finished, this, [this]() {
+    if (sync_bootstrap_reply_ == nullptr) {
+      return;
+    }
+
+    auto* reply = sync_bootstrap_reply_;
+    sync_bootstrap_reply_ = nullptr;
+
+    const auto status_code = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const auto error_text = ReplyErrorText(reply);
+    if (!error_text.isEmpty()) {
+      reply->deleteLater();
+      if (status_code == 401 || status_code == 403) {
+        SetSyncBootstrap(MakeStatusOnlyBootstrap(
+            QStringLiteral("Sync: authenticated session is not accepted by backend")));
+      } else {
+        SetSyncBootstrap(MakeStatusOnlyBootstrap(
+            QStringLiteral("Sync: bootstrap request failed (%1)").arg(error_text)));
+      }
+      return;
+    }
+
+    const auto payload = ParseJsonObject(reply);
+    reply->deleteLater();
+    if (!payload.value(QStringLiteral("ok")).toBool()) {
+      const auto error_message =
+          payload.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString();
+      SetSyncBootstrap(MakeStatusOnlyBootstrap(
+          error_message.isEmpty() ? QStringLiteral("Sync: bootstrap rejected")
+                                  : MakeSyncBootstrapStatus(error_message)));
+      return;
+    }
+
+    const auto result = EnvelopeResult(payload);
+    const auto auth = result.value(QStringLiteral("auth")).toObject();
+    const auto principal = result.value(QStringLiteral("principal")).toObject();
+    SetSyncBootstrap(sync::SyncBootstrap{
+        .available = result.value(QStringLiteral("available")).toBool(),
+        .enabled = result.value(QStringLiteral("enabled")).toBool(),
+        .gateway_url = result.value(QStringLiteral("gatewayUrl")).toString(),
+        .database_name = result.value(QStringLiteral("databaseName")).toString(),
+        .auth_mode = auth.value(QStringLiteral("mode")).toString(),
+        .token_passthrough = auth.value(QStringLiteral("tokenPassthrough")).toBool(),
+        .principal_subject = principal.value(QStringLiteral("subject")).toString(),
+        .principal_username = principal.value(QStringLiteral("preferredUsername")).toString(),
+        .principal_email = principal.value(QStringLiteral("email")).toString(),
+        .principal_roles = StringArray(principal, QStringLiteral("roles")),
+        .principal_groups = StringArray(principal, QStringLiteral("groups")),
+        .channels = StringArray(result, QStringLiteral("channels")),
+        .status_text = result.value(QStringLiteral("statusText")).toString(),
+    });
+  });
 }
 
 void BackendClient::ReleaseDocumentLock(const QString& document_id,

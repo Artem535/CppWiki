@@ -31,6 +31,8 @@ struct JwtPrincipal final {
   std::string preferred_username;
   std::string email;
   std::string issuer;
+  std::vector<std::string> roles;
+  std::vector<std::string> groups;
 };
 
 inline constexpr std::string_view kJwtPrincipalContextKey = "cppwiki.jwt-principal";

@@ -2,8 +2,10 @@
 #define CPPWIKI_SRC_SERVER_CONFIG_RUNTIME_CONFIG_H_
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <CLI/CLI.hpp>
 
@@ -17,6 +19,11 @@ struct RuntimeConfig final {
   std::optional<std::string> auth_issuer;
   std::optional<std::string> auth_audience;
   std::optional<std::string> auth_jwks_url;
+  bool sync_enabled{false};
+  std::optional<std::string> sync_gateway_url;
+  std::optional<std::string> sync_database_name;
+  std::map<std::string, std::vector<std::string>> sync_role_channels;
+  std::map<std::string, std::vector<std::string>> sync_group_channels;
   bool swagger{false};
 
   [[nodiscard]] static auto FromDefaults() -> RuntimeConfig;

@@ -10,6 +10,7 @@
 #include "auth/auth_session_manager.h"
 #include "backend/backend_client.h"
 #include "gui/main_window.h"
+#include "sync/document_sync_service.h"
 
 namespace cppwiki {
 
@@ -30,6 +31,7 @@ class Application final {
   std::optional<ProgramSettings> settings_;
   std::unique_ptr<auth::AuthSessionManager> auth_session_manager_;
   std::unique_ptr<backend::BackendClient> backend_client_;
+  std::unique_ptr<sync::DocumentSyncService> document_sync_service_;
   std::unique_ptr<AppContext> context_;
   MainWindow main_window_;
 };

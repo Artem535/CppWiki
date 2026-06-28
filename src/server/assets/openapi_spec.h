@@ -34,6 +34,46 @@ inline constexpr std::string_view kOpenApiJson = R"json({
           "userId": { "type": "string", "example": "artem" },
           "scope": { "type": "string", "example": "edit" }
         }
+      },
+      "SyncConfigResponse": {
+        "type": "object",
+        "properties": {
+          "available": { "type": "boolean" },
+          "enabled": { "type": "boolean" },
+          "gatewayUrl": { "type": "string", "example": "http://127.0.0.1:4984/cppwiki" },
+          "databaseName": { "type": "string", "example": "cppwiki" },
+          "auth": {
+            "type": "object",
+            "properties": {
+              "mode": { "type": "string", "example": "oidc_access_token_passthrough" },
+              "tokenPassthrough": { "type": "boolean", "example": true }
+            }
+          },
+          "principal": {
+            "type": "object",
+            "properties": {
+              "subject": { "type": "string", "example": "oidc-subject" },
+              "preferredUsername": { "type": "string", "example": "akadmin" },
+              "email": { "type": "string", "example": "user@example.com" },
+              "roles": {
+                "type": "array",
+                "items": { "type": "string" },
+                "example": ["wiki.editor"]
+              },
+              "groups": {
+                "type": "array",
+                "items": { "type": "string" },
+                "example": ["team.engineering"]
+              }
+            }
+          },
+          "channels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "example": ["user:oidc-subject"]
+          },
+          "statusText": { "type": "string", "example": "Sync bootstrap is ready" }
+        }
       }
     }
   },
@@ -155,6 +195,23 @@ inline constexpr std::string_view kOpenApiJson = R"json({
         "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": { "description": "Protected route reached" },
+          "401": { "description": "Missing or invalid bearer token" }
+        }
+      }
+    },
+    "/api/v1/sync/config": {
+      "get": {
+        "summary": "Get desktop sync bootstrap config",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Sync bootstrap returned",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SyncConfigResponse" }
+              }
+            }
+          },
           "401": { "description": "Missing or invalid bearer token" }
         }
       }

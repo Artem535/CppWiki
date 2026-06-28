@@ -7,6 +7,16 @@ auth:
    audience: cpp-wiki
    jwks_url: http://localhost:9000/application/o/cpp-wiki/jwks/
 
+sync:
+   enabled: true
+   gateway_url: http://127.0.0.1:4984/cppwiki
+   database_name: cppwiki
+   role_channels:
+      wiki.admin: ["*"]
+      wiki.editor: ["workspace:default"]
+   group_channels:
+      team.engineering: ["workspace:engineering"]
+
 # telemetry:
 #   enabled: false
 #   service_name: cppwiki-server

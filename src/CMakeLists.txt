@@ -50,6 +50,10 @@ qt_add_executable(cppwiki_app
         gui/page.cc
         gui/page.h
         main.cc
+        sync/document_sync_service.cc
+        sync/document_sync_service.h
+        sync/sync_bootstrap.cc
+        sync/sync_bootstrap.h
         storage/file_document_repository.cc
         storage/file_document_repository.h
         storage/cblite_document_repository.h
@@ -152,6 +156,8 @@ if (CPPWIKI_BUILD_SERVER)
             server/assets/swagger_ui_page.h
             server/components/cppwiki_server_component.cc
             server/components/cppwiki_server_component.h
+            server/components/sync_bootstrap_component.cc
+            server/components/sync_bootstrap_component.h
             server/handlers/health_handler.cc
             server/handlers/health_handler.h
             server/handlers/handler_utils.cc
@@ -164,6 +170,8 @@ if (CPPWIKI_BUILD_SERVER)
             server/handlers/lock_handler.h
             server/handlers/presence_handler.cc
             server/handlers/presence_handler.h
+            server/handlers/sync_config_handler.cc
+            server/handlers/sync_config_handler.h
             server/handlers/protected_page_handler.cc
             server/handlers/protected_page_handler.h
             server/handlers/swagger_ui_handler.cc
@@ -176,6 +184,8 @@ if (CPPWIKI_BUILD_SERVER)
             server/service/lock_service.h
             server/service/presence_service.cc
             server/service/presence_service.h
+            server/service/sync_gateway_adapter.cc
+            server/service/sync_gateway_adapter.h
             server/dto/json_adapter.h
             server/dto/response_envelope.cc
             server/dto/response_envelope.h
@@ -185,6 +195,7 @@ if (CPPWIKI_BUILD_SERVER)
             server/dto/lock_response.h
             server/dto/presence_response.cc
             server/dto/presence_response.h
+            server/dto/sync_config_response.h
             core/constants.h
             core/logging.cc
             core/logging.h
