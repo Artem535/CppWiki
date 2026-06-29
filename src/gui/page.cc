@@ -1093,6 +1093,8 @@ storage::DocumentSummary Page::SummaryFromVariantMap(const QVariantMap& document
   storage::DocumentSummary summary;
   summary.id = StringFromFirstExistingKey(document, {QStringLiteral("id")}).toStdString();
   summary.title = StringFromFirstExistingKey(document, {QStringLiteral("title")}).toStdString();
+  summary.workspace_id = StringFromFirstExistingKey(
+      document, {QStringLiteral("workspaceId"), QStringLiteral("workspace_id")}).toStdString();
   summary.parent_id = OptionalParentId(document);
   summary.sort_order = IntFromFirstExistingKey(
       document, {QStringLiteral("sortOrder"), QStringLiteral("sort_order")});
@@ -1100,6 +1102,8 @@ storage::DocumentSummary Page::SummaryFromVariantMap(const QVariantMap& document
       document, {QStringLiteral("createdAt"), QStringLiteral("created_at")}).toStdString();
   summary.updated_at = StringFromFirstExistingKey(
       document, {QStringLiteral("updatedAt"), QStringLiteral("updated_at")}).toStdString();
+  summary.created_by = StringFromFirstExistingKey(
+      document, {QStringLiteral("createdBy"), QStringLiteral("created_by")}).toStdString();
   return summary;
 }
 

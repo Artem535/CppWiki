@@ -163,6 +163,15 @@ auto OptionalStringToVariant(const std::optional<std::string>& value) -> QVarian
   return QString::fromStdString(*value);
 }
 
+auto NormalizeWorkspaceId(QString workspace_id) -> QString {
+  const auto trimmed = workspace_id.trimmed();
+  return trimmed.isEmpty() ? QStringLiteral("default") : trimmed;
+}
+
+auto EffectiveWorkspaceId(const std::string& workspace_id) -> std::string {
+  return workspace_id.empty() ? std::string("default") : workspace_id;
+}
+
 auto CurrentAuthorId() -> std::string {
   const auto environment = QProcessEnvironment::systemEnvironment();
   const auto author = environment.value(QStringLiteral("USER"));
@@ -184,24 +193,30 @@ auto MetadataToVariant(const document::PageMetadata& metadata) -> QVariantMap {
       {QStringLiteral("title"), QString::fromStdString(metadata.title)},
       {QStringLiteral("parentId"), OptionalStringToVariant(metadata.parent_id)},
       {QStringLiteral("sortOrder"), metadata.sort_order},
-      {QStringLiteral("workspaceId"), QString::fromStdString(metadata.workspace_id)},
+      {QStringLiteral("workspaceId"),
+       QString::fromStdString(EffectiveWorkspaceId(metadata.workspace_id))},
       {QStringLiteral("createdBy"), QString::fromStdString(metadata.created_by)},
       {QStringLiteral("createdAt"), QString::fromStdString(metadata.created_at)},
       {QStringLiteral("updatedAt"), QString::fromStdString(metadata.updated_at)},
   };
 }
 
-auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& documents)
+auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& documents,
+                                const QString& current_workspace_id)
     -> QVariantList {
   QVariantList result;
-  result.reserve(static_cast<int>(documents.size()));
   for (const auto& document : documents) {
+    const auto workspace_id = QString::fromStdString(EffectiveWorkspaceId(document.workspace_id));
+    if (workspace_id != current_workspace_id) {
+      continue;
+    }
+
     result.append(QVariantMap{
         {QStringLiteral("id"), QString::fromStdString(document.id)},
         {QStringLiteral("title"), QString::fromStdString(document.title)},
         {QStringLiteral("parentId"), OptionalStringToVariant(document.parent_id)},
         {QStringLiteral("sortOrder"), document.sort_order},
-        {QStringLiteral("workspaceId"), QString::fromStdString(document.workspace_id)},
+        {QStringLiteral("workspaceId"), workspace_id},
         {QStringLiteral("createdBy"), QString::fromStdString(document.created_by)},
         {QStringLiteral("createdAt"), QString::fromStdString(document.created_at)},
         {QStringLiteral("updatedAt"), QString::fromStdString(document.updated_at)},
@@ -214,7 +229,7 @@ auto CurrentUtcTimestamp() -> std::string {
   return QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString();
 }
 
-auto MakeWelcomeRecord() -> storage::DocumentRecord {
+auto MakeWelcomeRecord(const QString& workspace_id) -> storage::DocumentRecord {
   const auto id = GenerateUuidString();
   const auto title = std::string(constants::kDefaultPageTitle);
   const auto now = CurrentUtcTimestamp();
@@ -227,7 +242,7 @@ auto MakeWelcomeRecord() -> storage::DocumentRecord {
               .id = id,
               .schema_version = document::SchemaVersion::kV1,
               .title = title,
-              .workspace_id = "default",
+              .workspace_id = workspace_id.toStdString(),
               .parent_id = std::nullopt,
               .sort_order = 0,
               .created_at = now,
@@ -247,7 +262,9 @@ auto MakeWelcomeRecord() -> storage::DocumentRecord {
 }
 
 auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
-                           std::int32_t sort_order = 0) -> storage::DocumentRecord {
+                           std::int32_t sort_order = 0,
+                           QString workspace_id = QStringLiteral("default"))
+    -> storage::DocumentRecord {
   const auto id = GenerateUuidString();
   const auto title = std::string(constants::kNewDocumentTitle);
   const auto now = CurrentUtcTimestamp();
@@ -260,7 +277,7 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
               .id = id,
               .schema_version = document::SchemaVersion::kV1,
               .title = title,
-              .workspace_id = "default",
+              .workspace_id = workspace_id.toStdString(),
               .parent_id = std::move(parent_id),
               .sort_order = sort_order,
               .created_at = now,
@@ -310,12 +327,20 @@ auto ExtractTitle(const document::Document& document, std::string_view fallback_
 }
 
 auto LoadDocumentRecord(std::shared_ptr<storage::LocalDocumentRepository> repository,
-                        const QString& page_id) -> std::variant<storage::DocumentRecord, QVariantMap> {
+                        const QString& page_id,
+                        const QString& current_workspace_id)
+    -> std::variant<storage::DocumentRecord, QVariantMap> {
   auto result = repository->LoadDocument(page_id.toStdString());
   if (!result.document) {
     return ErrorResponse(QStringLiteral("load_failed"),
                          QString::fromStdString(result.error ? result.error->message
                                                              : "Document was not found."));
+  }
+  if (NormalizeWorkspaceId(
+          QString::fromStdString(EffectiveWorkspaceId(result.document->metadata.workspace_id))) !=
+      current_workspace_id) {
+    return ErrorResponse(QStringLiteral("workspace_mismatch"),
+                         QStringLiteral("Document belongs to another workspace."));
   }
   return std::move(*result.document);
 }
@@ -381,6 +406,11 @@ void QEditorBridge::SetCurrentDocumentAccess(bool editable, QString lock_owner,
                              current_access_message_);
 }
 
+void QEditorBridge::SetCurrentWorkspaceId(QString workspace_id) {
+  current_workspace_id_ = NormalizeWorkspaceId(std::move(workspace_id));
+  ClearCurrentDocumentSelection();
+}
+
 void QEditorBridge::RequestOpenDocument(const QString& page_id) {
   emit documentOpenRequested(page_id);
 }
@@ -413,17 +443,20 @@ QVariantMap QEditorBridge::listDocuments() {
                          QString::fromStdString(result.error->message));
   }
 
-  if (result.documents.empty()) {
-    auto welcome = MakeWelcomeRecord();
+  auto documents = DocumentSummariesToVariant(result.documents, current_workspace_id_);
+  if (documents.empty()) {
+    auto welcome = MakeWelcomeRecord(current_workspace_id_);
     const auto save_result = repository_->SaveDocument(welcome);
     if (save_result.error) {
       return ErrorResponse(QStringLiteral("default_page_failed"),
                            QString::fromStdString(save_result.error->message));
     }
-    result.documents.push_back(storage::DocumentSummaryFromMetadata(welcome.metadata));
+    documents = DocumentSummariesToVariant(
+        std::vector<storage::DocumentSummary>{storage::DocumentSummaryFromMetadata(welcome.metadata)},
+        current_workspace_id_);
   }
 
-  return SuccessResponse(DocumentSummariesToVariant(result.documents));
+  return SuccessResponse(documents);
 }
 
 QVariantMap QEditorBridge::createDocument() {
@@ -432,7 +465,7 @@ QVariantMap QEditorBridge::createDocument() {
                          QStringLiteral("Document repository is not configured."));
   }
 
-  auto record = MakeNewDocumentRecord();
+  auto record = MakeNewDocumentRecord(std::nullopt, 0, current_workspace_id_);
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
     return ErrorResponse(QStringLiteral("create_failed"),
@@ -454,7 +487,18 @@ QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
   }
 
   const auto sort_order = NextChildSortOrder(repository_, parent_id.toStdString());
-  auto record = MakeNewDocumentRecord(parent_id.toStdString(), sort_order);
+  auto parent_loaded = repository_->LoadDocument(parent_id.toStdString());
+  if (!parent_loaded.document) {
+    return ErrorResponse(QStringLiteral("invalid_parent"),
+                         QStringLiteral("Parent document was not found."));
+  }
+  if (NormalizeWorkspaceId(QString::fromStdString(
+          EffectiveWorkspaceId(parent_loaded.document->metadata.workspace_id))) != current_workspace_id_) {
+    return ErrorResponse(QStringLiteral("invalid_parent"),
+                         QStringLiteral("Parent document belongs to another workspace."));
+  }
+
+  auto record = MakeNewDocumentRecord(parent_id.toStdString(), sort_order, current_workspace_id_);
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
     return ErrorResponse(QStringLiteral("create_failed"),
@@ -481,7 +525,7 @@ QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString&
                          QStringLiteral("Document title cannot be empty."));
   }
 
-  auto loaded_or_error = LoadDocumentRecord(repository_, page_id);
+  auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
   if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
     return std::get<QVariantMap>(std::move(loaded_or_error));
   }
@@ -519,7 +563,7 @@ QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const
                          QStringLiteral("Document repository is not configured."));
   }
 
-  auto loaded_or_error = LoadDocumentRecord(repository_, page_id);
+  auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
   if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
     return std::get<QVariantMap>(std::move(loaded_or_error));
   }
@@ -548,6 +592,11 @@ QVariantMap QEditorBridge::deleteDocument(const QString& page_id) {
                          QStringLiteral("Document id is required."));
   }
 
+  auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
+  if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
+    return std::get<QVariantMap>(std::move(loaded_or_error));
+  }
+
   if (const auto error = DeleteDocumentTree(repository_, page_id.toStdString())) {
     return ErrorResponse(QStringLiteral("delete_failed"),
                          QString::fromStdString(error->message));
@@ -570,6 +619,12 @@ QVariantMap QEditorBridge::loadDocument(const QString& page_id) {
     return ErrorResponse(QStringLiteral("load_failed"),
                          QString::fromStdString(result.error ? result.error->message
                                                              : "Document was not found."));
+  }
+  if (NormalizeWorkspaceId(
+          QString::fromStdString(EffectiveWorkspaceId(result.document->metadata.workspace_id))) !=
+      current_workspace_id_) {
+    return ErrorResponse(QStringLiteral("workspace_mismatch"),
+                         QStringLiteral("Document belongs to another workspace."));
   }
 
   auto blocks = BlocksFromRawSnapshotJson(result.document->raw_snapshot_json);

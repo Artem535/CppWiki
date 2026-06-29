@@ -329,6 +329,49 @@ auto TestOpenDocumentReturnsLoadedDocument() -> void {
           "opened welcome document should include blocks");
 }
 
+auto TestWorkspaceListIsolation() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  RequireSuccessEnvelope(bridge.createDocument());
+
+  bridge.SetCurrentWorkspaceId(QStringLiteral("team-b"));
+  const auto team_b_list = bridge.listDocuments();
+  RequireSuccessEnvelope(team_b_list);
+  const auto team_b_pages = team_b_list.value(QStringLiteral("result")).toList();
+  Require(team_b_pages.size() == 1, "new workspace should bootstrap its own welcome page");
+  Require(team_b_pages.front().toMap().value(QStringLiteral("workspaceId")).toString() ==
+              QStringLiteral("team-b"),
+          "bootstrapped page should belong to active workspace");
+
+  bridge.SetCurrentWorkspaceId(QStringLiteral("default"));
+  const auto default_list = bridge.listDocuments();
+  RequireSuccessEnvelope(default_list);
+  const auto default_pages = default_list.value(QStringLiteral("result")).toList();
+  Require(!default_pages.isEmpty(), "default workspace should still have its own documents");
+  for (const auto& page_value : default_pages) {
+    Require(page_value.toMap().value(QStringLiteral("workspaceId")).toString() ==
+                QStringLiteral("default"),
+            "listDocuments should only return documents from active workspace");
+  }
+}
+
+auto TestWorkspaceMismatchBlocksCrossWorkspaceLoad() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created = bridge.createDocument();
+  RequireSuccessEnvelope(created);
+  const auto created_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+
+  bridge.SetCurrentWorkspaceId(QStringLiteral("team-b"));
+  const auto loaded = bridge.loadDocument(created_id);
+  RequireErrorEnvelope(loaded, QStringLiteral("workspace_mismatch"));
+}
+
 auto TestValidSnapshot() -> void {
   auto repository = std::make_shared<FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
@@ -404,6 +447,8 @@ auto main() -> int {
   TestRenameDocumentUpdatesTitle();
   TestDeleteDocumentRemovesItFromList();
   TestOpenDocumentReturnsLoadedDocument();
+  TestWorkspaceListIsolation();
+  TestWorkspaceMismatchBlocksCrossWorkspaceLoad();
   TestValidSnapshot();
   TestInvalidJsonSnapshot();
   TestInvalidRootSnapshot();
