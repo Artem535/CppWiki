@@ -372,6 +372,32 @@ auto TestWorkspaceMismatchBlocksCrossWorkspaceLoad() -> void {
   RequireErrorEnvelope(loaded, QStringLiteral("workspace_mismatch"));
 }
 
+auto TestSessionContextOverridesWorkspaceAndAuthor() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+  bridge.SetCurrentAuthorId(QStringLiteral("subject-42"));
+  bridge.SetCurrentWorkspaceId(QStringLiteral("workspace-blue"));
+
+  const auto created = bridge.createDocument();
+  RequireSuccessEnvelope(created);
+  const auto result = created.value(QStringLiteral("result")).toMap();
+  Require(result.value(QStringLiteral("workspaceId")).toString() == QStringLiteral("workspace-blue"),
+          "created document should use current workspace from session context");
+  Require(result.value(QStringLiteral("createdBy")).toString() == QStringLiteral("subject-42"),
+          "created document should use current author from session context");
+
+  const auto loaded = bridge.loadDocument(result.value(QStringLiteral("id")).toString());
+  RequireSuccessEnvelope(loaded);
+  const auto loaded_result = loaded.value(QStringLiteral("result")).toMap();
+  Require(loaded_result.value(QStringLiteral("workspaceId")).toString() ==
+              QStringLiteral("workspace-blue"),
+          "loaded document should preserve session-derived workspace");
+  Require(loaded_result.value(QStringLiteral("createdBy")).toString() ==
+              QStringLiteral("subject-42"),
+          "loaded document should preserve session-derived author");
+}
+
 auto TestValidSnapshot() -> void {
   auto repository = std::make_shared<FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
@@ -449,6 +475,7 @@ auto main() -> int {
   TestOpenDocumentReturnsLoadedDocument();
   TestWorkspaceListIsolation();
   TestWorkspaceMismatchBlocksCrossWorkspaceLoad();
+  TestSessionContextOverridesWorkspaceAndAuthor();
   TestValidSnapshot();
   TestInvalidJsonSnapshot();
   TestInvalidRootSnapshot();

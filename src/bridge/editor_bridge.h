@@ -25,6 +25,7 @@ class QEditorBridge final : public QObject {
                                 QString access_message = {});
   void SetCurrentDocumentAccess(bool editable, QString lock_owner = {},
                                 QString access_message = {});
+  void SetCurrentAuthorId(QString author_id);
   void SetCurrentWorkspaceId(QString workspace_id);
   void RequestOpenDocument(const QString& page_id);
   void ClearCurrentDocumentSelection();
@@ -61,6 +62,7 @@ signals:
   QString current_access_message_;
   std::shared_ptr<storage::LocalDocumentRepository> repository_;
   QString current_page_id_;
+  QString current_author_id_;
   QString current_workspace_id_{QStringLiteral("default")};
 };
 

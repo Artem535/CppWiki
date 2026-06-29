@@ -172,7 +172,7 @@ auto EffectiveWorkspaceId(const std::string& workspace_id) -> std::string {
   return workspace_id.empty() ? std::string("default") : workspace_id;
 }
 
-auto CurrentAuthorId() -> std::string {
+auto ProcessAuthorId() -> std::string {
   const auto environment = QProcessEnvironment::systemEnvironment();
   const auto author = environment.value(QStringLiteral("USER"));
   if (!author.isEmpty()) {
@@ -185,6 +185,14 @@ auto CurrentAuthorId() -> std::string {
   }
 
   return "unknown";
+}
+
+auto EffectiveAuthorId(const QString& author_id) -> std::string {
+  const auto trimmed = author_id.trimmed();
+  if (!trimmed.isEmpty()) {
+    return trimmed.toStdString();
+  }
+  return ProcessAuthorId();
 }
 
 auto MetadataToVariant(const document::PageMetadata& metadata) -> QVariantMap {
@@ -229,7 +237,8 @@ auto CurrentUtcTimestamp() -> std::string {
   return QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString();
 }
 
-auto MakeWelcomeRecord(const QString& workspace_id) -> storage::DocumentRecord {
+auto MakeWelcomeRecord(const QString& workspace_id, const QString& author_id)
+    -> storage::DocumentRecord {
   const auto id = GenerateUuidString();
   const auto title = std::string(constants::kDefaultPageTitle);
   const auto now = CurrentUtcTimestamp();
@@ -247,7 +256,7 @@ auto MakeWelcomeRecord(const QString& workspace_id) -> storage::DocumentRecord {
               .sort_order = 0,
               .created_at = now,
               .updated_at = now,
-              .created_by = CurrentAuthorId(),
+              .created_by = EffectiveAuthorId(author_id),
           },
       .snapshot =
           document::BlockNoteDocumentSnapshot{
@@ -263,7 +272,8 @@ auto MakeWelcomeRecord(const QString& workspace_id) -> storage::DocumentRecord {
 
 auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
                            std::int32_t sort_order = 0,
-                           QString workspace_id = QStringLiteral("default"))
+                           QString workspace_id = QStringLiteral("default"),
+                           QString author_id = {})
     -> storage::DocumentRecord {
   const auto id = GenerateUuidString();
   const auto title = std::string(constants::kNewDocumentTitle);
@@ -282,7 +292,7 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
               .sort_order = sort_order,
               .created_at = now,
               .updated_at = now,
-              .created_by = CurrentAuthorId(),
+              .created_by = EffectiveAuthorId(author_id),
           },
       .snapshot =
           document::BlockNoteDocumentSnapshot{
@@ -406,6 +416,10 @@ void QEditorBridge::SetCurrentDocumentAccess(bool editable, QString lock_owner,
                              current_access_message_);
 }
 
+void QEditorBridge::SetCurrentAuthorId(QString author_id) {
+  current_author_id_ = std::move(author_id);
+}
+
 void QEditorBridge::SetCurrentWorkspaceId(QString workspace_id) {
   current_workspace_id_ = NormalizeWorkspaceId(std::move(workspace_id));
   ClearCurrentDocumentSelection();
@@ -445,7 +459,7 @@ QVariantMap QEditorBridge::listDocuments() {
 
   auto documents = DocumentSummariesToVariant(result.documents, current_workspace_id_);
   if (documents.empty()) {
-    auto welcome = MakeWelcomeRecord(current_workspace_id_);
+    auto welcome = MakeWelcomeRecord(current_workspace_id_, current_author_id_);
     const auto save_result = repository_->SaveDocument(welcome);
     if (save_result.error) {
       return ErrorResponse(QStringLiteral("default_page_failed"),
@@ -465,7 +479,7 @@ QVariantMap QEditorBridge::createDocument() {
                          QStringLiteral("Document repository is not configured."));
   }
 
-  auto record = MakeNewDocumentRecord(std::nullopt, 0, current_workspace_id_);
+  auto record = MakeNewDocumentRecord(std::nullopt, 0, current_workspace_id_, current_author_id_);
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
     return ErrorResponse(QStringLiteral("create_failed"),
@@ -498,7 +512,8 @@ QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
                          QStringLiteral("Parent document belongs to another workspace."));
   }
 
-  auto record = MakeNewDocumentRecord(parent_id.toStdString(), sort_order, current_workspace_id_);
+  auto record = MakeNewDocumentRecord(parent_id.toStdString(), sort_order, current_workspace_id_,
+                                      current_author_id_);
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
     return ErrorResponse(QStringLiteral("create_failed"),
@@ -710,7 +725,7 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
       record.metadata.workspace_id = "default";
     }
     if (record.metadata.created_by.empty()) {
-      record.metadata.created_by = CurrentAuthorId();
+      record.metadata.created_by = EffectiveAuthorId(current_author_id_);
     }
     const auto fallback_title = record.metadata.title.empty()
                                     ? std::string_view(constants::kNewDocumentTitle)

@@ -87,6 +87,7 @@ signals:
   [[nodiscard]] std::vector<storage::DocumentSummary> FetchDocumentSummaries() const;
   [[nodiscard]] std::optional<std::string> MapToParentDocumentId(const QModelIndex& index) const;
   [[nodiscard]] storage::DocumentSummary SummaryFromVariantMap(const QVariantMap& document) const;
+  void ApplyBridgeSessionContext();
   void UpdateAuthCard();
 
   const AppContext& context_;

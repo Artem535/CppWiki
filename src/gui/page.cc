@@ -90,6 +90,32 @@ int IntFromFirstExistingKey(const QVariantMap& map, std::initializer_list<QStrin
   return value.toInt();
 }
 
+auto WorkspaceIdFromBootstrap(const sync::SyncBootstrap& bootstrap) -> QString {
+  for (const auto& channel : bootstrap.channels) {
+    const auto trimmed = channel.trimmed();
+    if (trimmed.startsWith(QStringLiteral("workspace:"))) {
+      const auto workspace_id = trimmed.sliced(QStringLiteral("workspace:").size()).trimmed();
+      if (!workspace_id.isEmpty()) {
+        return workspace_id;
+      }
+    }
+  }
+  return QStringLiteral("default");
+}
+
+auto AuthorIdFromBootstrap(const sync::SyncBootstrap& bootstrap) -> QString {
+  if (!bootstrap.principal_subject.trimmed().isEmpty()) {
+    return bootstrap.principal_subject.trimmed();
+  }
+  if (!bootstrap.principal_username.trimmed().isEmpty()) {
+    return bootstrap.principal_username.trimmed();
+  }
+  if (!bootstrap.principal_email.trimmed().isEmpty()) {
+    return bootstrap.principal_email.trimmed();
+  }
+  return {};
+}
+
 void VisitIndexes(const QAbstractItemModel* model, const QModelIndex& parent,
                   const std::function<void(const QModelIndex&)>& visitor) {
   if (model == nullptr) {
@@ -140,6 +166,7 @@ void Page::BuildUi() {
 
   // Set the document repository for the bridge
   editor_bridge_->SetRepository(context_.document_repository);
+  ApplyBridgeSessionContext();
 
   editor_view_ = new QWebEngineView(this);
   editor_view_->page()->setWebChannel(channel_);
@@ -273,6 +300,14 @@ void Page::BuildUi() {
             });
   }
   if (context_.backend_client != nullptr) {
+    connect(context_.backend_client, &backend::BackendClient::syncBootstrapChanged, this,
+            [this]() {
+              ApplyBridgeSessionContext();
+              PopulatePageList();
+              if (!selected_page_id_.isEmpty()) {
+                OpenDocumentWithAccess(selected_page_id_);
+              }
+            });
     connect(context_.backend_client, &backend::BackendClient::documentAccessInvalidated, this,
             [this](const QString& document_id, const QString& lock_owner,
                    const QString& status_text) {
@@ -294,6 +329,22 @@ void Page::BuildUi() {
   PopulatePageList();
   UpdateAuthCard();
   UpdateEditModeControls();
+}
+
+void Page::ApplyBridgeSessionContext() {
+  if (editor_bridge_ == nullptr) {
+    return;
+  }
+
+  if (context_.backend_client == nullptr) {
+    editor_bridge_->SetCurrentAuthorId({});
+    editor_bridge_->SetCurrentWorkspaceId(QStringLiteral("default"));
+    return;
+  }
+
+  const auto& bootstrap = context_.backend_client->CurrentSyncBootstrap();
+  editor_bridge_->SetCurrentAuthorId(AuthorIdFromBootstrap(bootstrap));
+  editor_bridge_->SetCurrentWorkspaceId(WorkspaceIdFromBootstrap(bootstrap));
 }
 
 void Page::SetupTreeView() {
