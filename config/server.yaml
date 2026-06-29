@@ -2,10 +2,11 @@ bind_host: 127.0.0.1
 port: 8080
 log_level: info
 
+
 auth:
-   issuer: http://localhost:9000/application/o/cpp-wiki/
+   issuer: http://authentik.cppwiki.local:9000/application/o/cpp-wiki/
    audience: cpp-wiki
-   jwks_url: http://localhost:9000/application/o/cpp-wiki/jwks/
+   jwks_url: http://authentik.cppwiki.local:9000/application/o/cpp-wiki/jwks/
 
 sync:
    enabled: true

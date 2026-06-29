@@ -28,4 +28,5 @@ Generated documentation set for Wiki Platform v9 — Block Document Edition.
 - `architecture/adr/ADR-006-confluence-integration.md`
 - `architecture/adr/ADR-007-rejection-qtextedit-djot-first.md`
 - `architecture/adr/ADR-008-authentik-auth-model.md`
+- `architecture/spikes/Couchbase_Sync_Gateway_OIDC_Example.md`
 - `backlog/Desktop_Collaboration_Backlog.md`
