@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QDateTime>
+#include <QProcessEnvironment>
 #include <QVariant>
 
 #include <cstdint>
@@ -162,6 +163,34 @@ auto OptionalStringToVariant(const std::optional<std::string>& value) -> QVarian
   return QString::fromStdString(*value);
 }
 
+auto CurrentAuthorId() -> std::string {
+  const auto environment = QProcessEnvironment::systemEnvironment();
+  const auto author = environment.value(QStringLiteral("USER"));
+  if (!author.isEmpty()) {
+    return author.toStdString();
+  }
+
+  const auto username = environment.value(QStringLiteral("USERNAME"));
+  if (!username.isEmpty()) {
+    return username.toStdString();
+  }
+
+  return "unknown";
+}
+
+auto MetadataToVariant(const document::PageMetadata& metadata) -> QVariantMap {
+  return QVariantMap{
+      {QStringLiteral("id"), QString::fromStdString(metadata.id)},
+      {QStringLiteral("title"), QString::fromStdString(metadata.title)},
+      {QStringLiteral("parentId"), OptionalStringToVariant(metadata.parent_id)},
+      {QStringLiteral("sortOrder"), metadata.sort_order},
+      {QStringLiteral("workspaceId"), QString::fromStdString(metadata.workspace_id)},
+      {QStringLiteral("createdBy"), QString::fromStdString(metadata.created_by)},
+      {QStringLiteral("createdAt"), QString::fromStdString(metadata.created_at)},
+      {QStringLiteral("updatedAt"), QString::fromStdString(metadata.updated_at)},
+  };
+}
+
 auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& documents)
     -> QVariantList {
   QVariantList result;
@@ -172,6 +201,8 @@ auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& doc
         {QStringLiteral("title"), QString::fromStdString(document.title)},
         {QStringLiteral("parentId"), OptionalStringToVariant(document.parent_id)},
         {QStringLiteral("sortOrder"), document.sort_order},
+        {QStringLiteral("workspaceId"), QString::fromStdString(document.workspace_id)},
+        {QStringLiteral("createdBy"), QString::fromStdString(document.created_by)},
         {QStringLiteral("createdAt"), QString::fromStdString(document.created_at)},
         {QStringLiteral("updatedAt"), QString::fromStdString(document.updated_at)},
     });
@@ -196,10 +227,12 @@ auto MakeWelcomeRecord() -> storage::DocumentRecord {
               .id = id,
               .schema_version = document::SchemaVersion::kV1,
               .title = title,
+              .workspace_id = "default",
               .parent_id = std::nullopt,
               .sort_order = 0,
               .created_at = now,
               .updated_at = now,
+              .created_by = CurrentAuthorId(),
           },
       .snapshot =
           document::BlockNoteDocumentSnapshot{
@@ -227,10 +260,12 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
               .id = id,
               .schema_version = document::SchemaVersion::kV1,
               .title = title,
+              .workspace_id = "default",
               .parent_id = std::move(parent_id),
               .sort_order = sort_order,
               .created_at = now,
               .updated_at = now,
+              .created_by = CurrentAuthorId(),
           },
       .snapshot =
           document::BlockNoteDocumentSnapshot{
@@ -404,14 +439,7 @@ QVariantMap QEditorBridge::createDocument() {
                          QString::fromStdString(save_result.error->message));
   }
 
-  return SuccessResponse(QVariantMap{
-      {QStringLiteral("id"), QString::fromStdString(record.metadata.id)},
-      {QStringLiteral("title"), QString::fromStdString(record.metadata.title)},
-      {QStringLiteral("parentId"), OptionalStringToVariant(record.metadata.parent_id)},
-      {QStringLiteral("sortOrder"), record.metadata.sort_order},
-      {QStringLiteral("createdAt"), QString::fromStdString(record.metadata.created_at)},
-      {QStringLiteral("updatedAt"), QString::fromStdString(record.metadata.updated_at)},
-  });
+  return SuccessResponse(MetadataToVariant(record.metadata));
 }
 
 QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
@@ -433,14 +461,7 @@ QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
                          QString::fromStdString(save_result.error->message));
   }
 
-  return SuccessResponse(QVariantMap{
-      {QStringLiteral("id"), QString::fromStdString(record.metadata.id)},
-      {QStringLiteral("title"), QString::fromStdString(record.metadata.title)},
-      {QStringLiteral("parentId"), OptionalStringToVariant(record.metadata.parent_id)},
-      {QStringLiteral("sortOrder"), record.metadata.sort_order},
-      {QStringLiteral("createdAt"), QString::fromStdString(record.metadata.created_at)},
-      {QStringLiteral("updatedAt"), QString::fromStdString(record.metadata.updated_at)},
-  });
+  return SuccessResponse(MetadataToVariant(record.metadata));
 }
 
 QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString& title) {
@@ -488,14 +509,7 @@ QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString&
                          QString::fromStdString(save_result.error->message));
   }
 
-  return SuccessResponse(QVariantMap{
-      {QStringLiteral("id"), QString::fromStdString(record.metadata.id)},
-      {QStringLiteral("title"), QString::fromStdString(record.metadata.title)},
-      {QStringLiteral("parentId"), OptionalStringToVariant(record.metadata.parent_id)},
-      {QStringLiteral("sortOrder"), record.metadata.sort_order},
-      {QStringLiteral("createdAt"), QString::fromStdString(record.metadata.created_at)},
-      {QStringLiteral("updatedAt"), QString::fromStdString(record.metadata.updated_at)},
-  });
+  return SuccessResponse(MetadataToVariant(record.metadata));
 }
 
 QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const QString& parent_id,
@@ -521,14 +535,7 @@ QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const
                          QString::fromStdString(save_result.error->message));
   }
 
-  return SuccessResponse(QVariantMap{
-      {QStringLiteral("id"), QString::fromStdString(record.metadata.id)},
-      {QStringLiteral("title"), QString::fromStdString(record.metadata.title)},
-      {QStringLiteral("parentId"), OptionalStringToVariant(record.metadata.parent_id)},
-      {QStringLiteral("sortOrder"), record.metadata.sort_order},
-      {QStringLiteral("createdAt"), QString::fromStdString(record.metadata.created_at)},
-      {QStringLiteral("updatedAt"), QString::fromStdString(record.metadata.updated_at)},
-  });
+  return SuccessResponse(MetadataToVariant(record.metadata));
 }
 
 QVariantMap QEditorBridge::deleteDocument(const QString& page_id) {
@@ -574,18 +581,12 @@ QVariantMap QEditorBridge::loadDocument(const QString& page_id) {
   current_document_editable_ = pending_document_editable_;
   current_lock_owner_ = pending_lock_owner_;
   current_access_message_ = pending_access_message_;
-  return SuccessResponse(QVariantMap{
-      {QStringLiteral("id"), QString::fromStdString(result.document->metadata.id)},
-      {QStringLiteral("title"), QString::fromStdString(result.document->metadata.title)},
-      {QStringLiteral("parentId"), OptionalStringToVariant(result.document->metadata.parent_id)},
-      {QStringLiteral("sortOrder"), result.document->metadata.sort_order},
-      {QStringLiteral("createdAt"), QString::fromStdString(result.document->metadata.created_at)},
-      {QStringLiteral("updatedAt"), QString::fromStdString(result.document->metadata.updated_at)},
-      {QStringLiteral("blocks"), std::get<QVariantList>(std::move(blocks))},
-      {QStringLiteral("editable"), current_document_editable_},
-      {QStringLiteral("lockOwner"), current_lock_owner_},
-      {QStringLiteral("accessMessage"), current_access_message_},
-  });
+  auto response = MetadataToVariant(result.document->metadata);
+  response.insert(QStringLiteral("blocks"), std::get<QVariantList>(std::move(blocks)));
+  response.insert(QStringLiteral("editable"), current_document_editable_);
+  response.insert(QStringLiteral("lockOwner"), current_lock_owner_);
+  response.insert(QStringLiteral("accessMessage"), current_access_message_);
+  return SuccessResponse(response);
 }
 
 QVariantMap QEditorBridge::openDocument(const QString& page_id) {
@@ -650,6 +651,12 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
     }
     record.metadata.id = current_page_id_.toStdString();
     record.metadata.schema_version = document::SchemaVersion::kV1;
+    if (record.metadata.workspace_id.empty()) {
+      record.metadata.workspace_id = "default";
+    }
+    if (record.metadata.created_by.empty()) {
+      record.metadata.created_by = CurrentAuthorId();
+    }
     const auto fallback_title = record.metadata.title.empty()
                                     ? std::string_view(constants::kNewDocumentTitle)
                                     : std::string_view(record.metadata.title);

@@ -72,10 +72,12 @@ auto TestRepositoryInterfaceStoresValidatedRawSnapshot() -> void {
               .id = "page-1",
               .schema_version = cppwiki::document::SchemaVersion::kV1,
               .title = "Getting Started",
+              .workspace_id = "default",
               .parent_id = std::nullopt,
               .sort_order = 10,
               .created_at = "2026-06-16T08:00:00.000Z",
               .updated_at = "2026-06-16T08:01:00.000Z",
+              .created_by = "tester",
           },
       .snapshot =
           cppwiki::document::BlockNoteDocumentSnapshot{
@@ -96,6 +98,10 @@ auto TestRepositoryInterfaceStoresValidatedRawSnapshot() -> void {
   Require(load_result.document->metadata.id == "page-1", "loaded metadata id should match");
   Require(load_result.document->metadata.sort_order == 10,
           "loaded metadata sort order should match");
+  Require(load_result.document->metadata.workspace_id == "default",
+          "loaded workspace id should match");
+  Require(load_result.document->metadata.created_by == "tester",
+          "loaded created_by should match");
   Require(load_result.document->raw_snapshot_json == document.raw_snapshot_json,
           "loaded raw snapshot should match");
 
@@ -105,6 +111,10 @@ auto TestRepositoryInterfaceStoresValidatedRawSnapshot() -> void {
   Require(list_result.documents.front().id == "page-1", "listed metadata id should match");
   Require(list_result.documents.front().sort_order == 10,
           "listed metadata sort order should match");
+  Require(list_result.documents.front().workspace_id == "default",
+          "listed workspace id should match");
+  Require(list_result.documents.front().created_by == "tester",
+          "listed created_by should match");
 
   const auto delete_result = repository.DeleteDocument("page-1");
   Require(!delete_result.error, "delete through repository interface should succeed");

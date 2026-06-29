@@ -148,6 +148,10 @@ auto TestDocumentListBootstrapsWelcomePage() -> QString {
   const auto page = pages.front().toMap();
   Require(page.value(QStringLiteral("title")).toString() == QStringLiteral("Welcome to CppWiki"),
           "bootstrap page title should match");
+  Require(page.value(QStringLiteral("workspaceId")).toString() == QStringLiteral("default"),
+          "bootstrap page workspace should default to default");
+  Require(!page.value(QStringLiteral("createdBy")).toString().isEmpty(),
+          "bootstrap page creator should not be empty");
   return page.value(QStringLiteral("id")).toString();
 }
 
@@ -167,6 +171,10 @@ auto TestCreateDocument() -> QString {
   Require(created.value(QStringLiteral("parentId")).isNull() ||
               !created.value(QStringLiteral("parentId")).isValid(),
           "created root document should not have a parent");
+  Require(created.value(QStringLiteral("workspaceId")).toString() == QStringLiteral("default"),
+          "created document workspace should default to default");
+  Require(!created.value(QStringLiteral("createdBy")).toString().isEmpty(),
+          "created document creator should not be empty");
   return created.value(QStringLiteral("id")).toString();
 }
 
@@ -239,6 +247,10 @@ auto TestCreateDocumentDoesNotHijackAutosaveSelection() -> void {
   const auto created_result = loaded_created.value(QStringLiteral("result")).toMap();
   Require(created_result.value(QStringLiteral("title")).toString() == QStringLiteral("Untitled note"),
           "creating a document should not change bridge selection before open");
+  Require(created_result.value(QStringLiteral("workspaceId")).toString() == QStringLiteral("default"),
+          "loaded created document workspace should default to default");
+  Require(!created_result.value(QStringLiteral("createdBy")).toString().isEmpty(),
+          "loaded created document creator should not be empty");
   Require(created_result.value(QStringLiteral("blocks")).toList().isEmpty(),
           "newly created document should remain empty until it is opened and edited");
 

@@ -174,6 +174,7 @@ class CbliteDocumentRepository::Impl {
                     document.metadata.sort_order);
       auto doc = GetMutableDocument(*collection_, document.metadata.id);
       doc.set("title", Slice(document.metadata.title));
+      doc.set("workspace_id", Slice(document.metadata.workspace_id));
       if (document.metadata.parent_id) {
         doc.set("parent_id", Slice(*document.metadata.parent_id));
       } else {
@@ -182,6 +183,7 @@ class CbliteDocumentRepository::Impl {
       doc.set("sort_order", document.metadata.sort_order);
       doc.set("created_at", Slice(document.metadata.created_at));
       doc.set("updated_at", Slice(document.metadata.updated_at));
+      doc.set("created_by", Slice(document.metadata.created_by));
       doc.set("raw_snapshot", Slice(document.raw_snapshot_json));
 
       collection_->saveDocument(doc);
@@ -241,12 +243,14 @@ class CbliteDocumentRepository::Impl {
       // Document properties are accessed via Dict interface
       auto props = doc.properties();
       record.metadata.title = std::string(props["title"].asString());
+      record.metadata.workspace_id = std::string(props["workspace_id"].asString());
       if (const auto parent_id = props["parent_id"]; parent_id) {
         record.metadata.parent_id = std::string(parent_id.asString());
       }
       record.metadata.sort_order = static_cast<std::int32_t>(props["sort_order"].asInt());
       record.metadata.created_at = std::string(props["created_at"].asString());
       record.metadata.updated_at = std::string(props["updated_at"].asString());
+      record.metadata.created_by = std::string(props["created_by"].asString());
       record.raw_snapshot_json = std::string(props["raw_snapshot"].asString());
 
       try {

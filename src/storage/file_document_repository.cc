@@ -124,10 +124,12 @@ struct FileDocumentRecordDto {
   std::string id;
   std::int32_t schema_version{};
   std::string title;
+  std::string workspace_id;
   std::optional<std::string> parent_id;
   std::int32_t sort_order{};
   std::string created_at;
   std::string updated_at;
+  std::string created_by;
   std::string raw_snapshot_json;
 };
 
@@ -136,10 +138,12 @@ auto ToDto(const DocumentRecord& document) -> FileDocumentRecordDto {
       .id = document.metadata.id,
       .schema_version = static_cast<std::int32_t>(document.metadata.schema_version),
       .title = document.metadata.title,
+      .workspace_id = document.metadata.workspace_id,
       .parent_id = document.metadata.parent_id,
       .sort_order = document.metadata.sort_order,
       .created_at = document.metadata.created_at,
       .updated_at = document.metadata.updated_at,
+      .created_by = document.metadata.created_by,
       .raw_snapshot_json = document.raw_snapshot_json,
   };
 }
@@ -151,10 +155,12 @@ auto FromDto(FileDocumentRecordDto dto) -> DocumentRecord {
               .id = std::move(dto.id),
               .schema_version = document::SchemaVersion::kV1,
               .title = std::move(dto.title),
+              .workspace_id = std::move(dto.workspace_id),
               .parent_id = std::move(dto.parent_id),
               .sort_order = dto.sort_order,
               .created_at = std::move(dto.created_at),
               .updated_at = std::move(dto.updated_at),
+              .created_by = std::move(dto.created_by),
           },
       .snapshot = document::BlockNoteDocumentSnapshot{},
       .raw_snapshot_json = std::move(dto.raw_snapshot_json),

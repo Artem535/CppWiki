@@ -24,10 +24,12 @@ struct DocumentRecord {
 struct DocumentSummary {
   std::string id;
   std::string title;
+  std::string workspace_id;
   std::optional<std::string> parent_id;
   std::int32_t sort_order{};
   std::string created_at;
   std::string updated_at;
+  std::string created_by;
 };
 
 [[nodiscard]] inline auto DocumentSummaryFromMetadata(
@@ -35,10 +37,12 @@ struct DocumentSummary {
   return DocumentSummary{
       .id = metadata.id,
       .title = metadata.title,
+      .workspace_id = metadata.workspace_id,
       .parent_id = metadata.parent_id,
       .sort_order = metadata.sort_order,
       .created_at = metadata.created_at,
       .updated_at = metadata.updated_at,
+      .created_by = metadata.created_by,
   };
 }
 
