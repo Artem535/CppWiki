@@ -18,6 +18,10 @@ namespace cppwiki::gui {
 class PresenceStripWidget;
 }
 
+namespace cppwiki::sync {
+enum class DocumentSyncState;
+}
+
 namespace cppwiki {
 
 struct AppContext;
@@ -43,6 +47,7 @@ class MainWindow final : public QMainWindow {
   void CreateInitialPage();
   void ShowSettingsDialog();
   void UpdateBackendStatus();
+  void UpdateSyncStatus();
   void UpdateDocumentStatus(const QString& message, bool is_error);
   void UpdateCollaborationStatus(const QString& summary, const QString& details, bool is_warning);
   void UpdateEditModeUi(const QString& label, bool checked, bool enabled);
@@ -72,6 +77,9 @@ class MainWindow final : public QMainWindow {
   QWidget* backend_status_widget_ = nullptr;
   oclero::qlementine::StatusBadgeWidget* backend_status_badge_ = nullptr;
   QLabel* backend_status_label_ = nullptr;
+  QWidget* sync_status_widget_ = nullptr;
+  oclero::qlementine::StatusBadgeWidget* sync_status_badge_ = nullptr;
+  QLabel* sync_status_label_ = nullptr;
 };
 
 }  // namespace cppwiki

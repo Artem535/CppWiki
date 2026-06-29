@@ -51,6 +51,7 @@ auto TestDefaultSettings() -> void {
   Require(settings.AuthRedirectUri() == QStringLiteral("http://127.0.0.1:38080/auth/callback"),
           "auth redirect uri should default to the localhost callback");
   Require(!settings.AuthEnabled(), "auth should be disabled by default");
+  Require(!settings.SyncEnabled(), "sync should be disabled by default");
   Require(settings.ApplicationFontPointSize() > 0, "font size should be positive");
 }
 
@@ -89,6 +90,7 @@ auto TestSettingsOverrides() -> void {
   settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsAuthRedirectUriKey),
                     auth_redirect_uri);
   settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsAuthEnabledKey), true);
+  settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsSyncEnabledKey), true);
   settings.setValue(
       cppwiki::ToQString(cppwiki::constants::kSettingsApplicationFontPointSizeKey), 15);
 
@@ -112,6 +114,7 @@ auto TestSettingsOverrides() -> void {
   Require(program_settings.AuthRedirectUri() == auth_redirect_uri,
           "auth redirect uri should be read from QSettings");
   Require(program_settings.AuthEnabled(), "auth enabled flag should be read from QSettings");
+  Require(program_settings.SyncEnabled(), "sync enabled flag should be read from QSettings");
   Require(program_settings.ApplicationFontPointSize() == 15,
           "font size should be read from QSettings");
 }
@@ -139,7 +142,8 @@ auto TestSettingsRoundTrip() -> void {
       cppwiki::ToQString(cppwiki::constants::kApplicationVersion),
       cppwiki::ToQString(cppwiki::constants::kOrganizationName), app_data_directory,
       database_directory, editor_dist_directory, backend_base_url, true,
-      auth_authorization_url, auth_token_url, auth_client_id, auth_redirect_uri, true, 15);
+      auth_authorization_url, auth_token_url, auth_client_id, auth_redirect_uri, true, false,
+      QString(), true, 15);
   program_settings.SaveToSettings(settings);
   settings.sync();
 
@@ -162,6 +166,7 @@ auto TestSettingsRoundTrip() -> void {
   Require(reloaded.AuthRedirectUri() == auth_redirect_uri,
           "saved auth redirect uri should round-trip through QSettings");
   Require(reloaded.AuthEnabled(), "saved auth enabled flag should round-trip through QSettings");
+  Require(reloaded.SyncEnabled(), "saved sync enabled flag should round-trip through QSettings");
   Require(reloaded.ApplicationFontPointSize() == 15,
           "saved font size should round-trip through QSettings");
 }

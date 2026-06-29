@@ -68,6 +68,7 @@ inline constexpr std::string_view kSettingsDemoCollaborationEnabledKey =
     "demo/collaborationEnabled";
 inline constexpr std::string_view kSettingsDemoCollaborationUserIdKey =
     "demo/collaborationUserId";
+inline constexpr std::string_view kSettingsSyncEnabledKey = "sync/enabled";
 inline constexpr std::string_view kSettingsApplicationFontPointSizeKey =
     "appearance/applicationFontPointSize";
 

@@ -127,6 +127,10 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
           demo_collaboration_user_id_edit_, &QWidget::setEnabled);
   form_layout_->addRow(QStringLiteral("Demo profile"), demo_collaboration_user_id_edit_);
 
+  sync_enabled_checkbox_ = new QCheckBox(QStringLiteral("Prepare authenticated document sync"), this);
+  sync_enabled_checkbox_->setChecked(current_settings_.SyncEnabled());
+  form_layout_->addRow(QStringLiteral("Sync"), sync_enabled_checkbox_);
+
   database_directory_edit_ = MakeReadOnlyPathLineEdit(current_settings_.DatabaseDirectory(), this);
   auto* open_folder_action =
       new QAction(QIcon::fromTheme(QStringLiteral("folder-open")),
@@ -177,6 +181,7 @@ auto SettingsDialog::BuildProgramSettings() const -> ProgramSettings {
       backend_base_url, backend_enabled_checkbox_->isChecked(), auth_authorization_url,
       auth_token_url, auth_client_id, auth_redirect_uri, auth_enabled_checkbox_->isChecked(),
       demo_collaboration_enabled_checkbox_->isChecked(), demo_collaboration_user_id,
+      sync_enabled_checkbox_->isChecked(),
       font_size_spinbox_->value());
 }
 

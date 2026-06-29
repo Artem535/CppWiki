@@ -15,6 +15,7 @@ class ProgramSettings final {
                   QString auth_authorization_url, QString auth_token_url,
                   QString auth_client_id, QString auth_redirect_uri, bool auth_enabled,
                   bool demo_collaboration_enabled, QString demo_collaboration_user_id,
+                  bool sync_enabled,
                   int application_font_point_size);
 
   [[nodiscard]] static auto FromDefaults() -> ProgramSettings;
@@ -36,6 +37,7 @@ class ProgramSettings final {
   [[nodiscard]] auto AuthEnabled() const -> bool;
   [[nodiscard]] auto DemoCollaborationEnabled() const -> bool;
   [[nodiscard]] auto DemoCollaborationUserId() const -> const QString&;
+  [[nodiscard]] auto SyncEnabled() const -> bool;
   [[nodiscard]] auto ApplicationFontPointSize() const -> int;
 
  private:
@@ -54,6 +56,7 @@ class ProgramSettings final {
   bool auth_enabled_;
   bool demo_collaboration_enabled_;
   QString demo_collaboration_user_id_;
+  bool sync_enabled_;
   int application_font_point_size_;
 };
 

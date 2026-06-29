@@ -53,7 +53,7 @@ ProgramSettings::ProgramSettings(QString application_name, QString application_v
                                  QString auth_authorization_url, QString auth_token_url,
                                  QString auth_client_id, QString auth_redirect_uri,
                                  bool auth_enabled, bool demo_collaboration_enabled,
-                                 QString demo_collaboration_user_id,
+                                 QString demo_collaboration_user_id, bool sync_enabled,
                                  int application_font_point_size)
     : application_name_(std::move(application_name)),
       application_version_(std::move(application_version)),
@@ -70,6 +70,7 @@ ProgramSettings::ProgramSettings(QString application_name, QString application_v
       auth_enabled_(auth_enabled),
       demo_collaboration_enabled_(demo_collaboration_enabled),
       demo_collaboration_user_id_(std::move(demo_collaboration_user_id)),
+      sync_enabled_(sync_enabled),
       application_font_point_size_(application_font_point_size) {}
 
 auto ProgramSettings::FromDefaults() -> ProgramSettings {
@@ -114,6 +115,8 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
       settings.value(ToQString(constants::kSettingsDemoCollaborationUserIdKey))
           .toString()
           .trimmed();
+  const auto sync_enabled =
+      settings.value(ToQString(constants::kSettingsSyncEnabledKey), false).toBool();
 
   const auto application_font_point_size_value =
       settings.value(ToQString(constants::kSettingsApplicationFontPointSizeKey),
@@ -129,7 +132,7 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
                          database_directory, editor_dist_directory, backend_base_url,
                          backend_enabled, auth_authorization_url, auth_token_url, auth_client_id,
                          auth_redirect_uri, auth_enabled, demo_collaboration_enabled,
-                         demo_collaboration_user_id,
+                         demo_collaboration_user_id, sync_enabled,
                          application_font_point_size);
 }
 
@@ -149,6 +152,7 @@ void ProgramSettings::SaveToSettings(QSettings& settings) const {
                     demo_collaboration_enabled_);
   settings.setValue(ToQString(constants::kSettingsDemoCollaborationUserIdKey),
                     demo_collaboration_user_id_);
+  settings.setValue(ToQString(constants::kSettingsSyncEnabledKey), sync_enabled_);
   settings.setValue(ToQString(constants::kSettingsApplicationFontPointSizeKey),
                     application_font_point_size_);
 }
@@ -211,6 +215,10 @@ auto ProgramSettings::DemoCollaborationEnabled() const -> bool {
 
 auto ProgramSettings::DemoCollaborationUserId() const -> const QString& {
   return demo_collaboration_user_id_;
+}
+
+auto ProgramSettings::SyncEnabled() const -> bool {
+  return sync_enabled_;
 }
 
 auto ProgramSettings::ApplicationFontPointSize() const -> int {

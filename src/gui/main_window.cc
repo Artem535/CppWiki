@@ -28,6 +28,7 @@
 #include "gui/presence_strip_widget.h"
 #include "gui/settings_dialog.h"
 #include "gui/page.h"
+#include "sync/document_sync_service.h"
 
 namespace cppwiki {
 
@@ -125,12 +126,17 @@ void MainWindow::SetContext(AppContext* context) {
               presence_strip_widget_->SetViewers(viewer_user_ids);
             });
   }
+  if (context_ != nullptr && context_->document_sync_service != nullptr) {
+    connect(context_->document_sync_service, &sync::DocumentSyncService::statusChanged, this,
+            [this](sync::DocumentSyncState, const QString&) { UpdateSyncStatus(); });
+  }
   if (context_ != nullptr && context_->auth_session_manager != nullptr) {
     connect(context_->auth_session_manager, &auth::AuthSessionManager::sessionChanged, this,
             [this]() { UpdateAuthCollaborationHint(); });
   }
   CreateInitialPage();
   UpdateBackendStatus();
+  UpdateSyncStatus();
   UpdateAuthCollaborationHint();
 }
 
@@ -260,6 +266,8 @@ void MainWindow::BuildUi() {
       MakeStatusWidget(QStringLiteral("Document: ready"), this);
   std::tie(backend_status_widget_, backend_status_badge_, backend_status_label_) =
       MakeStatusWidget(QStringLiteral("Backend: local only"), this);
+  std::tie(sync_status_widget_, sync_status_badge_, sync_status_label_) =
+      MakeStatusWidget(QStringLiteral("Sync: disabled"), this);
   collaboration_layout->addWidget(edit_mode_widget, 0, Qt::AlignVCenter);
   collaboration_layout->addStretch(1);
   collaboration_layout->addWidget(presence_strip_widget_, 0, Qt::AlignVCenter);
@@ -271,6 +279,7 @@ void MainWindow::BuildUi() {
   statusBar()->addPermanentWidget(backend_refresh_button_);
   statusBar()->addPermanentWidget(document_status_widget_);
   statusBar()->addPermanentWidget(backend_status_widget_);
+  statusBar()->addPermanentWidget(sync_status_widget_);
   menuBar()->hide();
 }
 
@@ -303,6 +312,36 @@ void MainWindow::UpdateBackendStatus() {
 
     case backend::BackendConnectionState::kUnavailable:
       backend_status_badge_->setBadge(oclero::qlementine::StatusBadge::Error);
+      break;
+  }
+}
+
+void MainWindow::UpdateSyncStatus() {
+  if (sync_status_label_ == nullptr || sync_status_badge_ == nullptr) {
+    return;
+  }
+
+  if (context_ == nullptr || context_->document_sync_service == nullptr) {
+    sync_status_label_->setText(QStringLiteral("Sync: unavailable"));
+    sync_status_badge_->setBadge(oclero::qlementine::StatusBadge::Warning);
+    return;
+  }
+
+  const auto state = context_->document_sync_service->State();
+  sync_status_label_->setText(context_->document_sync_service->StatusText());
+
+  switch (state) {
+    case sync::DocumentSyncState::kDisabled:
+      sync_status_badge_->setBadge(oclero::qlementine::StatusBadge::Info);
+      break;
+    case sync::DocumentSyncState::kUnavailable:
+      sync_status_badge_->setBadge(oclero::qlementine::StatusBadge::Warning);
+      break;
+    case sync::DocumentSyncState::kReady:
+      sync_status_badge_->setBadge(oclero::qlementine::StatusBadge::Success);
+      break;
+    case sync::DocumentSyncState::kError:
+      sync_status_badge_->setBadge(oclero::qlementine::StatusBadge::Error);
       break;
   }
 }
