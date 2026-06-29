@@ -1,6 +1,9 @@
 #ifndef CPPWIKI_SRC_SERVER_HANDLERS_SYNC_CONFIG_HANDLER_H_
 #define CPPWIKI_SRC_SERVER_HANDLERS_SYNC_CONFIG_HANDLER_H_
 
+#include <string>
+
+#include <userver/clients/http/client.hpp>
 #include <userver/server/handlers/http_handler_json_base.hpp>
 
 #include "server/components/sync_bootstrap_component.h"
@@ -22,7 +25,10 @@ class SyncConfigHandler final : public userver::server::handlers::HttpHandlerJso
       -> userver::formats::json::Value override;
 
  private:
+  [[nodiscard]] auto ProbeGatewayStatus() const -> std::string;
+
   const components::SyncBootstrapComponent& sync_config_;
+  userver::clients::http::Client& http_client_;
   service::SyncGatewayAdapter sync_gateway_adapter_;
 };
 
