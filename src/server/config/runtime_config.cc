@@ -11,13 +11,14 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/constants.h"
 #include "server/config/static_config_factory.h"
 
 namespace cppwiki::server::config {
 
-namespace {
+namespace detail {
 
 struct AuthConfigFile final {
   std::optional<std::string> issuer;
@@ -25,15 +26,15 @@ struct AuthConfigFile final {
   std::optional<std::string> jwks_url;
 };
 
-struct RuntimeConfigFile final {
-  struct SyncConfigFile final {
-    std::optional<bool> enabled;
-    std::optional<std::string> gateway_url;
-    std::optional<std::string> database_name;
-    std::optional<std::map<std::string, std::vector<std::string>>> role_channels;
-    std::optional<std::map<std::string, std::vector<std::string>>> group_channels;
-  };
+struct SyncConfigFile final {
+  std::optional<bool> enabled;
+  std::optional<std::string> gateway_url;
+  std::optional<std::string> database_name;
+  std::optional<std::map<std::string, std::vector<std::string>>> role_channels;
+  std::optional<std::map<std::string, std::vector<std::string>>> group_channels;
+};
 
+struct RuntimeConfigFile final {
   std::optional<std::string> bind_host;
   std::optional<std::uint16_t> port;
   std::optional<std::string> log_level;
@@ -95,7 +96,7 @@ auto LoadRuntimeConfigFile(const std::string& path) -> RuntimeConfigFile {
   return file_config;
 }
 
-}  // namespace
+}  // namespace detail
 
 auto RuntimeConfig::FromDefaults() -> RuntimeConfig {
   return RuntimeConfig{
@@ -139,7 +140,7 @@ auto RuntimeConfig::FromCli(int argc, char* argv[]) -> RuntimeConfig {
   app.parse(argc, argv);
 
   if (!cfg.config_path.empty() && cfg.config_path != "-") {
-    const auto file_config = LoadRuntimeConfigFile(cfg.config_path);
+    const auto file_config = detail::LoadRuntimeConfigFile(cfg.config_path);
     cfg.bind_host = file_config.bind_host;
     cfg.port = file_config.port;
     cfg.log_level = file_config.log_level;
@@ -166,7 +167,7 @@ auto RuntimeConfig::FromCli(int argc, char* argv[]) -> RuntimeConfig {
   }
 
   if (cli_log_level) {
-    cfg.log_level = ConvertLevel(*cli_log_level);
+    cfg.log_level = detail::ConvertLevel(*cli_log_level);
   }
 
   if (swagger_enabled && swagger_disabled) {
