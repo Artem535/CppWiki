@@ -9,6 +9,10 @@
 #include "document/block_note_snapshot.h"
 #include "document/document.h"
 
+namespace cppwiki::sync {
+struct SyncBootstrap;
+}
+
 namespace cppwiki::storage {
 
 struct DocumentRecord {
@@ -70,6 +74,22 @@ struct ListDocumentsResult {
   std::optional<RepositoryError> error;
 };
 
+enum class SyncLifecycleState {
+  kDisabled,
+  kConfigured,
+  kRunning,
+  kError,
+};
+
+struct SyncStatus {
+  SyncLifecycleState state{SyncLifecycleState::kDisabled};
+  std::string status_text;
+};
+
+struct SyncOperationResult {
+  std::optional<RepositoryError> error;
+};
+
 class LocalDocumentRepository {
  public:
   LocalDocumentRepository() = default;
@@ -85,6 +105,42 @@ class LocalDocumentRepository {
       -> DeleteDocumentResult = 0;
   [[nodiscard]] virtual auto LoadDocument(std::string_view page_id) -> LoadDocumentResult = 0;
   [[nodiscard]] virtual auto ListDocuments() -> ListDocumentsResult = 0;
+  [[nodiscard]] virtual auto SupportsSync() const -> bool { return false; }
+  [[nodiscard]] virtual auto SetSyncAccessToken(std::string)
+      -> SyncOperationResult {
+    return SyncOperationResult{
+        .error = RepositoryError{
+            .code = RepositoryErrorCode::kUnsupported,
+            .message = "Repository does not support sync access tokens.",
+        },
+    };
+  }
+  [[nodiscard]] virtual auto ApplySyncBootstrap(const sync::SyncBootstrap&)
+      -> SyncOperationResult {
+    return SyncOperationResult{
+        .error = RepositoryError{
+            .code = RepositoryErrorCode::kUnsupported,
+            .message = "Repository does not support sync bootstrap.",
+        },
+    };
+  }
+  [[nodiscard]] virtual auto StartSync() -> SyncOperationResult {
+    return SyncOperationResult{
+        .error = RepositoryError{
+            .code = RepositoryErrorCode::kUnsupported,
+            .message = "Repository does not support sync replication.",
+        },
+    };
+  }
+  [[nodiscard]] virtual auto StopSync() -> SyncOperationResult {
+    return SyncOperationResult{};
+  }
+  [[nodiscard]] virtual auto GetSyncStatus() const -> SyncStatus {
+    return SyncStatus{
+        .state = SyncLifecycleState::kDisabled,
+        .status_text = "Sync unsupported",
+    };
+  }
 };
 
 }  // namespace cppwiki::storage

@@ -46,6 +46,56 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
   [[nodiscard]] auto ListDocuments() -> cppwiki::storage::ListDocumentsResult override {
     return {};
   }
+
+  [[nodiscard]] auto SupportsSync() const -> bool override { return true; }
+
+  [[nodiscard]] auto SetSyncAccessToken(std::string access_token)
+      -> cppwiki::storage::SyncOperationResult override {
+    access_token_set = true;
+    last_access_token = std::move(access_token);
+    return {};
+  }
+
+  [[nodiscard]] auto ApplySyncBootstrap(const cppwiki::sync::SyncBootstrap& bootstrap)
+      -> cppwiki::storage::SyncOperationResult override {
+    bootstrap_applied = true;
+    last_bootstrap = bootstrap;
+    sync_status = {
+        .state = cppwiki::storage::SyncLifecycleState::kConfigured,
+        .status_text = "Sync bootstrap configured",
+    };
+    return {};
+  }
+
+  [[nodiscard]] auto StartSync() -> cppwiki::storage::SyncOperationResult override {
+    start_sync_called = true;
+    sync_status = {
+        .state = cppwiki::storage::SyncLifecycleState::kRunning,
+        .status_text = "Sync running",
+    };
+    return {};
+  }
+
+  [[nodiscard]] auto StopSync() -> cppwiki::storage::SyncOperationResult override {
+    stop_sync_called = true;
+    sync_status = {
+        .state = cppwiki::storage::SyncLifecycleState::kConfigured,
+        .status_text = "Sync stopped",
+    };
+    return {};
+  }
+
+  [[nodiscard]] auto GetSyncStatus() const -> cppwiki::storage::SyncStatus override {
+    return sync_status;
+  }
+
+  bool bootstrap_applied = false;
+  bool start_sync_called = false;
+  bool stop_sync_called = false;
+  bool access_token_set = false;
+  cppwiki::sync::SyncBootstrap last_bootstrap;
+  std::string last_access_token;
+  cppwiki::storage::SyncStatus sync_status{};
 };
 
 auto MakeSettings() -> cppwiki::ProgramSettings {
@@ -80,7 +130,8 @@ auto MakeBaseBootstrap() -> cppwiki::sync::SyncBootstrap {
 auto TestMissingChannelsIsRejected() -> void {
   cppwiki::sync::DocumentSyncService service;
   service.ApplySettings(MakeSettings());
-  service.SetRepository(std::make_shared<FakeDocumentRepository>());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  service.SetRepository(repository);
   service.SetAccessToken(QStringLiteral("test-token"));
 
   auto bootstrap = MakeBaseBootstrap();
@@ -91,12 +142,15 @@ auto TestMissingChannelsIsRejected() -> void {
           "sync service should reject bootstrap without channels");
   Require(service.StatusText().contains(QStringLiteral("did not assign sync channels")),
           "sync service should explain missing channels");
+  Require(!repository->bootstrap_applied,
+          "sync service should not configure repository when bootstrap is invalid");
 }
 
 auto TestMissingTokenPassthroughIsRejected() -> void {
   cppwiki::sync::DocumentSyncService service;
   service.ApplySettings(MakeSettings());
-  service.SetRepository(std::make_shared<FakeDocumentRepository>());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  service.SetRepository(repository);
   service.SetAccessToken(QStringLiteral("test-token"));
 
   auto bootstrap = MakeBaseBootstrap();
@@ -107,6 +161,30 @@ auto TestMissingTokenPassthroughIsRejected() -> void {
           "sync service should reject bootstrap without token passthrough");
   Require(service.StatusText().contains(QStringLiteral("does not allow token passthrough")),
           "sync service should explain missing token passthrough");
+  Require(!repository->bootstrap_applied,
+          "sync service should not configure repository without token passthrough");
+}
+
+auto TestValidBootstrapConfiguresRepositoryLifecycle() -> void {
+  cppwiki::sync::DocumentSyncService service;
+  service.ApplySettings(MakeSettings());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  service.SetRepository(repository);
+  service.SetAccessToken(QStringLiteral("test-token"));
+  service.SetBackendBootstrap(MakeBaseBootstrap());
+
+  Require(service.State() == cppwiki::sync::DocumentSyncState::kReady,
+          "sync service should become ready with valid bootstrap");
+  Require(repository->bootstrap_applied,
+          "sync service should apply bootstrap to sync-capable repository");
+  Require(repository->access_token_set,
+          "sync service should pass access token to sync-capable repository");
+  Require(repository->last_access_token == "test-token",
+          "repository should receive current access token");
+  Require(repository->start_sync_called,
+          "sync service should start repository sync lifecycle");
+  Require(repository->last_bootstrap.gateway_url == QStringLiteral("http://127.0.0.1:4984/cppwiki"),
+          "repository should receive backend bootstrap");
 }
 
 #ifdef CPPWIKI_ENABLE_CBLITE_STORAGE
@@ -152,6 +230,7 @@ auto main(int argc, char* argv[]) -> int {
 
   TestMissingChannelsIsRejected();
   TestMissingTokenPassthroughIsRejected();
+  TestValidBootstrapConfiguresRepositoryLifecycle();
 #ifdef CPPWIKI_ENABLE_CBLITE_STORAGE
   TestReadyStateIncludesPrincipalAndChannels();
 #endif

@@ -9,10 +9,15 @@
 #include <algorithm>
 #include <exception>
 #include <filesystem>
+#include <mutex>
 #include <utility>
+
+#include "sync/sync_bootstrap.h"
 
 namespace cppwiki::storage {
 namespace {
+
+constexpr std::string_view kSupportedSyncAuthMode = "oidc_access_token_passthrough";
 
 auto Slice(std::string_view value) -> cbl::slice {
   return cbl::slice(value.data(), value.size());
@@ -69,6 +74,86 @@ auto GetMutableDocument(const cbl::Collection& collection, std::string_view docu
     return existing.mutableCopy();
   }
   return cbl::MutableDocument(Slice(document_id));
+}
+
+auto MakeBearerHeader(const std::string& access_token) -> std::string {
+  return "Bearer " + access_token;
+}
+
+auto NormalizeGatewayReplicationUrl(const sync::SyncBootstrap& bootstrap)
+    -> std::optional<std::string> {
+  std::string url = bootstrap.gateway_url.trimmed().toStdString();
+  if (url.empty()) {
+    return std::nullopt;
+  }
+
+  if (url.starts_with("http://")) {
+    url.replace(0, std::string("http://").size(), "ws://");
+  } else if (url.starts_with("https://")) {
+    url.replace(0, std::string("https://").size(), "wss://");
+  } else if (!url.starts_with("ws://") && !url.starts_with("wss://")) {
+    return std::nullopt;
+  }
+
+  const auto scheme_delimiter = url.find("://");
+  if (scheme_delimiter == std::string::npos) {
+    return std::nullopt;
+  }
+
+  const auto host_start = scheme_delimiter + 3;
+  if (host_start >= url.size()) {
+    return std::nullopt;
+  }
+
+  const auto path_start = url.find('/', host_start);
+  const auto database_name = bootstrap.database_name.trimmed().toStdString();
+  if (path_start == std::string::npos) {
+    if (database_name.empty()) {
+      return std::nullopt;
+    }
+    url += "/" + database_name;
+    return url;
+  }
+
+  if (path_start == host_start) {
+    return std::nullopt;
+  }
+
+  if (path_start == url.size() - 1) {
+    if (database_name.empty()) {
+      return std::nullopt;
+    }
+    url += database_name;
+  }
+
+  return url;
+}
+
+auto MakeSyncStatus(SyncLifecycleState state, std::string status_text) -> SyncStatus {
+  return SyncStatus{
+      .state = state,
+      .status_text = std::move(status_text),
+  };
+}
+
+auto ReplicatorStatusText(const CBLReplicatorStatus& status) -> std::string {
+  switch (status.activity) {
+    case kCBLReplicatorStopped:
+      if (status.error.code != 0) {
+        return "Sync stopped: " + CbliteErrorMessage(status.error);
+      }
+      return "Sync stopped";
+    case kCBLReplicatorOffline:
+      return "Sync offline";
+    case kCBLReplicatorConnecting:
+      return "Sync connecting";
+    case kCBLReplicatorIdle:
+      return "Sync idle";
+    case kCBLReplicatorBusy:
+      return "Sync active";
+  }
+
+  return "Sync status unknown";
 }
 
 }  // namespace
@@ -252,6 +337,171 @@ class CbliteDocumentRepository::Impl {
     }
   }
 
+  [[nodiscard]] auto SetSyncAccessToken(std::string access_token) -> SyncOperationResult {
+    const bool changed = access_token_ != access_token;
+    access_token_ = std::move(access_token);
+    if (changed) {
+      replicator_dirty_ = true;
+      if (replicator_) {
+        ResetReplicator();
+      }
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto ApplySyncBootstrap(const sync::SyncBootstrap& bootstrap) -> SyncOperationResult {
+    if (bootstrap.auth_mode.trimmed() != QString::fromUtf8(kSupportedSyncAuthMode.data(),
+                                                           static_cast<qsizetype>(kSupportedSyncAuthMode.size()))) {
+      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError,
+                                   "Sync bootstrap auth mode is unsupported"));
+      return SyncOperationResult{
+          .error = MakeError(RepositoryErrorCode::kUnsupported,
+                             "Sync bootstrap auth mode is unsupported."),
+      };
+    }
+
+    if (bootstrap.gateway_url.trimmed().isEmpty()) {
+      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError,
+                                   "Sync bootstrap is missing gateway URL"));
+      return SyncOperationResult{
+          .error = MakeError(RepositoryErrorCode::kUnsupported,
+                             "Sync bootstrap is missing gateway URL."),
+      };
+    }
+
+    if (const auto replication_url = NormalizeGatewayReplicationUrl(bootstrap); !replication_url) {
+      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError,
+                                   "Sync gateway URL is invalid for replication"));
+      return SyncOperationResult{
+          .error = MakeError(RepositoryErrorCode::kUnsupported,
+                             "Sync gateway URL is invalid for replication."),
+      };
+    }
+
+    const bool changed = bootstrap_.gateway_url != bootstrap.gateway_url ||
+                         bootstrap_.database_name != bootstrap.database_name ||
+                         bootstrap_.channels != bootstrap.channels ||
+                         bootstrap_.auth_mode != bootstrap.auth_mode ||
+                         bootstrap_.token_passthrough != bootstrap.token_passthrough;
+    bootstrap_ = bootstrap;
+    if (changed) {
+      replicator_dirty_ = true;
+      if (replicator_) {
+        ResetReplicator();
+      }
+    }
+    SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kConfigured, "Sync bootstrap configured"));
+    return {};
+  }
+
+  [[nodiscard]] auto StartSync() -> SyncOperationResult {
+    if (const auto error = EnsureDatabaseOpen()) {
+      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError, error->message));
+      return SyncOperationResult{.error = std::move(error)};
+    }
+
+    if (bootstrap_.gateway_url.trimmed().isEmpty()) {
+      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError,
+                                   "Sync cannot start without bootstrap"));
+      return SyncOperationResult{
+          .error = MakeError(RepositoryErrorCode::kUnsupported,
+                             "Sync cannot start without a configured bootstrap."),
+      };
+    }
+
+    if (access_token_.empty()) {
+      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError,
+                                   "Sync cannot start without access token"));
+      return SyncOperationResult{
+          .error = MakeError(RepositoryErrorCode::kUnsupported,
+                             "Sync cannot start without an access token."),
+      };
+    }
+
+    if (replicator_ && !replicator_dirty_) {
+      const auto status = replicator_->status();
+      if (status.activity != kCBLReplicatorStopped) {
+        SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kRunning, ReplicatorStatusText(status)));
+        return {};
+      }
+    }
+
+    auto replication_url = NormalizeGatewayReplicationUrl(bootstrap_);
+    if (!replication_url) {
+      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError,
+                                   "Sync gateway URL is invalid for replication"));
+      return SyncOperationResult{
+          .error = MakeError(RepositoryErrorCode::kUnsupported,
+                             "Sync gateway URL is invalid for replication."),
+      };
+    }
+
+    try {
+      ResetReplicator();
+
+      cbl::CollectionConfiguration collection_config(*collection_);
+      for (const auto& channel : bootstrap_.channels) {
+        const auto trimmed_channel = channel.trimmed();
+        if (!trimmed_channel.isEmpty()) {
+          collection_config.channels.append(trimmed_channel.toStdString());
+        }
+      }
+
+      std::vector<cbl::CollectionConfiguration> collections;
+      collections.push_back(std::move(collection_config));
+
+      auto endpoint = cbl::Endpoint::urlEndpoint(Slice(*replication_url));
+      cbl::ReplicatorConfiguration replicator_config(std::move(collections), endpoint);
+      replicator_config.continuous = true;
+      replicator_config.headers.set(Slice("Authorization"), Slice(MakeBearerHeader(access_token_)));
+
+      auto replicator = std::make_unique<cbl::Replicator>(replicator_config);
+      change_listener_ = replicator->addChangeListener(
+          [this](cbl::Replicator, const CBLReplicatorStatus& status) {
+            if (status.activity == kCBLReplicatorStopped && status.error.code != 0) {
+              SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError,
+                                           ReplicatorStatusText(status)));
+              return;
+            }
+
+            SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kRunning,
+                                         ReplicatorStatusText(status)));
+          });
+
+      replicator->start();
+      replicator_ = std::move(replicator);
+      replicator_dirty_ = false;
+      SetSyncStatus(MakeSyncStatus(
+          SyncLifecycleState::kRunning,
+          "Sync replication started for " + replication_url.value()));
+    } catch (const CBLError& error) {
+      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError, CbliteErrorMessage(error)));
+      return SyncOperationResult{
+          .error = MakeError(RepositoryErrorCode::kOpenFailed, CbliteErrorMessage(error)),
+      };
+    } catch (const std::exception& error) {
+      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError, error.what()));
+      return SyncOperationResult{
+          .error = MakeError(RepositoryErrorCode::kOpenFailed, error.what()),
+      };
+    }
+
+    return {};
+  }
+
+  [[nodiscard]] auto StopSync() -> SyncOperationResult {
+    if (replicator_) {
+      ResetReplicator();
+    }
+    SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kConfigured, "Sync stopped"));
+    return {};
+  }
+
+  [[nodiscard]] auto GetSyncStatus() const -> SyncStatus {
+    std::lock_guard<std::mutex> lock(sync_status_mutex_);
+    return sync_status_;
+  }
+
  private:
   void SaveDocumentIndexEntry(const document::PageMetadata& metadata) {
     spdlog::debug("CBLite SaveDocumentIndexEntry: id={} title={}", metadata.id, metadata.title);
@@ -302,10 +552,31 @@ class CbliteDocumentRepository::Impl {
     }
   }
 
+  void SetSyncStatus(SyncStatus status) {
+    std::lock_guard<std::mutex> lock(sync_status_mutex_);
+    sync_status_ = std::move(status);
+  }
+
+  void ResetReplicator() {
+    change_listener_.remove();
+
+    if (replicator_) {
+      replicator_->stop();
+      replicator_.reset();
+    }
+  }
+
   CbliteDocumentRepositoryOptions options_;
   std::string database_directory_;
   std::unique_ptr<cbl::Database> database_;
   std::unique_ptr<cbl::Collection> collection_;
+  std::unique_ptr<cbl::Replicator> replicator_;
+  cbl::Replicator::ChangeListener change_listener_;
+  mutable std::mutex sync_status_mutex_;
+  std::string access_token_;
+  sync::SyncBootstrap bootstrap_;
+  bool replicator_dirty_{true};
+  SyncStatus sync_status_;
 };
 
 CbliteDocumentRepository::CbliteDocumentRepository(CbliteDocumentRepositoryOptions options)
@@ -328,5 +599,23 @@ auto CbliteDocumentRepository::LoadDocument(std::string_view page_id) -> LoadDoc
 auto CbliteDocumentRepository::ListDocuments() -> ListDocumentsResult {
   return impl_->ListDocuments();
 }
+
+auto CbliteDocumentRepository::SupportsSync() const -> bool { return true; }
+
+auto CbliteDocumentRepository::SetSyncAccessToken(std::string access_token)
+    -> SyncOperationResult {
+  return impl_->SetSyncAccessToken(std::move(access_token));
+}
+
+auto CbliteDocumentRepository::ApplySyncBootstrap(const sync::SyncBootstrap& bootstrap)
+    -> SyncOperationResult {
+  return impl_->ApplySyncBootstrap(bootstrap);
+}
+
+auto CbliteDocumentRepository::StartSync() -> SyncOperationResult { return impl_->StartSync(); }
+
+auto CbliteDocumentRepository::StopSync() -> SyncOperationResult { return impl_->StopSync(); }
+
+auto CbliteDocumentRepository::GetSyncStatus() const -> SyncStatus { return impl_->GetSyncStatus(); }
 
 }  // namespace cppwiki::storage

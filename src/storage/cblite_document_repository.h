@@ -28,6 +28,14 @@ class CbliteDocumentRepository final : public LocalDocumentRepository {
   [[nodiscard]] auto DeleteDocument(std::string_view page_id) -> DeleteDocumentResult override;
   [[nodiscard]] auto LoadDocument(std::string_view page_id) -> LoadDocumentResult override;
   [[nodiscard]] auto ListDocuments() -> ListDocumentsResult override;
+  [[nodiscard]] auto SupportsSync() const -> bool override;
+  [[nodiscard]] auto SetSyncAccessToken(std::string access_token)
+      -> SyncOperationResult override;
+  [[nodiscard]] auto ApplySyncBootstrap(const sync::SyncBootstrap& bootstrap)
+      -> SyncOperationResult override;
+  [[nodiscard]] auto StartSync() -> SyncOperationResult override;
+  [[nodiscard]] auto StopSync() -> SyncOperationResult override;
+  [[nodiscard]] auto GetSyncStatus() const -> SyncStatus override;
 
  private:
   class Impl;

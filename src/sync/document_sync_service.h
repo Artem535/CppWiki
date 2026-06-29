@@ -46,6 +46,7 @@ class DocumentSyncService final : public QObject {
  private:
   void RecomputeStatus();
   void SetStatus(DocumentSyncState state, QString status_text);
+  void ApplyRepositorySyncLifecycle();
 
   std::shared_ptr<storage::LocalDocumentRepository> repository_;
   QString access_token_;

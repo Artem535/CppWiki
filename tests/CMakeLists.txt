@@ -175,6 +175,8 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
     ${CMAKE_SOURCE_DIR}/src/core/constants.h
     ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
     ${CMAKE_SOURCE_DIR}/src/document/document.h
+    ${CMAKE_SOURCE_DIR}/src/sync/sync_bootstrap.cc
+    ${CMAKE_SOURCE_DIR}/src/sync/sync_bootstrap.h
     ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.cc
     ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.h
     ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
@@ -188,6 +190,7 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
   target_link_libraries(cppwiki_cblite_repository_tests
     PRIVATE
       CBLite::cblite
+      Qt6::Core
       spdlog::spdlog
       reflectcpp::reflectcpp
   )
