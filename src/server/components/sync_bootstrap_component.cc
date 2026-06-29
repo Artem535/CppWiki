@@ -53,17 +53,23 @@ properties:
         description: Logical replicated database name exposed to the desktop client.
     role_channels:
         type: object
+        properties: {}
         additionalProperties:
             type: array
+            description: Channels granted for a single role claim.
             items:
                 type: string
+                description: Sync Gateway channel name.
         description: Mapping from trusted JWT role claims to Sync Gateway channels.
     group_channels:
         type: object
+        properties: {}
         additionalProperties:
             type: array
+            description: Channels granted for a single group claim.
             items:
                 type: string
+                description: Sync Gateway channel name.
         description: Mapping from trusted JWT group claims to Sync Gateway channels.
 )");
 }

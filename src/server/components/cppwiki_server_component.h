@@ -5,7 +5,8 @@
 
 namespace cppwiki::server::components {
 
-auto RegisterCppWikiComponents(userver::components::ComponentList& component_list)
+auto RegisterCppWikiComponents(userver::components::ComponentList& component_list,
+                               bool swagger_enabled)
     -> userver::components::ComponentList&;
 
 }  // namespace cppwiki::server::components

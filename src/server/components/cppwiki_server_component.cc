@@ -40,12 +40,15 @@ class AuthCheckerFactory final : public userver::server::handlers::auth::AuthChe
 
 }  // namespace
 
-auto RegisterCppWikiComponents(userver::components::ComponentList& component_list)
+auto RegisterCppWikiComponents(userver::components::ComponentList& component_list,
+                               bool swagger_enabled)
     -> userver::components::ComponentList& {
   component_list.Append<handlers::HealthHandler>();
   component_list.Append<handlers::OptionsHandler>();
-  component_list.Append<handlers::OpenApiHandler>();
-  component_list.Append<handlers::SwaggerUiHandler>();
+  if (swagger_enabled) {
+    component_list.Append<handlers::OpenApiHandler>();
+    component_list.Append<handlers::SwaggerUiHandler>();
+  }
   component_list.Append<handlers::LockHandler>();
   component_list.Append<handlers::PresenceHandler>();
   component_list.Append<SyncBootstrapComponent>();

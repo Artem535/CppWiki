@@ -42,7 +42,7 @@ auto RunServer(const config::RuntimeConfig& config) -> int {
   auto component_list = userver::components::MinimalServerComponentList();
   component_list.Append<userver::clients::dns::Component>();
   component_list.AppendComponentList(userver::clients::http::ComponentList());
-  components::RegisterCppWikiComponents(component_list);
+  components::RegisterCppWikiComponents(component_list, config.swagger);
 
   userver::components::Run(config_path.string(), std::nullopt, std::nullopt, component_list);
   return 0;
