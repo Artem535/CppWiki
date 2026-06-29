@@ -101,8 +101,8 @@ struct ComponentsConfig final {
   ServerConfig server;
   rfl::Rename<"handler-health", PublicHandlerConfig> handler_health;
   rfl::Rename<"handler-options", PublicHandlerConfig> handler_options;
-  rfl::Rename<"handler-openapi", PublicHandlerConfig> handler_openapi;
-  rfl::Rename<"handler-swagger-ui", PublicHandlerConfig> handler_swagger_ui;
+  rfl::Rename<"handler-openapi", std::optional<PublicHandlerConfig>> handler_openapi;
+  rfl::Rename<"handler-swagger-ui", std::optional<PublicHandlerConfig>> handler_swagger_ui;
   rfl::Rename<"handler-locks", ProtectedHandlerConfig> handler_locks;
   rfl::Rename<"handler-presence", ProtectedHandlerConfig> handler_presence;
   rfl::Rename<"handler-sync-config", ProtectedHandlerConfig> handler_sync_config;
@@ -197,14 +197,18 @@ auto MakeSyncBootstrapConfig(const ServerSyncConfig& sync_config) -> SyncBootstr
 
 auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::string& log_level,
                       const ServerAuthConfig& auth_config, const ServerSyncConfig& sync_config,
-                      bool /*swagger_enabled*/) -> StaticConfig {
+                      bool swagger_enabled) -> StaticConfig {
   ComponentsConfig components{
       .logging = MakeLoggingConfig(log_level),
       .server = MakeServerConfig(host, port),
       .handler_health = MakePublicHandler("/api/v1/health", "GET"),
       .handler_options = MakePublicHandler("/api/v1/health", "OPTIONS"),
-      .handler_openapi = MakePublicHandler("/api/v1/openapi.json", "GET"),
-      .handler_swagger_ui = MakePublicHandler("/swagger/", "GET"),
+      .handler_openapi =
+          swagger_enabled ? std::make_optional(MakePublicHandler("/api/v1/openapi.json", "GET"))
+                          : std::nullopt,
+      .handler_swagger_ui =
+          swagger_enabled ? std::make_optional(MakePublicHandler("/swagger/", "GET"))
+                          : std::nullopt,
       .handler_locks =
           MakeProtectedHandler("/api/v1/locks/{document_id}", "GET,POST,PUT,DELETE", auth_config),
       .handler_presence =

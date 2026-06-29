@@ -101,8 +101,19 @@ auto TestStaticConfigGeneration() -> void {
           "static config must contain jwt issuer");
   Require(yaml.find("audience: cppwiki-desktop") != std::string::npos,
           "static config must contain jwt audience");
+  Require(yaml.find("handler-openapi:") == std::string::npos,
+          "static config must not contain openapi handler when swagger is disabled");
+  Require(yaml.find("handler-swagger-ui:") == std::string::npos,
+          "static config must not contain swagger ui handler when swagger is disabled");
   Require(yaml.find("\n        default\n") == std::string::npos,
           "static config must not contain malformed logger entries");
+
+  cfg.swagger = true;
+  const auto swagger_yaml = cfg.ToStaticConfigYaml();
+  Require(swagger_yaml.find("handler-openapi:") != std::string::npos,
+          "static config must contain openapi handler when swagger is enabled");
+  Require(swagger_yaml.find("handler-swagger-ui:") != std::string::npos,
+          "static config must contain swagger ui handler when swagger is enabled");
 }
 
 }  // namespace
