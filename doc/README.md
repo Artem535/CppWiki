@@ -30,3 +30,4 @@ Generated documentation set for Wiki Platform v9 — Block Document Edition.
 - `architecture/adr/ADR-008-authentik-auth-model.md`
 - `architecture/spikes/Couchbase_Sync_Gateway_OIDC_Example.md`
 - `backlog/Desktop_Collaboration_Backlog.md`
+- `backlog/Admin_Surface_Backlog.md`
