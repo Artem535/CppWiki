@@ -74,6 +74,28 @@ inline constexpr std::string_view kOpenApiJson = R"json({
           },
           "statusText": { "type": "string", "example": "Sync bootstrap is ready" }
         }
+      },
+      "WorkspaceCreateRequest": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "example": "marketing" }
+        }
+      },
+      "WorkspaceResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "example": "default" }
+        }
+      },
+      "WorkspaceListResponse": {
+        "type": "object",
+        "properties": {
+          "workspaces": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/WorkspaceResponse" }
+          }
+        }
       }
     }
   },
@@ -213,6 +235,41 @@ inline constexpr std::string_view kOpenApiJson = R"json({
             }
           },
           "401": { "description": "Missing or invalid bearer token" }
+        }
+      }
+    },
+    "/api/v1/workspaces": {
+      "get": {
+        "summary": "List available workspaces",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Workspace list returned",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WorkspaceListResponse" }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid bearer token" }
+        }
+      },
+      "post": {
+        "summary": "Create a new workspace",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WorkspaceCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Workspace created" },
+          "401": { "description": "Missing or invalid bearer token" },
+          "403": { "description": "Authenticated user is not a workspace admin" },
+          "409": { "description": "Workspace already exists" }
         }
       }
     }

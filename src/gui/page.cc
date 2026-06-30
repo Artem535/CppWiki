@@ -103,6 +103,33 @@ auto WorkspaceIdFromBootstrap(const sync::SyncBootstrap& bootstrap) -> QString {
   return QStringLiteral("default");
 }
 
+auto WorkspaceIdsFromBootstrap(const sync::SyncBootstrap& bootstrap) -> QStringList {
+  QStringList workspace_ids;
+  for (const auto& channel : bootstrap.channels) {
+    const auto trimmed = channel.trimmed();
+    if (!trimmed.startsWith(QStringLiteral("workspace:"))) {
+      continue;
+    }
+
+    const auto workspace_id = trimmed.sliced(QStringLiteral("workspace:").size()).trimmed();
+    if (!workspace_id.isEmpty() && !workspace_ids.contains(workspace_id)) {
+      workspace_ids.push_back(workspace_id);
+    }
+  }
+
+  if (workspace_ids.isEmpty()) {
+    workspace_ids.push_back(QStringLiteral("default"));
+  }
+  return workspace_ids;
+}
+
+auto MakeWorkspaceScopedDocumentId(const QString& workspace_id, std::string_view document_id)
+    -> std::string {
+  return QStringLiteral("%1::%2")
+      .arg(workspace_id, QString::fromStdString(std::string(document_id)))
+      .toStdString();
+}
+
 auto AuthorIdFromBootstrap(const sync::SyncBootstrap& bootstrap) -> QString {
   if (!bootstrap.principal_subject.trimmed().isEmpty()) {
     return bootstrap.principal_subject.trimmed();
@@ -166,14 +193,10 @@ void Page::BuildUi() {
 
   // Set the document repository for the bridge
   editor_bridge_->SetRepository(context_.document_repository);
-  ApplyBridgeSessionContext();
 
   editor_view_ = new QWebEngineView(this);
   editor_view_->page()->setWebChannel(channel_);
   InstallWebChannelScript();
-
-  // Create tree view with custom model and delegate
-  SetupTreeView();
 
   page_panel_ = new QWidget(this);
   page_panel_->setObjectName(QStringLiteral("pagePanel"));
@@ -185,26 +208,69 @@ void Page::BuildUi() {
 
   auto* app_title_label = new QLabel(ToQString(constants::kApplicationName), page_panel_);
   app_title_label->setObjectName(QStringLiteral("globalSidebarTitle"));
-  page_panel_layout->addWidget(app_title_label, 0, Qt::AlignLeft);
+  auto* title_row_layout = new QHBoxLayout();
+  title_row_layout->setContentsMargins(0, 0, 0, 0);
+  title_row_layout->setSpacing(8);
+  title_row_layout->addWidget(app_title_label, 1, Qt::AlignLeft);
 
-  auto* controls_layout = new QHBoxLayout();
-  controls_layout->setContentsMargins(0, 0, 0, 0);
-  controls_layout->setSpacing(8);
+  new_workspace_button_ = new QPushButton(QStringLiteral("New workspace"), page_panel_);
+  new_workspace_button_->setObjectName(QStringLiteral("newWorkspaceButton"));
+  new_workspace_button_->setIcon(QIcon::fromTheme(QStringLiteral("folder-new")));
+  new_workspace_button_->setIconSize(QSize(16, 16));
+  new_workspace_button_->setCursor(Qt::PointingHandCursor);
+  connect(new_workspace_button_, &QPushButton::clicked, this, &Page::CreateWorkspace);
+  title_row_layout->addWidget(new_workspace_button_, 0, Qt::AlignRight);
 
-  new_document_button_ = new QPushButton(QStringLiteral("New page"), page_panel_);
-  new_document_button_->setObjectName(QStringLiteral("newDocumentButton"));
-  new_document_button_->setIcon(QIcon::fromTheme(QStringLiteral("document-new")));
-  new_document_button_->setIconSize(QSize(16, 16));
-  new_document_button_->setCursor(Qt::PointingHandCursor);
-  connect(new_document_button_, &QPushButton::clicked, this, [this]() {
-    CreateNewDocument();
+  page_panel_layout->addLayout(title_row_layout);
+
+  workspace_tree_model_ = std::make_unique<gui::DocumentTreeModel>(this);
+  workspace_tree_view_ = new gui::DocumentTreeView(page_panel_);
+  workspace_tree_view_->setObjectName(QStringLiteral("workspaceTreeView"));
+  workspace_tree_view_->setModel(workspace_tree_model_.get());
+  workspace_tree_view_->setMinimumWidth(constants::kPageListMinimumWidth);
+  workspace_tree_view_->setMaximumWidth(constants::kPageListMaximumWidth);
+  workspace_tree_view_->setHeaderHidden(true);
+  workspace_tree_view_->setUniformRowHeights(true);
+  workspace_tree_view_->setAlternatingRowColors(false);
+  workspace_tree_view_->setExpandsOnDoubleClick(true);
+  workspace_tree_view_->setAnimated(true);
+  workspace_tree_view_->setFrameStyle(QFrame::NoFrame);
+  workspace_tree_view_->setRootIsDecorated(true);
+  workspace_tree_view_->setIndentation(20);
+  workspace_tree_view_->setItemsExpandable(true);
+  workspace_tree_view_->setMouseTracking(true);
+  workspace_tree_view_->viewport()->setMouseTracking(true);
+  workspace_tree_view_->viewport()->setAttribute(Qt::WA_Hover, true);
+  auto* delegate = new gui::DocumentTreeItemDelegate(workspace_tree_view_);
+  workspace_tree_view_->setItemDelegate(delegate);
+  workspace_tree_view_->setFocusPolicy(Qt::StrongFocus);
+  workspace_tree_view_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  workspace_tree_view_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+  workspace_tree_view_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+  workspace_tree_view_->setContextMenuPolicy(Qt::CustomContextMenu);
+  workspace_tree_view_->setDragEnabled(true);
+  workspace_tree_view_->setAcceptDrops(true);
+  workspace_tree_view_->setDropIndicatorShown(true);
+  workspace_tree_view_->setDefaultDropAction(Qt::MoveAction);
+  workspace_tree_view_->setDragDropMode(QAbstractItemView::InternalMove);
+  workspace_tree_view_->setDragDropOverwriteMode(false);
+  page_panel_layout->addWidget(workspace_tree_view_, 1);
+
+  connect(workspace_tree_view_, &QTreeView::clicked, this, [this](const QModelIndex& index) {
+    if (index.isValid()) {
+      OnTreePressed(index);
+    }
   });
-
-  controls_layout->addWidget(new_document_button_);
-  controls_layout->addStretch(1);
-
-  page_panel_layout->addLayout(controls_layout);
-  page_panel_layout->addWidget(page_tree_, 1);
+  connect(workspace_tree_view_, &QWidget::customContextMenuRequested, this,
+          [this](const QPoint& position) { ShowContextMenu(position); });
+  connect(workspace_tree_view_, &gui::DocumentTreeView::addChildRequested, this,
+          [this](const QModelIndex& parent_index) { CreateChildDocument(parent_index); });
+  connect(workspace_tree_model_.get(), &gui::DocumentTreeModel::documentMoveRequested, this,
+          [this](const QString& source_document_id, const QString& target_parent_id,
+                 bool has_parent_id, int target_sort_order, const QString& workspace_id) {
+            MoveDocumentToPlacement(source_document_id, target_parent_id, has_parent_id,
+                                    target_sort_order, workspace_id);
+          });
 
   auto* sidebar_footer = new QFrame(page_panel_);
   sidebar_footer->setObjectName(QStringLiteral("sidebarFooter"));
@@ -324,94 +390,6 @@ void Page::BuildUi() {
               });
             });
   }
-
-  LoadEditor();
-  PopulatePageList();
-  UpdateAuthCard();
-  UpdateEditModeControls();
-}
-
-void Page::ApplyBridgeSessionContext() {
-  if (editor_bridge_ == nullptr) {
-    return;
-  }
-
-  if (context_.backend_client == nullptr) {
-    editor_bridge_->SetCurrentAuthorId({});
-    editor_bridge_->SetCurrentWorkspaceId(QStringLiteral("default"));
-    return;
-  }
-
-  const auto& bootstrap = context_.backend_client->CurrentSyncBootstrap();
-  editor_bridge_->SetCurrentAuthorId(AuthorIdFromBootstrap(bootstrap));
-  editor_bridge_->SetCurrentWorkspaceId(WorkspaceIdFromBootstrap(bootstrap));
-}
-
-void Page::SetupTreeView() {
-  // Create tree model
-  tree_model_ = std::make_unique<gui::DocumentTreeModel>(this);
-
-  // Create tree view
-  auto* document_tree_view = new gui::DocumentTreeView(this);
-  page_tree_ = document_tree_view;
-  page_tree_->setModel(tree_model_.get());
-  page_tree_->setMinimumWidth(constants::kPageListMinimumWidth);
-  page_tree_->setMaximumWidth(constants::kPageListMaximumWidth);
-  page_tree_->setHeaderHidden(true);  // Hide header for cleaner look
-
-  // Set up tree view styling for Qlementine look
-  page_tree_->setUniformRowHeights(true);
-  page_tree_->setAlternatingRowColors(false);  // Qlementine handles alternating colors
-  page_tree_->setSelectionMode(QAbstractItemView::SingleSelection);
-  page_tree_->setExpandsOnDoubleClick(true);
-  page_tree_->setAnimated(true);
-
-  // Qlementine-specific styling
-  page_tree_->setFrameStyle(QFrame::NoFrame);  // Remove frame for cleaner look
-  page_tree_->setRootIsDecorated(true);
-  page_tree_->setIndentation(20);
-  page_tree_->setItemsExpandable(true);
-  page_tree_->setMouseTracking(true);
-  page_tree_->viewport()->setMouseTracking(true);
-  page_tree_->viewport()->setAttribute(Qt::WA_Hover, true);
-
-
-  // Set custom delegate for icons and badges with Qlementine styling
-  auto* delegate = new gui::DocumentTreeItemDelegate(page_tree_);
-  page_tree_->setItemDelegate(delegate);
-
-  // Configure tree view appearance
-  page_tree_->setFocusPolicy(Qt::StrongFocus);
-  page_tree_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-  page_tree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-  page_tree_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-  page_tree_->setContextMenuPolicy(Qt::CustomContextMenu);
-  page_tree_->setDragEnabled(true);
-  page_tree_->setAcceptDrops(true);
-  page_tree_->setDropIndicatorShown(true);
-  page_tree_->setDefaultDropAction(Qt::MoveAction);
-  page_tree_->setDragDropMode(QAbstractItemView::InternalMove);
-  page_tree_->setDragDropOverwriteMode(false);
-
-  // Open documents from normal row clicks. Inline tree actions are handled by DocumentTreeView.
-  connect(page_tree_, &QTreeView::clicked, this, [this](const QModelIndex& index) {
-    if (index.isValid()) {
-      OnTreePressed(index);
-    }
-  });
-  connect(page_tree_, &QWidget::customContextMenuRequested, this,
-          [this](const QPoint& position) { ShowContextMenu(position); });
-
-  connect(document_tree_view, &gui::DocumentTreeView::addChildRequested, this,
-          [this](const QModelIndex& parent_index) {
-            CreateChildDocument(parent_index);
-          });
-  connect(tree_model_.get(), &gui::DocumentTreeModel::documentMoveRequested, this,
-          [this](const QString& source_document_id, const QString& target_parent_id,
-                 bool has_parent_id, int target_sort_order) {
-            MoveDocumentToPlacement(source_document_id, target_parent_id, has_parent_id,
-                                    target_sort_order);
-          });
   connect(editor_bridge_, &bridge::QEditorBridge::saveStatusChanged, this,
           [this](const QString& page_id, bool success, const QString& message) {
             if (page_id == selected_page_id_ &&
@@ -425,6 +403,78 @@ void Page::SetupTreeView() {
           [this](const QString&, const QString& message) {
             emit documentStatusChanged(QStringLiteral("Load error: %1").arg(message), true);
           });
+
+  ApplyBridgeSessionContext();
+  LoadEditor();
+  PopulatePageList();
+  UpdateAuthCard();
+  UpdateEditModeControls();
+}
+
+void Page::ApplyBridgeSessionContext() {
+  if (editor_bridge_ == nullptr) {
+    return;
+  }
+
+  if (context_.backend_client == nullptr) {
+    editor_bridge_->SetCurrentAuthorId({});
+    available_workspace_ids_ = {QStringLiteral("default")};
+    ActivateWorkspace(QStringLiteral("default"));
+    RebuildWorkspaceTree();
+    return;
+  }
+
+  const auto& bootstrap = context_.backend_client->CurrentSyncBootstrap();
+  editor_bridge_->SetCurrentAuthorId(AuthorIdFromBootstrap(bootstrap));
+  available_workspace_ids_ = WorkspaceIdsFromBootstrap(bootstrap);
+  const auto preferred_workspace_id = WorkspaceIdFromBootstrap(bootstrap);
+  const auto selected_workspace_id = available_workspace_ids_.contains(current_workspace_id_)
+                                         ? current_workspace_id_
+                                         : preferred_workspace_id;
+  ActivateWorkspace(selected_workspace_id);
+  RebuildWorkspaceTree();
+}
+
+void Page::ActivateWorkspace(const QString& workspace_id) {
+  const auto normalized_workspace_id = workspace_id.trimmed().isEmpty() ? QStringLiteral("default")
+                                                                        : workspace_id.trimmed();
+  if (current_workspace_id_ == normalized_workspace_id) {
+    if (editor_bridge_ != nullptr) {
+      editor_bridge_->SetCurrentWorkspaceId(current_workspace_id_);
+    }
+    return;
+  }
+
+  current_workspace_id_ = normalized_workspace_id;
+  if (editor_bridge_ != nullptr) {
+    editor_bridge_->SetCurrentWorkspaceId(current_workspace_id_);
+  }
+  selected_page_id_.clear();
+  current_document_editable_ = false;
+  current_document_local_only_ = true;
+  pending_inactivity_exit_notice_ = false;
+  ApplyDocumentAccessState(backend::DocumentAccessState{
+      .editable = false,
+      .local_only = true,
+      .lock_owner = {},
+      .status_text = QStringLiteral("Document: select a page in %1").arg(current_workspace_id_),
+  });
+}
+
+void Page::RebuildWorkspaceTree() {
+  if (workspace_tree_model_ == nullptr) {
+    return;
+  }
+
+  if (workspace_tree_view_ != nullptr) {
+    workspace_tree_view_->setUpdatesEnabled(false);
+  }
+  PopulatePageList();
+  ExpandWorkspace(current_workspace_id_);
+  if (workspace_tree_view_ != nullptr) {
+    workspace_tree_view_->setUpdatesEnabled(true);
+    workspace_tree_view_->viewport()->update();
+  }
 }
 
 void Page::LoadEditor() {
@@ -457,68 +507,146 @@ void Page::InstallWebChannelScript() {
 
 void Page::PopulatePageList() {
   const auto expanded_ids = CaptureExpandedDocumentIds();
-  const auto response = editor_bridge_->listDocuments();
-  if (!response.value(QStringLiteral("ok")).toBool()) {
-    const auto error = response.value(QStringLiteral("error")).toMap();
-    spdlog::error("Failed to list documents for Qt navigation: {}",
-                  error.value(QStringLiteral("message")).toString().toStdString());
-    return;
+  if (workspace_tree_model_ != nullptr) {
+    workspace_tree_model_->setDocuments(FetchAllDocumentSummaries());
   }
-
-  const auto documents = response.value(QStringLiteral("result")).toList();
-
-  std::vector<storage::DocumentSummary> summaries;
-  summaries.reserve(static_cast<size_t>(documents.size()));
-
-  for (const auto& document_value : documents) {
-    auto summary = SummaryFromVariantMap(document_value.toMap());
-
-    spdlog::debug("Document summary: id={}, title={}, parent_id={}, sort_order={}",
-                  summary.id, summary.title, summary.parent_id.value_or("<root>"),
-                  summary.sort_order);
-
-    summaries.push_back(std::move(summary));
-  }
-
-  tree_model_->setDocuments(summaries);
   RestoreExpandedDocumentIds(expanded_ids);
 }
 
 void Page::OnTreePressed(const QModelIndex& index) {
-  const auto doc_id = tree_model_->documentId(index);
+  if (workspace_tree_model_ == nullptr || !index.isValid()) {
+    return;
+  }
+
+  if (workspace_tree_model_->isWorkspace(index)) {
+    if (const auto workspace_id = WorkspaceIdFromIndex(index); workspace_id.has_value()) {
+      ActivateWorkspace(*workspace_id);
+    }
+    return;
+  }
+
+  const auto doc_id = workspace_tree_model_->documentId(index);
   if (!doc_id) {
     return;
   }
 
+  if (const auto workspace_id = WorkspaceIdFromIndex(index); workspace_id.has_value()) {
+    ActivateWorkspace(*workspace_id);
+  }
   selected_page_id_ = QString::fromStdString(*doc_id);
   OpenDocumentWithAccess(selected_page_id_);
 }
 
-void Page::CreateNewDocument() {
-  const auto response = editor_bridge_->createDocument();
-  HandleCreatedDocument(response);
+void Page::CreateNewDocument(const QString& workspace_id) {
+  if (editor_bridge_ == nullptr) {
+    return;
+  }
+
+  ActivateWorkspace(workspace_id);
+  const auto response = editor_bridge_->createDocumentInWorkspace(workspace_id);
+  HandleCreatedDocument(response, workspace_id);
+}
+
+void Page::CreateWorkspace() {
+  if (context_.backend_client == nullptr) {
+    emit documentStatusChanged(QStringLiteral("Workspace creation requires the backend."), true);
+    return;
+  }
+
+  bool accepted = false;
+  const auto workspace_id = QInputDialog::getText(
+                                this, QStringLiteral("New workspace"),
+                                QStringLiteral("Workspace id:"), QLineEdit::Normal, {}, &accepted)
+                                .trimmed();
+  if (!accepted) {
+    return;
+  }
+  if (workspace_id.isEmpty()) {
+    emit documentStatusChanged(QStringLiteral("Workspace id must not be empty."), true);
+    return;
+  }
+
+  if (new_workspace_button_ != nullptr) {
+    new_workspace_button_->setEnabled(false);
+  }
+  emit documentStatusChanged(QStringLiteral("Creating workspace %1...").arg(workspace_id), false);
+
+  context_.backend_client->CreateWorkspace(
+      workspace_id, [this, workspace_id](bool success, QString message) {
+        if (new_workspace_button_ != nullptr) {
+          new_workspace_button_->setEnabled(true);
+        }
+
+        if (!success) {
+          emit documentStatusChanged(
+              message.trimmed().isEmpty()
+                  ? QStringLiteral("Workspace creation failed.")
+                  : QStringLiteral("Workspace creation failed: %1").arg(message),
+              true);
+          return;
+        }
+
+        if (!available_workspace_ids_.contains(workspace_id)) {
+          available_workspace_ids_.append(workspace_id);
+          ActivateWorkspace(workspace_id);
+          RebuildWorkspaceTree();
+        } else {
+          ActivateWorkspace(workspace_id);
+        }
+        ExpandWorkspace(workspace_id);
+
+        emit documentStatusChanged(
+            message.trimmed().isEmpty() ? QStringLiteral("Workspace created.")
+                                        : QStringLiteral("%1: %2").arg(workspace_id, message),
+            false);
+      });
 }
 
 void Page::CreateChildDocument(const QModelIndex& parent_index) {
+  if (editor_bridge_ == nullptr) {
+    return;
+  }
+
+  const auto workspace_id = WorkspaceIdFromIndex(parent_index);
+  if (!workspace_id.has_value()) {
+    return;
+  }
+
+  if (workspace_tree_model_ != nullptr && workspace_tree_model_->isWorkspace(parent_index)) {
+    CreateNewDocument(*workspace_id);
+    return;
+  }
+
+  ActivateWorkspace(*workspace_id);
   const auto parent_id = MapToParentDocumentId(parent_index);
   if (!parent_id) {
     spdlog::warn("Cannot create child document: invalid parent index");
     return;
   }
 
-  const auto response = editor_bridge_->createChildDocument(QString::fromStdString(*parent_id));
-  HandleCreatedDocument(response);
+  const auto response =
+      editor_bridge_->createChildDocumentInWorkspace(*workspace_id, QString::fromStdString(*parent_id));
+  HandleCreatedDocument(response, *workspace_id);
 }
 
 void Page::RenameDocument(const QModelIndex& index) {
-  const auto doc_id = tree_model_->documentId(index);
+  if (workspace_tree_model_ == nullptr || workspace_tree_view_ == nullptr || editor_bridge_ == nullptr) {
+    return;
+  }
+
+  const auto doc_id = workspace_tree_model_->documentId(index);
   if (!doc_id) {
+    return;
+  }
+
+  const auto workspace_id = WorkspaceIdFromIndex(index);
+  if (!workspace_id.has_value()) {
     return;
   }
 
   bool accepted = false;
   const auto current_title = index.data(Qt::DisplayRole).toString();
-  const auto new_title = QInputDialog::getText(page_tree_, QStringLiteral("Rename title"),
+  const auto new_title = QInputDialog::getText(workspace_tree_view_, QStringLiteral("Rename title"),
                                                QStringLiteral("Title:"), QLineEdit::Normal,
                                                current_title, &accepted)
                              .trimmed();
@@ -526,6 +654,7 @@ void Page::RenameDocument(const QModelIndex& index) {
     return;
   }
 
+  ActivateWorkspace(*workspace_id);
   const auto response = editor_bridge_->renameDocument(QString::fromStdString(*doc_id), new_title);
   if (!response.value(QStringLiteral("ok")).toBool()) {
     const auto error = response.value(QStringLiteral("error")).toMap();
@@ -538,7 +667,7 @@ void Page::RenameDocument(const QModelIndex& index) {
   SelectDocumentById(QString::fromStdString(*doc_id));
 }
 
-void Page::HandleCreatedDocument(const QVariantMap& response) {
+void Page::HandleCreatedDocument(const QVariantMap& response, const QString& workspace_id) {
   if (!response.value(QStringLiteral("ok")).toBool()) {
     const auto error = response.value(QStringLiteral("error")).toMap();
     spdlog::error("Failed to create document: {}",
@@ -553,7 +682,13 @@ void Page::HandleCreatedDocument(const QVariantMap& response) {
     return;
   }
 
-  tree_model_->appendDocument(SummaryFromVariantMap(created));
+  if (workspace_tree_model_ == nullptr) {
+    return;
+  }
+
+  ActivateWorkspace(workspace_id);
+  ExpandWorkspace(workspace_id);
+  workspace_tree_model_->appendDocument(SummaryFromVariantMap(created));
   selected_page_id_ = page_id;
   ExpandAncestors(page_id);
   SelectDocumentById(page_id);
@@ -561,24 +696,40 @@ void Page::HandleCreatedDocument(const QVariantMap& response) {
 }
 
 void Page::SelectDocumentById(const QString& page_id) {
-  if (!tree_model_ || page_id.isEmpty()) {
+  if (page_id.isEmpty()) {
     return;
   }
 
-  const auto index = tree_model_->indexForDocumentId(page_id.toStdString());
-  if (index.isValid()) {
-    ExpandAncestors(page_id);
-    page_tree_->setCurrentIndex(index);
-    page_tree_->scrollTo(index, QAbstractItemView::PositionAtCenter);
+  if (workspace_tree_model_ == nullptr || workspace_tree_view_ == nullptr) {
+    return;
   }
+
+  const auto index = workspace_tree_model_->indexForDocumentId(page_id.toStdString());
+  if (!index.isValid()) {
+    return;
+  }
+
+  ExpandAncestors(page_id);
+  workspace_tree_view_->setCurrentIndex(index);
+  workspace_tree_view_->scrollTo(index, QAbstractItemView::PositionAtCenter);
 }
 
 void Page::DeleteDocument(const QModelIndex& index) {
-  const auto doc_id = tree_model_->documentId(index);
+  if (workspace_tree_model_ == nullptr || editor_bridge_ == nullptr) {
+    return;
+  }
+
+  const auto doc_id = workspace_tree_model_->documentId(index);
   if (!doc_id) {
     return;
   }
 
+  const auto workspace_id = WorkspaceIdFromIndex(index);
+  if (!workspace_id.has_value()) {
+    return;
+  }
+
+  ActivateWorkspace(*workspace_id);
   const auto response = editor_bridge_->deleteDocument(QString::fromStdString(*doc_id));
   if (!response.value(QStringLiteral("ok")).toBool()) {
     const auto error = response.value(QStringLiteral("error")).toMap();
@@ -589,7 +740,7 @@ void Page::DeleteDocument(const QModelIndex& index) {
 
   PopulatePageList();
 
-  const auto summaries = FetchDocumentSummaries();
+  const auto summaries = FetchDocumentSummaries(*workspace_id);
   if (summaries.empty()) {
     selected_page_id_.clear();
     if (context_.backend_client != nullptr) {
@@ -683,14 +834,22 @@ void Page::ExitEditMode(bool due_to_inactivity) {
 }
 
 void Page::ToggleEditMode() {
-  switch (current_document_editable_) {
-    case true:
-      ExitEditMode();
-      break;
+  SetEditModeEnabled(!current_document_editable_);
+}
 
-    case false:
-      EnterEditMode();
-      break;
+void Page::SetEditModeEnabled(bool enabled) {
+  if (selected_page_id_.isEmpty()) {
+    return;
+  }
+
+  if (enabled == current_document_editable_) {
+    return;
+  }
+
+  if (enabled) {
+    EnterEditMode();
+  } else {
+    ExitEditMode();
   }
 }
 
@@ -807,12 +966,22 @@ void Page::HandleEditInactivityTimeout() {
 }
 
 void Page::MoveDocument(const QModelIndex& index, int delta) {
-  const auto doc_id = tree_model_->documentId(index);
+  if (workspace_tree_model_ == nullptr || editor_bridge_ == nullptr) {
+    return;
+  }
+
+  const auto doc_id = workspace_tree_model_->documentId(index);
   if (!doc_id || delta == 0) {
     return;
   }
 
-  auto summaries = FetchDocumentSummaries();
+  const auto workspace_id = WorkspaceIdFromIndex(index);
+  if (!workspace_id.has_value()) {
+    return;
+  }
+
+  ActivateWorkspace(*workspace_id);
+  auto summaries = FetchDocumentSummaries(*workspace_id);
   const auto target_it = std::find_if(summaries.begin(), summaries.end(), [&](const auto& summary) {
     return summary.id == *doc_id;
   });
@@ -874,8 +1043,9 @@ void Page::MoveDocument(const QModelIndex& index, int delta) {
 }
 
 void Page::MoveDocumentToPlacement(const QString& source_document_id, const QString& target_parent_id,
-                                   bool has_parent_id, int target_sort_order) {
-  if (!tree_model_ || source_document_id.isEmpty()) {
+                                   bool has_parent_id, int target_sort_order,
+                                   const QString& workspace_id) {
+  if (editor_bridge_ == nullptr || source_document_id.isEmpty()) {
     return;
   }
 
@@ -883,7 +1053,8 @@ void Page::MoveDocumentToPlacement(const QString& source_document_id, const QStr
     return;
   }
 
-  auto summaries = FetchDocumentSummaries();
+  ActivateWorkspace(workspace_id);
+  auto summaries = FetchDocumentSummaries(workspace_id);
   auto source_it = std::find_if(summaries.begin(), summaries.end(), [&](const auto& summary) {
     return summary.id == source_document_id.toStdString();
   });
@@ -977,16 +1148,49 @@ void Page::MoveDocumentToPlacement(const QString& source_document_id, const QStr
 }
 
 void Page::ShowContextMenu(const QPoint& position) {
-  const auto index = page_tree_->indexAt(position);
-  const auto doc_id = tree_model_->documentId(index);
+  if (workspace_tree_model_ == nullptr || workspace_tree_view_ == nullptr) {
+    return;
+  }
+
+  const auto index = workspace_tree_view_->indexAt(position);
+  if (!index.isValid()) {
+    return;
+  }
+
+  if (workspace_tree_model_->isWorkspace(index)) {
+    workspace_tree_view_->setCurrentIndex(index);
+    const auto workspace_id = WorkspaceIdFromIndex(index);
+    if (!workspace_id.has_value()) {
+      return;
+    }
+
+    auto* menu = new gui::DocumentContextMenu(
+        {.can_move_up = false, .can_move_down = false}, workspace_tree_view_);
+    connect(menu, &gui::DocumentContextMenu::actionRequested, this,
+            [this, index](gui::DocumentContextMenu::Action action) {
+              if (action == gui::DocumentContextMenu::Action::kAddChildPage) {
+                CreateChildDocument(index);
+              }
+            });
+    menu->ShowAt(workspace_tree_view_->mapToGlobal(position));
+    return;
+  }
+
+  const auto doc_id = workspace_tree_model_->documentId(index);
   if (!doc_id) {
     return;
   }
 
-  page_tree_->setCurrentIndex(index);
+  const auto workspace_id = WorkspaceIdFromIndex(index);
+  if (!workspace_id.has_value()) {
+    return;
+  }
+
+  ActivateWorkspace(*workspace_id);
+  workspace_tree_view_->setCurrentIndex(index);
   spdlog::info("Context menu requested");
 
-  const auto summaries = FetchDocumentSummaries();
+  const auto summaries = FetchDocumentSummaries(*workspace_id);
   const auto current_it = std::find_if(summaries.begin(), summaries.end(), [&](const auto& summary) {
     return summary.id == *doc_id;
   });
@@ -1017,7 +1221,7 @@ void Page::ShowContextMenu(const QPoint& position) {
       std::next(current_sibling_it) != same_parent_siblings.end();
 
   auto* menu = new gui::DocumentContextMenu(
-      {.can_move_up = can_move_up, .can_move_down = can_move_down}, page_tree_);
+      {.can_move_up = can_move_up, .can_move_down = can_move_down}, workspace_tree_view_);
   connect(menu, &gui::DocumentContextMenu::actionRequested, this,
           [this, index](gui::DocumentContextMenu::Action action) {
             switch (action) {
@@ -1043,7 +1247,7 @@ void Page::ShowContextMenu(const QPoint& position) {
                 break;
             }
           });
-  menu->ShowAt(page_tree_->mapToGlobal(position));
+  menu->ShowAt(workspace_tree_view_->mapToGlobal(position));
 }
 
 void Page::HandleDocumentSaved(const QString& page_id, bool success, const QString& message) {
@@ -1072,53 +1276,103 @@ void Page::HandleDocumentSaved(const QString& page_id, bool success, const QStri
 
 std::set<std::string> Page::CaptureExpandedDocumentIds() const {
   std::set<std::string> expanded_ids;
-  if (page_tree_ == nullptr || tree_model_ == nullptr) {
+  if (workspace_tree_model_ == nullptr || workspace_tree_view_ == nullptr) {
     return expanded_ids;
   }
 
-  VisitIndexes(tree_model_.get(), QModelIndex{}, [&](const QModelIndex& index) {
-    if (!page_tree_->isExpanded(index)) {
+  VisitIndexes(workspace_tree_model_.get(), QModelIndex{}, [&](const QModelIndex& index) {
+    if (!workspace_tree_view_->isExpanded(index)) {
       return;
     }
-    if (const auto doc_id = tree_model_->documentId(index); doc_id.has_value()) {
-      expanded_ids.insert(*doc_id);
+
+    if (workspace_tree_model_->isWorkspace(index)) {
+      if (const auto workspace_id = WorkspaceIdFromIndex(index); workspace_id.has_value()) {
+        expanded_ids.insert(MakeWorkspaceScopedDocumentId(*workspace_id, "__workspace__"));
+      }
+      return;
+    }
+
+    if (const auto doc_id = workspace_tree_model_->documentId(index); doc_id.has_value()) {
+      const auto workspace_id = WorkspaceIdFromIndex(index);
+      if (workspace_id.has_value()) {
+        expanded_ids.insert(MakeWorkspaceScopedDocumentId(*workspace_id, *doc_id));
+      }
     }
   });
   return expanded_ids;
 }
 
 void Page::RestoreExpandedDocumentIds(const std::set<std::string>& expanded_ids) {
-  if (page_tree_ == nullptr || tree_model_ == nullptr) {
+  if (workspace_tree_model_ == nullptr || workspace_tree_view_ == nullptr) {
     return;
   }
 
-  for (const auto& doc_id : expanded_ids) {
-    const auto index = tree_model_->indexForDocumentId(doc_id);
+  for (const auto& workspace_id : available_workspace_ids_) {
+    const auto workspace_key = MakeWorkspaceScopedDocumentId(workspace_id, "__workspace__");
+    if (expanded_ids.contains(workspace_key)) {
+      ExpandWorkspace(workspace_id);
+    }
+  }
+
+  for (const auto& scoped_id : expanded_ids) {
+    const auto separator = scoped_id.find("::");
+    if (separator == std::string::npos) {
+      continue;
+    }
+    const auto local_id = scoped_id.substr(separator + 2);
+    if (local_id == "__workspace__") {
+      continue;
+    }
+    const auto index = workspace_tree_model_->indexForDocumentId(local_id);
     if (index.isValid()) {
-      page_tree_->setExpanded(index, true);
+      workspace_tree_view_->setExpanded(index, true);
     }
   }
 }
 
 void Page::ExpandAncestors(const QString& page_id) {
-  if (page_tree_ == nullptr || tree_model_ == nullptr || page_id.isEmpty()) {
+  if (page_id.isEmpty() || workspace_tree_model_ == nullptr || workspace_tree_view_ == nullptr) {
     return;
   }
 
-  auto index = tree_model_->indexForDocumentId(page_id.toStdString());
+  auto index = workspace_tree_model_->indexForDocumentId(page_id.toStdString());
+  if (!index.isValid()) {
+    return;
+  }
+
   while (index.isValid()) {
-    const auto parent = index.parent();
-    if (!parent.isValid()) {
-      break;
-    }
-    page_tree_->setExpanded(parent, true);
-    index = parent;
+    workspace_tree_view_->setExpanded(index, true);
+    index = index.parent();
   }
 }
 
-std::vector<storage::DocumentSummary> Page::FetchDocumentSummaries() const {
+void Page::ExpandWorkspace(const QString& workspace_id) {
+  if (workspace_tree_model_ == nullptr || workspace_tree_view_ == nullptr || workspace_id.isEmpty()) {
+    return;
+  }
+
+  const auto workspace_index = workspace_tree_model_->indexForWorkspaceId(workspace_id.toStdString());
+  if (workspace_index.isValid()) {
+    workspace_tree_view_->setExpanded(workspace_index, true);
+  }
+}
+
+std::vector<storage::DocumentSummary> Page::FetchAllDocumentSummaries() const {
   std::vector<storage::DocumentSummary> summaries;
-  const auto response = editor_bridge_->listDocuments();
+  for (const auto& workspace_id : available_workspace_ids_) {
+    auto workspace_summaries = FetchDocumentSummaries(workspace_id);
+    std::move(workspace_summaries.begin(), workspace_summaries.end(), std::back_inserter(summaries));
+  }
+  return summaries;
+}
+
+std::vector<storage::DocumentSummary> Page::FetchDocumentSummaries(const QString& workspace_id) const {
+  std::vector<storage::DocumentSummary> summaries;
+  if (editor_bridge_ == nullptr) {
+    return summaries;
+  }
+
+  const auto response = editor_bridge_->listDocumentsInWorkspace(workspace_id);
   if (!response.value(QStringLiteral("ok")).toBool()) {
     return summaries;
   }
@@ -1132,12 +1386,23 @@ std::vector<storage::DocumentSummary> Page::FetchDocumentSummaries() const {
 }
 
 std::optional<std::string> Page::MapToParentDocumentId(const QModelIndex& index) const {
-  if (!index.isValid() || !tree_model_) {
+  if (!index.isValid() || workspace_tree_model_ == nullptr) {
     return std::nullopt;
   }
 
-  // The hover "+" button lives on the document row itself.
-  return tree_model_->documentId(index);
+  return workspace_tree_model_->documentId(index);
+}
+
+std::optional<QString> Page::WorkspaceIdFromIndex(const QModelIndex& index) const {
+  if (!index.isValid() || workspace_tree_model_ == nullptr) {
+    return std::nullopt;
+  }
+
+  const auto workspace_id = workspace_tree_model_->workspaceId(index);
+  if (!workspace_id.has_value() || workspace_id->empty()) {
+    return std::nullopt;
+  }
+  return QString::fromStdString(*workspace_id);
 }
 
 storage::DocumentSummary Page::SummaryFromVariantMap(const QVariantMap& document) const {

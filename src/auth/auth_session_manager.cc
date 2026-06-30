@@ -556,7 +556,8 @@ void AuthSessionManager::RebuildOAuthFlow() {
   oauth_flow_->setRefreshLeadTime(kRefreshLeadTime);
   oauth_flow_->setRequestedScopeTokens(
       QSet<QByteArray>{QByteArrayLiteral("openid"), QByteArrayLiteral("profile"),
-                       QByteArrayLiteral("email"), QByteArrayLiteral("offline_access")});
+                       QByteArrayLiteral("email"), QByteArrayLiteral("groups"),
+                       QByteArrayLiteral("roles"), QByteArrayLiteral("offline_access")});
 
   connect(oauth_flow_, &QAbstractOAuth::authorizeWithBrowser, this, [this](const QUrl& url) {
     if (!QDesktopServices::openUrl(url)) {

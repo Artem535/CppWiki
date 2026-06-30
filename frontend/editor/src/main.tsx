@@ -33,6 +33,10 @@ function EditorApp() {
   const showOverlay = !selectedPageId;
   const shouldMountEditor = hasLoadedDocumentOnce;
 
+  useEffect(() => {
+    editor.isEditable = isEditable;
+  }, [editor, isEditable]);
+
   const applyLoadedBlocks = (
     blocks: InitialDocumentSnapshot,
   ) => {

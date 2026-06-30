@@ -69,6 +69,7 @@ struct SyncBootstrapComponentConfig final {
   bool enabled{false};
   rfl::Rename<"gateway_url", std::string> gateway_url;
   rfl::Rename<"database_name", std::string> database_name{"cppwiki"};
+  rfl::Rename<"admin_url", std::string> admin_url;
   rfl::Rename<"role_channels", std::map<std::string, std::vector<std::string>>> role_channels;
   rfl::Rename<"group_channels", std::map<std::string, std::vector<std::string>>> group_channels;
 };
@@ -106,6 +107,7 @@ struct ComponentsConfig final {
   rfl::Rename<"handler-locks", ProtectedHandlerConfig> handler_locks;
   rfl::Rename<"handler-presence", ProtectedHandlerConfig> handler_presence;
   rfl::Rename<"handler-sync-config", ProtectedHandlerConfig> handler_sync_config;
+  rfl::Rename<"handler-workspaces", ProtectedHandlerConfig> handler_workspaces;
   rfl::Rename<"handler-protected-page", ProtectedHandlerConfig> handler_protected_page;
   rfl::Rename<"sync-config", SyncBootstrapComponentConfig> sync_config{};
 };
@@ -190,6 +192,7 @@ auto MakeSyncBootstrapConfig(const ServerSyncConfig& sync_config) -> SyncBootstr
       .enabled = sync_config.enabled,
       .gateway_url = sync_config.gateway_url.value_or(""),
       .database_name = sync_config.database_name.value_or("cppwiki"),
+      .admin_url = sync_config.admin_url.value_or(""),
       .role_channels = sync_config.role_channels,
       .group_channels = sync_config.group_channels,
   };
@@ -214,6 +217,7 @@ auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::st
       .handler_presence =
           MakeProtectedHandler("/api/v1/presence/{workspace_id}", "GET,POST", auth_config),
       .handler_sync_config = MakeProtectedHandler("/api/v1/sync/config", "GET", auth_config),
+      .handler_workspaces = MakeProtectedHandler("/api/v1/workspaces", "GET,POST", auth_config),
       .handler_protected_page = MakeProtectedHandler("/api/v1/protected", "GET", auth_config),
       .sync_config = MakeSyncBootstrapConfig(sync_config),
   };

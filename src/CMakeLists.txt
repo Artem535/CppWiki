@@ -52,6 +52,7 @@ qt_add_executable(cppwiki_app
         main.cc
         sync/document_sync_service.cc
         sync/document_sync_service.h
+        sync/sync_service.h
         sync/sync_bootstrap.cc
         sync/sync_bootstrap.h
         storage/file_document_repository.cc
@@ -172,6 +173,8 @@ if (CPPWIKI_BUILD_SERVER)
             server/handlers/presence_handler.h
             server/handlers/sync_config_handler.cc
             server/handlers/sync_config_handler.h
+            server/handlers/workspace_handler.cc
+            server/handlers/workspace_handler.h
             server/handlers/protected_page_handler.cc
             server/handlers/protected_page_handler.h
             server/handlers/swagger_ui_handler.cc
@@ -196,6 +199,7 @@ if (CPPWIKI_BUILD_SERVER)
             server/dto/presence_response.cc
             server/dto/presence_response.h
             server/dto/sync_config_response.h
+            server/dto/workspace_response.h
             core/constants.h
             core/logging.cc
             core/logging.h

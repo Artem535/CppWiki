@@ -76,7 +76,8 @@ inline constexpr std::string_view kDocumentsCollectionName = "documents";
 inline constexpr std::string_view kDocumentsIndexDocumentId = "cppwiki-document-index";
 inline constexpr std::string_view kDefaultAuthRedirectUri =
     "http://127.0.0.1:38080/auth/callback";
-inline constexpr std::string_view kDefaultAuthScopes = "openid profile email offline_access";
+inline constexpr std::string_view kDefaultAuthScopes =
+    "openid profile email groups roles offline_access";
 inline constexpr std::string_view kAuthTokenStoreEntryKey = "desktop-auth-session";
 }  // namespace cppwiki::constants
 

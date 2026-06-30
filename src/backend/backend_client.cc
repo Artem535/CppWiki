@@ -234,6 +234,63 @@ void BackendClient::SetAccessToken(QString access_token) {
   RefreshSyncBootstrap();
 }
 
+void BackendClient::CreateWorkspace(const QString& workspace_id,
+                                    std::function<void(bool success, QString message)> callback) {
+  const auto normalized_workspace_id = workspace_id.trimmed();
+  if (!enabled_ || state_ != BackendConnectionState::kReachable) {
+    callback(false, QStringLiteral("Backend is unavailable."));
+    return;
+  }
+  if (access_token_.trimmed().isEmpty()) {
+    callback(false, QStringLiteral("Sign in as a workspace admin first."));
+    return;
+  }
+  if (normalized_workspace_id.isEmpty()) {
+    callback(false, QStringLiteral("Workspace id must not be empty."));
+    return;
+  }
+
+  auto* reply = network_manager_->post(
+      MakeRequest(QUrl{ApiUrl(QStringLiteral("/api/v1/workspaces"))}, kLockRequestTimeoutMs,
+                  access_token_),
+      QJsonDocument(QJsonObject{{QStringLiteral("id"), normalized_workspace_id}})
+          .toJson(QJsonDocument::Compact));
+
+  connect(reply, &QNetworkReply::finished, this,
+          [this, reply, callback = std::move(callback)]() mutable {
+            const auto error_text = ReplyErrorText(reply);
+            const auto payload = ParseJsonObject(reply);
+            const auto status_code = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            reply->deleteLater();
+
+            const auto error = payload.value(QStringLiteral("error")).toObject();
+            const auto backend_message = error.value(QStringLiteral("message")).toString().trimmed();
+
+            if (!error_text.isEmpty()) {
+              if (status_code == 401 || status_code == 403) {
+                callback(false, backend_message.isEmpty()
+                                    ? QStringLiteral("Backend rejected the current session.")
+                                    : backend_message);
+                return;
+              }
+              callback(false, backend_message.isEmpty()
+                                  ? QStringLiteral("Create workspace failed: %1").arg(error_text)
+                                  : backend_message);
+              return;
+            }
+
+            if (!payload.value(QStringLiteral("ok")).toBool()) {
+              callback(false, backend_message.isEmpty()
+                                  ? QStringLiteral("Workspace creation was rejected.")
+                                  : backend_message);
+              return;
+            }
+
+            RefreshSyncBootstrap();
+            callback(true, QStringLiteral("Workspace created."));
+          });
+}
+
 void BackendClient::OpenDocumentViewSession(const QString& document_id,
                                             std::function<void(DocumentAccessState)> callback) {
   ++session_request_id_;

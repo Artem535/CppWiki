@@ -19,6 +19,7 @@ struct ServerSyncConfig final {
   bool enabled{false};
   std::optional<std::string> gateway_url;
   std::optional<std::string> database_name;
+  std::optional<std::string> admin_url;
   std::map<std::string, std::vector<std::string>> role_channels;
   std::map<std::string, std::vector<std::string>> group_channels;
 };

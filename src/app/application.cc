@@ -52,7 +52,7 @@ Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   QObject::connect(auth_session_manager_.get(), &auth::AuthSessionManager::accessTokenChanged,
                    backend_client_.get(), &backend::BackendClient::SetAccessToken);
   QObject::connect(auth_session_manager_.get(), &auth::AuthSessionManager::accessTokenChanged,
-                   document_sync_service_.get(), &sync::DocumentSyncService::SetAccessToken);
+                   document_sync_service_.get(), &sync::SyncService::SetAccessToken);
   QObject::connect(backend_client_.get(), &backend::BackendClient::syncBootstrapChanged,
                    &qt_application_, [this]() {
                      if (backend_client_ == nullptr || document_sync_service_ == nullptr) {

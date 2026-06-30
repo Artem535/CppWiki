@@ -19,7 +19,7 @@ SyncConfigHandler::SyncConfigHandler(const userver::components::ComponentConfig&
     : HttpHandlerJsonBase(config, context),
       sync_config_(context.FindComponent<components::SyncBootstrapComponent>()),
       http_client_(context.FindComponent<userver::components::HttpClient>().GetHttpClient()),
-      sync_gateway_adapter_(sync_config_.GetState()) {}
+      sync_gateway_adapter_(sync_config_) {}
 
 auto SyncConfigHandler::HandleRequestJsonThrow(const userver::server::http::HttpRequest& request,
                                                const userver::formats::json::Value&,

@@ -43,6 +43,8 @@ class BackendClient final : public QObject {
   void ApplySettings(const ProgramSettings& settings);
   void RefreshHealth();
   void SetAccessToken(QString access_token);
+  void CreateWorkspace(const QString& workspace_id,
+                       std::function<void(bool success, QString message)> callback);
   void OpenDocumentViewSession(const QString& document_id,
                                std::function<void(DocumentAccessState)> callback);
   void EnterDocumentEditSession(const QString& document_id,

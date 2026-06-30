@@ -30,6 +30,7 @@ struct SyncConfigFile final {
   std::optional<bool> enabled;
   std::optional<std::string> gateway_url;
   std::optional<std::string> database_name;
+  std::optional<std::string> admin_url;
   std::optional<std::map<std::string, std::vector<std::string>>> role_channels;
   std::optional<std::map<std::string, std::vector<std::string>>> group_channels;
 };
@@ -110,6 +111,7 @@ auto RuntimeConfig::FromDefaults() -> RuntimeConfig {
       .sync_enabled = false,
       .sync_gateway_url = std::nullopt,
       .sync_database_name = std::nullopt,
+      .sync_admin_url = std::nullopt,
       .sync_role_channels = {},
       .sync_group_channels = {},
       .swagger = false,
@@ -153,6 +155,7 @@ auto RuntimeConfig::FromCli(int argc, char* argv[]) -> RuntimeConfig {
       cfg.sync_enabled = file_config.sync->enabled.value_or(false);
       cfg.sync_gateway_url = file_config.sync->gateway_url;
       cfg.sync_database_name = file_config.sync->database_name;
+      cfg.sync_admin_url = file_config.sync->admin_url;
       cfg.sync_role_channels = file_config.sync->role_channels.value_or(decltype(cfg.sync_role_channels){});
       cfg.sync_group_channels = file_config.sync->group_channels.value_or(decltype(cfg.sync_group_channels){});
     }
@@ -194,6 +197,7 @@ auto RuntimeConfig::ToStaticConfigYaml() const -> std::string {
           .enabled = sync_enabled,
           .gateway_url = sync_gateway_url,
           .database_name = sync_database_name,
+          .admin_url = sync_admin_url,
           .role_channels = sync_role_channels,
           .group_channels = sync_group_channels,
       },

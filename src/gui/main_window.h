@@ -2,9 +2,11 @@
 #define CPPWIKI_SRC_GUI_MAIN_WINDOW_H_
 
 #include <QMainWindow>
+#include <QPointer>
 
 class QGridLayout;
 class QFrame;
+class QDialog;
 class QLabel;
 class QToolButton;
 class QWidget;
@@ -26,6 +28,7 @@ namespace cppwiki {
 
 struct AppContext;
 class Page;
+class SyncDetailsDialog;
 
 class MainWindow final : public QMainWindow {
   Q_OBJECT
@@ -38,6 +41,7 @@ class MainWindow final : public QMainWindow {
 
   // Sets the application context and creates the initial page.
   void SetContext(AppContext* context);
+  bool eventFilter(QObject* watched, QEvent* event) override;
 
  signals:
   void settingsChanged();
@@ -48,11 +52,13 @@ class MainWindow final : public QMainWindow {
   void ShowSettingsDialog();
   void UpdateBackendStatus();
   void UpdateSyncStatus();
+  void ShowSyncDetailsDialog();
   void UpdateDocumentStatus(const QString& message, bool is_error);
   void UpdateCollaborationStatus(const QString& summary, const QString& details, bool is_warning);
   void UpdateEditModeUi(const QString& label, bool checked, bool enabled);
   void UpdateAuthCollaborationHint();
   void RefreshCollaborationSecondaryText();
+  void RefreshSyncDetailsDialog();
 
   AppContext* context_ = nullptr;
   Page* current_page_ = nullptr;
@@ -80,6 +86,7 @@ class MainWindow final : public QMainWindow {
   QWidget* sync_status_widget_ = nullptr;
   oclero::qlementine::StatusBadgeWidget* sync_status_badge_ = nullptr;
   QLabel* sync_status_label_ = nullptr;
+  QPointer<SyncDetailsDialog> sync_details_dialog_;
 };
 
 }  // namespace cppwiki

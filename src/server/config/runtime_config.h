@@ -22,6 +22,7 @@ struct RuntimeConfig final {
   bool sync_enabled{false};
   std::optional<std::string> sync_gateway_url;
   std::optional<std::string> sync_database_name;
+  std::optional<std::string> sync_admin_url;
   std::map<std::string, std::vector<std::string>> sync_role_channels;
   std::map<std::string, std::vector<std::string>> sync_group_channels;
   bool swagger{false};

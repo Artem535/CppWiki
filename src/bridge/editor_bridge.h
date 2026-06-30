@@ -29,6 +29,10 @@ class QEditorBridge final : public QObject {
   void SetCurrentWorkspaceId(QString workspace_id);
   void RequestOpenDocument(const QString& page_id);
   void ClearCurrentDocumentSelection();
+  [[nodiscard]] QVariantMap listDocumentsInWorkspace(const QString& workspace_id);
+  [[nodiscard]] QVariantMap createDocumentInWorkspace(const QString& workspace_id);
+  [[nodiscard]] QVariantMap createChildDocumentInWorkspace(const QString& workspace_id,
+                                                           const QString& parent_id);
 
   Q_INVOKABLE QVariantMap getBridgeInfo();
   Q_INVOKABLE QVariantMap getInitialDocument();

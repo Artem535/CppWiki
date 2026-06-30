@@ -5,7 +5,10 @@
 
 namespace cppwiki::sync {
 
-DocumentSyncService::DocumentSyncService(QObject* parent) : QObject(parent) {}
+DocumentSyncService::DocumentSyncService(QObject* parent) : SyncService(parent) {
+  snapshot_.repository_status.state = storage::SyncLifecycleState::kDisabled;
+  snapshot_.repository_status.status_text = "Sync unsupported";
+}
 
 void DocumentSyncService::ApplySettings(const ProgramSettings& settings) {
   auth_enabled_ = settings.AuthEnabled();
@@ -32,15 +35,19 @@ void DocumentSyncService::SetBackendBootstrap(sync::SyncBootstrap bootstrap) {
 }
 
 auto DocumentSyncService::State() const -> DocumentSyncState {
-  return state_;
+  return snapshot_.state;
 }
 
 auto DocumentSyncService::StatusText() const -> const QString& {
-  return status_text_;
+  return snapshot_.status_text;
 }
 
 auto DocumentSyncService::Bootstrap() const -> const sync::SyncBootstrap& {
   return bootstrap_;
+}
+
+auto DocumentSyncService::Snapshot() const -> const DocumentSyncSnapshot& {
+  return snapshot_;
 }
 
 void DocumentSyncService::RecomputeStatus() {
@@ -136,13 +143,37 @@ void DocumentSyncService::RecomputeStatus() {
 }
 
 void DocumentSyncService::SetStatus(DocumentSyncState state, QString status_text) {
-  if (state_ == state && status_text_ == status_text) {
-    return;
-  }
+  const auto previous_snapshot = snapshot_;
+  const bool status_changed = snapshot_.state != state || snapshot_.status_text != status_text;
+  snapshot_.state = state;
+  snapshot_.status_text = std::move(status_text);
+  RefreshSnapshot();
+  const bool snapshot_changed =
+      previous_snapshot.state != snapshot_.state ||
+      previous_snapshot.status_text != snapshot_.status_text ||
+      previous_snapshot.bootstrap.available != snapshot_.bootstrap.available ||
+      previous_snapshot.bootstrap.enabled != snapshot_.bootstrap.enabled ||
+      previous_snapshot.bootstrap.gateway_url != snapshot_.bootstrap.gateway_url ||
+      previous_snapshot.bootstrap.database_name != snapshot_.bootstrap.database_name ||
+      previous_snapshot.bootstrap.auth_mode != snapshot_.bootstrap.auth_mode ||
+      previous_snapshot.bootstrap.token_passthrough != snapshot_.bootstrap.token_passthrough ||
+      previous_snapshot.bootstrap.channels != snapshot_.bootstrap.channels ||
+      previous_snapshot.repository_status.state != snapshot_.repository_status.state ||
+      previous_snapshot.repository_status.status_text != snapshot_.repository_status.status_text ||
+      previous_snapshot.has_repository != snapshot_.has_repository ||
+      previous_snapshot.repository_supports_sync != snapshot_.repository_supports_sync ||
+      previous_snapshot.has_access_token != snapshot_.has_access_token ||
+      previous_snapshot.auth_enabled != snapshot_.auth_enabled ||
+      previous_snapshot.sync_enabled != snapshot_.sync_enabled ||
+      previous_snapshot.backend_bootstrap_available != snapshot_.backend_bootstrap_available ||
+      previous_snapshot.backend_sync_enabled != snapshot_.backend_sync_enabled;
 
-  state_ = state;
-  status_text_ = std::move(status_text);
-  emit statusChanged(state_, status_text_);
+  if (status_changed) {
+    emit statusChanged(snapshot_.state, snapshot_.status_text);
+  }
+  if (snapshot_changed) {
+    emit snapshotChanged(snapshot_);
+  }
 }
 
 void DocumentSyncService::ApplyRepositorySyncLifecycle() {
@@ -166,6 +197,26 @@ void DocumentSyncService::ApplyRepositorySyncLifecycle() {
   if (const auto start_result = repository_->StartSync(); start_result.error) {
     SetStatus(DocumentSyncState::kError,
               QStringLiteral("Sync: %1").arg(QString::fromStdString(start_result.error->message)));
+  }
+}
+
+void DocumentSyncService::RefreshSnapshot() {
+  snapshot_.bootstrap = bootstrap_;
+  snapshot_.auth_enabled = auth_enabled_;
+  snapshot_.sync_enabled = sync_enabled_;
+  snapshot_.backend_bootstrap_available = backend_bootstrap_available_;
+  snapshot_.backend_sync_enabled = backend_sync_enabled_;
+  snapshot_.has_repository = repository_ != nullptr;
+  snapshot_.repository_supports_sync = repository_ != nullptr && repository_->SupportsSync();
+  snapshot_.has_access_token = !access_token_.trimmed().isEmpty();
+
+  if (repository_ != nullptr) {
+    snapshot_.repository_status = repository_->GetSyncStatus();
+  } else {
+    snapshot_.repository_status = storage::SyncStatus{
+        .state = storage::SyncLifecycleState::kDisabled,
+        .status_text = "Sync repository unavailable",
+    };
   }
 }
 

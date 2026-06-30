@@ -1,10 +1,14 @@
 #include "gui/main_window.h"
 
 #include <QDialog>
+#include <QDialogButtonBox>
+#include <QEvent>
 #include <QFrame>
+#include <QFormLayout>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPointer>
 #include <QMenuBar>
 #include <QSettings>
 #include <QStatusBar>
@@ -28,11 +32,191 @@
 #include "gui/presence_strip_widget.h"
 #include "gui/settings_dialog.h"
 #include "gui/page.h"
-#include "sync/document_sync_service.h"
+#include "sync/sync_service.h"
 
 namespace cppwiki {
 
-namespace {
+auto StateTextColor(bool is_error, bool is_warning, bool is_success) -> QString {
+  if (is_error) {
+    return QStringLiteral("#ff7b72");
+  }
+  if (is_warning) {
+    return QStringLiteral("#e3b341");
+  }
+  if (is_success) {
+    return QStringLiteral("#7ee787");
+  }
+  return QStringLiteral("#d0d7de");
+}
+
+auto BoolLabel(bool value, QStringView true_text = u"Yes", QStringView false_text = u"No")
+    -> QString;
+auto SyncLifecycleStateLabel(storage::SyncLifecycleState state) -> QString;
+auto JoinOrFallback(const QStringList& values,
+                    const QString& fallback = QStringLiteral("None")) -> QString;
+auto BuildSyncGuidance(const sync::DocumentSyncSnapshot& snapshot) -> QString;
+
+class SyncDetailsDialog final : public QDialog {
+ public:
+  explicit SyncDetailsDialog(QWidget* parent = nullptr) : QDialog(parent) {
+    setWindowTitle(QStringLiteral("Sync details"));
+    resize(640, 420);
+
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setSpacing(12);
+
+    summary_label_ = new QLabel(this);
+    summary_label_->setWordWrap(true);
+    summary_label_->setObjectName(QStringLiteral("syncDetailsSummary"));
+    layout->addWidget(summary_label_);
+
+    auto* form = new QFormLayout();
+    form->setContentsMargins(0, 0, 0, 0);
+    form->setSpacing(8);
+    layout->addLayout(form);
+
+    overall_status_value_ = CreateValueRow(form, this, QStringLiteral("Overall status"));
+    repository_state_value_ = CreateValueRow(form, this, QStringLiteral("Repository state"));
+    auth_enabled_value_ = CreateValueRow(form, this, QStringLiteral("Auth enabled"));
+    sync_enabled_value_ = CreateValueRow(form, this, QStringLiteral("Sync enabled"));
+    access_token_value_ = CreateValueRow(form, this, QStringLiteral("Access token"));
+    bootstrap_available_value_ =
+        CreateValueRow(form, this, QStringLiteral("Bootstrap available"));
+    backend_sync_value_ = CreateValueRow(form, this, QStringLiteral("Backend sync"));
+    repository_attached_value_ =
+        CreateValueRow(form, this, QStringLiteral("Repository attached"));
+    repository_supports_sync_value_ =
+        CreateValueRow(form, this, QStringLiteral("Repository supports sync"));
+    gateway_url_value_ = CreateValueRow(form, this, QStringLiteral("Gateway URL"));
+    database_value_ = CreateValueRow(form, this, QStringLiteral("Database"));
+    auth_mode_value_ = CreateValueRow(form, this, QStringLiteral("Auth mode"));
+    token_passthrough_value_ = CreateValueRow(form, this, QStringLiteral("Token passthrough"));
+    principal_value_ = CreateValueRow(form, this, QStringLiteral("Principal"));
+    principal_email_value_ = CreateValueRow(form, this, QStringLiteral("Principal email"));
+    roles_value_ = CreateValueRow(form, this, QStringLiteral("Roles"));
+    groups_value_ = CreateValueRow(form, this, QStringLiteral("Groups"));
+    channels_value_ = CreateValueRow(form, this, QStringLiteral("Channels"));
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    layout->addWidget(buttons);
+  }
+
+  void UpdateFromSnapshot(const sync::DocumentSyncSnapshot& snapshot) {
+    const auto is_error = snapshot.state == sync::DocumentSyncState::kError;
+    const auto is_warning = snapshot.state == sync::DocumentSyncState::kUnavailable;
+    const auto is_success = snapshot.state == sync::DocumentSyncState::kReady;
+    summary_label_->setText(BuildSyncGuidance(snapshot));
+    summary_label_->setStyleSheet(QStringLiteral("font-weight: 600;"));
+
+    SetValue(overall_status_value_, snapshot.status_text, is_error, is_warning, is_success);
+    SetValue(repository_state_value_,
+             QStringLiteral("%1: %2")
+                 .arg(SyncLifecycleStateLabel(snapshot.repository_status.state),
+                      QString::fromStdString(snapshot.repository_status.status_text)),
+             snapshot.repository_status.state == storage::SyncLifecycleState::kError,
+             snapshot.repository_status.state == storage::SyncLifecycleState::kDisabled,
+             snapshot.repository_status.state == storage::SyncLifecycleState::kRunning);
+    SetValue(auth_enabled_value_, BoolLabel(snapshot.auth_enabled), false, !snapshot.auth_enabled,
+             snapshot.auth_enabled);
+    SetValue(sync_enabled_value_, BoolLabel(snapshot.sync_enabled), false, !snapshot.sync_enabled,
+             snapshot.sync_enabled);
+    SetValue(access_token_value_, BoolLabel(snapshot.has_access_token, u"Present", u"Missing"),
+             !snapshot.has_access_token, !snapshot.has_access_token, snapshot.has_access_token);
+    SetValue(bootstrap_available_value_,
+             BoolLabel(snapshot.backend_bootstrap_available, u"Available", u"Missing"),
+             !snapshot.backend_bootstrap_available, !snapshot.backend_bootstrap_available,
+             snapshot.backend_bootstrap_available);
+    SetValue(backend_sync_value_,
+             BoolLabel(snapshot.backend_sync_enabled, u"Allowed", u"Rejected"),
+             !snapshot.backend_sync_enabled, !snapshot.backend_sync_enabled,
+             snapshot.backend_sync_enabled);
+    SetValue(repository_attached_value_,
+             BoolLabel(snapshot.has_repository, u"Attached", u"Missing"), !snapshot.has_repository,
+             !snapshot.has_repository, snapshot.has_repository);
+    SetValue(repository_supports_sync_value_,
+             BoolLabel(snapshot.repository_supports_sync, u"Yes", u"No"),
+             !snapshot.repository_supports_sync, !snapshot.repository_supports_sync,
+             snapshot.repository_supports_sync);
+    SetValue(gateway_url_value_, snapshot.bootstrap.gateway_url.trimmed().isEmpty()
+                                     ? QStringLiteral("Not provided")
+                                     : snapshot.bootstrap.gateway_url,
+             false, snapshot.bootstrap.gateway_url.trimmed().isEmpty(),
+             !snapshot.bootstrap.gateway_url.trimmed().isEmpty());
+    SetValue(database_value_, snapshot.bootstrap.database_name.trimmed().isEmpty()
+                                  ? QStringLiteral("Not provided")
+                                  : snapshot.bootstrap.database_name,
+             false, snapshot.bootstrap.database_name.trimmed().isEmpty(),
+             !snapshot.bootstrap.database_name.trimmed().isEmpty());
+    SetValue(auth_mode_value_, snapshot.bootstrap.auth_mode.trimmed().isEmpty()
+                                   ? QStringLiteral("Not provided")
+                                   : snapshot.bootstrap.auth_mode,
+             false, snapshot.bootstrap.auth_mode.trimmed().isEmpty(),
+             !snapshot.bootstrap.auth_mode.trimmed().isEmpty());
+    SetValue(token_passthrough_value_,
+             BoolLabel(snapshot.bootstrap.token_passthrough, u"Enabled", u"Disabled"),
+             !snapshot.bootstrap.token_passthrough, !snapshot.bootstrap.token_passthrough,
+             snapshot.bootstrap.token_passthrough);
+    SetValue(principal_value_,
+             snapshot.bootstrap.principal_username.trimmed().isEmpty()
+                 ? QStringLiteral("Current user")
+                 : snapshot.bootstrap.principal_username,
+             false, false, true);
+    SetValue(principal_email_value_,
+             snapshot.bootstrap.principal_email.trimmed().isEmpty()
+                 ? QStringLiteral("Not provided")
+                 : snapshot.bootstrap.principal_email,
+             false, snapshot.bootstrap.principal_email.trimmed().isEmpty(),
+             !snapshot.bootstrap.principal_email.trimmed().isEmpty());
+    SetValue(roles_value_, JoinOrFallback(snapshot.bootstrap.principal_roles), false,
+             snapshot.bootstrap.principal_roles.isEmpty(),
+             !snapshot.bootstrap.principal_roles.isEmpty());
+    SetValue(groups_value_, JoinOrFallback(snapshot.bootstrap.principal_groups), false,
+             snapshot.bootstrap.principal_groups.isEmpty(),
+             !snapshot.bootstrap.principal_groups.isEmpty());
+    SetValue(channels_value_, JoinOrFallback(snapshot.bootstrap.channels), false,
+             snapshot.bootstrap.channels.isEmpty(), !snapshot.bootstrap.channels.isEmpty());
+  }
+
+ private:
+  static auto CreateValueRow(QFormLayout* form, QWidget* parent, const QString& label_text)
+      -> QLabel* {
+    auto* value = new QLabel(parent);
+    value->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    value->setWordWrap(true);
+    form->addRow(label_text, value);
+    return value;
+  }
+
+  static void SetValue(QLabel* label, const QString& text, bool is_error, bool is_warning,
+                       bool is_success) {
+    label->setText(text);
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    label->setStyleSheet(QStringLiteral("color: %1;").arg(StateTextColor(is_error, is_warning,
+                                                                         is_success)));
+  }
+
+  QLabel* summary_label_ = nullptr;
+  QLabel* overall_status_value_ = nullptr;
+  QLabel* repository_state_value_ = nullptr;
+  QLabel* auth_enabled_value_ = nullptr;
+  QLabel* sync_enabled_value_ = nullptr;
+  QLabel* access_token_value_ = nullptr;
+  QLabel* bootstrap_available_value_ = nullptr;
+  QLabel* backend_sync_value_ = nullptr;
+  QLabel* repository_attached_value_ = nullptr;
+  QLabel* repository_supports_sync_value_ = nullptr;
+  QLabel* gateway_url_value_ = nullptr;
+  QLabel* database_value_ = nullptr;
+  QLabel* auth_mode_value_ = nullptr;
+  QLabel* token_passthrough_value_ = nullptr;
+  QLabel* principal_value_ = nullptr;
+  QLabel* principal_email_value_ = nullptr;
+  QLabel* roles_value_ = nullptr;
+  QLabel* groups_value_ = nullptr;
+  QLabel* channels_value_ = nullptr;
+};
 
 auto MakeStatusWidget(const QString& initial_text, QWidget* parent)
     -> std::tuple<QWidget*, oclero::qlementine::StatusBadgeWidget*, QLabel*> {
@@ -52,13 +236,88 @@ auto MakeStatusWidget(const QString& initial_text, QWidget* parent)
   return {container, badge, label};
 }
 
-}  // namespace
+auto BoolLabel(bool value, QStringView true_text, QStringView false_text)
+    -> QString {
+  return value ? true_text.toString() : false_text.toString();
+}
+
+auto SyncLifecycleStateLabel(storage::SyncLifecycleState state) -> QString {
+  switch (state) {
+    case storage::SyncLifecycleState::kDisabled:
+      return QStringLiteral("Disabled");
+    case storage::SyncLifecycleState::kConfigured:
+      return QStringLiteral("Configured");
+    case storage::SyncLifecycleState::kRunning:
+      return QStringLiteral("Running");
+    case storage::SyncLifecycleState::kError:
+      return QStringLiteral("Error");
+  }
+
+  return QStringLiteral("Unknown");
+}
+
+auto JoinOrFallback(const QStringList& values, const QString& fallback)
+    -> QString {
+  if (values.isEmpty()) {
+    return fallback;
+  }
+
+  return values.join(QStringLiteral(", "));
+}
+
+auto BuildSyncGuidance(const sync::DocumentSyncSnapshot& snapshot) -> QString {
+  if (!snapshot.auth_enabled) {
+    return QStringLiteral("Enable authentication in settings before document sync can start.");
+  }
+  if (!snapshot.sync_enabled) {
+    return QStringLiteral("Enable sync in settings for the current desktop client.");
+  }
+  if (!snapshot.backend_bootstrap_available) {
+    return QStringLiteral("Backend has not returned sync bootstrap yet.");
+  }
+  if (!snapshot.backend_sync_enabled) {
+    return QStringLiteral("Backend rejected sync for the current session or workspace.");
+  }
+  if (!snapshot.has_repository) {
+    return QStringLiteral("No local repository is attached to the sync service.");
+  }
+  if (!snapshot.repository_supports_sync) {
+    return QStringLiteral("The active repository implementation does not support replication.");
+  }
+  if (!snapshot.has_access_token) {
+    return QStringLiteral("Authenticated session is missing an access token for Sync Gateway.");
+  }
+  if (snapshot.bootstrap.gateway_url.trimmed().isEmpty()) {
+    return QStringLiteral("Backend bootstrap is missing Sync Gateway URL.");
+  }
+  if (snapshot.bootstrap.channels.isEmpty()) {
+    return QStringLiteral("Backend bootstrap did not assign any sync channels.");
+  }
+  if (snapshot.repository_status.state == storage::SyncLifecycleState::kError) {
+    return QStringLiteral("Repository replication failed after bootstrap was applied.");
+  }
+
+  return QStringLiteral("Sync prerequisites are satisfied.");
+}
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   BuildUi();
 }
 
 MainWindow::~MainWindow() = default;
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+  if ((watched == sync_status_widget_ ||
+       (sync_status_widget_ != nullptr && watched != nullptr &&
+        watched->parent() == sync_status_widget_)) &&
+      event != nullptr &&
+      event->type() == QEvent::MouseButtonRelease) {
+    ShowSyncDetailsDialog();
+    return true;
+  }
+
+  return QMainWindow::eventFilter(watched, event);
+}
 
 namespace {
 
@@ -127,8 +386,8 @@ void MainWindow::SetContext(AppContext* context) {
             });
   }
   if (context_ != nullptr && context_->document_sync_service != nullptr) {
-    connect(context_->document_sync_service, &sync::DocumentSyncService::statusChanged, this,
-            [this](sync::DocumentSyncState, const QString&) { UpdateSyncStatus(); });
+    connect(context_->document_sync_service, &sync::SyncService::snapshotChanged, this,
+            [this](const sync::DocumentSyncSnapshot&) { UpdateSyncStatus(); });
   }
   if (context_ != nullptr && context_->auth_session_manager != nullptr) {
     connect(context_->auth_session_manager, &auth::AuthSessionManager::sessionChanged, this,
@@ -240,9 +499,9 @@ void MainWindow::BuildUi() {
   edit_mode_switch_ = new oclero::qlementine::Switch(edit_mode_widget);
   edit_mode_switch_->setObjectName(QStringLiteral("editModeSwitch"));
   edit_mode_switch_->setEnabled(false);
-  connect(edit_mode_switch_, &oclero::qlementine::Switch::toggled, this, [this](bool) {
+  connect(edit_mode_switch_, &oclero::qlementine::Switch::toggled, this, [this](bool checked) {
     if (current_page_ != nullptr) {
-      current_page_->ToggleEditMode();
+      current_page_->SetEditModeEnabled(checked);
     }
   });
   edit_mode_layout->addWidget(edit_mode_switch_, 0, Qt::AlignVCenter);
@@ -268,6 +527,12 @@ void MainWindow::BuildUi() {
       MakeStatusWidget(QStringLiteral("Backend: local only"), this);
   std::tie(sync_status_widget_, sync_status_badge_, sync_status_label_) =
       MakeStatusWidget(QStringLiteral("Sync: disabled"), this);
+  sync_status_widget_->setCursor(Qt::PointingHandCursor);
+  sync_status_widget_->setToolTip(QStringLiteral("Open sync details"));
+  sync_status_widget_->installEventFilter(this);
+  for (auto* child : sync_status_widget_->findChildren<QWidget*>()) {
+    child->installEventFilter(this);
+  }
   collaboration_layout->addWidget(edit_mode_widget, 0, Qt::AlignVCenter);
   collaboration_layout->addStretch(1);
   collaboration_layout->addWidget(presence_strip_widget_, 0, Qt::AlignVCenter);
@@ -327,8 +592,9 @@ void MainWindow::UpdateSyncStatus() {
     return;
   }
 
-  const auto state = context_->document_sync_service->State();
-  sync_status_label_->setText(context_->document_sync_service->StatusText());
+  const auto& snapshot = context_->document_sync_service->Snapshot();
+  const auto state = snapshot.state;
+  sync_status_label_->setText(snapshot.status_text);
 
   switch (state) {
     case sync::DocumentSyncState::kDisabled:
@@ -344,6 +610,35 @@ void MainWindow::UpdateSyncStatus() {
       sync_status_badge_->setBadge(oclero::qlementine::StatusBadge::Error);
       break;
   }
+
+  RefreshSyncDetailsDialog();
+}
+
+void MainWindow::ShowSyncDetailsDialog() {
+  if (sync_details_dialog_ == nullptr) {
+    sync_details_dialog_ = new SyncDetailsDialog(this);
+    connect(sync_details_dialog_, &QObject::destroyed, this, [this]() {
+      sync_details_dialog_.clear();
+    });
+  }
+
+  RefreshSyncDetailsDialog();
+  sync_details_dialog_->show();
+  sync_details_dialog_->raise();
+  sync_details_dialog_->activateWindow();
+}
+
+void MainWindow::RefreshSyncDetailsDialog() {
+  if (sync_details_dialog_ == nullptr) {
+    return;
+  }
+
+  if (context_ == nullptr || context_->document_sync_service == nullptr) {
+    sync_details_dialog_->UpdateFromSnapshot(sync::DocumentSyncSnapshot{});
+    return;
+  }
+
+  sync_details_dialog_->UpdateFromSnapshot(context_->document_sync_service->Snapshot());
 }
 
 void MainWindow::UpdateDocumentStatus(const QString& message, bool is_error) {

@@ -17,7 +17,10 @@ struct LockInfo final {
 
 class LockService final {
  public:
-  LockService() = default;
+  static constexpr auto kDefaultLockLease = std::chrono::seconds{30};
+
+  explicit LockService(std::chrono::steady_clock::duration lock_lease = kDefaultLockLease)
+      : lock_lease_(lock_lease) {}
 
   [[nodiscard]] auto Acquire(const std::string& document_id, const std::string& owner) -> bool;
   [[nodiscard]] auto Heartbeat(const std::string& document_id, const std::string& owner) -> bool;
@@ -34,9 +37,13 @@ class LockService final {
   [[nodiscard]] auto IsOwnedBy(
       const std::unordered_map<std::string, LockInfo>::const_iterator& it,
       const std::string& owner) const -> bool;
+  [[nodiscard]] auto IsExpired(const LockInfo& lock,
+                               std::chrono::steady_clock::time_point now) const -> bool;
+  auto PruneExpiredLocked(std::chrono::steady_clock::time_point now) const -> void;
 
   mutable std::mutex mutex_;
-  std::unordered_map<std::string, LockInfo> locks_;
+  mutable std::unordered_map<std::string, LockInfo> locks_;
+  std::chrono::steady_clock::duration lock_lease_;
 };
 
 }  // namespace cppwiki::server::service

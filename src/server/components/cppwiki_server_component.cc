@@ -13,6 +13,7 @@
 #include "server/handlers/protected_page_handler.h"
 #include "server/handlers/swagger_ui_handler.h"
 #include "server/handlers/sync_config_handler.h"
+#include "server/handlers/workspace_handler.h"
 #include "server/components/sync_bootstrap_component.h"
 #include "server/middleware/auth_checker_impl.h"
 
@@ -53,6 +54,7 @@ auto RegisterCppWikiComponents(userver::components::ComponentList& component_lis
   component_list.Append<handlers::PresenceHandler>();
   component_list.Append<SyncBootstrapComponent>();
   component_list.Append<handlers::SyncConfigHandler>();
+  component_list.Append<handlers::WorkspaceHandler>();
   component_list.Append<handlers::ProtectedPageHandler>();
 
   static const auto kAuthCheckerRegistration =

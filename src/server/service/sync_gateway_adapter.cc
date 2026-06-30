@@ -11,18 +11,22 @@ namespace cppwiki::server::service {
 namespace {
 
 constexpr std::string_view kAuthMode = "oidc_access_token_passthrough";
+constexpr std::string_view kAdminRole = "wiki.admin";
+constexpr std::string_view kWorkspaceChannelPrefix = "workspace:";
 
 }
 
-SyncGatewayAdapter::SyncGatewayAdapter(const components::SyncBootstrapState& state) : state_(state) {}
+SyncGatewayAdapter::SyncGatewayAdapter(const components::SyncBootstrapComponent& sync_bootstrap)
+    : sync_bootstrap_(sync_bootstrap) {}
 
 auto SyncGatewayAdapter::BuildBootstrap(const middleware::JwtPrincipal& principal) const
     -> dto::SyncConfigResultDto {
+  const auto& state = sync_bootstrap_.GetState();
   return dto::SyncConfigResultDto{
-      .available = state_.available,
-      .enabled = state_.enabled,
-      .gateway_url = state_.gateway_url,
-      .database_name = state_.database_name,
+      .available = state.available,
+      .enabled = state.enabled,
+      .gateway_url = state.gateway_url,
+      .database_name = state.database_name,
       .auth =
           dto::SyncAuthConfigDto{
               .mode = std::string(kAuthMode),
@@ -35,14 +39,15 @@ auto SyncGatewayAdapter::BuildBootstrap(const middleware::JwtPrincipal& principa
               .email = principal.email,
               .roles = principal.roles,
               .groups = principal.groups,
-          },
+      },
       .channels = DeriveChannels(principal),
-      .status_text = state_.status_text,
+      .status_text = state.status_text,
   };
 }
 
 auto SyncGatewayAdapter::DeriveChannels(const middleware::JwtPrincipal& principal) const
     -> std::vector<std::string> {
+  const auto& state = sync_bootstrap_.GetState();
   std::set<std::string> unique_channels;
 
   if (principal.subject.empty()) {
@@ -67,8 +72,14 @@ auto SyncGatewayAdapter::DeriveChannels(const middleware::JwtPrincipal& principa
         }
       };
 
-  append_channels(state_.role_channels, principal.roles);
-  append_channels(state_.group_channels, principal.groups);
+  append_channels(state.role_channels, principal.roles);
+  append_channels(state.group_channels, principal.groups);
+
+  if (std::ranges::find(principal.roles, std::string(kAdminRole)) != principal.roles.end()) {
+    for (const auto& workspace_id : sync_bootstrap_.ListWorkspaces()) {
+      unique_channels.insert(std::string(kWorkspaceChannelPrefix) + workspace_id);
+    }
+  }
 
   return {unique_channels.begin(), unique_channels.end()};
 }

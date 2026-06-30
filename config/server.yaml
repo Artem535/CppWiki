@@ -11,6 +11,7 @@ auth:
 sync:
    enabled: true
    gateway_url: http://127.0.0.1:4984/cppwiki
+   admin_url: http://127.0.0.1:4985/cppwiki
    database_name: cppwiki
    role_channels:
       wiki.admin: ["*"]

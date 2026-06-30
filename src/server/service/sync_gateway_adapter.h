@@ -13,7 +13,7 @@ namespace cppwiki::server::service {
 
 class SyncGatewayAdapter final {
  public:
-  explicit SyncGatewayAdapter(const components::SyncBootstrapState& state);
+  explicit SyncGatewayAdapter(const components::SyncBootstrapComponent& sync_bootstrap);
 
   [[nodiscard]] auto BuildBootstrap(const middleware::JwtPrincipal& principal) const
       -> dto::SyncConfigResultDto;
@@ -22,7 +22,7 @@ class SyncGatewayAdapter final {
   [[nodiscard]] auto DeriveChannels(const middleware::JwtPrincipal& principal) const
       -> std::vector<std::string>;
 
-  components::SyncBootstrapState state_;
+  const components::SyncBootstrapComponent& sync_bootstrap_;
 };
 
 }  // namespace cppwiki::server::service

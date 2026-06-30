@@ -445,21 +445,22 @@ QVariantMap QEditorBridge::getInitialDocument() {
   return SuccessResponse(QVariantList{});
 }
 
-QVariantMap QEditorBridge::listDocuments() {
+QVariantMap QEditorBridge::listDocumentsInWorkspace(const QString& workspace_id) {
   if (!repository_) {
     return ErrorResponse(QStringLiteral("repository_unavailable"),
                          QStringLiteral("Document repository is not configured."));
   }
 
+  const auto normalized_workspace_id = NormalizeWorkspaceId(workspace_id);
   auto result = repository_->ListDocuments();
   if (result.error) {
     return ErrorResponse(QStringLiteral("list_failed"),
                          QString::fromStdString(result.error->message));
   }
 
-  auto documents = DocumentSummariesToVariant(result.documents, current_workspace_id_);
+  auto documents = DocumentSummariesToVariant(result.documents, normalized_workspace_id);
   if (documents.empty()) {
-    auto welcome = MakeWelcomeRecord(current_workspace_id_, current_author_id_);
+    auto welcome = MakeWelcomeRecord(normalized_workspace_id, current_author_id_);
     const auto save_result = repository_->SaveDocument(welcome);
     if (save_result.error) {
       return ErrorResponse(QStringLiteral("default_page_failed"),
@@ -467,19 +468,24 @@ QVariantMap QEditorBridge::listDocuments() {
     }
     documents = DocumentSummariesToVariant(
         std::vector<storage::DocumentSummary>{storage::DocumentSummaryFromMetadata(welcome.metadata)},
-        current_workspace_id_);
+        normalized_workspace_id);
   }
 
   return SuccessResponse(documents);
 }
 
-QVariantMap QEditorBridge::createDocument() {
+QVariantMap QEditorBridge::listDocuments() {
+  return listDocumentsInWorkspace(current_workspace_id_);
+}
+
+QVariantMap QEditorBridge::createDocumentInWorkspace(const QString& workspace_id) {
   if (!repository_) {
     return ErrorResponse(QStringLiteral("repository_unavailable"),
                          QStringLiteral("Document repository is not configured."));
   }
 
-  auto record = MakeNewDocumentRecord(std::nullopt, 0, current_workspace_id_, current_author_id_);
+  auto record = MakeNewDocumentRecord(std::nullopt, 0, NormalizeWorkspaceId(workspace_id),
+                                      current_author_id_);
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
     return ErrorResponse(QStringLiteral("create_failed"),
@@ -489,7 +495,12 @@ QVariantMap QEditorBridge::createDocument() {
   return SuccessResponse(MetadataToVariant(record.metadata));
 }
 
-QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
+QVariantMap QEditorBridge::createDocument() {
+  return createDocumentInWorkspace(current_workspace_id_);
+}
+
+QVariantMap QEditorBridge::createChildDocumentInWorkspace(const QString& workspace_id,
+                                                          const QString& parent_id) {
   if (!repository_) {
     return ErrorResponse(QStringLiteral("repository_unavailable"),
                          QStringLiteral("Document repository is not configured."));
@@ -500,6 +511,7 @@ QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
                          QStringLiteral("Parent document id is required."));
   }
 
+  const auto normalized_workspace_id = NormalizeWorkspaceId(workspace_id);
   const auto sort_order = NextChildSortOrder(repository_, parent_id.toStdString());
   auto parent_loaded = repository_->LoadDocument(parent_id.toStdString());
   if (!parent_loaded.document) {
@@ -507,12 +519,12 @@ QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
                          QStringLiteral("Parent document was not found."));
   }
   if (NormalizeWorkspaceId(QString::fromStdString(
-          EffectiveWorkspaceId(parent_loaded.document->metadata.workspace_id))) != current_workspace_id_) {
+          EffectiveWorkspaceId(parent_loaded.document->metadata.workspace_id))) != normalized_workspace_id) {
     return ErrorResponse(QStringLiteral("invalid_parent"),
                          QStringLiteral("Parent document belongs to another workspace."));
   }
 
-  auto record = MakeNewDocumentRecord(parent_id.toStdString(), sort_order, current_workspace_id_,
+  auto record = MakeNewDocumentRecord(parent_id.toStdString(), sort_order, normalized_workspace_id,
                                       current_author_id_);
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
@@ -521,6 +533,10 @@ QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
   }
 
   return SuccessResponse(MetadataToVariant(record.metadata));
+}
+
+QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
+  return createChildDocumentInWorkspace(current_workspace_id_, parent_id);
 }
 
 QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString& title) {

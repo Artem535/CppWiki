@@ -15,7 +15,7 @@ class AuthSessionManager;
 }
 
 namespace cppwiki::sync {
-class DocumentSyncService;
+class SyncService;
 }
 
 namespace cppwiki {
@@ -27,13 +27,13 @@ struct AppContext {
   std::shared_ptr<storage::LocalDocumentRepository> document_repository;
   backend::BackendClient* backend_client;
   auth::AuthSessionManager* auth_session_manager;
-  sync::DocumentSyncService* document_sync_service;
+  sync::SyncService* document_sync_service;
 
   AppContext(ProgramSettings settings,
              std::shared_ptr<storage::LocalDocumentRepository> repository,
              backend::BackendClient* backend_client,
              auth::AuthSessionManager* auth_session_manager,
-             sync::DocumentSyncService* document_sync_service)
+             sync::SyncService* document_sync_service)
       : settings(std::move(settings)),
         document_repository(std::move(repository)),
         backend_client(backend_client),
