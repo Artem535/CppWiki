@@ -219,6 +219,17 @@ services:
       - |
         set -eu
 
+        echo "Waiting for Sync Gateway Admin API to become reachable..."
+        i=0
+        until curl -fsS "http://sync-gateway:4985/" >/dev/null; do
+          i=$$((i + 1))
+          if [ "$$i" -ge 60 ]; then
+            echo "Sync Gateway Admin API did not become ready in time"
+            exit 1
+          fi
+          sleep 1
+        done
+
         echo "Creating Sync Gateway database cppwiki..."
 
         status="$$(curl -sS -o /tmp/sg-create-db-response.txt -w "%{http_code}" \
@@ -242,6 +253,26 @@ services:
             ;;
         esac
 
+        echo "Applying Sync Gateway database config (idempotent update)..."
+
+        config_status="$$(curl -sS -o /tmp/sg-db-config-response.txt -w "%{http_code}" \
+          -X PUT "http://sync-gateway:4985/cppwiki/_config" \
+          -H "Content-Type: application/json" \
+          --data-binary "@/cppwiki-db.json")"
+
+        cat /tmp/sg-db-config-response.txt || true
+        echo
+
+        case "$$config_status" in
+          200|201)
+            echo "Sync Gateway database cppwiki config applied."
+            ;;
+          *)
+            echo "Unexpected HTTP status from Sync Gateway database config update: $$config_status"
+            exit 1
+            ;;
+        esac
+
         echo "Disabling GUEST user..."
 
         guest_status="$$(curl -sS -o /tmp/sg-guest-response.txt -w "%{http_code}" \
@@ -258,6 +289,44 @@ services:
             ;;
           *)
             echo "Unexpected HTTP status from Sync Gateway GUEST update: $$guest_status"
+            exit 1
+            ;;
+        esac
+
+        echo "Bootstrapping Sync Gateway roles..."
+
+        role_default_status="$$(curl -sS -o /tmp/sg-role-default-response.txt -w "%{http_code}" \
+          -X PUT "http://sync-gateway:4985/cppwiki/_role/workspace_default" \
+          -H "Content-Type: application/json" \
+          --data-binary '{"collection_access":{"_default":{"documents":{"admin_channels":["workspace:default"]}}}}')"
+
+        cat /tmp/sg-role-default-response.txt || true
+        echo
+
+        case "$$role_default_status" in
+          200|201)
+            echo "Role workspace_default bootstrapped."
+            ;;
+          *)
+            echo "Unexpected HTTP status from Sync Gateway role workspace_default bootstrap: $$role_default_status"
+            exit 1
+            ;;
+        esac
+
+        role_engineering_status="$$(curl -sS -o /tmp/sg-role-engineering-response.txt -w "%{http_code}" \
+          -X PUT "http://sync-gateway:4985/cppwiki/_role/workspace_engineering" \
+          -H "Content-Type: application/json" \
+          --data-binary '{"collection_access":{"_default":{"documents":{"admin_channels":["workspace:engineering"]}}}}')"
+
+        cat /tmp/sg-role-engineering-response.txt || true
+        echo
+
+        case "$$role_engineering_status" in
+          200|201)
+            echo "Role workspace_engineering bootstrapped."
+            ;;
+          *)
+            echo "Unexpected HTTP status from Sync Gateway role workspace_engineering bootstrap: $$role_engineering_status"
             exit 1
             ;;
         esac

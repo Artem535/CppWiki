@@ -12,8 +12,9 @@
         "issuer": "http://authentik.cppwiki.local:9000/application/o/cpp-wiki/",
         "client_id": "cpp-wiki",
         "username_claim": "preferred_username",
+        "roles_claim": "roles",
         "register": true,
-        "scope": ["openid", "profile", "email", "groups"]
+        "scope": ["openid", "profile", "email", "groups", "roles"]
       }
     }
   },
