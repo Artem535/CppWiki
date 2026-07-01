@@ -7,6 +7,8 @@
 
 #include <memory>
 
+#include "sync/sync_state_provider.h"
+
 namespace cppwiki::storage {
 class LocalDocumentRepository;
 }
@@ -21,6 +23,7 @@ class QEditorBridge final : public QObject {
 
   // Set the document repository for persistence operations.
   void SetRepository(std::shared_ptr<storage::LocalDocumentRepository> repository);
+  void SetSyncStateProvider(const sync::SyncStateProvider* provider);
   void SetPendingDocumentAccess(bool editable, QString lock_owner = {},
                                 QString access_message = {});
   void SetCurrentDocumentAccess(bool editable, QString lock_owner = {},
@@ -65,6 +68,7 @@ signals:
   QString pending_access_message_;
   QString current_access_message_;
   std::shared_ptr<storage::LocalDocumentRepository> repository_;
+  const sync::SyncStateProvider* sync_state_provider_ = nullptr;
   QString current_page_id_;
   QString current_author_id_;
   QString current_workspace_id_{QStringLiteral("default")};

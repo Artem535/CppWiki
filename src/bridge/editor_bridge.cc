@@ -204,6 +204,8 @@ auto MetadataToVariant(const document::PageMetadata& metadata) -> QVariantMap {
       {QStringLiteral("workspaceId"),
        QString::fromStdString(EffectiveWorkspaceId(metadata.workspace_id))},
       {QStringLiteral("createdBy"), QString::fromStdString(metadata.created_by)},
+      {QStringLiteral("updatedBy"), QString::fromStdString(metadata.updated_by)},
+      {QStringLiteral("contentVersion"), static_cast<qlonglong>(metadata.content_version)},
       {QStringLiteral("createdAt"), QString::fromStdString(metadata.created_at)},
       {QStringLiteral("updatedAt"), QString::fromStdString(metadata.updated_at)},
   };
@@ -226,6 +228,8 @@ auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& doc
         {QStringLiteral("sortOrder"), document.sort_order},
         {QStringLiteral("workspaceId"), workspace_id},
         {QStringLiteral("createdBy"), QString::fromStdString(document.created_by)},
+        {QStringLiteral("updatedBy"), QString::fromStdString(document.updated_by)},
+        {QStringLiteral("contentVersion"), static_cast<qlonglong>(document.content_version)},
         {QStringLiteral("createdAt"), QString::fromStdString(document.created_at)},
         {QStringLiteral("updatedAt"), QString::fromStdString(document.updated_at)},
     });
@@ -235,6 +239,16 @@ auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& doc
 
 auto CurrentUtcTimestamp() -> std::string {
   return QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString();
+}
+
+void ApplyDocumentMutationAudit(document::PageMetadata& metadata, const QString& author_id) {
+  metadata.updated_at = CurrentUtcTimestamp();
+  metadata.updated_by = EffectiveAuthorId(author_id);
+  if (metadata.content_version < 1) {
+    metadata.content_version = 1;
+  } else {
+    ++metadata.content_version;
+  }
 }
 
 auto MakeWelcomeRecord(const QString& workspace_id, const QString& author_id)
@@ -257,6 +271,8 @@ auto MakeWelcomeRecord(const QString& workspace_id, const QString& author_id)
               .created_at = now,
               .updated_at = now,
               .created_by = EffectiveAuthorId(author_id),
+              .updated_by = EffectiveAuthorId(author_id),
+              .content_version = 1,
           },
       .snapshot =
           document::BlockNoteDocumentSnapshot{
@@ -293,6 +309,8 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
               .created_at = now,
               .updated_at = now,
               .created_by = EffectiveAuthorId(author_id),
+              .updated_by = EffectiveAuthorId(author_id),
+              .content_version = 1,
           },
       .snapshot =
           document::BlockNoteDocumentSnapshot{
@@ -400,6 +418,10 @@ void QEditorBridge::SetRepository(
   repository_ = std::move(repository);
 }
 
+void QEditorBridge::SetSyncStateProvider(const sync::SyncStateProvider* provider) {
+  sync_state_provider_ = provider;
+}
+
 void QEditorBridge::SetPendingDocumentAccess(bool editable, QString lock_owner,
                                              QString access_message) {
   pending_document_editable_ = editable;
@@ -460,6 +482,20 @@ QVariantMap QEditorBridge::listDocumentsInWorkspace(const QString& workspace_id)
 
   auto documents = DocumentSummariesToVariant(result.documents, normalized_workspace_id);
   if (documents.empty()) {
+    const bool sync_expected = repository_->SupportsSync() &&
+                               sync_state_provider_ != nullptr &&
+                               sync_state_provider_->ShouldExpectRemoteDocuments(
+                                   normalized_workspace_id);
+    if (sync_expected) {
+      spdlog::info(
+          "Workspace '{}' is empty locally, but remote sync is expected; skipping welcome creation",
+          normalized_workspace_id.toStdString());
+      return SuccessResponse(QVariantList{});
+    }
+
+    spdlog::info(
+        "Workspace '{}' is empty locally and no remote sync is expected; creating local welcome page",
+                 normalized_workspace_id.toStdString());
     auto welcome = MakeWelcomeRecord(normalized_workspace_id, current_author_id_);
     const auto save_result = repository_->SaveDocument(welcome);
     if (save_result.error) {
@@ -563,7 +599,7 @@ QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString&
 
   auto record = std::move(std::get<storage::DocumentRecord>(loaded_or_error));
   record.metadata.title = trimmed_title.toStdString();
-  record.metadata.updated_at = CurrentUtcTimestamp();
+  ApplyDocumentMutationAudit(record.metadata, current_author_id_);
   record.snapshot.title = record.metadata.title;
 
   auto blocks_or_error = ExtractBlocks(QByteArray::fromStdString(record.raw_snapshot_json));
@@ -602,7 +638,7 @@ QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const
   auto record = std::move(std::get<storage::DocumentRecord>(loaded_or_error));
   record.metadata.parent_id = has_parent_id ? std::make_optional(parent_id.toStdString()) : std::nullopt;
   record.metadata.sort_order = sort_order;
-  record.metadata.updated_at = CurrentUtcTimestamp();
+  ApplyDocumentMutationAudit(record.metadata, current_author_id_);
 
   auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
@@ -743,6 +779,12 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
     if (record.metadata.created_by.empty()) {
       record.metadata.created_by = EffectiveAuthorId(current_author_id_);
     }
+    if (record.metadata.updated_by.empty()) {
+      record.metadata.updated_by = record.metadata.created_by;
+    }
+    if (record.metadata.content_version < 1) {
+      record.metadata.content_version = 1;
+    }
     const auto fallback_title = record.metadata.title.empty()
                                     ? std::string_view(constants::kNewDocumentTitle)
                                     : std::string_view(record.metadata.title);
@@ -750,7 +792,7 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
     if (record.metadata.created_at.empty()) {
       record.metadata.created_at = CurrentUtcTimestamp();
     }
-    record.metadata.updated_at = CurrentUtcTimestamp();
+    ApplyDocumentMutationAudit(record.metadata, current_author_id_);
     record.snapshot = *validation.snapshot;
     record.snapshot.id = record.metadata.id;
     record.snapshot.schema_version = static_cast<std::int32_t>(document::SchemaVersion::kV1);
