@@ -30,6 +30,8 @@ struct DocumentSummary {
   std::string created_at;
   std::string updated_at;
   std::string created_by;
+  std::string updated_by;
+  std::int64_t content_version{1};
 };
 
 [[nodiscard]] inline auto DocumentSummaryFromMetadata(
@@ -43,6 +45,8 @@ struct DocumentSummary {
       .created_at = metadata.created_at,
       .updated_at = metadata.updated_at,
       .created_by = metadata.created_by,
+      .updated_by = metadata.updated_by,
+      .content_version = metadata.content_version,
   };
 }
 
@@ -78,6 +82,41 @@ struct ListDocumentsResult {
   std::optional<RepositoryError> error;
 };
 
+struct DocumentConflictRecord {
+  std::string id;
+  std::string document_id;
+  std::string workspace_id;
+  std::int64_t base_version{};
+  std::string local_snapshot;
+  std::string remote_snapshot;
+  std::string local_updated_by;
+  std::string remote_updated_by;
+  std::string detected_at;
+  std::string resolution_state{"pending"};
+};
+
+struct SaveConflictResult {
+  std::optional<RepositoryError> error;
+};
+
+struct LoadConflictResult {
+  std::optional<DocumentConflictRecord> conflict;
+  std::optional<RepositoryError> error;
+};
+
+struct ListConflictsResult {
+  std::vector<DocumentConflictRecord> conflicts;
+  std::optional<RepositoryError> error;
+};
+
+struct DeleteConflictResult {
+  std::optional<RepositoryError> error;
+};
+
+struct UpdateConflictResolutionResult {
+  std::optional<RepositoryError> error;
+};
+
 enum class SyncLifecycleState {
   kDisabled,
   kConfigured,
@@ -88,6 +127,10 @@ enum class SyncLifecycleState {
 struct SyncStatus {
   SyncLifecycleState state{SyncLifecycleState::kDisabled};
   std::string status_text;
+  bool initial_pull_active{false};
+  bool initial_pull_completed{false};
+  bool has_conflicts{false};
+  std::size_t conflict_count{0};
 };
 
 struct SyncOperationResult {
@@ -109,6 +152,17 @@ class LocalDocumentRepository {
       -> DeleteDocumentResult = 0;
   [[nodiscard]] virtual auto LoadDocument(std::string_view page_id) -> LoadDocumentResult = 0;
   [[nodiscard]] virtual auto ListDocuments() -> ListDocumentsResult = 0;
+  [[nodiscard]] virtual auto SaveConflict(const DocumentConflictRecord& conflict)
+      -> SaveConflictResult = 0;
+  [[nodiscard]] virtual auto DeleteConflict(std::string_view conflict_id)
+      -> DeleteConflictResult = 0;
+  [[nodiscard]] virtual auto LoadConflict(std::string_view conflict_id)
+      -> LoadConflictResult = 0;
+  [[nodiscard]] virtual auto ListConflicts() -> ListConflictsResult = 0;
+  [[nodiscard]] virtual auto ResolveConflict(std::string_view conflict_id)
+      -> UpdateConflictResolutionResult = 0;
+  [[nodiscard]] virtual auto DismissConflict(std::string_view conflict_id)
+      -> UpdateConflictResolutionResult = 0;
   [[nodiscard]] virtual auto SupportsSync() const -> bool { return false; }
   [[nodiscard]] virtual auto SetSyncAccessToken(std::string)
       -> SyncOperationResult {
