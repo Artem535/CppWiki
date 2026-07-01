@@ -18,6 +18,7 @@ Generated documentation set for Wiki Platform v9 — Block Document Edition.
 - `roadmap/Current_Roadmap.md`
 - `architecture/Architecture_Baseline_Libraries_and_Approaches.md`
 - `architecture/Desktop_Backend_Sync_Interaction.md`
+- `architecture/Sync_Document_Model_and_Conflict_Contract.md`
 - `architecture/Server_and_Realtime_Editing_Architecture.md`
 - `architecture/Project_Structure_and_Style.md`
 - `architecture/adr/ADR-001-editor-choice.md`

@@ -3,7 +3,7 @@
 **Product:** CppWiki / Wiki Platform v9 - Block Document Edition  
 **Status:** Draft / implementation-aligned after desktop collaboration and sync diagram spike  
 **Date:** 2026-06-30  
-**Related docs:** `doc/architecture/Desktop_Auth_Flow.md`, `doc/architecture/Server_and_Realtime_Editing_Architecture.md`, `doc/architecture/adr/ADR-003-collaboration-strategy.md`, `doc/architecture/adr/ADR-008-authentik-auth-model.md`, `doc/roadmap/Current_Roadmap.md`
+**Related docs:** `doc/architecture/Desktop_Auth_Flow.md`, `doc/architecture/Server_and_Realtime_Editing_Architecture.md`, `doc/architecture/Sync_Document_Model_and_Conflict_Contract.md`, `doc/architecture/adr/ADR-003-collaboration-strategy.md`, `doc/architecture/adr/ADR-008-authentik-auth-model.md`, `doc/roadmap/Current_Roadmap.md`
 
 ---
 
