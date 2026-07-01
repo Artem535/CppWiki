@@ -168,8 +168,17 @@ QVariant DocumentTreeModel::data(const QModelIndex& index, int role) const {
 
   switch (role) {
     case Qt::DisplayRole:
-    case Qt::EditRole:
-      return QString::fromStdString(item->title());
+    case Qt::EditRole: {
+      const auto base_title = QString::fromStdString(item->title());
+      if (item->isWorkspace()) {
+        const auto decoration =
+            workspace_decorations_.value(QString::fromStdString(item->id()), QString{});
+        if (!decoration.isEmpty()) {
+          return base_title + decoration;
+        }
+      }
+      return base_title;
+    }
 
     case Qt::DecorationRole:
       if (item->isAction()) {
@@ -567,6 +576,30 @@ DocumentTreeItem* DocumentTreeModel::findWorkspaceItem(std::string_view workspac
     }
   }
   return nullptr;
+}
+
+void DocumentTreeModel::setWorkspaceDecoration(const QString& workspace_id,
+                                               const QString& decoration) {
+  const auto had_decoration = !workspace_decorations_.value(workspace_id, QString{}).isEmpty();
+  if (decoration.isEmpty()) {
+    workspace_decorations_.remove(workspace_id);
+  } else {
+    workspace_decorations_[workspace_id] = decoration;
+  }
+
+  if (had_decoration == decoration.isEmpty()) {
+    // Emit dataChanged for the workspace row so the view re-renders the title.
+    if (auto* workspace = findWorkspaceItem(workspace_id.toStdString()); workspace != nullptr) {
+      const auto index = indexForItem(workspace);
+      if (index.isValid()) {
+        emit dataChanged(index, index, {Qt::DisplayRole});
+      }
+    }
+  }
+}
+
+QString DocumentTreeModel::workspaceDecoration(const QString& workspace_id) const {
+  return workspace_decorations_.value(workspace_id, QString{});
 }
 
 }  // namespace cppwiki::gui

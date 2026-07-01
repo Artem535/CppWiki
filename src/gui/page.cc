@@ -41,126 +41,19 @@
 #include "gui/document_tree_item_delegate.h"
 #include "gui/document_tree_model.h"
 #include "gui/document_tree_view.h"
+#include "gui/page_helpers.h"
 #include "app/editor_fallback.h"
+#include "sync/sync_service.h"
 
 namespace cppwiki {
 namespace {
 
-auto OptionalString(const QVariant& value) -> std::optional<std::string> {
-  if (!value.isValid() || value.isNull()) {
-    return std::nullopt;
-  }
+using namespace gui::page_helpers;
 
-  const auto str = value.toString().trimmed();
-  if (str.isEmpty()) {
-    return std::nullopt;
-  }
-
-  return str.toStdString();
-}
-
-QVariant ValueFromFirstExistingKey(const QVariantMap& map, std::initializer_list<QString> keys) {
-  for (const auto& key : keys) {
-    if (map.contains(key)) {
-      return map.value(key);
-    }
-  }
-
-  return {};
-}
-
-auto OptionalParentId(const QVariantMap& document) -> std::optional<std::string> {
-  // UI / bridge usually uses camelCase, while storage / JSON may use snake_case.
-  return OptionalString(ValueFromFirstExistingKey(
-      document, {QStringLiteral("parentId"), QStringLiteral("parent_id"),
-                 QStringLiteral("parentDocumentId"), QStringLiteral("parent_document_id")}));
-}
-
-QString StringFromFirstExistingKey(const QVariantMap& map, std::initializer_list<QString> keys) {
-  return ValueFromFirstExistingKey(map, keys).toString();
-}
-
-int IntFromFirstExistingKey(const QVariantMap& map, std::initializer_list<QString> keys,
-                            int default_value = 0) {
-  const auto value = ValueFromFirstExistingKey(map, keys);
-  if (!value.isValid() || value.isNull()) {
-    return default_value;
-  }
-
-  return value.toInt();
-}
-
-auto WorkspaceIdFromBootstrap(const sync::SyncBootstrap& bootstrap) -> QString {
-  for (const auto& channel : bootstrap.channels) {
-    const auto trimmed = channel.trimmed();
-    if (trimmed.startsWith(QStringLiteral("workspace:"))) {
-      const auto workspace_id = trimmed.sliced(QStringLiteral("workspace:").size()).trimmed();
-      if (!workspace_id.isEmpty()) {
-        return workspace_id;
-      }
-    }
-  }
-  return QStringLiteral("default");
-}
-
-auto WorkspaceIdsFromBootstrap(const sync::SyncBootstrap& bootstrap) -> QStringList {
-  QStringList workspace_ids;
-  for (const auto& channel : bootstrap.channels) {
-    const auto trimmed = channel.trimmed();
-    if (!trimmed.startsWith(QStringLiteral("workspace:"))) {
-      continue;
-    }
-
-    const auto workspace_id = trimmed.sliced(QStringLiteral("workspace:").size()).trimmed();
-    if (!workspace_id.isEmpty() && !workspace_ids.contains(workspace_id)) {
-      workspace_ids.push_back(workspace_id);
-    }
-  }
-
-  if (workspace_ids.isEmpty()) {
-    workspace_ids.push_back(QStringLiteral("default"));
-  }
-  return workspace_ids;
-}
-
-auto MakeWorkspaceScopedDocumentId(const QString& workspace_id, std::string_view document_id)
-    -> std::string {
-  return QStringLiteral("%1::%2")
-      .arg(workspace_id, QString::fromStdString(std::string(document_id)))
-      .toStdString();
-}
-
-auto AuthorIdFromBootstrap(const sync::SyncBootstrap& bootstrap) -> QString {
-  if (!bootstrap.principal_subject.trimmed().isEmpty()) {
-    return bootstrap.principal_subject.trimmed();
-  }
-  if (!bootstrap.principal_username.trimmed().isEmpty()) {
-    return bootstrap.principal_username.trimmed();
-  }
-  if (!bootstrap.principal_email.trimmed().isEmpty()) {
-    return bootstrap.principal_email.trimmed();
-  }
-  return {};
-}
-
-void VisitIndexes(const QAbstractItemModel* model, const QModelIndex& parent,
-                  const std::function<void(const QModelIndex&)>& visitor) {
-  if (model == nullptr) {
-    return;
-  }
-
-  const int rows = model->rowCount(parent);
-  for (int row = 0; row < rows; ++row) {
-    const auto index = model->index(row, 0, parent);
-    if (!index.isValid()) {
-      continue;
-    }
-    visitor(index);
-    VisitIndexes(model, index, visitor);
-  }
-}
+constexpr auto kWorkspaceAdminRole = "wiki.admin";
 
 }  // namespace
+
 
 Page::Page(const AppContext& context, QWidget* parent)
     : QWidget(parent), context_(context) {
@@ -193,6 +86,7 @@ void Page::BuildUi() {
 
   // Set the document repository for the bridge
   editor_bridge_->SetRepository(context_.document_repository);
+  editor_bridge_->SetSyncStateProvider(context_.document_sync_service);
 
   editor_view_ = new QWebEngineView(this);
   editor_view_->page()->setWebChannel(channel_);
@@ -390,6 +284,16 @@ void Page::BuildUi() {
               });
             });
   }
+  if (context_.document_sync_service != nullptr) {
+    connect(context_.document_sync_service, &sync::SyncService::snapshotChanged, this,
+            [this](const sync::DocumentSyncSnapshot&) {
+              ApplyBridgeSessionContext();
+              RefreshPageListIfChanged();
+              if (!selected_page_id_.isEmpty()) {
+                OpenDocumentWithAccess(selected_page_id_);
+              }
+            });
+  }
   connect(editor_bridge_, &bridge::QEditorBridge::saveStatusChanged, this,
           [this](const QString& page_id, bool success, const QString& message) {
             if (page_id == selected_page_id_ &&
@@ -416,23 +320,23 @@ void Page::ApplyBridgeSessionContext() {
     return;
   }
 
-  if (context_.backend_client == nullptr) {
-    editor_bridge_->SetCurrentAuthorId({});
-    available_workspace_ids_ = {QStringLiteral("default")};
-    ActivateWorkspace(QStringLiteral("default"));
-    RebuildWorkspaceTree();
-    return;
-  }
-
-  const auto& bootstrap = context_.backend_client->CurrentSyncBootstrap();
-  editor_bridge_->SetCurrentAuthorId(AuthorIdFromBootstrap(bootstrap));
-  available_workspace_ids_ = WorkspaceIdsFromBootstrap(bootstrap);
-  const auto preferred_workspace_id = WorkspaceIdFromBootstrap(bootstrap);
+  editor_bridge_->SetCurrentAuthorId(EffectiveAuthorId(context_));
+  available_workspace_ids_ = EffectiveWorkspaceIds(context_);
+  const auto preferred_workspace_id = PreferredWorkspaceId(context_, available_workspace_ids_);
   const auto selected_workspace_id = available_workspace_ids_.contains(current_workspace_id_)
                                          ? current_workspace_id_
                                          : preferred_workspace_id;
   ActivateWorkspace(selected_workspace_id);
   RebuildWorkspaceTree();
+  if (new_workspace_button_ != nullptr) {
+    const auto can_create_workspace = CanCreateWorkspace(context_);
+    new_workspace_button_->setEnabled(can_create_workspace);
+    new_workspace_button_->setToolTip(
+        can_create_workspace
+            ? QStringLiteral("Create a new workspace")
+            : QStringLiteral("Sign in with the '%1' role to create workspaces.")
+                  .arg(QString::fromUtf8(kWorkspaceAdminRole)));
+  }
 }
 
 void Page::ActivateWorkspace(const QString& workspace_id) {
@@ -461,6 +365,37 @@ void Page::ActivateWorkspace(const QString& workspace_id) {
   });
 }
 
+void Page::RefreshWorkspaceHydrationState() {
+  if (workspace_tree_model_ == nullptr || context_.document_sync_service == nullptr) {
+    return;
+  }
+
+  const auto& snapshot = context_.document_sync_service->Snapshot();
+  if (snapshot.workspace_ids.isEmpty()) {
+    return;
+  }
+
+  for (const auto& workspace_id : snapshot.workspace_ids) {
+    const auto state = snapshot.workspace_hydration.value(workspace_id,
+                                                          sync::WorkspaceHydrationState::kNotStarted);
+    QString decoration;
+    switch (state) {
+      case sync::WorkspaceHydrationState::kNotStarted:
+        decoration = QStringLiteral(" — not downloaded");
+        break;
+      case sync::WorkspaceHydrationState::kInProgress:
+        decoration = QStringLiteral(" — syncing...");
+        break;
+      case sync::WorkspaceHydrationState::kFailed:
+        decoration = QStringLiteral(" — sync failed");
+        break;
+      case sync::WorkspaceHydrationState::kMaterialized:
+        break;
+    }
+    workspace_tree_model_->setWorkspaceDecoration(workspace_id, decoration);
+  }
+}
+
 void Page::RebuildWorkspaceTree() {
   if (workspace_tree_model_ == nullptr) {
     return;
@@ -470,6 +405,7 @@ void Page::RebuildWorkspaceTree() {
     workspace_tree_view_->setUpdatesEnabled(false);
   }
   PopulatePageList();
+  RefreshWorkspaceHydrationState();
   ExpandWorkspace(current_workspace_id_);
   if (workspace_tree_view_ != nullptr) {
     workspace_tree_view_->setUpdatesEnabled(true);
@@ -506,11 +442,30 @@ void Page::InstallWebChannelScript() {
 }
 
 void Page::PopulatePageList() {
+  const auto summaries = FetchAllDocumentSummaries();
   const auto expanded_ids = CaptureExpandedDocumentIds();
+  last_document_summaries_ = summaries;
   if (workspace_tree_model_ != nullptr) {
-    workspace_tree_model_->setDocuments(FetchAllDocumentSummaries());
+    workspace_tree_model_->setDocuments(summaries);
   }
   RestoreExpandedDocumentIds(expanded_ids);
+}
+
+void Page::RefreshPageListIfChanged() {
+  const auto summaries = FetchAllDocumentSummaries();
+  RefreshWorkspaceHydrationState();
+
+  if (AreDocumentSummariesEqual(last_document_summaries_, summaries)) {
+    return;
+  }
+
+  const auto expanded_ids = CaptureExpandedDocumentIds();
+  last_document_summaries_ = summaries;
+  if (workspace_tree_model_ != nullptr) {
+    workspace_tree_model_->setDocuments(summaries);
+  }
+  RestoreExpandedDocumentIds(expanded_ids);
+  ExpandWorkspace(current_workspace_id_);
 }
 
 void Page::OnTreePressed(const QModelIndex& index) {
@@ -592,8 +547,13 @@ void Page::CreateWorkspace() {
           RebuildWorkspaceTree();
         } else {
           ActivateWorkspace(workspace_id);
+          PopulatePageList();
         }
         ExpandWorkspace(workspace_id);
+        if (workspace_tree_model_ != nullptr &&
+            !workspace_tree_model_->indexForWorkspaceId(workspace_id.toStdString()).isValid()) {
+          CreateNewDocument(workspace_id);
+        }
 
         emit documentStatusChanged(
             message.trimmed().isEmpty() ? QStringLiteral("Workspace created.")
@@ -1405,25 +1365,8 @@ std::optional<QString> Page::WorkspaceIdFromIndex(const QModelIndex& index) cons
   return QString::fromStdString(*workspace_id);
 }
 
-storage::DocumentSummary Page::SummaryFromVariantMap(const QVariantMap& document) const {
-  storage::DocumentSummary summary;
-  summary.id = StringFromFirstExistingKey(document, {QStringLiteral("id")}).toStdString();
-  summary.title = StringFromFirstExistingKey(document, {QStringLiteral("title")}).toStdString();
-  summary.workspace_id = StringFromFirstExistingKey(
-      document, {QStringLiteral("workspaceId"), QStringLiteral("workspace_id")}).toStdString();
-  summary.parent_id = OptionalParentId(document);
-  summary.sort_order = IntFromFirstExistingKey(
-      document, {QStringLiteral("sortOrder"), QStringLiteral("sort_order")});
-  summary.created_at = StringFromFirstExistingKey(
-      document, {QStringLiteral("createdAt"), QStringLiteral("created_at")}).toStdString();
-  summary.updated_at = StringFromFirstExistingKey(
-      document, {QStringLiteral("updatedAt"), QStringLiteral("updated_at")}).toStdString();
-  summary.created_by = StringFromFirstExistingKey(
-      document, {QStringLiteral("createdBy"), QStringLiteral("created_by")}).toStdString();
-  return summary;
-}
-
 void Page::UpdateAuthCard() {
+
   if (profile_avatar_label_ == nullptr || profile_name_label_ == nullptr ||
       profile_hint_label_ == nullptr || profile_action_button_ == nullptr) {
     return;
@@ -1435,6 +1378,10 @@ void Page::UpdateAuthCard() {
     profile_hint_label_->setText(QStringLiteral("Auth session manager is not available."));
     profile_action_button_->setText(QStringLiteral("Sign in"));
     profile_action_button_->setEnabled(false);
+    if (new_workspace_button_ != nullptr) {
+      new_workspace_button_->setEnabled(false);
+      new_workspace_button_->setToolTip(QStringLiteral("Auth is unavailable."));
+    }
     return;
   }
 
@@ -1444,6 +1391,15 @@ void Page::UpdateAuthCard() {
   profile_hint_label_->setText(QStringLiteral("%1\n%2").arg(auth->ProfileHint(), auth->Subtitle()));
   profile_action_button_->setText(auth->ActionLabel());
   profile_action_button_->setEnabled(auth->CanStartSignIn() || auth->CanSignOut());
+  if (new_workspace_button_ != nullptr) {
+    const auto can_create_workspace = CanCreateWorkspace(context_);
+    new_workspace_button_->setEnabled(can_create_workspace);
+    new_workspace_button_->setToolTip(
+        can_create_workspace
+            ? QStringLiteral("Create a new workspace")
+            : QStringLiteral("Sign in with the '%1' role to create workspaces.")
+                  .arg(QString::fromUtf8(kWorkspaceAdminRole)));
+  }
 }
 
 }  // namespace cppwiki

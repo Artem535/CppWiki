@@ -101,6 +101,10 @@ class DocumentTreeModel : public QAbstractItemModel {
   [[nodiscard]] bool isWorkspace(const QModelIndex& index) const;
   void requestAddChild(const QModelIndex& parent_document_index);
 
+  // Workspace hydration decoration
+  void setWorkspaceDecoration(const QString& workspace_id, const QString& decoration);
+  [[nodiscard]] QString workspaceDecoration(const QString& workspace_id) const;
+
   // Icon roles
   static constexpr int kIsContainerRole = Qt::UserRole + 1;
   static constexpr int kIsLockedRole = Qt::UserRole + 2;
@@ -124,6 +128,7 @@ class DocumentTreeModel : public QAbstractItemModel {
   [[nodiscard]] DocumentTreeItem* findWorkspaceItem(std::string_view workspace_id) const;
 
   std::unique_ptr<DocumentTreeItem> root_item_;
+  QHash<QString, QString> workspace_decorations_;
 };
 
 }  // namespace cppwiki::gui

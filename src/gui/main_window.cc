@@ -10,7 +10,9 @@
 #include <QLabel>
 #include <QPointer>
 #include <QMenuBar>
+#include <QListWidget>
 #include <QSettings>
+#include <QPushButton>
 #include <QStatusBar>
 #include <QString>
 #include <QStyle>
@@ -18,6 +20,8 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <functional>
+#include <optional>
 #include <oclero/qlementine/widgets/StatusBadgeWidget.hpp>
 #include <oclero/qlementine/widgets/Switch.hpp>
 
@@ -29,6 +33,7 @@
 #include "backend/backend_client.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "gui/main_window_helpers.h"
 #include "gui/presence_strip_widget.h"
 #include "gui/settings_dialog.h"
 #include "gui/page.h"
@@ -36,25 +41,7 @@
 
 namespace cppwiki {
 
-auto StateTextColor(bool is_error, bool is_warning, bool is_success) -> QString {
-  if (is_error) {
-    return QStringLiteral("#ff7b72");
-  }
-  if (is_warning) {
-    return QStringLiteral("#e3b341");
-  }
-  if (is_success) {
-    return QStringLiteral("#7ee787");
-  }
-  return QStringLiteral("#d0d7de");
-}
-
-auto BoolLabel(bool value, QStringView true_text = u"Yes", QStringView false_text = u"No")
-    -> QString;
-auto SyncLifecycleStateLabel(storage::SyncLifecycleState state) -> QString;
-auto JoinOrFallback(const QStringList& values,
-                    const QString& fallback = QStringLiteral("None")) -> QString;
-auto BuildSyncGuidance(const sync::DocumentSyncSnapshot& snapshot) -> QString;
+using namespace gui::main_window_helpers;
 
 class SyncDetailsDialog final : public QDialog {
  public:
@@ -94,9 +81,52 @@ class SyncDetailsDialog final : public QDialog {
     token_passthrough_value_ = CreateValueRow(form, this, QStringLiteral("Token passthrough"));
     principal_value_ = CreateValueRow(form, this, QStringLiteral("Principal"));
     principal_email_value_ = CreateValueRow(form, this, QStringLiteral("Principal email"));
+    initial_pull_value_ = CreateValueRow(form, this, QStringLiteral("Initial pull"));
+    hydrated_workspaces_value_ =
+        CreateValueRow(form, this, QStringLiteral("Hydrated workspaces"));
+    workspace_hydration_value_ =
+        CreateValueRow(form, this, QStringLiteral("Workspace hydration"));
     roles_value_ = CreateValueRow(form, this, QStringLiteral("Roles"));
     groups_value_ = CreateValueRow(form, this, QStringLiteral("Groups"));
     channels_value_ = CreateValueRow(form, this, QStringLiteral("Channels"));
+    pending_conflicts_value_ = CreateValueRow(form, this, QStringLiteral("Pending conflicts"));
+
+    conflicts_list_ = new QListWidget(this);
+    conflicts_list_->setSelectionMode(QAbstractItemView::SingleSelection);
+    conflicts_list_->setMinimumHeight(140);
+    layout->addWidget(conflicts_list_);
+
+    auto* conflict_actions = new QHBoxLayout();
+    conflict_actions->setContentsMargins(0, 0, 0, 0);
+    conflict_actions->setSpacing(8);
+    resolve_button_ = new QPushButton(QStringLiteral("Resolve"), this);
+    dismiss_button_ = new QPushButton(QStringLiteral("Dismiss"), this);
+    resolve_button_->setEnabled(false);
+    dismiss_button_->setEnabled(false);
+    conflict_actions->addWidget(resolve_button_);
+    conflict_actions->addWidget(dismiss_button_);
+    conflict_actions->addStretch(1);
+    layout->addLayout(conflict_actions);
+
+    connect(conflicts_list_, &QListWidget::itemSelectionChanged, this, [this]() {
+      const auto has_selection = conflicts_list_->currentItem() != nullptr;
+      resolve_button_->setEnabled(has_selection);
+      dismiss_button_->setEnabled(has_selection);
+    });
+    connect(resolve_button_, &QPushButton::clicked, this, [this]() {
+      if (resolve_conflict_callback_ == nullptr || conflicts_list_->currentItem() == nullptr) {
+        return;
+      }
+      resolve_conflict_callback_(
+          conflicts_list_->currentItem()->data(Qt::UserRole).toString());
+    });
+    connect(dismiss_button_, &QPushButton::clicked, this, [this]() {
+      if (dismiss_conflict_callback_ == nullptr || conflicts_list_->currentItem() == nullptr) {
+        return;
+      }
+      dismiss_conflict_callback_(
+          conflicts_list_->currentItem()->data(Qt::UserRole).toString());
+    });
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -169,6 +199,20 @@ class SyncDetailsDialog final : public QDialog {
                  : snapshot.bootstrap.principal_email,
              false, snapshot.bootstrap.principal_email.trimmed().isEmpty(),
              !snapshot.bootstrap.principal_email.trimmed().isEmpty());
+    SetValue(initial_pull_value_,
+             snapshot.initial_pull_completed
+                 ? QStringLiteral("Completed")
+                 : snapshot.initial_pull_active ? QStringLiteral("In progress")
+                                                : QStringLiteral("Pending"),
+             false, !snapshot.initial_pull_completed, snapshot.initial_pull_completed);
+    SetValue(hydrated_workspaces_value_, JoinOrFallback(snapshot.hydrated_workspace_ids), false,
+             snapshot.hydrated_workspace_ids.isEmpty(),
+             !snapshot.hydrated_workspace_ids.isEmpty());
+    SetValue(workspace_hydration_value_, BuildWorkspaceHydrationSummary(snapshot),
+             snapshot.workspace_hydration.isEmpty(),
+             snapshot.workspace_hydration.isEmpty() ||
+                 (!snapshot.initial_pull_completed && !snapshot.initial_pull_active),
+             snapshot.initial_pull_completed);
     SetValue(roles_value_, JoinOrFallback(snapshot.bootstrap.principal_roles), false,
              snapshot.bootstrap.principal_roles.isEmpty(),
              !snapshot.bootstrap.principal_roles.isEmpty());
@@ -177,6 +221,48 @@ class SyncDetailsDialog final : public QDialog {
              !snapshot.bootstrap.principal_groups.isEmpty());
     SetValue(channels_value_, JoinOrFallback(snapshot.bootstrap.channels), false,
              snapshot.bootstrap.channels.isEmpty(), !snapshot.bootstrap.channels.isEmpty());
+    SetValue(pending_conflicts_value_, QString::number(snapshot.conflict_count),
+             snapshot.state == sync::DocumentSyncState::kError, snapshot.has_conflicts,
+             snapshot.conflict_count == 0);
+  }
+
+  void UpdateConflictList(const std::vector<storage::DocumentConflictRecord>& conflicts) {
+    const auto previous_id =
+        conflicts_list_->currentItem() != nullptr
+            ? conflicts_list_->currentItem()->data(Qt::UserRole).toString()
+            : QString{};
+
+    conflicts_list_->clear();
+    for (const auto& conflict : conflicts) {
+      auto* item = new QListWidgetItem(
+          QStringLiteral("[%1] %2\n%3 vs %4\n%5")
+              .arg(QString::fromStdString(conflict.workspace_id),
+                   QString::fromStdString(conflict.document_id),
+                   QString::fromStdString(conflict.local_updated_by).isEmpty()
+                       ? QStringLiteral("local")
+                       : QString::fromStdString(conflict.local_updated_by),
+                   QString::fromStdString(conflict.remote_updated_by).isEmpty()
+                       ? QStringLiteral("remote")
+                       : QString::fromStdString(conflict.remote_updated_by),
+                   QString::fromStdString(conflict.detected_at)),
+          conflicts_list_);
+      item->setData(Qt::UserRole, QString::fromStdString(conflict.id));
+      if (item->data(Qt::UserRole).toString() == previous_id) {
+        conflicts_list_->setCurrentItem(item);
+      }
+    }
+
+    if (conflicts_list_->currentItem() == nullptr && conflicts_list_->count() > 0) {
+      conflicts_list_->setCurrentRow(0);
+    }
+    resolve_button_->setEnabled(conflicts_list_->currentItem() != nullptr);
+    dismiss_button_->setEnabled(conflicts_list_->currentItem() != nullptr);
+  }
+
+  void SetConflictActions(std::function<void(const QString&)> resolve_conflict_callback,
+                          std::function<void(const QString&)> dismiss_conflict_callback) {
+    resolve_conflict_callback_ = std::move(resolve_conflict_callback);
+    dismiss_conflict_callback_ = std::move(dismiss_conflict_callback);
   }
 
  private:
@@ -213,92 +299,19 @@ class SyncDetailsDialog final : public QDialog {
   QLabel* token_passthrough_value_ = nullptr;
   QLabel* principal_value_ = nullptr;
   QLabel* principal_email_value_ = nullptr;
+  QLabel* initial_pull_value_ = nullptr;
+  QLabel* hydrated_workspaces_value_ = nullptr;
+  QLabel* workspace_hydration_value_ = nullptr;
   QLabel* roles_value_ = nullptr;
   QLabel* groups_value_ = nullptr;
   QLabel* channels_value_ = nullptr;
+  QLabel* pending_conflicts_value_ = nullptr;
+  QListWidget* conflicts_list_ = nullptr;
+  QPushButton* resolve_button_ = nullptr;
+  QPushButton* dismiss_button_ = nullptr;
+  std::function<void(const QString&)> resolve_conflict_callback_;
+  std::function<void(const QString&)> dismiss_conflict_callback_;
 };
-
-auto MakeStatusWidget(const QString& initial_text, QWidget* parent)
-    -> std::tuple<QWidget*, oclero::qlementine::StatusBadgeWidget*, QLabel*> {
-  auto* container = new QWidget(parent);
-  auto* layout = new QHBoxLayout(container);
-  layout->setContentsMargins(0, 0, 0, 0);
-  layout->setSpacing(6);
-
-  auto* badge = new oclero::qlementine::StatusBadgeWidget(
-      oclero::qlementine::StatusBadge::Info, oclero::qlementine::StatusBadgeSize::Small,
-      container);
-  auto* label = new QLabel(initial_text, container);
-
-  layout->addWidget(badge, 0, Qt::AlignVCenter);
-  layout->addWidget(label, 0, Qt::AlignVCenter);
-
-  return {container, badge, label};
-}
-
-auto BoolLabel(bool value, QStringView true_text, QStringView false_text)
-    -> QString {
-  return value ? true_text.toString() : false_text.toString();
-}
-
-auto SyncLifecycleStateLabel(storage::SyncLifecycleState state) -> QString {
-  switch (state) {
-    case storage::SyncLifecycleState::kDisabled:
-      return QStringLiteral("Disabled");
-    case storage::SyncLifecycleState::kConfigured:
-      return QStringLiteral("Configured");
-    case storage::SyncLifecycleState::kRunning:
-      return QStringLiteral("Running");
-    case storage::SyncLifecycleState::kError:
-      return QStringLiteral("Error");
-  }
-
-  return QStringLiteral("Unknown");
-}
-
-auto JoinOrFallback(const QStringList& values, const QString& fallback)
-    -> QString {
-  if (values.isEmpty()) {
-    return fallback;
-  }
-
-  return values.join(QStringLiteral(", "));
-}
-
-auto BuildSyncGuidance(const sync::DocumentSyncSnapshot& snapshot) -> QString {
-  if (!snapshot.auth_enabled) {
-    return QStringLiteral("Enable authentication in settings before document sync can start.");
-  }
-  if (!snapshot.sync_enabled) {
-    return QStringLiteral("Enable sync in settings for the current desktop client.");
-  }
-  if (!snapshot.backend_bootstrap_available) {
-    return QStringLiteral("Backend has not returned sync bootstrap yet.");
-  }
-  if (!snapshot.backend_sync_enabled) {
-    return QStringLiteral("Backend rejected sync for the current session or workspace.");
-  }
-  if (!snapshot.has_repository) {
-    return QStringLiteral("No local repository is attached to the sync service.");
-  }
-  if (!snapshot.repository_supports_sync) {
-    return QStringLiteral("The active repository implementation does not support replication.");
-  }
-  if (!snapshot.has_access_token) {
-    return QStringLiteral("Authenticated session is missing an access token for Sync Gateway.");
-  }
-  if (snapshot.bootstrap.gateway_url.trimmed().isEmpty()) {
-    return QStringLiteral("Backend bootstrap is missing Sync Gateway URL.");
-  }
-  if (snapshot.bootstrap.channels.isEmpty()) {
-    return QStringLiteral("Backend bootstrap did not assign any sync channels.");
-  }
-  if (snapshot.repository_status.state == storage::SyncLifecycleState::kError) {
-    return QStringLiteral("Repository replication failed after bootstrap was applied.");
-  }
-
-  return QStringLiteral("Sync prerequisites are satisfied.");
-}
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   BuildUi();
@@ -316,46 +329,20 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
     return true;
   }
 
+  if ((watched == sync_conflicts_widget_ ||
+       (sync_conflicts_widget_ != nullptr && watched != nullptr &&
+        watched->parent() == sync_conflicts_widget_)) &&
+      event != nullptr &&
+      event->type() == QEvent::MouseButtonRelease) {
+    ShowSyncDetailsDialog();
+    return true;
+  }
+
   return QMainWindow::eventFilter(watched, event);
 }
 
-namespace {
-
-auto IsHighPrioritySaveHint(const QString& text) -> bool {
-  return text.contains(QStringLiteral("Saving"), Qt::CaseInsensitive) ||
-         text.contains(QStringLiteral("Save error"), Qt::CaseInsensitive);
-}
-
-auto CompactAuthHint(const auth::AuthSessionManager* auth) -> QString {
-  if (auth == nullptr) {
-    return {};
-  }
-
-  switch (auth->State()) {
-    case auth::AuthSessionState::kRefreshing:
-      return QStringLiteral("Refreshing session...");
-    case auth::AuthSessionState::kAwaitingCallback:
-      return QStringLiteral("Completing browser sign-in...");
-    case auth::AuthSessionState::kSignedOut:
-    case auth::AuthSessionState::kError: {
-      const auto subtitle = auth->Subtitle();
-      if (subtitle.contains(QStringLiteral("expired"), Qt::CaseInsensitive) ||
-          subtitle.contains(QStringLiteral("refresh failed"), Qt::CaseInsensitive)) {
-        return QStringLiteral("Session expired. Sign in again.");
-      }
-      return {};
-    }
-    case auth::AuthSessionState::kDisabled:
-    case auth::AuthSessionState::kAuthenticated:
-      return {};
-  }
-
-  return {};
-}
-
-}  // namespace
-
 void MainWindow::SetContext(AppContext* context) {
+
   context_ = context;
   if (context_ != nullptr && context_->backend_client != nullptr) {
     connect(context_->backend_client, &backend::BackendClient::statusChanged, this,
@@ -527,14 +514,44 @@ void MainWindow::BuildUi() {
       MakeStatusWidget(QStringLiteral("Backend: local only"), this);
   std::tie(sync_status_widget_, sync_status_badge_, sync_status_label_) =
       MakeStatusWidget(QStringLiteral("Sync: disabled"), this);
+  std::tie(sync_conflicts_widget_, sync_conflicts_badge_, sync_conflicts_label_) =
+      MakeStatusWidget(QStringLiteral("Conflicts: 0"), this);
   sync_status_widget_->setCursor(Qt::PointingHandCursor);
   sync_status_widget_->setToolTip(QStringLiteral("Open sync details"));
   sync_status_widget_->installEventFilter(this);
   for (auto* child : sync_status_widget_->findChildren<QWidget*>()) {
     child->installEventFilter(this);
   }
+  sync_conflicts_widget_->setCursor(Qt::PointingHandCursor);
+  sync_conflicts_widget_->setToolTip(QStringLiteral("Open conflict details"));
+  sync_conflicts_widget_->installEventFilter(this);
+  for (auto* child : sync_conflicts_widget_->findChildren<QWidget*>()) {
+    child->installEventFilter(this);
+  }
+  sync_conflict_resolve_button_ = new QToolButton(collaboration_panel_);
+  sync_conflict_resolve_button_->setObjectName(QStringLiteral("statusLineButton"));
+  sync_conflict_resolve_button_->setText(QStringLiteral("Resolve"));
+  sync_conflict_resolve_button_->setToolTip(
+      QStringLiteral("Resolve the next pending sync conflict"));
+  sync_conflict_resolve_button_->setAutoRaise(true);
+  connect(sync_conflict_resolve_button_, &QToolButton::clicked, this,
+          &MainWindow::ResolveNextSyncConflict);
+  sync_conflict_dismiss_button_ = new QToolButton(collaboration_panel_);
+  sync_conflict_dismiss_button_->setObjectName(QStringLiteral("statusLineButton"));
+  sync_conflict_dismiss_button_->setText(QStringLiteral("Dismiss"));
+  sync_conflict_dismiss_button_->setToolTip(
+      QStringLiteral("Dismiss the next pending sync conflict"));
+  sync_conflict_dismiss_button_->setAutoRaise(true);
+  connect(sync_conflict_dismiss_button_, &QToolButton::clicked, this,
+          &MainWindow::DismissNextSyncConflict);
+  sync_conflicts_widget_->hide();
+  sync_conflict_resolve_button_->hide();
+  sync_conflict_dismiss_button_->hide();
   collaboration_layout->addWidget(edit_mode_widget, 0, Qt::AlignVCenter);
   collaboration_layout->addStretch(1);
+  collaboration_layout->addWidget(sync_conflicts_widget_, 0, Qt::AlignVCenter);
+  collaboration_layout->addWidget(sync_conflict_resolve_button_, 0, Qt::AlignVCenter);
+  collaboration_layout->addWidget(sync_conflict_dismiss_button_, 0, Qt::AlignVCenter);
   collaboration_layout->addWidget(presence_strip_widget_, 0, Qt::AlignVCenter);
   header_layout->addWidget(collaboration_panel_, 1);
 
@@ -556,11 +573,15 @@ void MainWindow::UpdateBackendStatus() {
   if (context_ == nullptr || context_->backend_client == nullptr) {
     backend_status_label_->setText(QStringLiteral("Backend: unavailable"));
     backend_status_badge_->setBadge(oclero::qlementine::StatusBadge::Warning);
+    ApplyStatusTooltip(backend_status_widget_, backend_status_label_, backend_status_badge_,
+                       QStringLiteral("Backend client is not configured."));
     return;
   }
 
   const auto state = context_->backend_client->State();
-  backend_status_label_->setText(context_->backend_client->StatusText());
+  backend_status_label_->setText(CompactBackendStatusText(state));
+  ApplyStatusTooltip(backend_status_widget_, backend_status_label_, backend_status_badge_,
+                     context_->backend_client->StatusText());
 
   switch (state) {
     case backend::BackendConnectionState::kLocalOnly:
@@ -582,19 +603,32 @@ void MainWindow::UpdateBackendStatus() {
 }
 
 void MainWindow::UpdateSyncStatus() {
-  if (sync_status_label_ == nullptr || sync_status_badge_ == nullptr) {
+  if (sync_status_label_ == nullptr || sync_status_badge_ == nullptr ||
+      sync_conflicts_label_ == nullptr || sync_conflicts_badge_ == nullptr ||
+      sync_conflicts_widget_ == nullptr) {
     return;
   }
 
   if (context_ == nullptr || context_->document_sync_service == nullptr) {
     sync_status_label_->setText(QStringLiteral("Sync: unavailable"));
     sync_status_badge_->setBadge(oclero::qlementine::StatusBadge::Warning);
+    ApplyStatusTooltip(sync_status_widget_, sync_status_label_, sync_status_badge_,
+                       QStringLiteral("Sync service is not configured."));
+    sync_conflicts_widget_->hide();
+    if (sync_conflict_resolve_button_ != nullptr) {
+      sync_conflict_resolve_button_->hide();
+    }
+    if (sync_conflict_dismiss_button_ != nullptr) {
+      sync_conflict_dismiss_button_->hide();
+    }
     return;
   }
 
   const auto& snapshot = context_->document_sync_service->Snapshot();
   const auto state = snapshot.state;
-  sync_status_label_->setText(snapshot.status_text);
+  sync_status_label_->setText(CompactSyncStatusText(snapshot));
+  ApplyStatusTooltip(sync_status_widget_, sync_status_label_, sync_status_badge_,
+                     snapshot.status_text);
 
   switch (state) {
     case sync::DocumentSyncState::kDisabled:
@@ -611,12 +645,63 @@ void MainWindow::UpdateSyncStatus() {
       break;
   }
 
+  const auto pending_conflicts = PendingConflicts(context_->document_repository);
+  const auto pending_conflict_count = static_cast<qsizetype>(pending_conflicts.size());
+  const auto snapshot_conflict_count = snapshot.conflict_count;
+  const auto effective_conflict_count =
+      snapshot_conflict_count > pending_conflict_count ? snapshot_conflict_count
+                                                       : pending_conflict_count;
+  const auto has_pending_conflicts = pending_conflict_count > 0;
+  const auto show_conflicts = snapshot.has_conflicts || has_pending_conflicts;
+
+  if (show_conflicts) {
+    sync_conflicts_label_->setText(
+        QStringLiteral("Conflicts: %1").arg(QString::number(effective_conflict_count)));
+    sync_conflicts_badge_->setBadge(oclero::qlementine::StatusBadge::Warning);
+    const auto snapshot_matches_repository =
+        snapshot.has_conflicts == has_pending_conflicts &&
+        snapshot_conflict_count == pending_conflict_count;
+    const auto tooltip =
+        snapshot_matches_repository
+            ? QStringLiteral("%1 pending conflict%2. Open sync details to resolve or dismiss.")
+                  .arg(QString::number(effective_conflict_count),
+                       effective_conflict_count == 1 ? QString{} : QStringLiteral("s"))
+            : QStringLiteral(
+                  "Snapshot reports %1 conflict%2, repository currently has %3 pending conflict%4. Open sync details to resolve or dismiss.")
+                  .arg(QString::number(snapshot_conflict_count),
+                       snapshot_conflict_count == 1 ? QString{} : QStringLiteral("s"),
+                       QString::number(pending_conflict_count),
+                       pending_conflict_count == 1 ? QString{} : QStringLiteral("s"));
+    ApplyStatusTooltip(
+        sync_conflicts_widget_, sync_conflicts_label_, sync_conflicts_badge_, tooltip);
+    sync_conflicts_widget_->show();
+    if (sync_conflict_resolve_button_ != nullptr) {
+      sync_conflict_resolve_button_->show();
+      sync_conflict_resolve_button_->setEnabled(has_pending_conflicts);
+    }
+    if (sync_conflict_dismiss_button_ != nullptr) {
+      sync_conflict_dismiss_button_->show();
+      sync_conflict_dismiss_button_->setEnabled(has_pending_conflicts);
+    }
+  } else {
+    sync_conflicts_widget_->hide();
+    if (sync_conflict_resolve_button_ != nullptr) {
+      sync_conflict_resolve_button_->hide();
+    }
+    if (sync_conflict_dismiss_button_ != nullptr) {
+      sync_conflict_dismiss_button_->hide();
+    }
+  }
+
   RefreshSyncDetailsDialog();
 }
 
 void MainWindow::ShowSyncDetailsDialog() {
   if (sync_details_dialog_ == nullptr) {
     sync_details_dialog_ = new SyncDetailsDialog(this);
+    sync_details_dialog_->SetConflictActions(
+        [this](const QString& conflict_id) { ResolveSelectedSyncConflict(conflict_id); },
+        [this](const QString& conflict_id) { DismissSelectedSyncConflict(conflict_id); });
     connect(sync_details_dialog_, &QObject::destroyed, this, [this]() {
       sync_details_dialog_.clear();
     });
@@ -639,6 +724,77 @@ void MainWindow::RefreshSyncDetailsDialog() {
   }
 
   sync_details_dialog_->UpdateFromSnapshot(context_->document_sync_service->Snapshot());
+  sync_details_dialog_->UpdateConflictList(PendingConflicts(context_->document_repository));
+}
+
+void MainWindow::ResolveSelectedSyncConflict(const QString& conflict_id) {
+  if (context_ == nullptr || context_->document_repository == nullptr || conflict_id.trimmed().isEmpty()) {
+    return;
+  }
+
+  const auto result = context_->document_repository->ResolveConflict(conflict_id.toStdString());
+  if (result.error) {
+    statusBar()->showMessage(
+        QStringLiteral("Conflict resolve failed: %1")
+            .arg(QString::fromStdString(result.error->message)),
+        4000);
+    return;
+  }
+
+  if (context_->document_sync_service != nullptr) {
+    context_->document_sync_service->RefreshStatus();
+  }
+  RefreshSyncDetailsDialog();
+  UpdateSyncStatus();
+  statusBar()->showMessage(QStringLiteral("Conflict marked resolved."), 3000);
+}
+
+void MainWindow::DismissSelectedSyncConflict(const QString& conflict_id) {
+  if (context_ == nullptr || context_->document_repository == nullptr || conflict_id.trimmed().isEmpty()) {
+    return;
+  }
+
+  const auto result = context_->document_repository->DismissConflict(conflict_id.toStdString());
+  if (result.error) {
+    statusBar()->showMessage(
+        QStringLiteral("Conflict dismiss failed: %1")
+            .arg(QString::fromStdString(result.error->message)),
+        4000);
+    return;
+  }
+
+  if (context_->document_sync_service != nullptr) {
+    context_->document_sync_service->RefreshStatus();
+  }
+  RefreshSyncDetailsDialog();
+  UpdateSyncStatus();
+  statusBar()->showMessage(QStringLiteral("Conflict dismissed."), 3000);
+}
+
+void MainWindow::ResolveNextSyncConflict() {
+  if (context_ == nullptr || context_->document_repository == nullptr) {
+    return;
+  }
+
+  const auto conflict = FirstPendingConflict(context_->document_repository);
+  if (!conflict.has_value()) {
+    return;
+  }
+
+  ResolveSelectedSyncConflict(QString::fromStdString(conflict->id));
+}
+
+void MainWindow::DismissNextSyncConflict() {
+  if (context_ == nullptr || context_->document_repository == nullptr) {
+    return;
+  }
+
+  const auto conflict = FirstPendingConflict(context_->document_repository);
+  if (!conflict.has_value()) {
+    return;
+  }
+
+  DismissSelectedSyncConflict(QString::fromStdString(conflict->id));
 }
 
 void MainWindow::UpdateDocumentStatus(const QString& message, bool is_error) {
@@ -646,8 +802,10 @@ void MainWindow::UpdateDocumentStatus(const QString& message, bool is_error) {
     return;
   }
 
-  document_status_label_->setText(message);
+  document_status_label_->setText(CompactDocumentStatusText(message, is_error));
   document_status_label_->setStyleSheet(QString{});
+  ApplyStatusTooltip(document_status_widget_, document_status_label_, document_status_badge_,
+                     message);
   if (message.contains(QStringLiteral("Saving"), Qt::CaseInsensitive) ||
       message.contains(QStringLiteral("Saved"), Qt::CaseInsensitive) ||
       message.contains(QStringLiteral("Save error"), Qt::CaseInsensitive)) {

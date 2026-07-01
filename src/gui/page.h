@@ -95,10 +95,12 @@ signals:
       const QString& workspace_id) const;
   [[nodiscard]] std::optional<std::string> MapToParentDocumentId(const QModelIndex& index) const;
   [[nodiscard]] std::optional<QString> WorkspaceIdFromIndex(const QModelIndex& index) const;
-  [[nodiscard]] storage::DocumentSummary SummaryFromVariantMap(const QVariantMap& document) const;
   void ActivateWorkspace(const QString& workspace_id);
+
   void ApplyBridgeSessionContext();
   void UpdateAuthCard();
+  void RefreshPageListIfChanged();
+  void RefreshWorkspaceHydrationState();
 
   const AppContext& context_;
   QWidget* page_panel_ = nullptr;
@@ -121,6 +123,7 @@ signals:
   bool current_document_local_only_ = true;
   bool pending_inactivity_exit_notice_ = false;
   QTimer* edit_inactivity_timer_ = nullptr;
+  std::vector<storage::DocumentSummary> last_document_summaries_;
 };
 
 }  // namespace cppwiki
