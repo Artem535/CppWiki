@@ -28,6 +28,14 @@ auto Require(bool condition, std::string_view message) -> void {
   }
 }
 
+auto MakeUniqueAppDataDirectory() -> QString {
+  static int counter = 0;
+  const auto path = std::filesystem::temp_directory_path() /
+                    ("cppwiki-sync-service-test-" + std::to_string(counter++));
+  std::filesystem::remove_all(path);
+  return QString::fromStdString(path.string());
+}
+
 class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepository {
  public:
   [[nodiscard]] auto SaveDocument(const cppwiki::storage::DocumentRecord&)
@@ -47,6 +55,35 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     return {};
   }
 
+  [[nodiscard]] auto SaveConflict(const cppwiki::storage::DocumentConflictRecord&)
+      -> cppwiki::storage::SaveConflictResult override {
+    return {};
+  }
+
+  [[nodiscard]] auto DeleteConflict(std::string_view)
+      -> cppwiki::storage::DeleteConflictResult override {
+    return {};
+  }
+
+  [[nodiscard]] auto LoadConflict(std::string_view)
+      -> cppwiki::storage::LoadConflictResult override {
+    return {};
+  }
+
+  [[nodiscard]] auto ListConflicts() -> cppwiki::storage::ListConflictsResult override {
+    return {};
+  }
+
+  [[nodiscard]] auto ResolveConflict(std::string_view)
+      -> cppwiki::storage::UpdateConflictResolutionResult override {
+    return {};
+  }
+
+  [[nodiscard]] auto DismissConflict(std::string_view)
+      -> cppwiki::storage::UpdateConflictResolutionResult override {
+    return {};
+  }
+
   [[nodiscard]] auto SupportsSync() const -> bool override { return true; }
 
   [[nodiscard]] auto SetSyncAccessToken(std::string access_token)
@@ -63,6 +100,8 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     sync_status = {
         .state = cppwiki::storage::SyncLifecycleState::kConfigured,
         .status_text = "Sync bootstrap configured",
+        .has_conflicts = sync_status.has_conflicts,
+        .conflict_count = sync_status.conflict_count,
     };
     return {};
   }
@@ -72,6 +111,10 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     sync_status = {
         .state = cppwiki::storage::SyncLifecycleState::kRunning,
         .status_text = "Sync running",
+        .initial_pull_active = true,
+        .initial_pull_completed = false,
+        .has_conflicts = sync_status.has_conflicts,
+        .conflict_count = sync_status.conflict_count,
     };
     return {};
   }
@@ -81,6 +124,8 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     sync_status = {
         .state = cppwiki::storage::SyncLifecycleState::kConfigured,
         .status_text = "Sync stopped",
+        .has_conflicts = sync_status.has_conflicts,
+        .conflict_count = sync_status.conflict_count,
     };
     return {};
   }
@@ -98,11 +143,12 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
   cppwiki::storage::SyncStatus sync_status{};
 };
 
-auto MakeSettings() -> cppwiki::ProgramSettings {
+auto MakeSettings(const QString& app_data_directory = MakeUniqueAppDataDirectory())
+    -> cppwiki::ProgramSettings {
   return cppwiki::ProgramSettings(
       cppwiki::ToQString(cppwiki::constants::kApplicationName),
       cppwiki::ToQString(cppwiki::constants::kApplicationVersion),
-      cppwiki::ToQString(cppwiki::constants::kOrganizationName), QStringLiteral("/tmp/cppwiki-app"),
+      cppwiki::ToQString(cppwiki::constants::kOrganizationName), app_data_directory,
       QStringLiteral("/tmp/cppwiki-db"), QStringLiteral("/tmp/cppwiki-editor"),
       QStringLiteral("http://127.0.0.1:8080"), true,
       QStringLiteral("http://127.0.0.1:9000/application/o/authorize/"),
@@ -140,6 +186,9 @@ auto TestMissingChannelsIsRejected() -> void {
 
   Require(service.State() == cppwiki::sync::DocumentSyncState::kUnavailable,
           "sync service should reject bootstrap without channels");
+  if (!service.StatusText().contains(QStringLiteral("did not assign sync channels"))) {
+    spdlog::error("Observed status text: {}", service.StatusText().toStdString());
+  }
   Require(service.StatusText().contains(QStringLiteral("did not assign sync channels")),
           "sync service should explain missing channels");
   Require(!repository->bootstrap_applied,
@@ -185,6 +234,421 @@ auto TestValidBootstrapConfiguresRepositoryLifecycle() -> void {
           "sync service should start repository sync lifecycle");
   Require(repository->last_bootstrap.gateway_url == QStringLiteral("http://127.0.0.1:4984/cppwiki"),
           "repository should receive backend bootstrap");
+  const auto snapshot = service.Snapshot();
+  Require(snapshot.workspace_ids.contains(QStringLiteral("default")) == false,
+          "workspace ids should be empty when no workspace channels are assigned");
+}
+
+auto TestSnapshotExposesWorkspaceScopeAndConflicts() -> void {
+  cppwiki::sync::DocumentSyncService service;
+  service.ApplySettings(MakeSettings());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync running with conflicts",
+      .initial_pull_active = true,
+      .initial_pull_completed = false,
+      .has_conflicts = true,
+      .conflict_count = 2,
+  };
+  service.SetRepository(repository);
+  service.SetAccessToken(QStringLiteral("test-token"));
+
+  auto bootstrap = MakeBaseBootstrap();
+  bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:default"),
+                        QStringLiteral("workspace:engineering")};
+  service.SetBackendBootstrap(std::move(bootstrap));
+
+  const auto snapshot = service.Snapshot();
+  Require(snapshot.workspace_ids.size() == 2,
+          "snapshot should expose workspace ids derived from channels");
+  Require(snapshot.workspace_ids.contains(QStringLiteral("default")),
+          "snapshot should include default workspace id");
+  Require(snapshot.workspace_ids.contains(QStringLiteral("engineering")),
+          "snapshot should include engineering workspace id");
+  Require(snapshot.hydrated_workspace_ids.isEmpty(),
+          "snapshot should not mark workspaces hydrated before initial pull completes");
+  Require(snapshot.initial_pull_active,
+          "snapshot should expose active initial pull state");
+  Require(!snapshot.initial_pull_completed,
+          "snapshot should expose incomplete initial pull state");
+  Require(snapshot.has_conflicts, "snapshot should expose repository conflict state");
+  Require(snapshot.conflict_count == 2, "snapshot should expose repository conflict count");
+}
+
+auto TestRemoteExpectationTracksInitialPullCompletion() -> void {
+  cppwiki::sync::DocumentSyncService service;
+  service.ApplySettings(MakeSettings());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  service.SetRepository(repository);
+  service.SetAccessToken(QStringLiteral("test-token"));
+
+  auto bootstrap = MakeBaseBootstrap();
+  bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:default")};
+  service.SetBackendBootstrap(bootstrap);
+
+  Require(service.ShouldExpectRemoteDocuments(QStringLiteral("default")),
+          "workspace should expect remote documents while initial pull is pending");
+
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync idle",
+      .initial_pull_active = false,
+      .initial_pull_completed = true,
+  };
+  service.RefreshStatus();
+
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("default")),
+          "workspace should stop expecting remote documents after initial pull completes");
+  Require(service.Snapshot().initial_pull_completed,
+          "snapshot should expose completed initial pull state");
+  Require(service.Snapshot().hydrated_workspace_ids.contains(QStringLiteral("default")),
+          "snapshot should mark completed workspace as hydrated");
+}
+
+auto TestNewWorkspaceBecomesPendingAfterBootstrapChange() -> void {
+  cppwiki::sync::DocumentSyncService service;
+  service.ApplySettings(MakeSettings());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  service.SetRepository(repository);
+  service.SetAccessToken(QStringLiteral("test-token"));
+
+  auto bootstrap = MakeBaseBootstrap();
+  bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:default")};
+  service.SetBackendBootstrap(bootstrap);
+
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync idle",
+      .initial_pull_active = false,
+      .initial_pull_completed = true,
+  };
+  service.RefreshStatus();
+
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("default")),
+          "default workspace should be hydrated after completed initial pull");
+
+  bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:default"),
+                        QStringLiteral("workspace:engineering")};
+  service.SetBackendBootstrap(bootstrap);
+
+  const auto snapshot = service.Snapshot();
+  Require(!snapshot.hydrated_workspace_ids.contains(QStringLiteral("engineering")),
+          "new workspace should not be marked hydrated after bootstrap change");
+  Require(service.ShouldExpectRemoteDocuments(QStringLiteral("engineering")),
+          "new workspace should expect remote documents until next initial pull completes");
+}
+
+auto TestOfflineStatusBootstrapDoesNotEraseHydratedWorkspaceScope() -> void {
+  cppwiki::sync::DocumentSyncService service;
+  service.ApplySettings(MakeSettings());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  service.SetRepository(repository);
+  service.SetAccessToken(QStringLiteral("test-token"));
+
+  auto bootstrap = MakeBaseBootstrap();
+  bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:default"),
+                        QStringLiteral("workspace:engineering")};
+  bootstrap.principal_subject = QStringLiteral("subject-42");
+  service.SetBackendBootstrap(bootstrap);
+
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync idle",
+      .initial_pull_active = false,
+      .initial_pull_completed = true,
+  };
+  service.RefreshStatus();
+
+  cppwiki::sync::SyncBootstrap offline_bootstrap;
+  offline_bootstrap.status_text = QStringLiteral("Sync: waiting for backend");
+  service.SetBackendBootstrap(offline_bootstrap);
+
+  const auto snapshot = service.Snapshot();
+  Require(snapshot.workspace_ids.contains(QStringLiteral("default")),
+          "offline status bootstrap should preserve previously known default workspace");
+  Require(snapshot.workspace_ids.contains(QStringLiteral("engineering")),
+          "offline status bootstrap should preserve previously known engineering workspace");
+  Require(snapshot.hydrated_workspace_ids.contains(QStringLiteral("default")),
+          "offline status bootstrap should preserve hydrated workspace ids");
+  Require(snapshot.hydrated_workspace_ids.contains(QStringLiteral("engineering")),
+          "offline status bootstrap should preserve hydrated workspace ids for all workspaces");
+  Require(snapshot.bootstrap.principal_subject == QStringLiteral("subject-42"),
+          "offline status bootstrap should preserve last valid author context");
+}
+
+auto TestExpandWorkspaceHydrationStateTracksProgressAndFailure() -> void {
+  cppwiki::sync::DocumentSyncService service;
+  service.ApplySettings(MakeSettings());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  service.SetRepository(repository);
+  service.SetAccessToken(QStringLiteral("test-token"));
+
+  auto bootstrap = MakeBaseBootstrap();
+  bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:default"),
+                        QStringLiteral("workspace:engineering")};
+  service.SetBackendBootstrap(bootstrap);
+
+  // Initial state after StartSync is running but pull is active.
+  const auto pending_snapshot = service.Snapshot();
+  Require(pending_snapshot.workspace_hydration.size() == 2,
+          "snapshot should expose hydration state for all workspaces");
+  Require(pending_snapshot.workspace_hydration.value(QStringLiteral("default")) ==
+              cppwiki::sync::WorkspaceHydrationState::kInProgress,
+          "default workspace should be in progress while initial pull is active");
+  Require(pending_snapshot.workspace_hydration.value(QStringLiteral("engineering")) ==
+              cppwiki::sync::WorkspaceHydrationState::kInProgress,
+          "engineering workspace should be in progress while initial pull is active");
+  Require(service.ShouldExpectRemoteDocuments(QStringLiteral("default")),
+          "workspace should expect remote documents while in progress");
+
+  // Complete initial pull.
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync idle",
+      .initial_pull_active = false,
+      .initial_pull_completed = true,
+  };
+  service.RefreshStatus();
+
+  const auto materialized_snapshot = service.Snapshot();
+  Require(materialized_snapshot.workspace_hydration.value(QStringLiteral("default")) ==
+              cppwiki::sync::WorkspaceHydrationState::kMaterialized,
+          "default workspace should be materialized after initial pull completes");
+  Require(materialized_snapshot.workspace_hydration.value(QStringLiteral("engineering")) ==
+              cppwiki::sync::WorkspaceHydrationState::kMaterialized,
+          "engineering workspace should be materialized after initial pull completes");
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("default")),
+          "workspace should not expect remote documents after materialization");
+
+  // Reintroduce a new workspace and simulate failure before completion.
+  bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:default"),
+                        QStringLiteral("workspace:engineering"),
+                        QStringLiteral("workspace:product")};
+  service.SetBackendBootstrap(bootstrap);
+
+  const auto expanded_snapshot = service.Snapshot();
+  Require(expanded_snapshot.workspace_hydration.value(QStringLiteral("product")) ==
+              cppwiki::sync::WorkspaceHydrationState::kNotStarted,
+          "new workspace should start as not started");
+  Require(service.ShouldExpectRemoteDocuments(QStringLiteral("product")),
+          "new workspace should expect remote documents while not started");
+
+  // Simulate a replicator error.
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kError,
+      .status_text = "Sync failed",
+      .initial_pull_active = false,
+      .initial_pull_completed = false,
+  };
+  service.RefreshStatus();
+
+  const auto failed_snapshot = service.Snapshot();
+  Require(failed_snapshot.workspace_hydration.value(QStringLiteral("product")) ==
+              cppwiki::sync::WorkspaceHydrationState::kFailed,
+          "un-materialized workspace should become failed when replicator errors");
+  Require(failed_snapshot.workspace_hydration.value(QStringLiteral("default")) ==
+              cppwiki::sync::WorkspaceHydrationState::kMaterialized,
+          "materialized workspace should stay materialized when replicator errors");
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("product")),
+          "failed workspace should not expect remote documents");
+
+  // Recovery path: replicator is running again but still no completion.
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync active",
+      .initial_pull_active = true,
+      .initial_pull_completed = false,
+  };
+  service.RefreshStatus();
+
+  const auto recovered_snapshot = service.Snapshot();
+  // Failure is sticky: product stays failed until it completes.
+  Require(recovered_snapshot.workspace_hydration.value(QStringLiteral("product")) ==
+              cppwiki::sync::WorkspaceHydrationState::kFailed,
+          "failed workspace should stay failed until a successful pull completes");
+
+  // Completion clears the failed state.
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync idle",
+      .initial_pull_active = false,
+      .initial_pull_completed = true,
+  };
+  service.RefreshStatus();
+
+  const auto completed_snapshot = service.Snapshot();
+  Require(completed_snapshot.workspace_hydration.value(QStringLiteral("product")) ==
+              cppwiki::sync::WorkspaceHydrationState::kMaterialized,
+          "failed workspace should become materialized after successful pull");
+}
+
+auto TestPersistedSyncContextRestoresWorkspaceScopeAfterRestart() -> void {
+  const auto app_data_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-sync-context-test";
+  std::filesystem::remove_all(app_data_directory);
+
+  {
+    cppwiki::sync::DocumentSyncService service;
+    service.ApplySettings(MakeSettings(QString::fromStdString(app_data_directory.string())));
+    auto repository = std::make_shared<FakeDocumentRepository>();
+    service.SetRepository(repository);
+    service.SetAccessToken(QStringLiteral("test-token"));
+
+    auto bootstrap = MakeBaseBootstrap();
+    bootstrap.principal_subject = QStringLiteral("subject-restart");
+    bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:default"),
+                          QStringLiteral("workspace:engineering")};
+    service.SetBackendBootstrap(bootstrap);
+
+    repository->sync_status = {
+        .state = cppwiki::storage::SyncLifecycleState::kRunning,
+        .status_text = "Sync idle",
+        .initial_pull_active = false,
+        .initial_pull_completed = true,
+    };
+    service.RefreshStatus();
+  }
+
+  {
+    cppwiki::sync::DocumentSyncService service;
+    service.ApplySettings(MakeSettings(QString::fromStdString(app_data_directory.string())));
+
+    const auto snapshot = service.Snapshot();
+    Require(snapshot.workspace_ids.contains(QStringLiteral("default")),
+            "persisted sync context should restore default workspace after restart");
+    Require(snapshot.workspace_ids.contains(QStringLiteral("engineering")),
+            "persisted sync context should restore engineering workspace after restart");
+    Require(snapshot.hydrated_workspace_ids.contains(QStringLiteral("default")),
+            "persisted sync context should restore hydrated default workspace after restart");
+    Require(snapshot.hydrated_workspace_ids.contains(QStringLiteral("engineering")),
+            "persisted sync context should restore hydrated engineering workspace after restart");
+    Require(snapshot.workspace_hydration.value(QStringLiteral("default")) ==
+                cppwiki::sync::WorkspaceHydrationState::kMaterialized,
+            "persisted sync context should restore materialized default hydration state");
+    Require(snapshot.workspace_hydration.value(QStringLiteral("engineering")) ==
+                cppwiki::sync::WorkspaceHydrationState::kMaterialized,
+            "persisted sync context should restore materialized engineering hydration state");
+    Require(snapshot.bootstrap.principal_subject == QStringLiteral("subject-restart"),
+            "persisted sync context should restore principal subject after restart");
+  }
+
+  std::filesystem::remove_all(app_data_directory);
+}
+
+auto TestReconnectExpandsWorkspaceScopeAndRehydratesNewWorkspace() -> void {
+  cppwiki::sync::DocumentSyncService service;
+  service.ApplySettings(MakeSettings());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  service.SetRepository(repository);
+  service.SetAccessToken(QStringLiteral("test-token"));
+
+  auto bootstrap = MakeBaseBootstrap();
+  bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:default")};
+  service.SetBackendBootstrap(bootstrap);
+
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync idle",
+      .initial_pull_active = false,
+      .initial_pull_completed = true,
+  };
+  service.RefreshStatus();
+
+  Require(service.Snapshot().hydrated_workspace_ids.contains(QStringLiteral("default")),
+          "default workspace should be hydrated after first completed pull");
+
+  cppwiki::sync::SyncBootstrap offline_bootstrap;
+  offline_bootstrap.status_text = QStringLiteral("Sync: waiting for backend");
+  service.SetBackendBootstrap(offline_bootstrap);
+
+  Require(service.Snapshot().hydrated_workspace_ids.contains(QStringLiteral("default")),
+          "offline transition should preserve hydrated default workspace");
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("default")),
+          "offline transition should not make hydrated default workspace pending again");
+
+  bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:default"),
+                        QStringLiteral("workspace:engineering")};
+  service.SetBackendBootstrap(bootstrap);
+
+  Require(service.Snapshot().workspace_ids.contains(QStringLiteral("engineering")),
+          "reconnect should expose newly assigned engineering workspace");
+  Require(!service.Snapshot().hydrated_workspace_ids.contains(QStringLiteral("engineering")),
+          "new workspace should remain non-hydrated until next pull completes");
+  Require(service.ShouldExpectRemoteDocuments(QStringLiteral("engineering")),
+          "new workspace should expect remote documents after reconnect");
+
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync active",
+      .initial_pull_active = true,
+      .initial_pull_completed = false,
+  };
+  service.RefreshStatus();
+
+  Require(service.Snapshot().initial_pull_active,
+          "second pull should expose active initial pull state while reconnect hydration runs");
+
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync idle",
+      .initial_pull_active = false,
+      .initial_pull_completed = true,
+  };
+  service.RefreshStatus();
+
+  Require(service.Snapshot().hydrated_workspace_ids.contains(QStringLiteral("engineering")),
+          "new workspace should become hydrated after reconnect pull completes");
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("engineering")),
+          "new workspace should stop expecting remote documents after reconnect hydration");
+}
+
+auto TestOfflineReconnectDoesNotRevertHydratedWorkspacesToPending() -> void {
+  cppwiki::sync::DocumentSyncService service;
+  service.ApplySettings(MakeSettings());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  service.SetRepository(repository);
+  service.SetAccessToken(QStringLiteral("test-token"));
+
+  auto bootstrap = MakeBaseBootstrap();
+  bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:default"),
+                        QStringLiteral("workspace:engineering")};
+  service.SetBackendBootstrap(bootstrap);
+
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync idle",
+      .initial_pull_active = false,
+      .initial_pull_completed = true,
+  };
+  service.RefreshStatus();
+
+  Require(service.Snapshot().hydrated_workspace_ids.contains(QStringLiteral("default")),
+          "default workspace should be hydrated after initial pull");
+  Require(service.Snapshot().hydrated_workspace_ids.contains(QStringLiteral("engineering")),
+          "engineering workspace should be hydrated after initial pull");
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("default")),
+          "hydrated default workspace should not expect remote documents");
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("engineering")),
+          "hydrated engineering workspace should not expect remote documents");
+
+  cppwiki::sync::SyncBootstrap offline_bootstrap;
+  offline_bootstrap.status_text = QStringLiteral("Sync: waiting for backend");
+  service.SetBackendBootstrap(offline_bootstrap);
+
+  Require(service.Snapshot().initial_pull_completed,
+          "offline bootstrap should preserve completed initial pull state for hydrated workspaces");
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("default")),
+          "offline transition should keep hydrated default workspace non-pending");
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("engineering")),
+          "offline transition should keep hydrated engineering workspace non-pending");
+
+  service.SetBackendBootstrap(bootstrap);
+
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("default")),
+          "reconnect with unchanged workspace scope should not make default pending again");
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("engineering")),
+          "reconnect with unchanged workspace scope should not make engineering pending again");
 }
 
 #ifdef CPPWIKI_ENABLE_CBLITE_STORAGE
@@ -231,6 +695,14 @@ auto main(int argc, char* argv[]) -> int {
   TestMissingChannelsIsRejected();
   TestMissingTokenPassthroughIsRejected();
   TestValidBootstrapConfiguresRepositoryLifecycle();
+  TestSnapshotExposesWorkspaceScopeAndConflicts();
+  TestRemoteExpectationTracksInitialPullCompletion();
+  TestNewWorkspaceBecomesPendingAfterBootstrapChange();
+  TestOfflineStatusBootstrapDoesNotEraseHydratedWorkspaceScope();
+  TestExpandWorkspaceHydrationStateTracksProgressAndFailure();
+  TestPersistedSyncContextRestoresWorkspaceScopeAfterRestart();
+  TestReconnectExpandsWorkspaceScopeAndRehydratesNewWorkspace();
+  TestOfflineReconnectDoesNotRevertHydratedWorkspacesToPending();
 #ifdef CPPWIKI_ENABLE_CBLITE_STORAGE
   TestReadyStateIncludesPrincipalAndChannels();
 #endif

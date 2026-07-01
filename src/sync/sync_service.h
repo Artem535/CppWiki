@@ -1,13 +1,16 @@
 #ifndef CPPWIKI_SRC_SYNC_SYNC_SERVICE_H_
 #define CPPWIKI_SRC_SYNC_SYNC_SERVICE_H_
 
+#include <QHash>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include <memory>
 
 #include "storage/local_document_repository.h"
 #include "sync/sync_bootstrap.h"
+#include "sync/sync_state_provider.h"
 
 namespace cppwiki {
 class ProgramSettings;
@@ -26,6 +29,13 @@ enum class DocumentSyncState {
   kError,
 };
 
+enum class WorkspaceHydrationState {
+  kNotStarted,
+  kInProgress,
+  kMaterialized,
+  kFailed,
+};
+
 struct DocumentSyncSnapshot {
   DocumentSyncState state{DocumentSyncState::kDisabled};
   QString status_text{QStringLiteral("Sync: disabled")};
@@ -38,19 +48,57 @@ struct DocumentSyncSnapshot {
   bool sync_enabled = false;
   bool backend_bootstrap_available = false;
   bool backend_sync_enabled = false;
+  bool initial_pull_active = false;
+  bool initial_pull_completed = false;
+  bool has_conflicts = false;
+  qsizetype conflict_count = 0;
+  QStringList workspace_ids;
+  QStringList hydrated_workspace_ids;
+  QHash<QString, WorkspaceHydrationState> workspace_hydration;
 };
 
-class SyncService : public QObject {
+[[nodiscard]] inline auto IsHydrated(WorkspaceHydrationState state) -> bool {
+  return state == WorkspaceHydrationState::kMaterialized;
+}
+
+[[nodiscard]] inline auto IsPendingOrInProgress(WorkspaceHydrationState state) -> bool {
+  return state == WorkspaceHydrationState::kNotStarted ||
+         state == WorkspaceHydrationState::kInProgress;
+}
+
+class SyncService : public QObject, public SyncStateProvider {
   Q_OBJECT
 
  public:
   explicit SyncService(QObject* parent = nullptr) : QObject(parent) {}
   ~SyncService() override = default;
 
+  [[nodiscard]] auto ShouldExpectRemoteDocuments(const QString& workspace_id) const
+      -> bool override {
+    const auto normalized_workspace_id = workspace_id.trimmed().isEmpty()
+                                             ? QStringLiteral("default")
+                                             : workspace_id.trimmed();
+    const auto& snapshot = Snapshot();
+    const auto ready = snapshot.sync_enabled && snapshot.auth_enabled &&
+                       snapshot.backend_bootstrap_available && snapshot.backend_sync_enabled &&
+                       snapshot.has_repository && snapshot.repository_supports_sync &&
+                       snapshot.has_access_token && snapshot.bootstrap.token_passthrough &&
+                       !snapshot.bootstrap.gateway_url.trimmed().isEmpty() &&
+                       !snapshot.bootstrap.auth_mode.trimmed().isEmpty() &&
+                       snapshot.workspace_ids.contains(normalized_workspace_id);
+    if (!ready) {
+      return false;
+    }
+    const auto state = snapshot.workspace_hydration.value(normalized_workspace_id,
+                                                          WorkspaceHydrationState::kNotStarted);
+    return IsPendingOrInProgress(state);
+  }
+
   virtual void ApplySettings(const ProgramSettings& settings) = 0;
   virtual void SetRepository(std::shared_ptr<storage::LocalDocumentRepository> repository) = 0;
   virtual void SetAccessToken(QString access_token) = 0;
   virtual void SetBackendBootstrap(sync::SyncBootstrap bootstrap) = 0;
+  virtual void RefreshStatus() = 0;
 
   [[nodiscard]] virtual auto State() const -> DocumentSyncState = 0;
   [[nodiscard]] virtual auto StatusText() const -> const QString& = 0;
