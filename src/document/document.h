@@ -51,6 +51,8 @@ struct PageMetadata {
   std::string created_at;
   std::string updated_at;
   std::string created_by;
+  std::string updated_by;
+  std::int64_t content_version{1};
 };
 
 struct Document {
