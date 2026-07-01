@@ -43,15 +43,21 @@ qt_add_executable(cppwiki_app
         gui/i_page.h
         gui/main_window.cc
         gui/main_window.h
+        gui/main_window_helpers.cc
+        gui/main_window_helpers.h
         gui/presence_strip_widget.cc
         gui/presence_strip_widget.h
         gui/settings_dialog.cc
         gui/settings_dialog.h
         gui/page.cc
         gui/page.h
+        gui/page_helpers.cc
+        gui/page_helpers.h
+
         main.cc
         sync/document_sync_service.cc
         sync/document_sync_service.h
+        sync/sync_service.cc
         sync/sync_service.h
         sync/sync_bootstrap.cc
         sync/sync_bootstrap.h
