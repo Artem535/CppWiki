@@ -50,8 +50,6 @@ namespace {
 
 using namespace gui::page_helpers;
 
-constexpr auto kWorkspaceAdminRole = "wiki.admin";
-
 }  // namespace
 
 
@@ -106,14 +104,6 @@ void Page::BuildUi() {
   title_row_layout->setContentsMargins(0, 0, 0, 0);
   title_row_layout->setSpacing(8);
   title_row_layout->addWidget(app_title_label, 1, Qt::AlignLeft);
-
-  new_workspace_button_ = new QPushButton(QStringLiteral("New workspace"), page_panel_);
-  new_workspace_button_->setObjectName(QStringLiteral("newWorkspaceButton"));
-  new_workspace_button_->setIcon(QIcon::fromTheme(QStringLiteral("folder-new")));
-  new_workspace_button_->setIconSize(QSize(16, 16));
-  new_workspace_button_->setCursor(Qt::PointingHandCursor);
-  connect(new_workspace_button_, &QPushButton::clicked, this, &Page::CreateWorkspace);
-  title_row_layout->addWidget(new_workspace_button_, 0, Qt::AlignRight);
 
   page_panel_layout->addLayout(title_row_layout);
 
@@ -328,15 +318,6 @@ void Page::ApplyBridgeSessionContext() {
                                          : preferred_workspace_id;
   ActivateWorkspace(selected_workspace_id);
   RebuildWorkspaceTree();
-  if (new_workspace_button_ != nullptr) {
-    const auto can_create_workspace = CanCreateWorkspace(context_);
-    new_workspace_button_->setEnabled(can_create_workspace);
-    new_workspace_button_->setToolTip(
-        can_create_workspace
-            ? QStringLiteral("Create a new workspace")
-            : QStringLiteral("Sign in with the '%1' role to create workspaces.")
-                  .arg(QString::fromUtf8(kWorkspaceAdminRole)));
-  }
 }
 
 void Page::ActivateWorkspace(const QString& workspace_id) {
@@ -500,66 +481,6 @@ void Page::CreateNewDocument(const QString& workspace_id) {
   ActivateWorkspace(workspace_id);
   const auto response = editor_bridge_->createDocumentInWorkspace(workspace_id);
   HandleCreatedDocument(response, workspace_id);
-}
-
-void Page::CreateWorkspace() {
-  if (context_.backend_client == nullptr) {
-    emit documentStatusChanged(QStringLiteral("Workspace creation requires the backend."), true);
-    return;
-  }
-
-  bool accepted = false;
-  const auto workspace_id = QInputDialog::getText(
-                                this, QStringLiteral("New workspace"),
-                                QStringLiteral("Workspace id:"), QLineEdit::Normal, {}, &accepted)
-                                .trimmed();
-  if (!accepted) {
-    return;
-  }
-  if (workspace_id.isEmpty()) {
-    emit documentStatusChanged(QStringLiteral("Workspace id must not be empty."), true);
-    return;
-  }
-
-  if (new_workspace_button_ != nullptr) {
-    new_workspace_button_->setEnabled(false);
-  }
-  emit documentStatusChanged(QStringLiteral("Creating workspace %1...").arg(workspace_id), false);
-
-  context_.backend_client->CreateWorkspace(
-      workspace_id, [this, workspace_id](bool success, QString message) {
-        if (new_workspace_button_ != nullptr) {
-          new_workspace_button_->setEnabled(true);
-        }
-
-        if (!success) {
-          emit documentStatusChanged(
-              message.trimmed().isEmpty()
-                  ? QStringLiteral("Workspace creation failed.")
-                  : QStringLiteral("Workspace creation failed: %1").arg(message),
-              true);
-          return;
-        }
-
-        if (!available_workspace_ids_.contains(workspace_id)) {
-          available_workspace_ids_.append(workspace_id);
-          ActivateWorkspace(workspace_id);
-          RebuildWorkspaceTree();
-        } else {
-          ActivateWorkspace(workspace_id);
-          PopulatePageList();
-        }
-        ExpandWorkspace(workspace_id);
-        if (workspace_tree_model_ != nullptr &&
-            !workspace_tree_model_->indexForWorkspaceId(workspace_id.toStdString()).isValid()) {
-          CreateNewDocument(workspace_id);
-        }
-
-        emit documentStatusChanged(
-            message.trimmed().isEmpty() ? QStringLiteral("Workspace created.")
-                                        : QStringLiteral("%1: %2").arg(workspace_id, message),
-            false);
-      });
 }
 
 void Page::CreateChildDocument(const QModelIndex& parent_index) {
@@ -1378,10 +1299,6 @@ void Page::UpdateAuthCard() {
     profile_hint_label_->setText(QStringLiteral("Auth session manager is not available."));
     profile_action_button_->setText(QStringLiteral("Sign in"));
     profile_action_button_->setEnabled(false);
-    if (new_workspace_button_ != nullptr) {
-      new_workspace_button_->setEnabled(false);
-      new_workspace_button_->setToolTip(QStringLiteral("Auth is unavailable."));
-    }
     return;
   }
 
@@ -1391,15 +1308,6 @@ void Page::UpdateAuthCard() {
   profile_hint_label_->setText(QStringLiteral("%1\n%2").arg(auth->ProfileHint(), auth->Subtitle()));
   profile_action_button_->setText(auth->ActionLabel());
   profile_action_button_->setEnabled(auth->CanStartSignIn() || auth->CanSignOut());
-  if (new_workspace_button_ != nullptr) {
-    const auto can_create_workspace = CanCreateWorkspace(context_);
-    new_workspace_button_->setEnabled(can_create_workspace);
-    new_workspace_button_->setToolTip(
-        can_create_workspace
-            ? QStringLiteral("Create a new workspace")
-            : QStringLiteral("Sign in with the '%1' role to create workspaces.")
-                  .arg(QString::fromUtf8(kWorkspaceAdminRole)));
-  }
 }
 
 }  // namespace cppwiki

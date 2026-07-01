@@ -63,7 +63,6 @@ signals:
   void InstallWebChannelScript();
   void PopulatePageList();
   void RebuildWorkspaceTree();
-  void CreateWorkspace();
   void CreateNewDocument(const QString& workspace_id);
   void CreateChildDocument(const QModelIndex& parent_index);
   void RenameDocument(const QModelIndex& index);
@@ -108,7 +107,6 @@ signals:
   std::unique_ptr<gui::DocumentTreeModel> workspace_tree_model_;
   QWidget* content_widget_ = nullptr;
   QPushButton* settings_button_ = nullptr;
-  QPushButton* new_workspace_button_ = nullptr;
   QLabel* profile_avatar_label_ = nullptr;
   QLabel* profile_name_label_ = nullptr;
   QLabel* profile_hint_label_ = nullptr;

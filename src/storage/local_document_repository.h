@@ -137,6 +137,22 @@ struct SyncOperationResult {
   std::optional<RepositoryError> error;
 };
 
+struct WorkspaceRootRecord {
+  std::string workspace_id;
+  std::string title;
+  std::string created_at;
+  std::int64_t schema_version{1};
+};
+
+struct SaveWorkspaceRootResult {
+  std::optional<RepositoryError> error;
+};
+
+struct ListWorkspacesResult {
+  std::vector<std::string> workspace_ids;
+  std::optional<RepositoryError> error;
+};
+
 class LocalDocumentRepository {
  public:
   LocalDocumentRepository() = default;
@@ -197,6 +213,33 @@ class LocalDocumentRepository {
     return SyncStatus{
         .state = SyncLifecycleState::kDisabled,
         .status_text = "Sync unsupported",
+    };
+  }
+
+  // Workspace root/meta document support. A workspace is only considered
+  // "materialized" once its root record exists locally - this is the fact
+  // that proves an initial pull actually completed for that workspace, even
+  // if the workspace itself contains zero pages.
+  [[nodiscard]] virtual auto SaveWorkspaceRoot(const WorkspaceRootRecord&)
+      -> SaveWorkspaceRootResult {
+    return SaveWorkspaceRootResult{
+        .error = RepositoryError{
+            .code = RepositoryErrorCode::kUnsupported,
+            .message = "Repository does not support workspace root records.",
+        },
+    };
+  }
+  [[nodiscard]] virtual auto LoadWorkspaceRoot(std::string_view)
+      -> std::optional<WorkspaceRootRecord> {
+    return std::nullopt;
+  }
+  [[nodiscard]] virtual auto ListWorkspaces() -> ListWorkspacesResult {
+    return ListWorkspacesResult{
+        .workspace_ids = {},
+        .error = RepositoryError{
+            .code = RepositoryErrorCode::kUnsupported,
+            .message = "Repository does not support listing workspaces.",
+        },
     };
   }
 };

@@ -70,9 +70,6 @@ void VisitIndexes(const QAbstractItemModel* model, const QModelIndex& parent,
 auto AreDocumentSummariesEqual(const std::vector<storage::DocumentSummary>& lhs,
                                const std::vector<storage::DocumentSummary>& rhs) -> bool;
 
-// Returns true if the current session/backend allows creating new workspaces.
-auto CanCreateWorkspace(const AppContext& context) -> bool;
-
 // Converts a QVariantMap document representation (from the JS bridge) into a DocumentSummary.
 auto SummaryFromVariantMap(const QVariantMap& document) -> storage::DocumentSummary;
 

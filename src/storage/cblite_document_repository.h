@@ -46,6 +46,11 @@ class CbliteDocumentRepository final : public LocalDocumentRepository {
   [[nodiscard]] auto StartSync() -> SyncOperationResult override;
   [[nodiscard]] auto StopSync() -> SyncOperationResult override;
   [[nodiscard]] auto GetSyncStatus() const -> SyncStatus override;
+  [[nodiscard]] auto SaveWorkspaceRoot(const WorkspaceRootRecord& workspace_root)
+      -> SaveWorkspaceRootResult override;
+  [[nodiscard]] auto LoadWorkspaceRoot(std::string_view workspace_id)
+      -> std::optional<WorkspaceRootRecord> override;
+  [[nodiscard]] auto ListWorkspaces() -> ListWorkspacesResult override;
 
  private:
   class Impl;

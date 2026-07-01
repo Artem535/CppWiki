@@ -92,6 +92,14 @@ auto IsConflictDocumentId(std::string_view document_id) -> bool {
   return document_id.starts_with(constants::kConflictDocumentIdPrefix);
 }
 
+auto MakeWorkspaceRootDocumentId(std::string_view workspace_id) -> std::string {
+  return std::string(constants::kWorkspaceDocumentIdPrefix) + std::string(workspace_id);
+}
+
+auto IsWorkspaceRootDocumentId(std::string_view document_id) -> bool {
+  return document_id.starts_with(constants::kWorkspaceDocumentIdPrefix);
+}
+
 auto IsPendingConflict(const DocumentConflictRecord& conflict) -> bool {
   return conflict.resolution_state == "pending";
 }
@@ -271,6 +279,20 @@ class CbliteDocumentRepository::Impl {
     Impl& impl_;
   };
 
+  auto GetCollectionForWorkspace(std::string_view workspace_id) -> cbl::Collection& {
+    if (workspace_id == "default") {
+      return *local_collection_;
+    }
+    return *collection_;
+  }
+
+  auto GetIndexDocumentIdForWorkspace(std::string_view workspace_id) const -> std::string_view {
+    if (workspace_id == "default") {
+      return constants::kLocalDocumentsIndexDocumentId;
+    }
+    return constants::kDocumentsIndexDocumentId;
+  }
+
   [[nodiscard]] auto SaveDocument(const DocumentRecord& document) -> SaveDocumentResult {
     if (const auto error = EnsureDatabaseOpen()) {
       return SaveDocumentResult{.error = error};
@@ -282,7 +304,8 @@ class CbliteDocumentRepository::Impl {
                     document.metadata.id,
                     document.metadata.parent_id.value_or("<root>"),
                     document.metadata.sort_order);
-      auto doc = GetMutableDocument(*collection_, document.metadata.id);
+      auto& coll = GetCollectionForWorkspace(document.metadata.workspace_id);
+      auto doc = GetMutableDocument(coll, document.metadata.id);
       doc.set("title", Slice(document.metadata.title));
       doc.set("workspace_id", Slice(document.metadata.workspace_id));
       if (document.metadata.parent_id) {
@@ -298,7 +321,7 @@ class CbliteDocumentRepository::Impl {
       doc.set("content_version", document.metadata.content_version);
       doc.set("raw_snapshot", Slice(document.raw_snapshot_json));
 
-      collection_->saveDocument(doc);
+      coll.saveDocument(doc);
       SaveDocumentIndexEntry(document.metadata);
       return SaveDocumentResult{};
     } catch (const CBLError& error) {
@@ -334,6 +357,10 @@ class CbliteDocumentRepository::Impl {
       if (doc) {
         collection_->deleteDocument(doc);
       }
+      auto local_doc = local_collection_->getDocument(Slice(page_id));
+      if (local_doc) {
+        local_collection_->deleteDocument(local_doc);
+      }
       RemoveDocumentIndexEntry(page_id);
       return DeleteDocumentResult{};
     } catch (const CBLError& error) {
@@ -356,6 +383,9 @@ class CbliteDocumentRepository::Impl {
     try {
       spdlog::debug("CBLite LoadDocument: id={}", page_id);
       auto doc = collection_->getDocument(Slice(page_id));
+      if (!doc) {
+        doc = local_collection_->getDocument(Slice(page_id));
+      }
       if (!doc) {
         return LoadDocumentResult{
             .document = std::nullopt,
@@ -608,9 +638,6 @@ class CbliteDocumentRepository::Impl {
     try {
       std::vector<DocumentSummary> documents;
 
-      spdlog::info("CBLite ListDocuments: reading index doc '{}' from collection '{}'",
-                   constants::kDocumentsIndexDocumentId,
-                   constants::kDocumentsCollectionName);
       if (document_index_dirty_.exchange(false)) {
         spdlog::info("CBLite ListDocuments: index marked dirty; rebuilding from collection scan");
         const auto scan_result = ListDocumentsByCollectionScan();
@@ -620,26 +647,44 @@ class CbliteDocumentRepository::Impl {
       }
 
       auto doc = collection_->getDocument(Slice(constants::kDocumentsIndexDocumentId));
-      if (!doc) {
-        spdlog::info("CBLite ListDocuments: no index doc; will rebuild from collection scan");
+      auto local_doc = local_collection_->getDocument(Slice(constants::kLocalDocumentsIndexDocumentId));
+      if (!doc && !local_doc) {
+        spdlog::info("CBLite ListDocuments: no index docs; will rebuild from collection scan");
         const auto scan_result = ListDocumentsByCollectionScan();
         spdlog::info("CBLite ListDocuments: collection scan returned {} document(s)",
                      scan_result.documents.size());
         return scan_result;
       }
 
-      auto props = doc.properties();
-      for (auto it = props.begin(); it != props.end(); ++it) {
-        const auto key = it.keyString().asString();
-        if (key == constants::kDocumentsIndexDocumentId ||
-            key == constants::kConflictsIndexDocumentId || IsConflictDocumentId(key)) {
-          continue;
+      if (doc) {
+        auto props = doc.properties();
+        for (auto it = props.begin(); it != props.end(); ++it) {
+          const auto key = it.keyString().asString();
+          if (key == constants::kDocumentsIndexDocumentId ||
+              key == constants::kConflictsIndexDocumentId || IsConflictDocumentId(key)) {
+            continue;
+          }
+          auto loaded = LoadDocument(key);
+          if (!loaded.document) {
+            continue;
+          }
+          documents.push_back(DocumentSummaryFromMetadata(loaded.document->metadata));
         }
-        auto loaded = LoadDocument(key);
-        if (!loaded.document) {
-          continue;
+      }
+
+      if (local_doc) {
+        auto props = local_doc.properties();
+        for (auto it = props.begin(); it != props.end(); ++it) {
+          const auto key = it.keyString().asString();
+          if (key == constants::kLocalDocumentsIndexDocumentId || IsConflictDocumentId(key)) {
+            continue;
+          }
+          auto loaded = LoadDocument(key);
+          if (!loaded.document) {
+            continue;
+          }
+          documents.push_back(DocumentSummaryFromMetadata(loaded.document->metadata));
         }
-        documents.push_back(DocumentSummaryFromMetadata(loaded.document->metadata));
       }
 
       std::ranges::sort(documents, [](const DocumentSummary& lhs, const DocumentSummary& rhs) {
@@ -649,9 +694,8 @@ class CbliteDocumentRepository::Impl {
         return lhs.title < rhs.title;
       });
 
-      spdlog::info("CBLite ListDocuments: index scan returned {} document(s) for collection '{}'",
-                   documents.size(),
-                   constants::kDocumentsCollectionName);
+      spdlog::info("CBLite ListDocuments: index scan returned {} document(s)",
+                   documents.size());
       return ListDocumentsResult{
           .documents = std::move(documents),
           .error = std::nullopt,
@@ -917,13 +961,83 @@ class CbliteDocumentRepository::Impl {
     return status;
   }
 
- private:
-  [[nodiscard]] auto ListDocumentsByCollectionScan() -> ListDocumentsResult {
+  [[nodiscard]] auto SaveWorkspaceRoot(const WorkspaceRootRecord& workspace_root)
+      -> SaveWorkspaceRootResult {
+    if (const auto error = EnsureDatabaseOpen()) {
+      return SaveWorkspaceRootResult{.error = error};
+    }
+    if (workspace_root.workspace_id.empty()) {
+      return SaveWorkspaceRootResult{
+          .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                             "Workspace root record requires a non-empty workspace id."),
+      };
+    }
+
     try {
-      std::vector<DocumentSummary> documents;
+      ScopedCollectionWriteGuard guard(*this);
+      const auto document_id = MakeWorkspaceRootDocumentId(workspace_root.workspace_id);
+      auto doc = GetMutableDocument(*collection_, document_id);
+      doc.set("type", Slice(constants::kWorkspaceRootDocumentType));
+      doc.set("workspace_id", Slice(workspace_root.workspace_id));
+      doc.set("title", Slice(workspace_root.title));
+      doc.set("created_at", Slice(workspace_root.created_at));
+      doc.set("schema_version", workspace_root.schema_version);
+
+      collection_->saveDocument(doc);
+      spdlog::info("CBLite SaveWorkspaceRoot: workspace_id={} materialized locally",
+                   workspace_root.workspace_id);
+      return SaveWorkspaceRootResult{};
+    } catch (const CBLError& error) {
+      return SaveWorkspaceRootResult{
+          .error = MakeError(RepositoryErrorCode::kWriteFailed, CbliteErrorMessage(error))};
+    } catch (const std::exception& error) {
+      return SaveWorkspaceRootResult{
+          .error = MakeError(RepositoryErrorCode::kWriteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto LoadWorkspaceRoot(std::string_view workspace_id)
+      -> std::optional<WorkspaceRootRecord> {
+    if (const auto error = EnsureDatabaseOpen()) {
+      return std::nullopt;
+    }
+
+    try {
+      auto doc = collection_->getDocument(Slice(MakeWorkspaceRootDocumentId(workspace_id)));
+      if (!doc) {
+        return std::nullopt;
+      }
+
+      auto props = doc.properties();
+      WorkspaceRootRecord record;
+      record.workspace_id = std::string(props["workspace_id"].asString());
+      record.title = std::string(props["title"].asString());
+      record.created_at = std::string(props["created_at"].asString());
+      record.schema_version = static_cast<std::int64_t>(props["schema_version"].asInt());
+      if (record.schema_version < 1) {
+        record.schema_version = 1;
+      }
+      if (record.workspace_id.empty()) {
+        record.workspace_id = std::string(workspace_id);
+      }
+      return std::make_optional(std::move(record));
+    } catch (const CBLError&) {
+      return std::nullopt;
+    } catch (const std::exception&) {
+      return std::nullopt;
+    }
+  }
+
+  [[nodiscard]] auto ListWorkspaces() -> ListWorkspacesResult {
+    if (const auto error = EnsureDatabaseOpen()) {
+      return ListWorkspacesResult{.workspace_ids = {}, .error = error};
+    }
+
+    try {
+      std::vector<std::string> workspace_ids;
       const auto query_text = "SELECT META().id AS doc_id FROM " +
                               MakeCollectionQualifiedName(*collection_) +
-                              " WHERE raw_snapshot IS NOT MISSING AND workspace_id IS NOT MISSING";
+                              " WHERE type = 'workspace'";
       auto query = database_->createQuery(kCBLN1QLLanguage, Slice(query_text));
       auto results = query.execute();
       for (const auto& row : results) {
@@ -931,17 +1045,65 @@ class CbliteDocumentRepository::Impl {
         if (!value) {
           continue;
         }
+        const auto document_id = std::string(value.asString());
+        if (!IsWorkspaceRootDocumentId(document_id)) {
+          continue;
+        }
+        auto loaded = LoadWorkspaceRoot(
+            document_id.substr(constants::kWorkspaceDocumentIdPrefix.size()));
+        if (!loaded) {
+          continue;
+        }
+        workspace_ids.push_back(loaded->workspace_id);
+      }
 
+      std::ranges::sort(workspace_ids);
+      return ListWorkspacesResult{.workspace_ids = std::move(workspace_ids), .error = std::nullopt};
+    } catch (const CBLError& error) {
+      return ListWorkspacesResult{
+          .workspace_ids = {},
+          .error = MakeError(RepositoryErrorCode::kReadFailed, CbliteErrorMessage(error))};
+    } catch (const std::exception& error) {
+      return ListWorkspacesResult{
+          .workspace_ids = {},
+          .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
+ private:
+  [[nodiscard]] auto ListDocumentsByCollectionScan() -> ListDocumentsResult {
+    try {
+      std::vector<DocumentSummary> documents;
+      
+      // Synced collection scan
+      const auto query_text_sync = "SELECT META().id AS doc_id FROM " +
+                                   MakeCollectionQualifiedName(*collection_) +
+                                   " WHERE raw_snapshot IS NOT MISSING AND workspace_id IS NOT MISSING";
+      auto query_sync = database_->createQuery(kCBLN1QLLanguage, Slice(query_text_sync));
+      auto results_sync = query_sync.execute();
+      for (const auto& row : results_sync) {
+        const auto value = row["doc_id"];
+        if (!value) continue;
         const auto document_id = value.asString();
-        if (document_id.empty()) {
-          continue;
-        }
-
+        if (document_id.empty()) continue;
         auto loaded = LoadDocument(document_id);
-        if (!loaded.document) {
-          continue;
-        }
+        if (!loaded.document) continue;
+        documents.push_back(DocumentSummaryFromMetadata(loaded.document->metadata));
+      }
 
+      // Local collection scan
+      const auto query_text_local = "SELECT META().id AS doc_id FROM " +
+                                    MakeCollectionQualifiedName(*local_collection_) +
+                                    " WHERE raw_snapshot IS NOT MISSING AND workspace_id IS NOT MISSING";
+      auto query_local = database_->createQuery(kCBLN1QLLanguage, Slice(query_text_local));
+      auto results_local = query_local.execute();
+      for (const auto& row : results_local) {
+        const auto value = row["doc_id"];
+        if (!value) continue;
+        const auto document_id = value.asString();
+        if (document_id.empty()) continue;
+        auto loaded = LoadDocument(document_id);
+        if (!loaded.document) continue;
         documents.push_back(DocumentSummaryFromMetadata(loaded.document->metadata));
       }
 
@@ -987,16 +1149,25 @@ class CbliteDocumentRepository::Impl {
 
   void SaveDocumentIndexEntry(const document::PageMetadata& metadata) {
     spdlog::debug("CBLite SaveDocumentIndexEntry: id={} title={}", metadata.id, metadata.title);
-    auto index_doc = GetMutableDocument(*collection_, constants::kDocumentsIndexDocumentId);
+    auto& coll = GetCollectionForWorkspace(metadata.workspace_id);
+    const auto index_id = GetIndexDocumentIdForWorkspace(metadata.workspace_id);
+    auto index_doc = GetMutableDocument(coll, index_id);
     index_doc.set(Slice(metadata.id), Slice(metadata.title));
-    collection_->saveDocument(index_doc);
+    coll.saveDocument(index_doc);
   }
 
   void RemoveDocumentIndexEntry(std::string_view document_id) {
     spdlog::debug("CBLite RemoveDocumentIndexEntry: id={}", document_id);
-    auto index_doc = GetMutableDocument(*collection_, constants::kDocumentsIndexDocumentId);
-    index_doc.properties().remove(Slice(document_id));
-    collection_->saveDocument(index_doc);
+    
+    // Remove from local collection index
+    auto local_index_doc = GetMutableDocument(*local_collection_, constants::kLocalDocumentsIndexDocumentId);
+    local_index_doc.properties().remove(Slice(document_id));
+    local_collection_->saveDocument(local_index_doc);
+
+    // Remove from synced collection index
+    auto sync_index_doc = GetMutableDocument(*collection_, constants::kDocumentsIndexDocumentId);
+    sync_index_doc.properties().remove(Slice(document_id));
+    collection_->saveDocument(sync_index_doc);
   }
 
   void SaveConflictIndexEntry(const DocumentConflictRecord& conflict) {
@@ -1085,7 +1256,7 @@ class CbliteDocumentRepository::Impl {
               const auto changed_id = std::string(doc_id.asString());
               if (changed_id == constants::kDocumentsIndexDocumentId ||
                   changed_id == constants::kConflictsIndexDocumentId ||
-                  IsConflictDocumentId(changed_id)) {
+                  IsConflictDocumentId(changed_id) || IsWorkspaceRootDocumentId(changed_id)) {
                 continue;
               }
               has_document_changes = true;
@@ -1098,6 +1269,38 @@ class CbliteDocumentRepository::Impl {
                   "CBLite collection listener: marked document index dirty after external collection changes");
             }
           });
+
+      spdlog::info("CBLite creating/opening collection: {}", constants::kLocalDocumentsCollectionName);
+      local_collection_ = std::make_unique<cbl::Collection>(
+          database_->createCollection(Slice(constants::kLocalDocumentsCollectionName)));
+      spdlog::info("CBLite collection ready: {}", constants::kLocalDocumentsCollectionName);
+      local_collection_change_listener_ = local_collection_->addChangeListener(
+          [this](cbl::CollectionChange* change) {
+            if (change == nullptr) {
+              return;
+            }
+            if (suppress_collection_dirty_tracking_.load() > 0) {
+              return;
+            }
+
+            bool has_document_changes = false;
+            for (const auto& doc_id : change->docIDs()) {
+              const auto changed_id = std::string(doc_id.asString());
+              if (changed_id == constants::kLocalDocumentsIndexDocumentId ||
+                  IsConflictDocumentId(changed_id) || IsWorkspaceRootDocumentId(changed_id)) {
+                continue;
+              }
+              has_document_changes = true;
+              break;
+            }
+
+            if (has_document_changes) {
+              document_index_dirty_.store(true);
+              spdlog::info(
+                  "CBLite collection listener: marked document index dirty after external local collection changes");
+            }
+          });
+
       return std::nullopt;
     } catch (const CBLError& error) {
       return MakeError(RepositoryErrorCode::kOpenFailed, CbliteErrorMessage(error));
@@ -1126,10 +1329,12 @@ class CbliteDocumentRepository::Impl {
   std::string database_directory_;
   std::unique_ptr<cbl::Database> database_;
   std::unique_ptr<cbl::Collection> collection_;
+  std::unique_ptr<cbl::Collection> local_collection_;
   std::unique_ptr<cbl::Replicator> replicator_;
   cbl::Replicator::ChangeListener change_listener_;
   cbl::Replicator::DocumentReplicationListener document_listener_;
   cbl::Collection::CollectionChangeListener collection_change_listener_;
+  cbl::Collection::CollectionChangeListener local_collection_change_listener_;
   std::atomic_bool document_index_dirty_{false};
   std::atomic_int suppress_collection_dirty_tracking_{0};
   mutable std::mutex sync_status_mutex_;
@@ -1205,5 +1410,19 @@ auto CbliteDocumentRepository::StartSync() -> SyncOperationResult { return impl_
 auto CbliteDocumentRepository::StopSync() -> SyncOperationResult { return impl_->StopSync(); }
 
 auto CbliteDocumentRepository::GetSyncStatus() const -> SyncStatus { return impl_->GetSyncStatus(); }
+
+auto CbliteDocumentRepository::SaveWorkspaceRoot(const WorkspaceRootRecord& workspace_root)
+    -> SaveWorkspaceRootResult {
+  return impl_->SaveWorkspaceRoot(workspace_root);
+}
+
+auto CbliteDocumentRepository::LoadWorkspaceRoot(std::string_view workspace_id)
+    -> std::optional<WorkspaceRootRecord> {
+  return impl_->LoadWorkspaceRoot(workspace_id);
+}
+
+auto CbliteDocumentRepository::ListWorkspaces() -> ListWorkspacesResult {
+  return impl_->ListWorkspaces();
+}
 
 }  // namespace cppwiki::storage

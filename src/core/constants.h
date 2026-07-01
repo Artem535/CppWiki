@@ -73,9 +73,13 @@ inline constexpr std::string_view kSettingsApplicationFontPointSizeKey =
     "appearance/applicationFontPointSize";
 
 inline constexpr std::string_view kDocumentsCollectionName = "documents";
+inline constexpr std::string_view kLocalDocumentsCollectionName = "local_documents";
 inline constexpr std::string_view kDocumentsIndexDocumentId = "cppwiki-document-index";
+inline constexpr std::string_view kLocalDocumentsIndexDocumentId = "cppwiki-local-document-index";
 inline constexpr std::string_view kConflictsIndexDocumentId = "cppwiki-conflict-index";
 inline constexpr std::string_view kConflictDocumentIdPrefix = "cppwiki-conflict-";
+inline constexpr std::string_view kWorkspaceDocumentIdPrefix = "workspace:";
+inline constexpr std::string_view kWorkspaceRootDocumentType = "workspace";
 inline constexpr std::string_view kDefaultAuthRedirectUri =
     "http://127.0.0.1:38080/auth/callback";
 inline constexpr std::string_view kDefaultAuthScopes =

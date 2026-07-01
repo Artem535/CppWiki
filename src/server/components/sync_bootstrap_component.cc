@@ -100,7 +100,7 @@ auto SyncBootstrapComponent::ListWorkspaces() const -> std::vector<std::string> 
 auto SyncBootstrapComponent::AddWorkspace(std::string workspace_id) -> AddWorkspaceResult {
   workspace_id = NormalizeWorkspaceId(std::move(workspace_id));
   std::lock_guard lock(workspaces_mutex_);
-  const auto [it, inserted] = workspace_ids_.insert(std::move(workspace_id));
+  const auto [it, inserted] = workspace_ids_.insert(workspace_id);
   if (!inserted) {
     return AddWorkspaceResult::kAlreadyExists;
   }
@@ -108,6 +108,18 @@ auto SyncBootstrapComponent::AddWorkspace(std::string workspace_id) -> AddWorksp
     workspace_ids_.erase(it);
     return AddWorkspaceResult::kPersistFailed;
   }
+
+  // Materialize the workspace as a real synced root/meta document so that
+  // desktop clients can prove initial-pull completion by the fact of this
+  // document's presence, rather than inferring it from replicator idle
+  // state or from the (potentially empty) page list.
+  if (!PersistWorkspaceRootDocument(workspace_id)) {
+    spdlog::error(
+        "Workspace '{}' was registered but its root/meta sync document could not be created; "
+        "desktop clients will not be able to prove hydration for this workspace.",
+        workspace_id);
+  }
+
   return AddWorkspaceResult::kAdded;
 }
 
@@ -219,7 +231,8 @@ auto SyncBootstrapComponent::PersistWorkspacesLocked() -> bool {
   }
 }
 
-auto SyncBootstrapComponent::RegistryDocumentUrl() const -> std::string {
+auto SyncBootstrapComponent::KeyspaceDocumentUrl(std::string_view document_id) const
+    -> std::string {
   if (state_.admin_url.empty()) {
     return {};
   }
@@ -240,7 +253,74 @@ auto SyncBootstrapComponent::RegistryDocumentUrl() const -> std::string {
                 std::string(cppwiki::constants::kDocumentsCollectionName);
   }
 
-  return url.substr(0, slash_pos + 1) + keyspace + "/" + std::string(kRegistryDocumentId);
+  return url.substr(0, slash_pos + 1) + keyspace + "/" + std::string(document_id);
+}
+
+auto SyncBootstrapComponent::RegistryDocumentUrl() const -> std::string {
+  return KeyspaceDocumentUrl(kRegistryDocumentId);
+}
+
+auto SyncBootstrapComponent::PersistWorkspaceRootDocument(const std::string& workspace_id)
+    -> bool {
+  const auto document_id =
+      std::string(cppwiki::constants::kWorkspaceDocumentIdPrefix) + workspace_id;
+  const auto document_url = KeyspaceDocumentUrl(document_id);
+  if (document_url.empty()) {
+    // No admin URL configured (e.g. local/dev without Sync Gateway admin API) -
+    // nothing to materialize server-side; desktop clients fall back to their
+    // own local bootstrap of the workspace root on first connect.
+    return true;
+  }
+
+  try {
+    std::optional<std::string> revision;
+    const auto current_response = http_client_.CreateRequest()
+                                       .get(document_url)
+                                       .timeout(std::chrono::seconds(2))
+                                       .SetDestinationMetricName("sync-gateway-workspace-root-read")
+                                       .perform();
+    if (current_response->status_code() == 200) {
+      // Root document already exists (e.g. re-registration after restart); nothing to do.
+      return true;
+    }
+    if (current_response->status_code() != 404) {
+      spdlog::error("Failed to check workspace root document at {}: HTTP {}", document_url,
+                    static_cast<int>(current_response->status_code()));
+      return false;
+    }
+
+    struct WorkspaceRootDocument final {
+      rfl::Rename<"_id", std::string> id;
+      std::string type{"workspace"};
+      rfl::Rename<"workspace_id", std::string> workspace_id;
+      std::vector<std::string> channels;
+    };
+
+    const WorkspaceRootDocument payload_document{
+        .id = rfl::Rename<"_id", std::string>{document_id},
+        .workspace_id = rfl::Rename<"workspace_id", std::string>{workspace_id},
+        .channels = {std::string(kWorkspaceChannelPrefix) + workspace_id},
+    };
+    const auto payload = rfl::json::write(payload_document);
+    const auto response = http_client_.CreateRequest()
+                               .put(document_url, payload)
+                               .headers({{"Content-Type", "application/json"}})
+                               .timeout(std::chrono::seconds(2))
+                               .SetDestinationMetricName("sync-gateway-workspace-root-write")
+                               .perform();
+    if (!response->IsOk()) {
+      spdlog::error("Failed to persist workspace root document to {}: HTTP {}", document_url,
+                    static_cast<int>(response->status_code()));
+      return false;
+    }
+    spdlog::info("Workspace '{}' root/meta sync document materialized at {}", workspace_id,
+                 document_url);
+    return true;
+  } catch (const std::exception& exception) {
+    spdlog::error("Failed to persist workspace root document to {}: {}", document_url,
+                  exception.what());
+    return false;
+  }
 }
 
 auto SyncBootstrapComponent::GetStaticConfigSchema() -> userver::yaml_config::Schema {

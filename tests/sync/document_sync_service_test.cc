@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string_view>
 
 #include "app/program_settings.h"
@@ -52,7 +53,10 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
   }
 
   [[nodiscard]] auto ListDocuments() -> cppwiki::storage::ListDocumentsResult override {
-    return {};
+    return {
+        .documents = listed_documents,
+        .error = std::nullopt,
+    };
   }
 
   [[nodiscard]] auto SaveConflict(const cppwiki::storage::DocumentConflictRecord&)
@@ -134,6 +138,35 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     return sync_status;
   }
 
+  [[nodiscard]] auto SaveWorkspaceRoot(const cppwiki::storage::WorkspaceRootRecord& record)
+      -> cppwiki::storage::SaveWorkspaceRootResult override {
+    materialized_workspaces.insert(record.workspace_id);
+    return {};
+  }
+
+  [[nodiscard]] auto LoadWorkspaceRoot(std::string_view workspace_id)
+      -> std::optional<cppwiki::storage::WorkspaceRootRecord> override {
+    if (sync_status.initial_pull_completed) {
+      materialized_workspaces.insert(std::string(workspace_id));
+    }
+    if (materialized_workspaces.contains(std::string(workspace_id))) {
+      return cppwiki::storage::WorkspaceRootRecord{
+          .workspace_id = std::string(workspace_id),
+          .title = std::string(workspace_id),
+          .created_at = "2026-07-01T12:00:00Z",
+          .schema_version = 1,
+      };
+    }
+    return std::nullopt;
+  }
+
+  [[nodiscard]] auto ListWorkspaces() -> cppwiki::storage::ListWorkspacesResult override {
+    return cppwiki::storage::ListWorkspacesResult{
+        .workspace_ids = {materialized_workspaces.begin(), materialized_workspaces.end()},
+        .error = std::nullopt,
+    };
+  }
+
   bool bootstrap_applied = false;
   bool start_sync_called = false;
   bool stop_sync_called = false;
@@ -141,6 +174,8 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
   cppwiki::sync::SyncBootstrap last_bootstrap;
   std::string last_access_token;
   cppwiki::storage::SyncStatus sync_status{};
+  std::set<std::string> materialized_workspaces;
+  std::vector<cppwiki::storage::DocumentSummary> listed_documents;
 };
 
 auto MakeSettings(const QString& app_data_directory = MakeUniqueAppDataDirectory())
@@ -429,10 +464,10 @@ auto TestExpandWorkspaceHydrationStateTracksProgressAndFailure() -> void {
 
   const auto expanded_snapshot = service.Snapshot();
   Require(expanded_snapshot.workspace_hydration.value(QStringLiteral("product")) ==
-              cppwiki::sync::WorkspaceHydrationState::kNotStarted,
-          "new workspace should start as not started");
+              cppwiki::sync::WorkspaceHydrationState::kInProgress,
+          "new workspace should start as in progress");
   Require(service.ShouldExpectRemoteDocuments(QStringLiteral("product")),
-          "new workspace should expect remote documents while not started");
+          "new workspace should expect remote documents while in progress");
 
   // Simulate a replicator error.
   repository->sync_status = {
@@ -651,6 +686,49 @@ auto TestOfflineReconnectDoesNotRevertHydratedWorkspacesToPending() -> void {
           "reconnect with unchanged workspace scope should not make engineering pending again");
 }
 
+auto TestWorkspaceWithLocalDocumentsIsMaterializedWithoutRootRecord() -> void {
+  cppwiki::sync::DocumentSyncService service;
+  service.ApplySettings(MakeSettings());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  repository->listed_documents = {
+      cppwiki::storage::DocumentSummary{
+          .id = "page-1",
+          .title = "Doc",
+          .parent_id = std::nullopt,
+          .sort_order = 0,
+          .workspace_id = "engineering",
+          .created_by = "alice",
+          .updated_by = "alice",
+          .content_version = 1,
+          .created_at = "2026-07-01T12:00:00Z",
+          .updated_at = "2026-07-01T12:00:00Z",
+      },
+  };
+  service.SetRepository(repository);
+  service.SetAccessToken(QStringLiteral("test-token"));
+
+  auto bootstrap = MakeBaseBootstrap();
+  bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:engineering")};
+  service.SetBackendBootstrap(bootstrap);
+
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync idle",
+      .initial_pull_active = false,
+      .initial_pull_completed = false,
+  };
+  service.RefreshStatus();
+
+  const auto snapshot = service.Snapshot();
+  Require(snapshot.workspace_hydration.value(QStringLiteral("engineering")) ==
+              cppwiki::sync::WorkspaceHydrationState::kMaterialized,
+          "workspace with local documents should be materialized even without root record");
+  Require(snapshot.hydrated_workspace_ids.contains(QStringLiteral("engineering")),
+          "workspace with local documents should be added to hydrated workspace ids");
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("engineering")),
+          "workspace with local documents should not be treated as not downloaded");
+}
+
 #ifdef CPPWIKI_ENABLE_CBLITE_STORAGE
 auto TestReadyStateIncludesPrincipalAndChannels() -> void {
   const auto test_directory =
@@ -703,6 +781,7 @@ auto main(int argc, char* argv[]) -> int {
   TestPersistedSyncContextRestoresWorkspaceScopeAfterRestart();
   TestReconnectExpandsWorkspaceScopeAndRehydratesNewWorkspace();
   TestOfflineReconnectDoesNotRevertHydratedWorkspacesToPending();
+  TestWorkspaceWithLocalDocumentsIsMaterializedWithoutRootRecord();
 #ifdef CPPWIKI_ENABLE_CBLITE_STORAGE
   TestReadyStateIncludesPrincipalAndChannels();
 #endif

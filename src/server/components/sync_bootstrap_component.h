@@ -48,6 +48,8 @@ class SyncBootstrapComponent final : public userver::components::ComponentBase {
   void LoadPersistedWorkspaces();
   [[nodiscard]] auto PersistWorkspacesLocked() -> bool;
   [[nodiscard]] auto RegistryDocumentUrl() const -> std::string;
+  [[nodiscard]] auto KeyspaceDocumentUrl(std::string_view document_id) const -> std::string;
+  auto PersistWorkspaceRootDocument(const std::string& workspace_id) -> bool;
 
   SyncBootstrapState state_;
   userver::clients::http::Client& http_client_;

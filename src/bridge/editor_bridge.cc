@@ -502,6 +502,26 @@ QVariantMap QEditorBridge::listDocumentsInWorkspace(const QString& workspace_id)
       return ErrorResponse(QStringLiteral("default_page_failed"),
                            QString::fromStdString(save_result.error->message));
     }
+
+    // Materialize a local workspace root/meta record so this workspace is
+    // treated as a real, fact-proven entity (not just an id inferred from a
+    // channel list), consistent with synced workspaces that gain their root
+    // document via replication. For a purely local-only workspace this root
+    // is created immediately since there is no remote pull to wait for.
+    if (!repository_->LoadWorkspaceRoot(normalized_workspace_id.toStdString()).has_value()) {
+      const auto workspace_root_result = repository_->SaveWorkspaceRoot(storage::WorkspaceRootRecord{
+          .workspace_id = normalized_workspace_id.toStdString(),
+          .title = normalized_workspace_id.toStdString(),
+          .created_at = CurrentUtcTimestamp(),
+          .schema_version = 1,
+      });
+      if (workspace_root_result.error) {
+        spdlog::warn("Failed to materialize local workspace root for '{}': {}",
+                     normalized_workspace_id.toStdString(),
+                     workspace_root_result.error->message);
+      }
+    }
+
     documents = DocumentSummariesToVariant(
         std::vector<storage::DocumentSummary>{storage::DocumentSummaryFromMetadata(welcome.metadata)},
         normalized_workspace_id);

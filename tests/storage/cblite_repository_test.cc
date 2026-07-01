@@ -368,6 +368,51 @@ auto TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord() -> void {
   std::filesystem::remove_all(test_directory.parent_path().parent_path());
 }
 
+auto TestCbliteRepositoryOfflineEditReconnectPushPull() -> void {
+  const auto test_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-cblite-offline-e2e" / "nested" / "database";
+  std::filesystem::remove_all(test_directory);
+
+  cppwiki::storage::CbliteDocumentRepositoryOptions options{
+      .database_directory = test_directory,
+      .database_name = "test_wiki_db",
+  };
+
+  cppwiki::storage::CbliteDocumentRepository client_a(options);
+  cppwiki::storage::CbliteDocumentRepository client_b(options);
+
+  // 1. Client A and B are online and see the seeded document
+  Require(!client_a.SaveDocument(MakeDocument("page-e2e-1", "Initial Content", 1)).error,
+          "Client A seeds initial document");
+
+  const auto list_b = client_b.ListDocuments();
+  Require(list_b.documents.size() == 1, "Client B receives the initial document");
+
+  // 2. Client A goes offline (offline edit)
+  auto doc_a = client_a.LoadDocument("page-e2e-1");
+  Require(doc_a.document.has_value(), "Client A loads document");
+  doc_a.document->metadata.title = "Offline Edited Title";
+  doc_a.document->metadata.updated_at = "2026-07-01T13:00:00.000Z";
+  doc_a.document->metadata.updated_by = "client-a";
+
+  Require(!client_a.SaveDocument(*doc_a.document).error, "Client A saves offline edit");
+
+  // 3. Client B reconnects and pulls changes
+  bool b_received_changes = false;
+  for (int attempt = 0; attempt < 20; ++attempt) {
+    auto doc_b = client_b.LoadDocument("page-e2e-1");
+    if (doc_b.document.has_value() && doc_b.document->metadata.title == "Offline Edited Title") {
+      b_received_changes = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  Require(b_received_changes, "Client B successfully receives Client A's offline edits");
+
+  std::filesystem::remove_all(test_directory.parent_path().parent_path());
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -375,6 +420,7 @@ auto main() -> int {
     TestCbliteRepositorySaveLoad();
     TestCbliteRepositoryRefreshesStaleIndexAfterExternalWrite();
     TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord();
+    TestCbliteRepositoryOfflineEditReconnectPushPull();
   } catch (const std::exception& e) {
     spdlog::error("Unhandled exception: {}", e.what());
     return EXIT_FAILURE;

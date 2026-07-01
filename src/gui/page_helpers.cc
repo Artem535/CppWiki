@@ -4,11 +4,6 @@
 #include "sync/sync_service.h"
 
 namespace cppwiki::gui::page_helpers {
-namespace {
-
-constexpr auto kWorkspaceAdminRole = "wiki.admin";
-
-}  // namespace
 
 auto OptionalString(const QVariant& value) -> std::optional<std::string> {
   if (!value.isValid() || value.isNull()) {
@@ -201,15 +196,6 @@ auto AreDocumentSummariesEqual(const std::vector<storage::DocumentSummary>& lhs,
   }
 
   return true;
-}
-
-auto CanCreateWorkspace(const AppContext& context) -> bool {
-  if (context.backend_client == nullptr) {
-    return false;
-  }
-
-  const auto& bootstrap = context.backend_client->CurrentSyncBootstrap();
-  return bootstrap.principal_roles.contains(QString::fromUtf8(kWorkspaceAdminRole));
 }
 
 auto SummaryFromVariantMap(const QVariantMap& document) -> storage::DocumentSummary {

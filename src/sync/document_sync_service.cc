@@ -58,6 +58,28 @@ auto IsStatusOnlyBootstrap(const sync::SyncBootstrap& bootstrap) -> bool {
          bootstrap.channels.isEmpty();
 }
 
+auto MaterializedWorkspacesFromDocuments(
+    const std::shared_ptr<storage::LocalDocumentRepository>& repository) -> QSet<QString> {
+  QSet<QString> workspace_ids;
+  if (repository == nullptr) {
+    return workspace_ids;
+  }
+
+  const auto listed = repository->ListDocuments();
+  if (listed.error) {
+    return workspace_ids;
+  }
+
+  for (const auto& document : listed.documents) {
+    const auto workspace_id = QString::fromStdString(document.workspace_id).trimmed().isEmpty()
+                                  ? QStringLiteral("default")
+                                  : QString::fromStdString(document.workspace_id).trimmed();
+    workspace_ids.insert(workspace_id);
+  }
+
+  return workspace_ids;
+}
+
 }  // namespace
 
 DocumentSyncService::DocumentSyncService(QObject* parent) : SyncService(parent) {
@@ -397,48 +419,50 @@ void DocumentSyncService::UpdateWorkspaceHydration() {
 
   const auto repository_state = snapshot_.repository_status.state;
   const auto global_failed = repository_state == storage::SyncLifecycleState::kError;
+  bool any_newly_materialized = false;
+  const auto workspaces_with_documents = MaterializedWorkspacesFromDocuments(repository_);
 
   for (const auto& workspace_id : snapshot_.workspace_ids) {
     const auto previous = workspace_hydration_.value(workspace_id,
                                                      WorkspaceHydrationState::kNotStarted);
 
-    // Failure is sticky: once a workspace's initial pull fails it stays failed until
-    // a successful initial pull completes or the bootstrap scope changes.
-    if (previous == WorkspaceHydrationState::kFailed) {
-      if (global_failed) {
-        workspace_hydration_[workspace_id] = WorkspaceHydrationState::kFailed;
-        continue;
+    // Fact-based hydration: a workspace is materialized if either its explicit
+    // root/meta record exists locally or at least one document for that workspace
+    // is already present in the local database.
+    const bool root_materialized =
+        repository_ != nullptr && repository_->LoadWorkspaceRoot(workspace_id.toStdString()).has_value();
+    const bool has_local_documents = workspaces_with_documents.contains(workspace_id);
+
+    if (root_materialized || has_local_documents ||
+        previous == WorkspaceHydrationState::kMaterialized) {
+      if (previous != WorkspaceHydrationState::kMaterialized) {
+        any_newly_materialized = true;
       }
-
-      const bool completed =
-          snapshot_.repository_status.initial_pull_completed ||
-          (snapshot_.repository_status.state == storage::SyncLifecycleState::kRunning &&
-           snapshot_.repository_status.initial_pull_active == false);
-      workspace_hydration_[workspace_id] = completed ? WorkspaceHydrationState::kMaterialized
-                                                     : WorkspaceHydrationState::kNotStarted;
-      continue;
-    }
-
-    if (snapshot_.repository_status.initial_pull_completed) {
       workspace_hydration_[workspace_id] = WorkspaceHydrationState::kMaterialized;
       continue;
     }
 
-    if (snapshot_.repository_status.initial_pull_active ||
-        (repository_state == storage::SyncLifecycleState::kRunning && !global_failed)) {
-      workspace_hydration_[workspace_id] = WorkspaceHydrationState::kInProgress;
-      continue;
-    }
-
-    if (global_failed && previous != WorkspaceHydrationState::kMaterialized) {
+    // Sticky failure: once failed, it stays failed until root_materialized is true
+    if (previous == WorkspaceHydrationState::kFailed) {
       workspace_hydration_[workspace_id] = WorkspaceHydrationState::kFailed;
       continue;
     }
 
-    // Default for workspaces that are in scope but have not started yet.
-    if (!IsHydrated(previous)) {
-      workspace_hydration_[workspace_id] = WorkspaceHydrationState::kNotStarted;
+    // Global failure transitions unmaterialized workspaces to failed
+    if (global_failed) {
+      workspace_hydration_[workspace_id] = WorkspaceHydrationState::kFailed;
+      continue;
     }
+
+    // A workspace stays "in progress" only while the current pull is actually active.
+    // `kRunning` also covers the steady-state "Sync idle" replicator status, so it must
+    // not by itself keep workspace hydration stuck in progress forever.
+    if (snapshot_.repository_status.initial_pull_active) {
+      workspace_hydration_[workspace_id] = WorkspaceHydrationState::kInProgress;
+      continue;
+    }
+
+    workspace_hydration_[workspace_id] = WorkspaceHydrationState::kNotStarted;
   }
 
   // Back-fill compatibility list for existing UI consumers.
@@ -449,7 +473,7 @@ void DocumentSyncService::UpdateWorkspaceHydration() {
     }
   }
 
-  if (snapshot_.repository_status.initial_pull_completed) {
+  if (any_newly_materialized || snapshot_.repository_status.initial_pull_completed) {
     SavePersistedSyncContext();
   }
 }
