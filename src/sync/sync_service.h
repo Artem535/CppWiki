@@ -79,19 +79,44 @@ class SyncService : public QObject, public SyncStateProvider {
                                              ? QStringLiteral("default")
                                              : workspace_id.trimmed();
     const auto& snapshot = Snapshot();
-    const auto ready = snapshot.sync_enabled && snapshot.auth_enabled &&
-                       snapshot.backend_bootstrap_available && snapshot.backend_sync_enabled &&
-                       snapshot.has_repository && snapshot.repository_supports_sync &&
-                       snapshot.has_access_token && snapshot.bootstrap.token_passthrough &&
-                       !snapshot.bootstrap.gateway_url.trimmed().isEmpty() &&
-                       !snapshot.bootstrap.auth_mode.trimmed().isEmpty() &&
-                       snapshot.workspace_ids.contains(normalized_workspace_id);
-    if (!ready) {
+    const bool repository_ready =
+        snapshot.sync_enabled && snapshot.auth_enabled && snapshot.has_repository &&
+        snapshot.repository_supports_sync;
+    const bool has_bootstrap_scope =
+        snapshot.bootstrap.token_passthrough &&
+        !snapshot.bootstrap.gateway_url.trimmed().isEmpty() &&
+        !snapshot.bootstrap.auth_mode.trimmed().isEmpty() &&
+        snapshot.workspace_ids.contains(normalized_workspace_id);
+
+    // Cold start after local DB reset must still treat previously synced
+    // workspaces as remote-backed even before the live auth/backend session is
+    // fully re-established. Otherwise the UI eagerly creates local welcome
+    // pages and pollutes an empty database before the initial pull begins.
+    if (!repository_ready || !has_bootstrap_scope) {
       return false;
     }
+
     const auto state = snapshot.workspace_hydration.value(normalized_workspace_id,
                                                           WorkspaceHydrationState::kNotStarted);
     return IsPendingOrInProgress(state);
+  }
+
+  [[nodiscard]] auto ShouldCreateSyntheticWelcomePage(const QString& workspace_id) const
+      -> bool override {
+    Q_UNUSED(workspace_id);
+
+    const auto& snapshot = Snapshot();
+
+    // In authenticated sync mode the local DB must not be eagerly seeded with
+    // synthetic welcome pages. An empty DB should stay empty until the initial
+    // pull either materializes remote documents or the user explicitly creates
+    // local content offline.
+    if (snapshot.sync_enabled && snapshot.auth_enabled && snapshot.has_repository &&
+        snapshot.repository_supports_sync) {
+      return false;
+    }
+
+    return true;
   }
 
   virtual void ApplySettings(const ProgramSettings& settings) = 0;

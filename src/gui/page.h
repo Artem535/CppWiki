@@ -97,6 +97,7 @@ signals:
   void ActivateWorkspace(const QString& workspace_id);
 
   void ApplyBridgeSessionContext();
+  void RefreshSelectedDocumentAccess();
   void UpdateAuthCard();
   void RefreshPageListIfChanged();
   void RefreshWorkspaceHydrationState();

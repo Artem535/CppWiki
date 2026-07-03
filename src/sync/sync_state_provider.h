@@ -13,6 +13,8 @@ class SyncStateProvider {
 
   [[nodiscard]] virtual auto ShouldExpectRemoteDocuments(const QString& workspace_id) const
       -> bool = 0;
+  [[nodiscard]] virtual auto ShouldCreateSyntheticWelcomePage(const QString& workspace_id) const
+      -> bool = 0;
 };
 
 }  // namespace cppwiki::sync

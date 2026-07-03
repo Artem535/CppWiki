@@ -230,6 +230,11 @@ void BackendClient::RefreshHealth() {
 }
 
 void BackendClient::SetAccessToken(QString access_token) {
+  access_token = access_token.trimmed();
+  if (access_token_ == access_token) {
+    return;
+  }
+
   access_token_ = std::move(access_token);
   RefreshSyncBootstrap();
 }
@@ -331,6 +336,18 @@ void BackendClient::OpenDocumentViewSession(const QString& document_id,
     return;
   }
 
+  if (access_token_.trimmed().isEmpty()) {
+    CloseDocumentSession();
+    StopPresence();
+    callback(DocumentAccessState{
+        .editable = true,
+        .local_only = true,
+        .lock_owner = {},
+        .status_text = QStringLiteral("Document: authenticated session unavailable, editing locally"),
+    });
+    return;
+  }
+
   auto continue_with_view = [this, document_id, callback = std::move(callback), request_id]() mutable {
     if (request_id != session_request_id_) {
       return;
@@ -391,6 +408,18 @@ void BackendClient::EnterDocumentEditSession(const QString& document_id,
         .local_only = true,
         .lock_owner = {},
         .status_text = QStringLiteral("Document: backend unavailable, editing locally"),
+    });
+    return;
+  }
+
+  if (access_token_.trimmed().isEmpty()) {
+    CloseDocumentSession();
+    StopPresence();
+    callback(DocumentAccessState{
+        .editable = true,
+        .local_only = true,
+        .lock_owner = {},
+        .status_text = QStringLiteral("Document: authenticated session unavailable, editing locally"),
     });
     return;
   }
@@ -727,9 +756,26 @@ void BackendClient::AcquireDocumentLock(const QString& document_id,
               return;
             }
 
+            const auto status_code = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
             const auto error_text = ReplyErrorText(reply);
             if (!error_text.isEmpty()) {
+              const bool network_failure = reply->error() != QNetworkReply::NoError;
+              const bool auth_failure = status_code == 401 || status_code == 403;
               reply->deleteLater();
+              if (network_failure || auth_failure) {
+                CloseDocumentSession();
+                StopPresence();
+                callback(DocumentAccessState{
+                    .editable = true,
+                    .local_only = true,
+                    .lock_owner = {},
+                    .status_text =
+                        auth_failure
+                            ? QStringLiteral("Document: authenticated session unavailable, editing locally")
+                            : QStringLiteral("Document: backend unavailable, editing locally"),
+                });
+                return;
+              }
               callback(DocumentAccessState{
                   .editable = false,
                   .local_only = false,

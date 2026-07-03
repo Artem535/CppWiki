@@ -2,7 +2,6 @@
 
 #include <QIcon>
 #include <QMimeData>
-
 #include <algorithm>
 #include <functional>
 #include <map>
@@ -16,7 +15,8 @@
 namespace cppwiki::gui {
 
 // DocumentTreeItem implementation
-DocumentTreeItem::DocumentTreeItem(const storage::DocumentSummary& summary, DocumentTreeItem* parent)
+DocumentTreeItem::DocumentTreeItem(const storage::DocumentSummary& summary,
+                                   DocumentTreeItem* parent)
     : kind_(Kind::kDocument),
       id_(summary.id),
       title_(summary.title),
@@ -24,7 +24,8 @@ DocumentTreeItem::DocumentTreeItem(const storage::DocumentSummary& summary, Docu
       sort_order_(summary.sort_order),
       parent_(parent) {}
 
-DocumentTreeItem::DocumentTreeItem(Kind kind, std::string id, std::string title, DocumentTreeItem* parent)
+DocumentTreeItem::DocumentTreeItem(Kind kind, std::string id, std::string title,
+                                   DocumentTreeItem* parent)
     : kind_(kind),
       id_(std::move(id)),
       title_(std::move(title)),
@@ -42,8 +43,7 @@ void DocumentTreeItem::addChild(std::unique_ptr<DocumentTreeItem> child) {
 
 void DocumentTreeItem::insertChild(int row, std::unique_ptr<DocumentTreeItem> child) {
   child->parent_ = this;
-  const auto insert_it =
-      children_.begin() + std::clamp(row, 0, static_cast<int>(children_.size()));
+  const auto insert_it = children_.begin() + std::clamp(row, 0, static_cast<int>(children_.size()));
   children_.insert(insert_it, std::move(child));
 }
 
@@ -148,7 +148,9 @@ int DocumentTreeModel::rowCount(const QModelIndex& parent) const {
   return parent_item ? parent_item->rowCount() : 0;
 }
 
-int DocumentTreeModel::columnCount(const QModelIndex& /*parent*/) const { return 1; }
+int DocumentTreeModel::columnCount(const QModelIndex& /*parent*/) const {
+  return 1;
+}
 
 bool DocumentTreeModel::hasChildren(const QModelIndex& parent) const {
   if (parent.column() > 0) {
@@ -321,6 +323,23 @@ Qt::DropActions DocumentTreeModel::supportedDropActions() const {
   return Qt::MoveAction;
 }
 
+void DocumentTreeModel::setWorkspaces(const QStringList& workspace_ids) {
+  QStringList normalized_workspace_ids;
+  for (const auto& workspace_id : workspace_ids) {
+    const auto normalized =
+        workspace_id.trimmed().isEmpty() ? QStringLiteral("default") : workspace_id.trimmed();
+    if (!normalized_workspace_ids.contains(normalized)) {
+      normalized_workspace_ids.push_back(normalized);
+    }
+  }
+
+  if (normalized_workspace_ids.isEmpty()) {
+    normalized_workspace_ids.push_back(QStringLiteral("default"));
+  }
+
+  workspace_ids_ = std::move(normalized_workspace_ids);
+}
+
 void DocumentTreeModel::setDocuments(const std::vector<storage::DocumentSummary>& documents) {
   beginResetModel();
   buildTree(documents);
@@ -331,9 +350,9 @@ void DocumentTreeModel::appendDocument(const storage::DocumentSummary& document)
   auto* workspace_item = findWorkspaceItem(document.workspace_id);
   if (workspace_item == nullptr) {
     beginResetModel();
-    root_item_->addChild(std::make_unique<DocumentTreeItem>(DocumentTreeItem::Kind::kWorkspace,
-                                                            document.workspace_id,
-                                                            document.workspace_id, root_item_.get()));
+    root_item_->addChild(std::make_unique<DocumentTreeItem>(
+        DocumentTreeItem::Kind::kWorkspace, document.workspace_id, document.workspace_id,
+        root_item_.get()));
     root_item_->sortChildren();
     workspace_item = findWorkspaceItem(document.workspace_id);
     endResetModel();
@@ -343,7 +362,8 @@ void DocumentTreeModel::appendDocument(const storage::DocumentSummary& document)
   QModelIndex parent_index;
 
   if (document.parent_id.has_value() && !document.parent_id->empty()) {
-    parent_item = workspace_item != nullptr ? workspace_item->findItemById(*document.parent_id) : nullptr;
+    parent_item =
+        workspace_item != nullptr ? workspace_item->findItemById(*document.parent_id) : nullptr;
     if (parent_item == nullptr) {
       parent_item = workspace_item;
     } else {
@@ -378,8 +398,8 @@ void DocumentTreeModel::appendDocument(const storage::DocumentSummary& document)
 void DocumentTreeModel::buildTree(const std::vector<storage::DocumentSummary>& documents) {
   root_item_ = std::make_unique<DocumentTreeItem>(nullptr);
 
-  const auto normalizedParentId = [](const std::optional<std::string>& parent_id)
-      -> std::optional<std::string> {
+  const auto normalizedParentId =
+      [](const std::optional<std::string>& parent_id) -> std::optional<std::string> {
     if (!parent_id.has_value() || parent_id->empty()) {
       return std::nullopt;
     }
@@ -387,6 +407,12 @@ void DocumentTreeModel::buildTree(const std::vector<storage::DocumentSummary>& d
   };
 
   std::map<std::string, std::vector<storage::DocumentSummary>> workspace_documents;
+  for (const auto& workspace_id : workspace_ids_) {
+    const auto normalized =
+        workspace_id.trimmed().isEmpty() ? QStringLiteral("default") : workspace_id.trimmed();
+    workspace_documents.try_emplace(normalized.toStdString());
+  }
+
   for (const auto& doc : documents) {
     if (doc.id.empty()) {
       continue;
@@ -396,9 +422,8 @@ void DocumentTreeModel::buildTree(const std::vector<storage::DocumentSummary>& d
   }
 
   for (auto& [workspace_id, workspace_docs] : workspace_documents) {
-    auto workspace_root = std::make_unique<DocumentTreeItem>(DocumentTreeItem::Kind::kWorkspace,
-                                                             workspace_id, workspace_id,
-                                                             root_item_.get());
+    auto workspace_root = std::make_unique<DocumentTreeItem>(
+        DocumentTreeItem::Kind::kWorkspace, workspace_id, workspace_id, root_item_.get());
 
     std::map<std::string, storage::DocumentSummary> document_map;
     for (const auto& doc : workspace_docs) {

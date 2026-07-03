@@ -1,21 +1,21 @@
 // Suppress upstream header warnings before including CBLite headers
-#include "core/constants.h"
 #include "storage/cblite_document_repository.h"
 
-#include <cbl++/CouchbaseLite.hh>
-#include <rfl/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include <QDateTime>
 #include <QTimeZone>
-
 #include <algorithm>
 #include <atomic>
+#include <cbl++/CouchbaseLite.hh>
 #include <exception>
 #include <filesystem>
 #include <mutex>
+#include <rfl/json.hpp>
+#include <set>
 #include <utility>
 
+#include "core/constants.h"
 #include "sync/sync_bootstrap.h"
 
 namespace cppwiki::storage {
@@ -36,9 +36,9 @@ auto MakeError(RepositoryErrorCode code, std::string message) -> RepositoryError
 
 auto CbliteErrorMessage(const CBLError& error) -> std::string {
   const auto message = cbl::alloc_slice(CBLError_Message(&error)).asString();
-  std::string result = "Couchbase Lite error domain=" +
-                       std::to_string(static_cast<int>(error.domain)) +
-                       " code=" + std::to_string(error.code);
+  std::string result =
+      "Couchbase Lite error domain=" + std::to_string(static_cast<int>(error.domain)) +
+      " code=" + std::to_string(error.code);
   if (!message.empty()) {
     result += " message=" + message;
   }
@@ -142,8 +142,8 @@ auto ConflictWorkspaceId(const cbl::Document& local_document, const cbl::Documen
   return {};
 }
 
-auto ConflictContentVersion(const cbl::Document& local_document, const cbl::Document& remote_document)
-    -> std::int64_t {
+auto ConflictContentVersion(const cbl::Document& local_document,
+                            const cbl::Document& remote_document) -> std::int64_t {
   const cbl::Document* documents[] = {&local_document, &remote_document};
   for (const auto* document : documents) {
     if (document != nullptr && *document) {
@@ -224,8 +224,8 @@ auto NormalizeGatewayReplicationUrl(const sync::SyncBootstrap& bootstrap)
 }
 
 auto MakeSyncStatus(SyncLifecycleState state, std::string status_text,
-                    bool initial_pull_active = false,
-                    bool initial_pull_completed = false) -> SyncStatus {
+                    bool initial_pull_active = false, bool initial_pull_completed = false)
+    -> SyncStatus {
   return SyncStatus{
       .state = state,
       .status_text = std::move(status_text),
@@ -270,7 +270,9 @@ class CbliteDocumentRepository::Impl {
       impl_.suppress_collection_dirty_tracking_.fetch_add(1);
     }
 
-    ~ScopedCollectionWriteGuard() { impl_.suppress_collection_dirty_tracking_.fetch_sub(1); }
+    ~ScopedCollectionWriteGuard() {
+      impl_.suppress_collection_dirty_tracking_.fetch_sub(1);
+    }
 
     ScopedCollectionWriteGuard(const ScopedCollectionWriteGuard&) = delete;
     auto operator=(const ScopedCollectionWriteGuard&) -> ScopedCollectionWriteGuard& = delete;
@@ -279,18 +281,22 @@ class CbliteDocumentRepository::Impl {
     Impl& impl_;
   };
 
+  auto IsWorkspaceBackedBySync(std::string_view workspace_id) const -> bool {
+    return synced_workspace_ids_.contains(std::string(workspace_id));
+  }
+
   auto GetCollectionForWorkspace(std::string_view workspace_id) -> cbl::Collection& {
-    if (workspace_id == "default") {
-      return *local_collection_;
+    if (IsWorkspaceBackedBySync(workspace_id)) {
+      return *collection_;
     }
-    return *collection_;
+    return *local_collection_;
   }
 
   auto GetIndexDocumentIdForWorkspace(std::string_view workspace_id) const -> std::string_view {
-    if (workspace_id == "default") {
-      return constants::kLocalDocumentsIndexDocumentId;
+    if (IsWorkspaceBackedBySync(workspace_id)) {
+      return constants::kDocumentsIndexDocumentId;
     }
-    return constants::kDocumentsIndexDocumentId;
+    return constants::kLocalDocumentsIndexDocumentId;
   }
 
   [[nodiscard]] auto SaveDocument(const DocumentRecord& document) -> SaveDocumentResult {
@@ -300,10 +306,8 @@ class CbliteDocumentRepository::Impl {
 
     try {
       ScopedCollectionWriteGuard guard(*this);
-      spdlog::debug("CBLite SaveDocument: id={} parent={} sort_order={}",
-                    document.metadata.id,
-                    document.metadata.parent_id.value_or("<root>"),
-                    document.metadata.sort_order);
+      spdlog::debug("CBLite SaveDocument: id={} parent={} sort_order={}", document.metadata.id,
+                    document.metadata.parent_id.value_or("<root>"), document.metadata.sort_order);
       auto& coll = GetCollectionForWorkspace(document.metadata.workspace_id);
       auto doc = GetMutableDocument(coll, document.metadata.id);
       doc.set("title", Slice(document.metadata.title));
@@ -367,8 +371,8 @@ class CbliteDocumentRepository::Impl {
       return DeleteDocumentResult{
           .error = MakeError(RepositoryErrorCode::kDeleteFailed, CbliteErrorMessage(error))};
     } catch (const std::exception& error) {
-      return DeleteDocumentResult{
-          .error = MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
+      return DeleteDocumentResult{.error =
+                                      MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
     }
   }
 
@@ -407,8 +411,7 @@ class CbliteDocumentRepository::Impl {
       record.metadata.updated_at = std::string(props["updated_at"].asString());
       record.metadata.created_by = std::string(props["created_by"].asString());
       record.metadata.updated_by = std::string(props["updated_by"].asString());
-      record.metadata.content_version =
-          static_cast<std::int64_t>(props["content_version"].asInt());
+      record.metadata.content_version = static_cast<std::int64_t>(props["content_version"].asInt());
       if (record.metadata.content_version < 1) {
         record.metadata.content_version = 1;
       }
@@ -458,7 +461,7 @@ class CbliteDocumentRepository::Impl {
 
     try {
       ScopedCollectionWriteGuard guard(*this);
-      auto doc = GetMutableDocument(*collection_, MakeConflictDocumentId(conflict.id));
+      auto doc = GetMutableDocument(*local_collection_, MakeConflictDocumentId(conflict.id));
       doc.set("document_id", Slice(conflict.document_id));
       doc.set("workspace_id", Slice(conflict.workspace_id));
       doc.set("base_version", conflict.base_version);
@@ -469,15 +472,15 @@ class CbliteDocumentRepository::Impl {
       doc.set("detected_at", Slice(conflict.detected_at));
       doc.set("resolution_state", Slice(conflict.resolution_state));
 
-      collection_->saveDocument(doc);
+      local_collection_->saveDocument(doc);
       SaveConflictIndexEntry(conflict);
       return SaveConflictResult{};
     } catch (const CBLError& error) {
       return SaveConflictResult{
           .error = MakeError(RepositoryErrorCode::kWriteFailed, CbliteErrorMessage(error))};
     } catch (const std::exception& error) {
-      return SaveConflictResult{
-          .error = MakeError(RepositoryErrorCode::kWriteFailed, error.what())};
+      return SaveConflictResult{.error =
+                                    MakeError(RepositoryErrorCode::kWriteFailed, error.what())};
     }
   }
 
@@ -488,9 +491,9 @@ class CbliteDocumentRepository::Impl {
 
     try {
       ScopedCollectionWriteGuard guard(*this);
-      auto doc = collection_->getDocument(Slice(MakeConflictDocumentId(conflict_id)));
+      auto doc = local_collection_->getDocument(Slice(MakeConflictDocumentId(conflict_id)));
       if (doc) {
-        collection_->deleteDocument(doc);
+        local_collection_->deleteDocument(doc);
       }
       RemoveConflictIndexEntry(conflict_id);
       return DeleteConflictResult{};
@@ -498,8 +501,8 @@ class CbliteDocumentRepository::Impl {
       return DeleteConflictResult{
           .error = MakeError(RepositoryErrorCode::kDeleteFailed, CbliteErrorMessage(error))};
     } catch (const std::exception& error) {
-      return DeleteConflictResult{
-          .error = MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
+      return DeleteConflictResult{.error =
+                                      MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
     }
   }
 
@@ -512,7 +515,7 @@ class CbliteDocumentRepository::Impl {
     }
 
     try {
-      auto doc = collection_->getDocument(Slice(MakeConflictDocumentId(conflict_id)));
+      auto doc = local_collection_->getDocument(Slice(MakeConflictDocumentId(conflict_id)));
       if (!doc) {
         return LoadConflictResult{
             .conflict = std::nullopt,
@@ -571,7 +574,7 @@ class CbliteDocumentRepository::Impl {
     try {
       std::vector<DocumentConflictRecord> conflicts;
 
-      auto index_doc = collection_->getDocument(Slice(constants::kConflictsIndexDocumentId));
+      auto index_doc = local_collection_->getDocument(Slice(constants::kConflictsIndexDocumentId));
       if (!index_doc) {
         return ListConflictsResult{};
       }
@@ -590,13 +593,13 @@ class CbliteDocumentRepository::Impl {
         conflicts.push_back(std::move(*loaded.conflict));
       }
 
-      std::ranges::sort(
-          conflicts, [](const DocumentConflictRecord& lhs, const DocumentConflictRecord& rhs) {
-            if (lhs.detected_at != rhs.detected_at) {
-              return lhs.detected_at < rhs.detected_at;
-            }
-            return lhs.id < rhs.id;
-          });
+      std::ranges::sort(conflicts,
+                        [](const DocumentConflictRecord& lhs, const DocumentConflictRecord& rhs) {
+                          if (lhs.detected_at != rhs.detected_at) {
+                            return lhs.detected_at < rhs.detected_at;
+                          }
+                          return lhs.id < rhs.id;
+                        });
 
       return ListConflictsResult{
           .conflicts = std::move(conflicts),
@@ -627,8 +630,7 @@ class CbliteDocumentRepository::Impl {
 
   [[nodiscard]] auto ListDocuments() -> ListDocumentsResult {
     if (const auto error = EnsureDatabaseOpen()) {
-      spdlog::warn("CBLite ListDocuments failed: database not open ({})",
-                   error->message);
+      spdlog::warn("CBLite ListDocuments failed: database not open ({})", error->message);
       return ListDocumentsResult{
           .documents = {},
           .error = error,
@@ -647,7 +649,8 @@ class CbliteDocumentRepository::Impl {
       }
 
       auto doc = collection_->getDocument(Slice(constants::kDocumentsIndexDocumentId));
-      auto local_doc = local_collection_->getDocument(Slice(constants::kLocalDocumentsIndexDocumentId));
+      auto local_doc =
+          local_collection_->getDocument(Slice(constants::kLocalDocumentsIndexDocumentId));
       if (!doc && !local_doc) {
         spdlog::info("CBLite ListDocuments: no index docs; will rebuild from collection scan");
         const auto scan_result = ListDocumentsByCollectionScan();
@@ -694,8 +697,7 @@ class CbliteDocumentRepository::Impl {
         return lhs.title < rhs.title;
       });
 
-      spdlog::info("CBLite ListDocuments: index scan returned {} document(s)",
-                   documents.size());
+      spdlog::info("CBLite ListDocuments: index scan returned {} document(s)", documents.size());
       return ListDocumentsResult{
           .documents = std::move(documents),
           .error = std::nullopt,
@@ -728,11 +730,13 @@ class CbliteDocumentRepository::Impl {
     return {};
   }
 
-  [[nodiscard]] auto ApplySyncBootstrap(const sync::SyncBootstrap& bootstrap) -> SyncOperationResult {
-    if (bootstrap.auth_mode.trimmed() != QString::fromUtf8(kSupportedSyncAuthMode.data(),
-                                                           static_cast<qsizetype>(kSupportedSyncAuthMode.size()))) {
-      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError,
-                                   "Sync bootstrap auth mode is unsupported"));
+  [[nodiscard]] auto ApplySyncBootstrap(const sync::SyncBootstrap& bootstrap)
+      -> SyncOperationResult {
+    if (bootstrap.auth_mode.trimmed() !=
+        QString::fromUtf8(kSupportedSyncAuthMode.data(),
+                          static_cast<qsizetype>(kSupportedSyncAuthMode.size()))) {
+      SetSyncStatus(
+          MakeSyncStatus(SyncLifecycleState::kError, "Sync bootstrap auth mode is unsupported"));
       return SyncOperationResult{
           .error = MakeError(RepositoryErrorCode::kUnsupported,
                              "Sync bootstrap auth mode is unsupported."),
@@ -740,8 +744,8 @@ class CbliteDocumentRepository::Impl {
     }
 
     if (bootstrap.gateway_url.trimmed().isEmpty()) {
-      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError,
-                                   "Sync bootstrap is missing gateway URL"));
+      SetSyncStatus(
+          MakeSyncStatus(SyncLifecycleState::kError, "Sync bootstrap is missing gateway URL"));
       return SyncOperationResult{
           .error = MakeError(RepositoryErrorCode::kUnsupported,
                              "Sync bootstrap is missing gateway URL."),
@@ -763,6 +767,11 @@ class CbliteDocumentRepository::Impl {
                          bootstrap_.auth_mode != bootstrap.auth_mode ||
                          bootstrap_.token_passthrough != bootstrap.token_passthrough;
     bootstrap_ = bootstrap;
+    UpdateSyncedWorkspaceIdsFromBootstrap();
+    if (const auto promote_error = PromoteLocalDocumentsToSyncCollections(); promote_error) {
+      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError, promote_error->message));
+      return SyncOperationResult{.error = std::move(promote_error)};
+    }
     if (changed) {
       replicator_dirty_ = true;
       if (replicator_) {
@@ -780,8 +789,8 @@ class CbliteDocumentRepository::Impl {
     }
 
     if (bootstrap_.gateway_url.trimmed().isEmpty()) {
-      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError,
-                                   "Sync cannot start without bootstrap"));
+      SetSyncStatus(
+          MakeSyncStatus(SyncLifecycleState::kError, "Sync cannot start without bootstrap"));
       return SyncOperationResult{
           .error = MakeError(RepositoryErrorCode::kUnsupported,
                              "Sync cannot start without a configured bootstrap."),
@@ -789,8 +798,8 @@ class CbliteDocumentRepository::Impl {
     }
 
     if (access_token_.empty()) {
-      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError,
-                                   "Sync cannot start without access token"));
+      SetSyncStatus(
+          MakeSyncStatus(SyncLifecycleState::kError, "Sync cannot start without access token"));
       return SyncOperationResult{
           .error = MakeError(RepositoryErrorCode::kUnsupported,
                              "Sync cannot start without an access token."),
@@ -810,10 +819,8 @@ class CbliteDocumentRepository::Impl {
       const auto status = replicator_->status();
       if (status.activity != kCBLReplicatorStopped) {
         const bool initial_pull_completed = status.activity == kCBLReplicatorIdle;
-        SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kRunning,
-                                     ReplicatorStatusText(status),
-                                     !initial_pull_completed,
-                                     initial_pull_completed));
+        SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kRunning, ReplicatorStatusText(status),
+                                     !initial_pull_completed, initial_pull_completed));
         return {};
       }
     }
@@ -821,10 +828,8 @@ class CbliteDocumentRepository::Impl {
     auto replication_url = NormalizeGatewayReplicationUrl(bootstrap_);
     try {
       spdlog::info("CBLite StartSync: starting replicator to {} for collection '{}'",
-                   *replication_url,
-                   constants::kDocumentsCollectionName);
-      spdlog::info("CBLite StartSync: continuous=true channels={}",
-                   bootstrap_.channels.size());
+                   *replication_url, constants::kDocumentsCollectionName);
+      spdlog::info("CBLite StartSync: continuous=true channels={}", bootstrap_.channels.size());
       for (const auto& channel : bootstrap_.channels) {
         spdlog::info("CBLite StartSync: channel='{}'", channel.toStdString());
       }
@@ -842,11 +847,13 @@ class CbliteDocumentRepository::Impl {
                  const cbl::Document remote_document) -> cbl::Document {
         auto conflict = BuildConflictRecord(doc_id, local_document, remote_document);
         if (const auto save_result = SaveConflict(conflict); save_result.error) {
-          spdlog::error("CBLite conflict resolver: failed to persist sync conflict for document {}: {}",
-                        doc_id.asString(), save_result.error->message);
+          spdlog::error(
+              "CBLite conflict resolver: failed to persist sync conflict for document {}: {}",
+              doc_id.asString(), save_result.error->message);
         } else {
-          spdlog::warn("CBLite conflict resolver: persisted sync conflict for document {} in workspace {}",
-                       conflict.document_id, conflict.workspace_id);
+          spdlog::warn(
+              "CBLite conflict resolver: persisted sync conflict for document {} in workspace {}",
+              conflict.document_id, conflict.workspace_id);
         }
 
         if (local_document) {
@@ -864,8 +871,8 @@ class CbliteDocumentRepository::Impl {
       replicator_config.headers.set(Slice("Authorization"), Slice(MakeBearerHeader(access_token_)));
 
       auto replicator = std::make_unique<cbl::Replicator>(replicator_config);
-      change_listener_ = replicator->addChangeListener(
-          [this](cbl::Replicator, const CBLReplicatorStatus& status) {
+      change_listener_ =
+          replicator->addChangeListener([this](cbl::Replicator, const CBLReplicatorStatus& status) {
             const auto status_text = ReplicatorStatusText(status);
             if (status.activity == kCBLReplicatorStopped && status.error.code != 0) {
               spdlog::warn("CBLite replicator status: {}", status_text);
@@ -874,22 +881,19 @@ class CbliteDocumentRepository::Impl {
             }
             const bool initial_pull_completed = status.activity == kCBLReplicatorIdle;
             spdlog::info("CBLite replicator status: {}", status_text);
-            SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kRunning,
-                                         status_text,
-                                         !initial_pull_completed,
-                                         initial_pull_completed));
+            SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kRunning, status_text,
+                                         !initial_pull_completed, initial_pull_completed));
           });
 
       document_listener_ = replicator->addDocumentReplicationListener(
-          [this](cbl::Replicator, bool is_push, const std::vector<CBLReplicatedDocument>& documents) {
+          [this](cbl::Replicator, bool is_push,
+                 const std::vector<CBLReplicatedDocument>& documents) {
             const char* direction = is_push ? "pushed" : "pulled";
             bool has_remote_document_changes = false;
             for (const auto& document : documents) {
               const auto doc_id = std::string(fleece::slice(document.ID).asString());
               if (document.error.code != 0) {
-                spdlog::warn("CBLite replicator document {}: id={} error={}",
-                             direction,
-                             doc_id,
+                spdlog::warn("CBLite replicator document {}: id={} error={}", direction, doc_id,
                              CbliteErrorMessage(document.error));
               } else if (document.flags & kCBLDocumentFlagsDeleted) {
                 spdlog::info("CBLite replicator document deleted: id={}", doc_id);
@@ -907,18 +911,17 @@ class CbliteDocumentRepository::Impl {
             if (has_remote_document_changes) {
               document_index_dirty_.store(true);
               spdlog::info(
-                  "CBLite replicator document listener: marked document index dirty after remote changes");
-              }
+                  "CBLite replicator document listener: marked document index dirty after remote "
+                  "changes");
+            }
           });
 
       replicator->start();
       replicator_ = std::move(replicator);
       replicator_dirty_ = false;
-      SetSyncStatus(MakeSyncStatus(
-          SyncLifecycleState::kRunning,
-          "Sync replication started for " + replication_url.value(),
-          true,
-          false));
+      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kRunning,
+                                   "Sync replication started for " + replication_url.value(), true,
+                                   false));
       spdlog::info("CBLite StartSync: replicator started for {}", replication_url.value());
     } catch (const CBLError& error) {
       spdlog::error("CBLite StartSync: CBLite error: {}", CbliteErrorMessage(error));
@@ -1049,8 +1052,8 @@ class CbliteDocumentRepository::Impl {
         if (!IsWorkspaceRootDocumentId(document_id)) {
           continue;
         }
-        auto loaded = LoadWorkspaceRoot(
-            document_id.substr(constants::kWorkspaceDocumentIdPrefix.size()));
+        auto loaded =
+            LoadWorkspaceRoot(document_id.substr(constants::kWorkspaceDocumentIdPrefix.size()));
         if (!loaded) {
           continue;
         }
@@ -1065,8 +1068,7 @@ class CbliteDocumentRepository::Impl {
           .error = MakeError(RepositoryErrorCode::kReadFailed, CbliteErrorMessage(error))};
     } catch (const std::exception& error) {
       return ListWorkspacesResult{
-          .workspace_ids = {},
-          .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+          .workspace_ids = {}, .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
     }
   }
 
@@ -1074,36 +1076,42 @@ class CbliteDocumentRepository::Impl {
   [[nodiscard]] auto ListDocumentsByCollectionScan() -> ListDocumentsResult {
     try {
       std::vector<DocumentSummary> documents;
-      
+
       // Synced collection scan
-      const auto query_text_sync = "SELECT META().id AS doc_id FROM " +
-                                   MakeCollectionQualifiedName(*collection_) +
-                                   " WHERE raw_snapshot IS NOT MISSING AND workspace_id IS NOT MISSING";
+      const auto query_text_sync =
+          "SELECT META().id AS doc_id FROM " + MakeCollectionQualifiedName(*collection_) +
+          " WHERE raw_snapshot IS NOT MISSING AND workspace_id IS NOT MISSING";
       auto query_sync = database_->createQuery(kCBLN1QLLanguage, Slice(query_text_sync));
       auto results_sync = query_sync.execute();
       for (const auto& row : results_sync) {
         const auto value = row["doc_id"];
-        if (!value) continue;
+        if (!value)
+          continue;
         const auto document_id = value.asString();
-        if (document_id.empty()) continue;
+        if (document_id.empty())
+          continue;
         auto loaded = LoadDocument(document_id);
-        if (!loaded.document) continue;
+        if (!loaded.document)
+          continue;
         documents.push_back(DocumentSummaryFromMetadata(loaded.document->metadata));
       }
 
       // Local collection scan
-      const auto query_text_local = "SELECT META().id AS doc_id FROM " +
-                                    MakeCollectionQualifiedName(*local_collection_) +
-                                    " WHERE raw_snapshot IS NOT MISSING AND workspace_id IS NOT MISSING";
+      const auto query_text_local =
+          "SELECT META().id AS doc_id FROM " + MakeCollectionQualifiedName(*local_collection_) +
+          " WHERE raw_snapshot IS NOT MISSING AND workspace_id IS NOT MISSING";
       auto query_local = database_->createQuery(kCBLN1QLLanguage, Slice(query_text_local));
       auto results_local = query_local.execute();
       for (const auto& row : results_local) {
         const auto value = row["doc_id"];
-        if (!value) continue;
+        if (!value)
+          continue;
         const auto document_id = value.asString();
-        if (document_id.empty()) continue;
+        if (document_id.empty())
+          continue;
         auto loaded = LoadDocument(document_id);
-        if (!loaded.document) continue;
+        if (!loaded.document)
+          continue;
         documents.push_back(DocumentSummaryFromMetadata(loaded.document->metadata));
       }
 
@@ -1158,9 +1166,10 @@ class CbliteDocumentRepository::Impl {
 
   void RemoveDocumentIndexEntry(std::string_view document_id) {
     spdlog::debug("CBLite RemoveDocumentIndexEntry: id={}", document_id);
-    
+
     // Remove from local collection index
-    auto local_index_doc = GetMutableDocument(*local_collection_, constants::kLocalDocumentsIndexDocumentId);
+    auto local_index_doc =
+        GetMutableDocument(*local_collection_, constants::kLocalDocumentsIndexDocumentId);
     local_index_doc.properties().remove(Slice(document_id));
     local_collection_->saveDocument(local_index_doc);
 
@@ -1171,15 +1180,15 @@ class CbliteDocumentRepository::Impl {
   }
 
   void SaveConflictIndexEntry(const DocumentConflictRecord& conflict) {
-    auto index_doc = GetMutableDocument(*collection_, constants::kConflictsIndexDocumentId);
+    auto index_doc = GetMutableDocument(*local_collection_, constants::kConflictsIndexDocumentId);
     index_doc.set(Slice(conflict.id), Slice(conflict.document_id));
-    collection_->saveDocument(index_doc);
+    local_collection_->saveDocument(index_doc);
   }
 
   void RemoveConflictIndexEntry(std::string_view conflict_id) {
-    auto index_doc = GetMutableDocument(*collection_, constants::kConflictsIndexDocumentId);
+    auto index_doc = GetMutableDocument(*local_collection_, constants::kConflictsIndexDocumentId);
     index_doc.properties().remove(Slice(conflict_id));
-    collection_->saveDocument(index_doc);
+    local_collection_->saveDocument(index_doc);
   }
 
   [[nodiscard]] auto UpdateConflictResolutionState(std::string_view conflict_id,
@@ -1215,6 +1224,75 @@ class CbliteDocumentRepository::Impl {
     };
   }
 
+  void UpdateSyncedWorkspaceIdsFromBootstrap() {
+    synced_workspace_ids_.clear();
+    for (const auto& channel : bootstrap_.channels) {
+      const auto trimmed_channel = channel.trimmed();
+      if (!trimmed_channel.startsWith(QStringLiteral("workspace:"))) {
+        continue;
+      }
+
+      const auto workspace_id =
+          trimmed_channel.sliced(QStringLiteral("workspace:").size()).trimmed();
+      if (!workspace_id.isEmpty()) {
+        synced_workspace_ids_.insert(workspace_id.toStdString());
+      }
+    }
+  }
+
+  [[nodiscard]] auto PromoteLocalDocumentsToSyncCollections() -> std::optional<RepositoryError> {
+    if (synced_workspace_ids_.empty()) {
+      return std::nullopt;
+    }
+
+    try {
+      ScopedCollectionWriteGuard guard(*this);
+      bool migrated_any = false;
+
+      for (const auto& workspace_id : synced_workspace_ids_) {
+        const auto query_text =
+            "SELECT META().id AS doc_id FROM " + MakeCollectionQualifiedName(*local_collection_) +
+            " WHERE raw_snapshot IS NOT MISSING AND workspace_id = '" + workspace_id + "'";
+        auto query = database_->createQuery(kCBLN1QLLanguage, Slice(query_text));
+        auto results = query.execute();
+        for (const auto& row : results) {
+          const auto value = row["doc_id"];
+          if (!value) {
+            continue;
+          }
+
+          const auto document_id = std::string(value.asString());
+          if (document_id.empty()) {
+            continue;
+          }
+
+          auto local_doc = local_collection_->getDocument(Slice(document_id));
+          if (!local_doc) {
+            continue;
+          }
+
+          auto sync_doc = local_doc.mutableCopy();
+          collection_->saveDocument(sync_doc);
+          local_collection_->deleteDocument(local_doc);
+          migrated_any = true;
+          spdlog::info(
+              "CBLite PromoteLocalDocumentsToSyncCollections: promoted document {} for workspace "
+              "{}",
+              document_id, workspace_id);
+        }
+      }
+
+      if (migrated_any) {
+        document_index_dirty_.store(true);
+      }
+      return std::nullopt;
+    } catch (const CBLError& error) {
+      return MakeError(RepositoryErrorCode::kWriteFailed, CbliteErrorMessage(error));
+    } catch (const std::exception& error) {
+      return MakeError(RepositoryErrorCode::kWriteFailed, error.what());
+    }
+  }
+
   [[nodiscard]] auto EnsureDatabaseOpen() -> std::optional<RepositoryError> {
     if (database_) {
       return std::nullopt;
@@ -1230,8 +1308,7 @@ class CbliteDocumentRepository::Impl {
       auto config = CBLDatabaseConfiguration_Default();
       database_directory_ = normalized_directory.string();
       config.directory = Slice(database_directory_);
-      spdlog::info("CBLite opening database: name={} directory={}",
-                   options_.database_name,
+      spdlog::info("CBLite opening database: name={} directory={}", options_.database_name,
                    database_directory_);
       database_ = std::make_unique<cbl::Database>(Slice(options_.database_name), config);
       if (!static_cast<bool>(*database_)) {
@@ -1242,8 +1319,8 @@ class CbliteDocumentRepository::Impl {
       collection_ = std::make_unique<cbl::Collection>(
           database_->createCollection(Slice(constants::kDocumentsCollectionName)));
       spdlog::info("CBLite collection ready: {}", constants::kDocumentsCollectionName);
-      collection_change_listener_ = collection_->addChangeListener(
-          [this](cbl::CollectionChange* change) {
+      collection_change_listener_ =
+          collection_->addChangeListener([this](cbl::CollectionChange* change) {
             if (change == nullptr) {
               return;
             }
@@ -1266,16 +1343,18 @@ class CbliteDocumentRepository::Impl {
             if (has_document_changes) {
               document_index_dirty_.store(true);
               spdlog::info(
-                  "CBLite collection listener: marked document index dirty after external collection changes");
+                  "CBLite collection listener: marked document index dirty after external "
+                  "collection changes");
             }
           });
 
-      spdlog::info("CBLite creating/opening collection: {}", constants::kLocalDocumentsCollectionName);
+      spdlog::info("CBLite creating/opening collection: {}",
+                   constants::kLocalDocumentsCollectionName);
       local_collection_ = std::make_unique<cbl::Collection>(
           database_->createCollection(Slice(constants::kLocalDocumentsCollectionName)));
       spdlog::info("CBLite collection ready: {}", constants::kLocalDocumentsCollectionName);
-      local_collection_change_listener_ = local_collection_->addChangeListener(
-          [this](cbl::CollectionChange* change) {
+      local_collection_change_listener_ =
+          local_collection_->addChangeListener([this](cbl::CollectionChange* change) {
             if (change == nullptr) {
               return;
             }
@@ -1297,7 +1376,8 @@ class CbliteDocumentRepository::Impl {
             if (has_document_changes) {
               document_index_dirty_.store(true);
               spdlog::info(
-                  "CBLite collection listener: marked document index dirty after external local collection changes");
+                  "CBLite collection listener: marked document index dirty after external local "
+                  "collection changes");
             }
           });
 
@@ -1338,6 +1418,7 @@ class CbliteDocumentRepository::Impl {
   std::atomic_bool document_index_dirty_{false};
   std::atomic_int suppress_collection_dirty_tracking_{0};
   mutable std::mutex sync_status_mutex_;
+  std::set<std::string> synced_workspace_ids_;
   std::string access_token_;
   sync::SyncBootstrap bootstrap_;
   bool replicator_dirty_{true};
@@ -1393,10 +1474,11 @@ auto CbliteDocumentRepository::DismissConflict(std::string_view conflict_id)
   return impl_->DismissConflict(conflict_id);
 }
 
-auto CbliteDocumentRepository::SupportsSync() const -> bool { return true; }
+auto CbliteDocumentRepository::SupportsSync() const -> bool {
+  return true;
+}
 
-auto CbliteDocumentRepository::SetSyncAccessToken(std::string access_token)
-    -> SyncOperationResult {
+auto CbliteDocumentRepository::SetSyncAccessToken(std::string access_token) -> SyncOperationResult {
   return impl_->SetSyncAccessToken(std::move(access_token));
 }
 
@@ -1405,11 +1487,17 @@ auto CbliteDocumentRepository::ApplySyncBootstrap(const sync::SyncBootstrap& boo
   return impl_->ApplySyncBootstrap(bootstrap);
 }
 
-auto CbliteDocumentRepository::StartSync() -> SyncOperationResult { return impl_->StartSync(); }
+auto CbliteDocumentRepository::StartSync() -> SyncOperationResult {
+  return impl_->StartSync();
+}
 
-auto CbliteDocumentRepository::StopSync() -> SyncOperationResult { return impl_->StopSync(); }
+auto CbliteDocumentRepository::StopSync() -> SyncOperationResult {
+  return impl_->StopSync();
+}
 
-auto CbliteDocumentRepository::GetSyncStatus() const -> SyncStatus { return impl_->GetSyncStatus(); }
+auto CbliteDocumentRepository::GetSyncStatus() const -> SyncStatus {
+  return impl_->GetSyncStatus();
+}
 
 auto CbliteDocumentRepository::SaveWorkspaceRoot(const WorkspaceRootRecord& workspace_root)
     -> SaveWorkspaceRootResult {

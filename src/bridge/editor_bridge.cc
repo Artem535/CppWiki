@@ -482,6 +482,9 @@ QVariantMap QEditorBridge::listDocumentsInWorkspace(const QString& workspace_id)
 
   auto documents = DocumentSummariesToVariant(result.documents, normalized_workspace_id);
   if (documents.empty()) {
+    const bool should_create_welcome = sync_state_provider_ == nullptr ||
+                                       sync_state_provider_->ShouldCreateSyntheticWelcomePage(
+                                           normalized_workspace_id);
     const bool sync_expected = repository_->SupportsSync() &&
                                sync_state_provider_ != nullptr &&
                                sync_state_provider_->ShouldExpectRemoteDocuments(
@@ -489,6 +492,13 @@ QVariantMap QEditorBridge::listDocumentsInWorkspace(const QString& workspace_id)
     if (sync_expected) {
       spdlog::info(
           "Workspace '{}' is empty locally, but remote sync is expected; skipping welcome creation",
+          normalized_workspace_id.toStdString());
+      return SuccessResponse(QVariantList{});
+    }
+
+    if (!should_create_welcome) {
+      spdlog::info(
+          "Workspace '{}' is empty locally and synthetic welcome creation is suppressed while sync mode is active",
           normalized_workspace_id.toStdString());
       return SuccessResponse(QVariantList{});
     }

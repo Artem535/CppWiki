@@ -28,6 +28,12 @@ qt_add_executable(cppwiki_app
         core/qt_string.h
         core/uuid.cc
         core/uuid.h
+        gui/merge/conflict_merge_dialog.cc
+        gui/merge/conflict_merge_dialog.h
+        gui/merge/conflict_merge_model.cc
+        gui/merge/conflict_merge_model.h
+        gui/merge/conflict_merge_resolution.cc
+        gui/merge/conflict_merge_resolution.h
         document/block_note_snapshot.h
         document/document.h
         document/document_validator.cc
@@ -85,6 +91,9 @@ target_link_libraries(cppwiki_app
         Qt6::Gui
         Qt6::Network
         Qt6::NetworkAuth
+        Qt6::Qml
+        Qt6::Quick
+        Qt6::QuickWidgets
         Qt6::Widgets
         Qt6::WebChannel
         Qt6::WebEngineWidgets
@@ -92,6 +101,12 @@ target_link_libraries(cppwiki_app
         qlementine
         spdlog::spdlog
         reflectcpp::reflectcpp
+)
+
+qt_add_resources(cppwiki_app cppwiki_qml_resources
+        PREFIX "/cppwiki"
+        FILES
+        gui/qml/ConflictMergeEditor.qml
 )
 
 if (CPPWIKI_ENABLE_CBLITE_STORAGE)

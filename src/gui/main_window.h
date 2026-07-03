@@ -59,9 +59,13 @@ class MainWindow final : public QMainWindow {
   void UpdateAuthCollaborationHint();
   void RefreshCollaborationSecondaryText();
   void RefreshSyncDetailsDialog();
-  void ResolveSelectedSyncConflict(const QString& conflict_id);
+  void UseLocalForSelectedSyncConflict(const QString& conflict_id);
+  void UseRemoteForSelectedSyncConflict(const QString& conflict_id);
+  void OpenMergeEditorForSelectedSyncConflict(const QString& conflict_id);
   void DismissSelectedSyncConflict(const QString& conflict_id);
-  void ResolveNextSyncConflict();
+  void UseLocalForNextSyncConflict();
+  void UseRemoteForNextSyncConflict();
+  void OpenMergeEditorForNextSyncConflict();
   void DismissNextSyncConflict();
 
   AppContext* context_ = nullptr;
@@ -93,7 +97,9 @@ class MainWindow final : public QMainWindow {
   QWidget* sync_conflicts_widget_ = nullptr;
   oclero::qlementine::StatusBadgeWidget* sync_conflicts_badge_ = nullptr;
   QLabel* sync_conflicts_label_ = nullptr;
-  QToolButton* sync_conflict_resolve_button_ = nullptr;
+  QToolButton* sync_conflict_use_local_button_ = nullptr;
+  QToolButton* sync_conflict_use_remote_button_ = nullptr;
+  QToolButton* sync_conflict_merge_button_ = nullptr;
   QToolButton* sync_conflict_dismiss_button_ = nullptr;
   QPointer<SyncDetailsDialog> sync_details_dialog_;
 };

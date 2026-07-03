@@ -2,36 +2,36 @@
 
 #include <spdlog/spdlog.h>
 
-#include <algorithm>
-#include <functional>
-#include <initializer_list>
-#include <iterator>
-#include <set>
-#include <string_view>
-
 #include <QAbstractItemView>
-#include <QIcon>
 #include <QFile>
 #include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSize>
 #include <QTimer>
-#include <QVBoxLayout>
 #include <QTreeView>
 #include <QUrl>
+#include <QVBoxLayout>
 #include <QWebChannel>
 #include <QWebEnginePage>
 #include <QWebEngineProfile>
 #include <QWebEngineScript>
 #include <QWebEngineScriptCollection>
 #include <QWebEngineView>
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+#include <iterator>
+#include <set>
+#include <string_view>
 #include <utility>
 
+#include "app/editor_fallback.h"
 #include "auth/auth_session_manager.h"
 #include "backend/backend_client.h"
 #include "bridge/editor_bridge.h"
@@ -42,7 +42,6 @@
 #include "gui/document_tree_model.h"
 #include "gui/document_tree_view.h"
 #include "gui/page_helpers.h"
-#include "app/editor_fallback.h"
 #include "sync/sync_service.h"
 
 namespace cppwiki {
@@ -52,9 +51,7 @@ using namespace gui::page_helpers;
 
 }  // namespace
 
-
-Page::Page(const AppContext& context, QWidget* parent)
-    : QWidget(parent), context_(context) {
+Page::Page(const AppContext& context, QWidget* parent) : QWidget(parent), context_(context) {
   BuildUi();
 }
 
@@ -244,44 +241,37 @@ void Page::BuildUi() {
     connect(context_.auth_session_manager, &auth::AuthSessionManager::sessionChanged, this,
             [this]() {
               UpdateAuthCard();
-              if (!selected_page_id_.isEmpty()) {
-                OpenDocumentWithAccess(selected_page_id_);
-              }
+              RefreshSelectedDocumentAccess();
             });
   }
   if (context_.backend_client != nullptr) {
-    connect(context_.backend_client, &backend::BackendClient::syncBootstrapChanged, this,
-            [this]() {
-              ApplyBridgeSessionContext();
-              PopulatePageList();
-              if (!selected_page_id_.isEmpty()) {
-                OpenDocumentWithAccess(selected_page_id_);
-              }
-            });
-    connect(context_.backend_client, &backend::BackendClient::documentAccessInvalidated, this,
-            [this](const QString& document_id, const QString& lock_owner,
-                   const QString& status_text) {
-              if (document_id != selected_page_id_ || editor_bridge_ == nullptr) {
-                return;
-              }
+    connect(context_.backend_client, &backend::BackendClient::syncBootstrapChanged, this, [this]() {
+      ApplyBridgeSessionContext();
+      PopulatePageList();
+      RefreshSelectedDocumentAccess();
+    });
+    connect(
+        context_.backend_client, &backend::BackendClient::documentAccessInvalidated, this,
+        [this](const QString& document_id, const QString& lock_owner, const QString& status_text) {
+          if (document_id != selected_page_id_ || editor_bridge_ == nullptr) {
+            return;
+          }
 
-              editor_bridge_->SetCurrentDocumentAccess(false, lock_owner, status_text);
-              ApplyDocumentAccessState(backend::DocumentAccessState{
-                  .editable = false,
-                  .local_only = false,
-                  .lock_owner = lock_owner,
-                  .status_text = status_text,
-              });
-            });
+          editor_bridge_->SetCurrentDocumentAccess(false, lock_owner, status_text);
+          ApplyDocumentAccessState(backend::DocumentAccessState{
+              .editable = false,
+              .local_only = false,
+              .lock_owner = lock_owner,
+              .status_text = status_text,
+          });
+        });
   }
   if (context_.document_sync_service != nullptr) {
     connect(context_.document_sync_service, &sync::SyncService::snapshotChanged, this,
             [this](const sync::DocumentSyncSnapshot&) {
               ApplyBridgeSessionContext();
               RefreshPageListIfChanged();
-              if (!selected_page_id_.isEmpty()) {
-                OpenDocumentWithAccess(selected_page_id_);
-              }
+              RefreshSelectedDocumentAccess();
             });
   }
   connect(editor_bridge_, &bridge::QEditorBridge::saveStatusChanged, this,
@@ -321,12 +311,9 @@ void Page::ApplyBridgeSessionContext() {
 }
 
 void Page::ActivateWorkspace(const QString& workspace_id) {
-  const auto normalized_workspace_id = workspace_id.trimmed().isEmpty() ? QStringLiteral("default")
-                                                                        : workspace_id.trimmed();
+  const auto normalized_workspace_id =
+      workspace_id.trimmed().isEmpty() ? QStringLiteral("default") : workspace_id.trimmed();
   if (current_workspace_id_ == normalized_workspace_id) {
-    if (editor_bridge_ != nullptr) {
-      editor_bridge_->SetCurrentWorkspaceId(current_workspace_id_);
-    }
     return;
   }
 
@@ -357,8 +344,8 @@ void Page::RefreshWorkspaceHydrationState() {
   }
 
   for (const auto& workspace_id : snapshot.workspace_ids) {
-    const auto state = snapshot.workspace_hydration.value(workspace_id,
-                                                          sync::WorkspaceHydrationState::kNotStarted);
+    const auto state = snapshot.workspace_hydration.value(
+        workspace_id, sync::WorkspaceHydrationState::kNotStarted);
     QString decoration;
     switch (state) {
       case sync::WorkspaceHydrationState::kNotStarted:
@@ -395,7 +382,8 @@ void Page::RebuildWorkspaceTree() {
 }
 
 void Page::LoadEditor() {
-  const QString editor_index_path = context_.settings.EditorDistDirectory() + QStringLiteral("/index.html");
+  const QString editor_index_path =
+      context_.settings.EditorDistDirectory() + QStringLiteral("/index.html");
   const QFileInfo editor_index(editor_index_path);
 
   if (editor_index.exists() && editor_index.isFile()) {
@@ -427,6 +415,7 @@ void Page::PopulatePageList() {
   const auto expanded_ids = CaptureExpandedDocumentIds();
   last_document_summaries_ = summaries;
   if (workspace_tree_model_ != nullptr) {
+    workspace_tree_model_->setWorkspaces(available_workspace_ids_);
     workspace_tree_model_->setDocuments(summaries);
   }
   RestoreExpandedDocumentIds(expanded_ids);
@@ -443,6 +432,7 @@ void Page::RefreshPageListIfChanged() {
   const auto expanded_ids = CaptureExpandedDocumentIds();
   last_document_summaries_ = summaries;
   if (workspace_tree_model_ != nullptr) {
+    workspace_tree_model_->setWorkspaces(available_workspace_ids_);
     workspace_tree_model_->setDocuments(summaries);
   }
   RestoreExpandedDocumentIds(expanded_ids);
@@ -505,13 +495,14 @@ void Page::CreateChildDocument(const QModelIndex& parent_index) {
     return;
   }
 
-  const auto response =
-      editor_bridge_->createChildDocumentInWorkspace(*workspace_id, QString::fromStdString(*parent_id));
+  const auto response = editor_bridge_->createChildDocumentInWorkspace(
+      *workspace_id, QString::fromStdString(*parent_id));
   HandleCreatedDocument(response, *workspace_id);
 }
 
 void Page::RenameDocument(const QModelIndex& index) {
-  if (workspace_tree_model_ == nullptr || workspace_tree_view_ == nullptr || editor_bridge_ == nullptr) {
+  if (workspace_tree_model_ == nullptr || workspace_tree_view_ == nullptr ||
+      editor_bridge_ == nullptr) {
     return;
   }
 
@@ -527,10 +518,10 @@ void Page::RenameDocument(const QModelIndex& index) {
 
   bool accepted = false;
   const auto current_title = index.data(Qt::DisplayRole).toString();
-  const auto new_title = QInputDialog::getText(workspace_tree_view_, QStringLiteral("Rename title"),
-                                               QStringLiteral("Title:"), QLineEdit::Normal,
-                                               current_title, &accepted)
-                             .trimmed();
+  const auto new_title =
+      QInputDialog::getText(workspace_tree_view_, QStringLiteral("Rename title"),
+                            QStringLiteral("Title:"), QLineEdit::Normal, current_title, &accepted)
+          .trimmed();
   if (!accepted || new_title.isEmpty() || new_title == current_title) {
     return;
   }
@@ -665,8 +656,25 @@ void Page::OpenDocumentWithAccess(const QString& page_id) {
       });
 }
 
+void Page::RefreshSelectedDocumentAccess() {
+  if (selected_page_id_.isEmpty()) {
+    return;
+  }
+
+  // Background auth/sync updates must not reopen a document that is already in
+  // edit mode. Reopening negotiates a fresh view-session and can downgrade the
+  // current lock-backed edit session, which causes the editor to jump, lose
+  // selection, or switch back to read-only while the user is typing.
+  if (current_document_editable_) {
+    return;
+  }
+
+  OpenDocumentWithAccess(selected_page_id_);
+}
+
 void Page::EnterEditMode() {
-  if (selected_page_id_.isEmpty() || context_.backend_client == nullptr || editor_bridge_ == nullptr) {
+  if (selected_page_id_.isEmpty() || context_.backend_client == nullptr ||
+      editor_bridge_ == nullptr) {
     return;
   }
 
@@ -685,7 +693,8 @@ void Page::EnterEditMode() {
 }
 
 void Page::ExitEditMode(bool due_to_inactivity) {
-  if (selected_page_id_.isEmpty() || context_.backend_client == nullptr || editor_bridge_ == nullptr) {
+  if (selected_page_id_.isEmpty() || context_.backend_client == nullptr ||
+      editor_bridge_ == nullptr) {
     return;
   }
 
@@ -752,12 +761,11 @@ void Page::ApplyDocumentAccessState(const backend::DocumentAccessState& access_s
   }
 
   if (access_state.editable) {
-    emit collaborationStatusChanged(
-        QStringLiteral("Collab: editing"),
-        access_state.lock_owner.trimmed().isEmpty()
-            ? QStringLiteral("Backend lock acquired.")
-            : QStringLiteral("Owner: %1").arg(access_state.lock_owner),
-        false);
+    emit collaborationStatusChanged(QStringLiteral("Collab: editing"),
+                                    access_state.lock_owner.trimmed().isEmpty()
+                                        ? QStringLiteral("Backend lock acquired.")
+                                        : QStringLiteral("Owner: %1").arg(access_state.lock_owner),
+                                    false);
     return;
   }
 
@@ -765,7 +773,8 @@ void Page::ApplyDocumentAccessState(const backend::DocumentAccessState& access_s
       access_state.status_text.contains(QStringLiteral("heartbeat failed"), Qt::CaseInsensitive)) {
     emit collaborationStatusChanged(
         QStringLiteral("Collab: lock lost"),
-        QStringLiteral("Editing access was lost. Re-enter edit mode when the backend is reachable."),
+        QStringLiteral(
+            "Editing access was lost. Re-enter edit mode when the backend is reachable."),
         true);
     return;
   }
@@ -819,7 +828,8 @@ void Page::UpdateEditModeControls() {
 }
 
 void Page::StartEditInactivityTimer() {
-  if (edit_inactivity_timer_ == nullptr || current_document_local_only_ || !current_document_editable_) {
+  if (edit_inactivity_timer_ == nullptr || current_document_local_only_ ||
+      !current_document_editable_) {
     return;
   }
 
@@ -863,9 +873,8 @@ void Page::MoveDocument(const QModelIndex& index, int delta) {
 
   ActivateWorkspace(*workspace_id);
   auto summaries = FetchDocumentSummaries(*workspace_id);
-  const auto target_it = std::find_if(summaries.begin(), summaries.end(), [&](const auto& summary) {
-    return summary.id == *doc_id;
-  });
+  const auto target_it = std::find_if(summaries.begin(), summaries.end(),
+                                      [&](const auto& summary) { return summary.id == *doc_id; });
   if (target_it == summaries.end()) {
     return;
   }
@@ -888,17 +897,15 @@ void Page::MoveDocument(const QModelIndex& index, int delta) {
     return lhs.get().title < rhs.get().title;
   });
 
-  auto sibling_it = std::find_if(siblings.begin(), siblings.end(), [&](const auto& summary) {
-    return summary.get().id == *doc_id;
-  });
+  auto sibling_it = std::find_if(siblings.begin(), siblings.end(),
+                                 [&](const auto& summary) { return summary.get().id == *doc_id; });
   if (sibling_it == siblings.end()) {
     return;
   }
 
   const auto position = static_cast<std::ptrdiff_t>(std::distance(siblings.begin(), sibling_it));
   const auto new_position = position + delta;
-  if (new_position < 0 ||
-      new_position >= static_cast<std::ptrdiff_t>(siblings.size())) {
+  if (new_position < 0 || new_position >= static_cast<std::ptrdiff_t>(siblings.size())) {
     return;
   }
 
@@ -909,8 +916,7 @@ void Page::MoveDocument(const QModelIndex& index, int delta) {
     const auto response = editor_bridge_->updateDocumentPlacement(
         QString::fromStdString(summary.id),
         summary.parent_id ? QString::fromStdString(*summary.parent_id) : QString{},
-        summary.parent_id.has_value(),
-        static_cast<int>(i));
+        summary.parent_id.has_value(), static_cast<int>(i));
     if (!response.value(QStringLiteral("ok")).toBool()) {
       const auto error = response.value(QStringLiteral("error")).toMap();
       spdlog::error("Failed to move document: {}",
@@ -923,9 +929,9 @@ void Page::MoveDocument(const QModelIndex& index, int delta) {
   SelectDocumentById(QString::fromStdString(*doc_id));
 }
 
-void Page::MoveDocumentToPlacement(const QString& source_document_id, const QString& target_parent_id,
-                                   bool has_parent_id, int target_sort_order,
-                                   const QString& workspace_id) {
+void Page::MoveDocumentToPlacement(const QString& source_document_id,
+                                   const QString& target_parent_id, bool has_parent_id,
+                                   int target_sort_order, const QString& workspace_id) {
   if (editor_bridge_ == nullptr || source_document_id.isEmpty()) {
     return;
   }
@@ -950,9 +956,9 @@ void Page::MoveDocumentToPlacement(const QString& source_document_id, const QStr
       if (*cursor == source_id_std) {
         return;
       }
-      const auto parent_it = std::find_if(summaries.begin(), summaries.end(), [&](const auto& summary) {
-        return summary.id == *cursor;
-      });
+      const auto parent_it =
+          std::find_if(summaries.begin(), summaries.end(),
+                       [&](const auto& summary) { return summary.id == *cursor; });
       if (parent_it == summaries.end()) {
         break;
       }
@@ -961,11 +967,10 @@ void Page::MoveDocumentToPlacement(const QString& source_document_id, const QStr
   }
 
   const auto old_parent = source_it->parent_id;
-  const auto new_parent = has_parent_id ? std::make_optional(target_parent_id.toStdString())
-                                        : std::nullopt;
+  const auto new_parent =
+      has_parent_id ? std::make_optional(target_parent_id.toStdString()) : std::nullopt;
 
-  auto build_group = [&](const std::optional<std::string>& parent_id,
-                         std::string_view skip_id) {
+  auto build_group = [&](const std::optional<std::string>& parent_id, std::string_view skip_id) {
     std::vector<std::reference_wrapper<storage::DocumentSummary>> group;
     for (auto& summary : summaries) {
       if (summary.parent_id == parent_id && summary.id != skip_id) {
@@ -987,8 +992,7 @@ void Page::MoveDocumentToPlacement(const QString& source_document_id, const QStr
       auto& summary = group[i].get();
       const auto response = editor_bridge_->updateDocumentPlacement(
           QString::fromStdString(summary.id),
-          parent_id ? QString::fromStdString(*parent_id) : QString{},
-          parent_id.has_value(),
+          parent_id ? QString::fromStdString(*parent_id) : QString{}, parent_id.has_value(),
           static_cast<int>(i));
       if (!response.value(QStringLiteral("ok")).toBool()) {
         const auto error = response.value(QStringLiteral("error")).toMap();
@@ -1045,8 +1049,8 @@ void Page::ShowContextMenu(const QPoint& position) {
       return;
     }
 
-    auto* menu = new gui::DocumentContextMenu(
-        {.can_move_up = false, .can_move_down = false}, workspace_tree_view_);
+    auto* menu = new gui::DocumentContextMenu({.can_move_up = false, .can_move_down = false},
+                                              workspace_tree_view_);
     connect(menu, &gui::DocumentContextMenu::actionRequested, this,
             [this, index](gui::DocumentContextMenu::Action action) {
               if (action == gui::DocumentContextMenu::Action::kAddChildPage) {
@@ -1072,9 +1076,8 @@ void Page::ShowContextMenu(const QPoint& position) {
   spdlog::info("Context menu requested");
 
   const auto summaries = FetchDocumentSummaries(*workspace_id);
-  const auto current_it = std::find_if(summaries.begin(), summaries.end(), [&](const auto& summary) {
-    return summary.id == *doc_id;
-  });
+  const auto current_it = std::find_if(summaries.begin(), summaries.end(),
+                                       [&](const auto& summary) { return summary.id == *doc_id; });
 
   auto same_parent_siblings = std::vector<const storage::DocumentSummary*>{};
   if (current_it != summaries.end()) {
@@ -1091,15 +1094,13 @@ void Page::ShowContextMenu(const QPoint& position) {
     });
   }
 
-  const auto current_sibling_it = std::find_if(same_parent_siblings.begin(), same_parent_siblings.end(),
-                                               [&](const auto* summary) {
-                                                 return summary->id == *doc_id;
-                                               });
-  const bool can_move_up =
-      current_sibling_it != same_parent_siblings.end() && current_sibling_it != same_parent_siblings.begin();
-  const bool can_move_down =
-      current_sibling_it != same_parent_siblings.end() &&
-      std::next(current_sibling_it) != same_parent_siblings.end();
+  const auto current_sibling_it =
+      std::find_if(same_parent_siblings.begin(), same_parent_siblings.end(),
+                   [&](const auto* summary) { return summary->id == *doc_id; });
+  const bool can_move_up = current_sibling_it != same_parent_siblings.end() &&
+                           current_sibling_it != same_parent_siblings.begin();
+  const bool can_move_down = current_sibling_it != same_parent_siblings.end() &&
+                             std::next(current_sibling_it) != same_parent_siblings.end();
 
   auto* menu = new gui::DocumentContextMenu(
       {.can_move_up = can_move_up, .can_move_down = can_move_down}, workspace_tree_view_);
@@ -1228,11 +1229,13 @@ void Page::ExpandAncestors(const QString& page_id) {
 }
 
 void Page::ExpandWorkspace(const QString& workspace_id) {
-  if (workspace_tree_model_ == nullptr || workspace_tree_view_ == nullptr || workspace_id.isEmpty()) {
+  if (workspace_tree_model_ == nullptr || workspace_tree_view_ == nullptr ||
+      workspace_id.isEmpty()) {
     return;
   }
 
-  const auto workspace_index = workspace_tree_model_->indexForWorkspaceId(workspace_id.toStdString());
+  const auto workspace_index =
+      workspace_tree_model_->indexForWorkspaceId(workspace_id.toStdString());
   if (workspace_index.isValid()) {
     workspace_tree_view_->setExpanded(workspace_index, true);
   }
@@ -1242,12 +1245,14 @@ std::vector<storage::DocumentSummary> Page::FetchAllDocumentSummaries() const {
   std::vector<storage::DocumentSummary> summaries;
   for (const auto& workspace_id : available_workspace_ids_) {
     auto workspace_summaries = FetchDocumentSummaries(workspace_id);
-    std::move(workspace_summaries.begin(), workspace_summaries.end(), std::back_inserter(summaries));
+    std::move(workspace_summaries.begin(), workspace_summaries.end(),
+              std::back_inserter(summaries));
   }
   return summaries;
 }
 
-std::vector<storage::DocumentSummary> Page::FetchDocumentSummaries(const QString& workspace_id) const {
+std::vector<storage::DocumentSummary> Page::FetchDocumentSummaries(
+    const QString& workspace_id) const {
   std::vector<storage::DocumentSummary> summaries;
   if (editor_bridge_ == nullptr) {
     return summaries;
@@ -1287,7 +1292,6 @@ std::optional<QString> Page::WorkspaceIdFromIndex(const QModelIndex& index) cons
 }
 
 void Page::UpdateAuthCard() {
-
   if (profile_avatar_label_ == nullptr || profile_name_label_ == nullptr ||
       profile_hint_label_ == nullptr || profile_action_button_ == nullptr) {
     return;

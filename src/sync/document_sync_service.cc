@@ -1,13 +1,13 @@
 #include "sync/document_sync_service.h"
 
-#include "app/program_settings.h"
-#include "storage/local_document_repository.h"
-
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+
+#include "app/program_settings.h"
+#include "storage/local_document_repository.h"
 
 namespace cppwiki::sync {
 
@@ -40,22 +40,18 @@ auto SameSyncSession(const sync::SyncBootstrap& lhs, const sync::SyncBootstrap& 
 }
 
 auto IsUsableSyncBootstrap(const sync::SyncBootstrap& bootstrap) -> bool {
-  return bootstrap.available && bootstrap.enabled &&
-         !bootstrap.gateway_url.trimmed().isEmpty() &&
+  return bootstrap.available && bootstrap.enabled && !bootstrap.gateway_url.trimmed().isEmpty() &&
          !bootstrap.auth_mode.trimmed().isEmpty() && bootstrap.token_passthrough &&
          !WorkspaceIdsFromChannels(bootstrap.channels).isEmpty();
 }
 
 auto IsStatusOnlyBootstrap(const sync::SyncBootstrap& bootstrap) -> bool {
-  return !bootstrap.available && !bootstrap.enabled &&
-         bootstrap.gateway_url.trimmed().isEmpty() &&
-         bootstrap.database_name.trimmed().isEmpty() &&
-         bootstrap.auth_mode.trimmed().isEmpty() && !bootstrap.token_passthrough &&
-         bootstrap.principal_subject.trimmed().isEmpty() &&
+  return !bootstrap.available && !bootstrap.enabled && bootstrap.gateway_url.trimmed().isEmpty() &&
+         bootstrap.database_name.trimmed().isEmpty() && bootstrap.auth_mode.trimmed().isEmpty() &&
+         !bootstrap.token_passthrough && bootstrap.principal_subject.trimmed().isEmpty() &&
          bootstrap.principal_username.trimmed().isEmpty() &&
-         bootstrap.principal_email.trimmed().isEmpty() &&
-         bootstrap.principal_roles.isEmpty() && bootstrap.principal_groups.isEmpty() &&
-         bootstrap.channels.isEmpty();
+         bootstrap.principal_email.trimmed().isEmpty() && bootstrap.principal_roles.isEmpty() &&
+         bootstrap.principal_groups.isEmpty() && bootstrap.channels.isEmpty();
 }
 
 auto MaterializedWorkspacesFromDocuments(
@@ -118,9 +114,12 @@ void DocumentSyncService::SetRepository(
 }
 
 void DocumentSyncService::SetAccessToken(QString access_token) {
-  if (access_token_ != access_token) {
-    ResetWorkspaceHydration();
+  access_token = access_token.trimmed();
+  if (access_token_ == access_token) {
+    return;
   }
+
+  ResetWorkspaceHydration();
   access_token_ = std::move(access_token);
   RecomputeStatus();
 }
@@ -130,6 +129,7 @@ void DocumentSyncService::SetBackendBootstrap(sync::SyncBootstrap bootstrap) {
   backend_sync_enabled_ = bootstrap.enabled;
 
   if (IsStatusOnlyBootstrap(bootstrap)) {
+    bootstrap_.status_text = std::move(bootstrap.status_text);
     RecomputeStatus();
     return;
   }
@@ -215,8 +215,8 @@ auto DocumentSyncService::Snapshot() const -> const DocumentSyncSnapshot& {
 }
 
 void DocumentSyncService::RecomputeStatus() {
-  if (repository_ != nullptr &&
-      (!auth_enabled_ || !sync_enabled_ || !backend_bootstrap_available_ || !backend_sync_enabled_)) {
+  if (repository_ != nullptr && (!auth_enabled_ || !sync_enabled_ ||
+                                 !backend_bootstrap_available_ || !backend_sync_enabled_)) {
     [[maybe_unused]] const auto stop_result = repository_->StopSync();
   }
 
@@ -239,10 +239,9 @@ void DocumentSyncService::RecomputeStatus() {
   }
 
   if (!backend_sync_enabled_) {
-    SetStatus(DocumentSyncState::kUnavailable,
-              bootstrap_.status_text.trimmed().isEmpty()
-                  ? QStringLiteral("Sync: disabled by backend")
-                  : bootstrap_.status_text);
+    SetStatus(DocumentSyncState::kUnavailable, bootstrap_.status_text.trimmed().isEmpty()
+                                                   ? QStringLiteral("Sync: disabled by backend")
+                                                   : bootstrap_.status_text);
     return;
   }
 
@@ -294,16 +293,16 @@ void DocumentSyncService::RecomputeStatus() {
     return;
   }
 
-  SetStatus(DocumentSyncState::kReady,
-            QStringLiteral("Sync: ready for %1 at %2 as %3 (%4 channel%5)")
-                .arg(bootstrap_.database_name.trimmed().isEmpty() ? QStringLiteral("replication")
-                                                                  : bootstrap_.database_name,
-                     bootstrap_.gateway_url,
-                     bootstrap_.principal_username.trimmed().isEmpty()
-                         ? QStringLiteral("current user")
-                         : bootstrap_.principal_username,
-                     QString::number(bootstrap_.channels.size()),
-                     bootstrap_.channels.size() == 1 ? QString{} : QStringLiteral("s")));
+  SetStatus(
+      DocumentSyncState::kReady,
+      QStringLiteral("Sync: ready for %1 at %2 as %3 (%4 channel%5)")
+          .arg(bootstrap_.database_name.trimmed().isEmpty() ? QStringLiteral("replication")
+                                                            : bootstrap_.database_name,
+               bootstrap_.gateway_url,
+               bootstrap_.principal_username.trimmed().isEmpty() ? QStringLiteral("current user")
+                                                                 : bootstrap_.principal_username,
+               QString::number(bootstrap_.channels.size()),
+               bootstrap_.channels.size() == 1 ? QString{} : QStringLiteral("s")));
 }
 
 void DocumentSyncService::SetStatus(DocumentSyncState state, QString status_text) {
@@ -352,7 +351,8 @@ void DocumentSyncService::ApplyRepositorySyncLifecycle() {
     return;
   }
 
-  if (const auto token_result = repository_->SetSyncAccessToken(access_token_.trimmed().toStdString());
+  if (const auto token_result =
+          repository_->SetSyncAccessToken(access_token_.trimmed().toStdString());
       token_result.error) {
     SetStatus(DocumentSyncState::kError,
               QStringLiteral("Sync: %1").arg(QString::fromStdString(token_result.error->message)));
@@ -398,8 +398,7 @@ void DocumentSyncService::RefreshSnapshot() {
       !snapshot_.workspace_ids.isEmpty() &&
       snapshot_.hydrated_workspace_ids.size() == snapshot_.workspace_ids.size();
   snapshot_.has_conflicts = snapshot_.repository_status.has_conflicts;
-  snapshot_.conflict_count =
-      static_cast<qsizetype>(snapshot_.repository_status.conflict_count);
+  snapshot_.conflict_count = static_cast<qsizetype>(snapshot_.repository_status.conflict_count);
 }
 
 void DocumentSyncService::ResetWorkspaceHydration() {
@@ -423,14 +422,15 @@ void DocumentSyncService::UpdateWorkspaceHydration() {
   const auto workspaces_with_documents = MaterializedWorkspacesFromDocuments(repository_);
 
   for (const auto& workspace_id : snapshot_.workspace_ids) {
-    const auto previous = workspace_hydration_.value(workspace_id,
-                                                     WorkspaceHydrationState::kNotStarted);
+    const auto previous =
+        workspace_hydration_.value(workspace_id, WorkspaceHydrationState::kNotStarted);
 
     // Fact-based hydration: a workspace is materialized if either its explicit
     // root/meta record exists locally or at least one document for that workspace
     // is already present in the local database.
     const bool root_materialized =
-        repository_ != nullptr && repository_->LoadWorkspaceRoot(workspace_id.toStdString()).has_value();
+        repository_ != nullptr &&
+        repository_->LoadWorkspaceRoot(workspace_id.toStdString()).has_value();
     const bool has_local_documents = workspaces_with_documents.contains(workspace_id);
 
     if (root_materialized || has_local_documents ||
@@ -483,7 +483,8 @@ void DocumentSyncService::LoadPersistedSyncContext() {
     return;
   }
 
-  const auto file_path = QDir(app_data_directory_).filePath(QString::fromUtf8(kSyncContextFileName));
+  const auto file_path =
+      QDir(app_data_directory_).filePath(QString::fromUtf8(kSyncContextFileName));
   QFile file(file_path);
   if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
     return;

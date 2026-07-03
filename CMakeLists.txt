@@ -35,7 +35,7 @@ include(FetchContent)
 
 find_package(
         Qt6 6.5 REQUIRED
-        COMPONENTS Core DBus Gui NetworkAuth Widgets WebChannel WebEngineWidgets Svg
+        COMPONENTS Core DBus Gui NetworkAuth Widgets WebChannel WebEngineWidgets Svg Qml Quick QuickWidgets
 )
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
