@@ -224,6 +224,8 @@ Implementation tasks:
 - keep local-only document bootstrapping only for repositories that are not under active remote sync scope;
 - remove any desktop behavior that appends remote workspaces optimistically before backend/bootstrap confirms them.
 
+Status: **Implemented** in `SyncService`, `DocumentSyncService`, `QEditorBridge` and workspace bootstrap flow.
+
 ### Phase 2. Introduce initial workspace hydration state
 
 Each workspace visible to the desktop must have an explicit hydration state.
@@ -254,10 +256,7 @@ Status: **Implemented** in `DocumentSyncService`, `DocumentSyncSnapshot` and `Pa
 
 ### Phase 3. Define initial pull completion gate
 - [x] Update architecture docs
-- [ ] Build/test verification
-
-
-### Phase 3. Define initial pull completion gate
+- [x] Build/test verification
 
 The desktop needs a real gate for "documents are now available offline".
 
@@ -273,6 +272,9 @@ Implementation tasks:
 - define what CppWiki treats as initial pull completion for a workspace;
 - persist or derive enough state so a restart can still distinguish hydrated and non-hydrated workspaces;
 - keep the local database authoritative for reads after hydration, even when backend later becomes unavailable.
+
+Status: **Implemented** in `DocumentSyncService` hydration persistence and covered by
+`cppwiki_document_sync_service_tests`.
 
 ### Phase 4. Tighten reconnect and replication behavior
 
@@ -290,6 +292,18 @@ Implementation tasks:
 - verify that offline edits survive reconnect and are sent back through replication;
 - keep collaboration state separate from replication state;
 - keep workspace tree and document list refresh driven by actual repository state changes.
+
+Status: **Implemented for the current single-user sync model**.
+
+Covered by:
+
+- `cppwiki_cblite_repository_tests` for offline edit -> reconnect push/pull;
+- `cppwiki_document_sync_service_tests` for reconnect, workspace rehydration and persisted sync context;
+- desktop fixes that prevent synthetic welcome pages and unwanted editor reopen during sync/auth updates.
+
+Follow-up still pending:
+
+- broader end-to-end validation against a real Sync Gateway environment in CI or release validation, not only local repository/service tests.
 
 ### Phase 5. Finish conflict surfacing and resolution
 
@@ -311,6 +325,18 @@ Implementation tasks:
 - support explicit `resolve` and `dismiss` over stored conflict metadata;
 - keep automatic merge out of scope for v1.
 
+Status: **Partially implemented**.
+
+Implemented now:
+
+- conflict detection persists `DocumentConflictRecord` at the CBLite conflict resolver point;
+- desktop sync UI shows conflict count, conflict list and `Resolve` / `Dismiss` actions;
+- repository and sync snapshot expose pending conflict state.
+
+Still pending:
+
+- richer conflict drill-down than the current list-based diagnostics.
+
 ## 8.3. Concrete coding order
 
 The recommended implementation order in code is:
@@ -323,6 +349,16 @@ The recommended implementation order in code is:
 6. validate offline edit then reconnect;
 7. finish conflict UX on top of the already stored conflict records.
 
+Current status:
+
+1. done
+2. done
+3. done
+4. done for current desktop/sync model
+5. done
+6. done
+7. partially done: resolve/dismiss exists, compare/merge surface still pending
+
 ## 8.4. Acceptance criteria
 
 The sync phase is considered correct only if all of the following are true:
@@ -333,3 +369,177 @@ The sync phase is considered correct only if all of the following are true:
 - deleting the local database and reconnecting causes documents to be re-materialized from sync;
 - offline edits survive reconnect and are replicated later;
 - conflicts do not silently overwrite local data and are represented explicitly in UI and storage.
+
+Current verification status:
+
+- the first five criteria are covered by current desktop behavior plus regression tests;
+- the last criterion is covered for conflict persistence, badge/list surfacing and resolve/dismiss actions;
+- compare/merge UX is implemented for the current BlockNote snapshot model and still needs
+  real multi-user Sync Gateway validation.
+
+---
+
+# 9. Operational Sync Notes
+
+This section records the deployment and debugging rules learned during the first real Sync Gateway
+bring-up.
+
+## 9.1. OIDC identifiers must match literally
+
+The following values are not interchangeable:
+
+- `localhost`
+- a LAN/VPN IP address;
+- a DNS name such as `authentik.cppwiki.local`;
+- a Docker service/container name such as `authentik-server`.
+
+OIDC validation requires exact string matches.
+
+Rules:
+
+- Authentik `AUTHENTIK_HOST` defines the issuer that appears in the JWT `iss` claim;
+- backend `auth.issuer` must equal the JWT `iss` claim exactly;
+- Sync Gateway `oidc.providers.<name>.issuer` must equal the same issuer exactly;
+- desktop login must happen through the same host/port scheme that Authentik uses as issuer;
+- changing issuer requires user logout/login because old tokens keep the old `iss`.
+
+Audience/client-id rules:
+
+- backend `auth.audience` must match the JWT `aud` claim;
+- Sync Gateway `oidc.providers.<name>.client_id` must also match the JWT `aud` claim for
+  bearer-token passthrough;
+- if Authentik issues a generated audience such as
+  `2n9RY6M8Oz6Cr3Ar6z9QIgh4WPD1KH8nD1IZRwLe`, both backend and Sync Gateway must use that value,
+  or Authentik must be reconfigured to issue `aud=cpp-wiki`.
+
+Useful token inspection command:
+
+```bash
+export TOKEN='PASTE_ACCESS_TOKEN_HERE'
+python3 - <<'PY'
+import base64, json, os
+p = os.environ["TOKEN"].split(".")[1]
+p += "=" * (-len(p) % 4)
+c = json.loads(base64.urlsafe_b64decode(p))
+print(json.dumps({"iss": c.get("iss"), "aud": c.get("aud"), "azp": c.get("azp")}, indent=2))
+PY
+```
+
+## 9.2. Sync Gateway public and admin URLs have different audiences
+
+The desktop replicator uses the public Sync Gateway URL:
+
+```yaml
+sync:
+  gateway_url: http://<sync-host>:4984/cppwiki
+```
+
+The backend uses the admin Sync Gateway URL for provisioning workspaces/roles and registry
+documents:
+
+```yaml
+sync:
+  admin_url: http://<private-sync-host>:4985/cppwiki
+```
+
+Rules:
+
+- `4984` is the public replication API and may be reachable by desktop clients according to the
+  deployment network model;
+- `4985` is the Admin API and must remain private: same host, VPN, SSH tunnel, or protected reverse
+  proxy;
+- if `docker compose` binds `127.0.0.1:4985:4985`, then `admin_url` works only from the compose
+  host or through a tunnel;
+- raw `4985` must not be exposed to an untrusted network.
+
+## 9.3. Couchbase bucket, Sync Gateway DB and collection names
+
+These names represent different layers:
+
+| Name | Meaning | Current value |
+| :--- | :--- | :--- |
+| Couchbase bucket | physical Couchbase bucket | `cppwiki` |
+| Sync Gateway DB | Sync Gateway database name | `cppwiki` |
+| Sync collection | replicated CBLite collection | `_default.documents` |
+
+Rules:
+
+- `sync-gateway/cppwiki-db.json` `bucket` is the Couchbase bucket name, not the container name;
+- Sync Gateway bootstrap `server` points to Couchbase, e.g. `couchbase://couchbase` inside compose;
+- collection-aware admin endpoints use the `db.scope.collection` form, for example:
+
+```bash
+curl -s 'http://127.0.0.1:4985/cppwiki._default.documents/_all_docs?limit=50'
+```
+
+Direct Couchbase query check:
+
+```bash
+curl -s -u Administrator:password http://127.0.0.1:8093/query/service \
+  --data-urlencode 'statement=SELECT META().id AS id, workspace_id, title FROM `cppwiki`.`_default`.`documents` LIMIT 20'
+```
+
+## 9.4. Local and synced CBLite collections must not be mixed
+
+The desktop CBLite repository uses two collections:
+
+| Collection | Purpose |
+| :--- | :--- |
+| `documents` | replicated documents for workspaces in the current sync bootstrap |
+| `local_documents` | local-only documents, conflict metadata and local indexes |
+
+Rules:
+
+- conflict records must stay in `local_documents`; they are UI/local resolution metadata, not
+  replicated product documents;
+- document promotion from `local_documents` to `documents` must create a new detached
+  `MutableDocument` for the destination collection;
+- never save a `mutableCopy()` from one collection into another collection.
+
+The known failure mode is:
+
+```text
+Couchbase Lite error domain=1 code=9
+The collection for save or delete does not match the document's collection or belongs to a different database instance.
+```
+
+The correct promotion pattern is:
+
+```cpp
+cbl::MutableDocument sync_doc(Slice(document_id));
+sync_doc.setPropertiesAsJSON(local_doc.propertiesAsJSON());
+collection_->saveDocument(sync_doc);
+```
+
+Covered by `cppwiki_cblite_repository_tests`.
+
+## 9.5. Empty assigned workspaces are valid UI state
+
+An assigned workspace may have zero documents on the server.
+
+Rules:
+
+- desktop must still show the workspace row if bootstrap contains `workspace:<id>`;
+- empty synced workspaces must not trigger automatic welcome-page creation;
+- the user must be able to create the first document from the empty workspace row;
+- workspace visibility comes from backend bootstrap channels, not from the current document list.
+
+Covered by `cppwiki_document_tree_model_tests`.
+
+## 9.6. Current manual smoke test
+
+After changing sync configuration or CBLite behavior, use this sequence:
+
+1. restart backend/desktop with the new build;
+2. logout/login in desktop if issuer/audience/client_id changed;
+3. verify `/api/v1/sync/config` returns assigned `workspace:<id>` channels;
+4. verify empty workspace rows are visible in desktop;
+5. create a document in an assigned workspace;
+6. check Sync Gateway:
+
+```bash
+curl -s 'http://<sync-host>:4985/cppwiki._default.documents/_all_docs?limit=50'
+```
+
+7. check Couchbase query service if Sync Gateway and bucket disagree;
+8. inspect desktop logs for `CBLite replicator document pushed` or document-level replication errors.

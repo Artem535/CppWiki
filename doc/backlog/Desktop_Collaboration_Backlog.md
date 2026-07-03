@@ -16,5 +16,6 @@
 
 ## Sync Preparation
 
-- Revisit collaboration panel states once Couchbase Sync replication status is available.
-- Add a dedicated sync/replication indicator instead of overloading the collaboration hint line.
+- Add real end-to-end sync validation in CI or release verification, not only local repository/service regression tests.
+- Add admin workspace provisioning so workspace roots, Sync Gateway roles/channels and registry docs are not managed by manual curl.
+- Add Sync Gateway diagnostics mapping for common failures: invalid login, forbidden channel, missing collection and initial pull failure.
