@@ -1271,7 +1271,8 @@ class CbliteDocumentRepository::Impl {
             continue;
           }
 
-          auto sync_doc = local_doc.mutableCopy();
+          cbl::MutableDocument sync_doc(Slice(document_id));
+          sync_doc.setPropertiesAsJSON(local_doc.propertiesAsJSON());
           collection_->saveDocument(sync_doc);
           local_collection_->deleteDocument(local_doc);
           migrated_any = true;

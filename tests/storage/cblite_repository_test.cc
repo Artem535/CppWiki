@@ -1,4 +1,5 @@
 #include "storage/cblite_document_repository.h"
+#include "sync/sync_bootstrap.h"
 
 #include <spdlog/spdlog.h>
 
@@ -263,6 +264,44 @@ auto TestCbliteRepositoryRefreshesStaleIndexAfterExternalWrite() -> void {
   std::filesystem::remove_all(test_directory.parent_path().parent_path());
 }
 
+auto TestCbliteRepositoryPromotesLocalDocumentsAfterSyncBootstrap() -> void {
+  const auto test_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-cblite-promote-local" / "nested" / "database";
+  std::filesystem::remove_all(test_directory);
+
+  cppwiki::storage::CbliteDocumentRepository repository(
+      cppwiki::storage::CbliteDocumentRepositoryOptions{
+          .database_directory = test_directory,
+          .database_name = "test_wiki_db",
+      });
+
+  Require(!repository.SaveDocument(MakeDocument("page-promote", "Offline Draft", 1)).error,
+          "local document should save before sync bootstrap");
+
+  cppwiki::sync::SyncBootstrap bootstrap;
+  bootstrap.available = true;
+  bootstrap.enabled = true;
+  bootstrap.gateway_url = QStringLiteral("http://127.0.0.1:4984/cppwiki");
+  bootstrap.database_name = QStringLiteral("cppwiki");
+  bootstrap.auth_mode = QStringLiteral("oidc_access_token_passthrough");
+  bootstrap.token_passthrough = true;
+  bootstrap.channels = {QStringLiteral("workspace:engineering")};
+
+  const auto apply_result = repository.ApplySyncBootstrap(bootstrap);
+  if (apply_result.error) {
+    spdlog::error("ApplySyncBootstrap failed: {}", apply_result.error->message);
+  }
+  Require(!apply_result.error,
+          "sync bootstrap should promote local workspace documents without collection mismatch");
+
+  const auto loaded = repository.LoadDocument("page-promote");
+  Require(loaded.document.has_value(), "promoted document should still load");
+  Require(loaded.document->metadata.workspace_id == "engineering",
+          "promoted document should preserve workspace id");
+
+  std::filesystem::remove_all(test_directory.parent_path().parent_path());
+}
+
 auto MakePendingConflict(std::string id, std::string document_id, std::string detected_at,
                          std::string local_updated_by, std::string remote_updated_by)
     -> cppwiki::storage::DocumentConflictRecord {
@@ -419,6 +458,7 @@ auto main() -> int {
   try {
     TestCbliteRepositorySaveLoad();
     TestCbliteRepositoryRefreshesStaleIndexAfterExternalWrite();
+    TestCbliteRepositoryPromotesLocalDocumentsAfterSyncBootstrap();
     TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord();
     TestCbliteRepositoryOfflineEditReconnectPushPull();
   } catch (const std::exception& e) {
