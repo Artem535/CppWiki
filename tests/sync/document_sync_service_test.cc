@@ -3,7 +3,6 @@
 #include <spdlog/spdlog.h>
 
 #include <QCoreApplication>
-
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
@@ -44,11 +43,13 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     return {};
   }
 
-  [[nodiscard]] auto DeleteDocument(std::string_view) -> cppwiki::storage::DeleteDocumentResult override {
+  [[nodiscard]] auto DeleteDocument(std::string_view)
+      -> cppwiki::storage::DeleteDocumentResult override {
     return {};
   }
 
-  [[nodiscard]] auto LoadDocument(std::string_view) -> cppwiki::storage::LoadDocumentResult override {
+  [[nodiscard]] auto LoadDocument(std::string_view)
+      -> cppwiki::storage::LoadDocumentResult override {
     return {};
   }
 
@@ -88,7 +89,9 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     return {};
   }
 
-  [[nodiscard]] auto SupportsSync() const -> bool override { return true; }
+  [[nodiscard]] auto SupportsSync() const -> bool override {
+    return true;
+  }
 
   [[nodiscard]] auto SetSyncAccessToken(std::string access_token)
       -> cppwiki::storage::SyncOperationResult override {
@@ -265,8 +268,7 @@ auto TestValidBootstrapConfiguresRepositoryLifecycle() -> void {
           "sync service should pass access token to sync-capable repository");
   Require(repository->last_access_token == "test-token",
           "repository should receive current access token");
-  Require(repository->start_sync_called,
-          "sync service should start repository sync lifecycle");
+  Require(repository->start_sync_called, "sync service should start repository sync lifecycle");
   Require(repository->last_bootstrap.gateway_url == QStringLiteral("http://127.0.0.1:4984/cppwiki"),
           "repository should receive backend bootstrap");
   const auto snapshot = service.Snapshot();
@@ -303,10 +305,8 @@ auto TestSnapshotExposesWorkspaceScopeAndConflicts() -> void {
           "snapshot should include engineering workspace id");
   Require(snapshot.hydrated_workspace_ids.isEmpty(),
           "snapshot should not mark workspaces hydrated before initial pull completes");
-  Require(snapshot.initial_pull_active,
-          "snapshot should expose active initial pull state");
-  Require(!snapshot.initial_pull_completed,
-          "snapshot should expose incomplete initial pull state");
+  Require(snapshot.initial_pull_active, "snapshot should expose active initial pull state");
+  Require(!snapshot.initial_pull_completed, "snapshot should expose incomplete initial pull state");
   Require(snapshot.has_conflicts, "snapshot should expose repository conflict state");
   Require(snapshot.conflict_count == 2, "snapshot should expose repository conflict count");
 }
@@ -410,6 +410,24 @@ auto TestOfflineStatusBootstrapDoesNotEraseHydratedWorkspaceScope() -> void {
           "offline status bootstrap should preserve hydrated workspace ids for all workspaces");
   Require(snapshot.bootstrap.principal_subject == QStringLiteral("subject-42"),
           "offline status bootstrap should preserve last valid author context");
+}
+
+auto TestStatusOnlyBootstrapExposesBackendReason() -> void {
+  cppwiki::sync::DocumentSyncService service;
+  service.ApplySettings(MakeSettings());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  service.SetRepository(repository);
+  service.SetAccessToken(QStringLiteral("test-token"));
+
+  cppwiki::sync::SyncBootstrap status_bootstrap;
+  status_bootstrap.status_text =
+      QStringLiteral("Sync: authenticated session is not accepted by backend");
+  service.SetBackendBootstrap(status_bootstrap);
+
+  Require(service.State() == cppwiki::sync::DocumentSyncState::kUnavailable,
+          "status-only bootstrap should keep sync unavailable");
+  Require(service.StatusText() == status_bootstrap.status_text,
+          "sync service should expose backend bootstrap failure reason");
 }
 
 auto TestExpandWorkspaceHydrationStateTracksProgressAndFailure() -> void {
@@ -694,14 +712,14 @@ auto TestWorkspaceWithLocalDocumentsIsMaterializedWithoutRootRecord() -> void {
       cppwiki::storage::DocumentSummary{
           .id = "page-1",
           .title = "Doc",
+          .workspace_id = "engineering",
           .parent_id = std::nullopt,
           .sort_order = 0,
-          .workspace_id = "engineering",
+          .created_at = "2026-07-01T12:00:00Z",
+          .updated_at = "2026-07-01T12:00:00Z",
           .created_by = "alice",
           .updated_by = "alice",
           .content_version = 1,
-          .created_at = "2026-07-01T12:00:00Z",
-          .updated_at = "2026-07-01T12:00:00Z",
       },
   };
   service.SetRepository(repository);
@@ -731,19 +749,10 @@ auto TestWorkspaceWithLocalDocumentsIsMaterializedWithoutRootRecord() -> void {
 
 #ifdef CPPWIKI_ENABLE_CBLITE_STORAGE
 auto TestReadyStateIncludesPrincipalAndChannels() -> void {
-  const auto test_directory =
-      std::filesystem::temp_directory_path() / "cppwiki-sync-service-test" / "database";
-  std::filesystem::remove_all(test_directory.parent_path());
-
-  auto repository = std::make_shared<cppwiki::storage::CbliteDocumentRepository>(
-      cppwiki::storage::CbliteDocumentRepositoryOptions{
-          .database_directory = test_directory,
-          .database_name = "cppwiki",
-      });
-
   cppwiki::sync::DocumentSyncService service;
   service.ApplySettings(MakeSettings());
-  service.SetRepository(std::move(repository));
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  service.SetRepository(repository);
   service.SetAccessToken(QStringLiteral("test-token"));
 
   auto bootstrap = MakeBaseBootstrap();
@@ -756,8 +765,6 @@ auto TestReadyStateIncludesPrincipalAndChannels() -> void {
           "ready text should include principal username");
   Require(service.StatusText().contains(QStringLiteral("2 channels")),
           "ready text should include assigned channel count");
-
-  std::filesystem::remove_all(test_directory.parent_path());
 }
 #endif
 
@@ -777,6 +784,7 @@ auto main(int argc, char* argv[]) -> int {
   TestRemoteExpectationTracksInitialPullCompletion();
   TestNewWorkspaceBecomesPendingAfterBootstrapChange();
   TestOfflineStatusBootstrapDoesNotEraseHydratedWorkspaceScope();
+  TestStatusOnlyBootstrapExposesBackendReason();
   TestExpandWorkspaceHydrationStateTracksProgressAndFailure();
   TestPersistedSyncContextRestoresWorkspaceScopeAfterRestart();
   TestReconnectExpandsWorkspaceScopeAndRehydratesNewWorkspace();

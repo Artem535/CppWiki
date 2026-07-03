@@ -197,6 +197,94 @@ add_test(
   COMMAND cppwiki_document_sync_service_tests
 )
 
+add_executable(cppwiki_conflict_merge_model_tests
+  gui/conflict_merge_model_test.cc
+  ${CMAKE_SOURCE_DIR}/src/core/uuid.cc
+  ${CMAKE_SOURCE_DIR}/src/core/uuid.h
+  ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
+  ${CMAKE_SOURCE_DIR}/src/document/document.h
+  ${CMAKE_SOURCE_DIR}/src/document/document_validator.cc
+  ${CMAKE_SOURCE_DIR}/src/document/document_validator.h
+  ${CMAKE_SOURCE_DIR}/src/gui/merge/conflict_merge_model.cc
+  ${CMAKE_SOURCE_DIR}/src/gui/merge/conflict_merge_model.h
+  ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
+)
+
+target_include_directories(cppwiki_conflict_merge_model_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_conflict_merge_model_tests
+  PRIVATE
+    Qt6::Core
+    spdlog::spdlog
+    reflectcpp::reflectcpp
+)
+
+cppwiki_apply_common_options(cppwiki_conflict_merge_model_tests)
+
+add_test(
+  NAME cppwiki_conflict_merge_model_tests
+  COMMAND cppwiki_conflict_merge_model_tests
+)
+
+add_executable(cppwiki_document_tree_model_tests
+  gui/document_tree_model_test.cc
+  ${CMAKE_SOURCE_DIR}/src/gui/document_tree_model.cc
+  ${CMAKE_SOURCE_DIR}/src/gui/document_tree_model.h
+  ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
+)
+
+target_include_directories(cppwiki_document_tree_model_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_document_tree_model_tests
+  PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    reflectcpp::reflectcpp
+)
+
+cppwiki_apply_common_options(cppwiki_document_tree_model_tests)
+
+add_test(
+  NAME cppwiki_document_tree_model_tests
+  COMMAND cppwiki_document_tree_model_tests
+)
+
+add_executable(cppwiki_conflict_merge_resolution_tests
+  gui/conflict_merge_resolution_test.cc
+  ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
+  ${CMAKE_SOURCE_DIR}/src/document/document.h
+  ${CMAKE_SOURCE_DIR}/src/document/document_validator.cc
+  ${CMAKE_SOURCE_DIR}/src/document/document_validator.h
+  ${CMAKE_SOURCE_DIR}/src/gui/merge/conflict_merge_resolution.cc
+  ${CMAKE_SOURCE_DIR}/src/gui/merge/conflict_merge_resolution.h
+  ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
+)
+
+target_include_directories(cppwiki_conflict_merge_resolution_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_conflict_merge_resolution_tests
+  PRIVATE
+    Qt6::Core
+    spdlog::spdlog
+    reflectcpp::reflectcpp
+)
+
+cppwiki_apply_common_options(cppwiki_conflict_merge_resolution_tests)
+
+add_test(
+  NAME cppwiki_conflict_merge_resolution_tests
+  COMMAND cppwiki_conflict_merge_resolution_tests
+)
+
 if(CPPWIKI_ENABLE_CBLITE_STORAGE)
   add_executable(cppwiki_cblite_repository_tests
     storage/cblite_repository_test.cc
