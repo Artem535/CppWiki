@@ -13,6 +13,7 @@ RUN apt-get update \
         automake \
         build-essential \
         ca-certificates \
+        clang-format \
         cmake \
         curl \
         git \
@@ -20,6 +21,7 @@ RUN apt-get update \
         libicu-dev \
         libjemalloc-dev \
         liblzma-dev \
+        libsecret-1-dev \
         libssl-dev \
         libtool \
         libzstd-dev \
@@ -27,6 +29,7 @@ RUN apt-get update \
         perl \
         pkg-config \
         python3 \
+        python3-dev \
         python3-venv \
         tar \
         unzip \
