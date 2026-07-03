@@ -42,6 +42,13 @@ ENV VCPKG_ROOT=/opt/vcpkg
 ENV PATH="${VCPKG_ROOT}:${PATH}"
 
 WORKDIR /src
+COPY vcpkg.json ./
+
+RUN --mount=type=cache,target=/root/.cache/vcpkg \
+    vcpkg install \
+        --triplet x64-linux \
+        --x-install-root=/src/build/server-release/vcpkg_installed
+
 COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/vcpkg \

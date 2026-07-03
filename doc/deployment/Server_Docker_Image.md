@@ -47,6 +47,19 @@ The Docker build uses the `server-release` CMake preset:
 - `CPPWIKI_ENABLE_CBLITE_STORAGE=OFF`
 - `BUILD_SHARED_LIBS=OFF`
 
+Dependency build caching:
+
+- the Dockerfile copies `vcpkg.json` before the rest of the source tree;
+- `vcpkg install` runs in its own layer, so regular source changes do not invalidate downloaded or
+  built third-party packages;
+- GitHub Actions stores Docker BuildKit cache with `cache-to: type=gha,mode=max`;
+- the first CI build can still be slow, especially while building `grpc`/`protobuf` for OTLP, but
+  later builds should reuse the dependency layer unless `vcpkg.json`, the Ubuntu version or the
+  Dockerfile dependency stage changes.
+
+If the dependency build remains too slow for clean runners, add a separate prebuilt builder image
+published to GHCR and use it as the first stage for `docker/server.Dockerfile`.
+
 ## Run
 
 The image includes `/etc/cppwiki/server.yaml` copied from `config/server.docker.yaml`.
