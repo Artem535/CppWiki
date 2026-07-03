@@ -1,0 +1,31 @@
+{
+  "bucket": "cppwiki",
+
+  "enable_shared_bucket_access": true,
+  "import_docs": true,
+  "num_index_replicas": 0,
+
+  "oidc": {
+    "default_provider": "authentik",
+    "providers": {
+      "authentik": {
+        "issuer": "http://authentik.cppwiki.local:9000/application/o/cpp-wiki/",
+        "client_id": "cpp-wiki",
+        "username_claim": "preferred_username",
+        "roles_claim": "roles",
+        "register": true,
+        "scope": ["openid", "profile", "email", "groups", "roles"]
+      }
+    }
+  },
+
+  "scopes": {
+    "_default": {
+      "collections": {
+        "documents": {
+          "sync": "function sync(doc, oldDoc, meta) { if (doc.channels && Array.isArray(doc.channels)) { for (var i = 0; i < doc.channels.length; i++) { channel(doc.channels[i]); } return; } if (doc.workspace_id) { channel('workspace:' + doc.workspace_id); return; } channel('public'); }"
+        }
+      }
+    }
+  }
+}

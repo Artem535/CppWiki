@@ -85,6 +85,9 @@ export function createMockEditorBridge(): EditorBridge {
           createdAt: mockPageCreatedAt,
           updatedAt: mockPageUpdatedAt,
           blocks: initialDocument,
+          editable: true,
+          lockOwner: null,
+          accessMessage: "Document: local-only editing",
         },
       };
     },
@@ -101,6 +104,9 @@ export function createMockEditorBridge(): EditorBridge {
           createdAt: mockPageCreatedAt,
           updatedAt: mockPageUpdatedAt,
           blocks: initialDocument,
+          editable: true,
+          lockOwner: null,
+          accessMessage: "Document: local-only editing",
         },
       };
     },
@@ -114,6 +120,10 @@ export function createMockEditorBridge(): EditorBridge {
     },
 
     onDocumentLoaded() {
+      return () => undefined;
+    },
+
+    onDocumentAccessChanged() {
       return () => undefined;
     },
 

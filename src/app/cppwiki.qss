@@ -1,3 +1,182 @@
+QWidget#shellHeaderRow {
+  background-color: transparent;
+}
+
+QFrame#shellWidgetCell {
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+QLabel#globalSidebarTitle {
+  color: palette(text);
+  font-size: 15px;
+  font-weight: 700;
+  padding: 2px 2px 8px 2px;
+}
+
+QFrame#shellWidgetCell {
+  min-height: 44px;
+}
+
+QFrame#collaborationPanel {
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+}
+
+QFrame#collaborationPanel[collaborationState="editing"] {
+  background-color: rgba(28, 201, 156, 0.08);
+  border: 1px solid rgba(28, 201, 156, 0.32);
+}
+
+QFrame#collaborationPanel[collaborationState="viewing"] {
+  background-color: rgba(65, 152, 255, 0.06);
+  border: 1px solid rgba(65, 152, 255, 0.18);
+}
+
+QFrame#collaborationPanel[collaborationState="read-only"] {
+  background-color: rgba(255, 193, 87, 0.08);
+  border: 1px solid rgba(255, 193, 87, 0.28);
+}
+
+QFrame#collaborationPanel[collaborationState="attention"] {
+  background-color: rgba(255, 107, 107, 0.08);
+  border: 1px solid rgba(255, 107, 107, 0.28);
+}
+
+QFrame#collaborationPanel[collaborationState="local-only"] {
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+QFrame#presenceStripWidget {
+  background-color: transparent;
+  border: none;
+}
+
+QLabel#presenceCaptionLabel {
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+QWidget#presenceEditorAvatar,
+QWidget#presenceViewerAvatar {
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(40, 43, 52, 0.95);
+  border-radius: 14px;
+}
+
+QWidget#presenceOnlineDot {
+  background-color: rgba(59, 225, 154, 0.98);
+  border: 2px solid rgba(40, 43, 52, 0.95);
+  border-radius: 4px;
+}
+
+QWidget#presenceEditorAvatar[presenceActive="true"] {
+  background-color: rgba(28, 201, 156, 0.22);
+  border: 2px solid rgba(28, 201, 156, 0.65);
+}
+
+QWidget#presenceEditorAvatar[presenceSelf="true"] {
+  background-color: rgba(65, 152, 255, 0.24);
+  border: 2px solid rgba(65, 152, 255, 0.72);
+}
+
+QWidget#presenceViewerAvatar[presenceActive="true"] {
+  background-color: rgba(255, 255, 255, 0.14);
+  border: 2px solid rgba(40, 43, 52, 0.95);
+}
+
+QLabel#avatarLabel {
+  color: palette(text);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+QFrame#contentToolbar {
+  background-color: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+QLabel#editModeLabel {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+QLabel#saveStateLabel {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  font-weight: 600;
+  padding-left: 6px;
+}
+
 QWidget#pagePanel {
   background-color: palette(base);
+}
+
+
+QFrame#sidebarFooter {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+QPushButton#sidebarSettingsButton {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: palette(text);
+}
+
+QToolButton#statusLineButton {
+  padding: 4px;
+  color: palette(text);
+}
+
+QFrame#profilePlaceholderCard {
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+QLabel#profilePlaceholderAvatar {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  font-weight: 700;
+}
+
+QLabel#profilePlaceholderName {
+  font-weight: 600;
+}
+
+QLabel#profilePlaceholderHint {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+QPushButton#profileActionButton {
+  padding: 6px 10px;
+  border-radius: 8px;
+  text-align: center;
+  min-height: 32px;
+  background-color: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: palette(text);
+}
+
+QPushButton#profileActionButton:hover {
+  background-color: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+QPushButton#profileActionButton:pressed {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+QPushButton#profileActionButton:disabled {
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.35);
 }

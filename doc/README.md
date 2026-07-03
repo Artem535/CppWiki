@@ -17,6 +17,9 @@ Generated documentation set for Wiki Platform v9 — Block Document Edition.
 - `PRD_v9_Block_Document_Edition.md`
 - `roadmap/Current_Roadmap.md`
 - `architecture/Architecture_Baseline_Libraries_and_Approaches.md`
+- `architecture/Desktop_Backend_Sync_Interaction.md`
+- `architecture/Sync_Document_Model_and_Conflict_Contract.md`
+- `architecture/Server_and_Realtime_Editing_Architecture.md`
 - `architecture/Project_Structure_and_Style.md`
 - `architecture/adr/ADR-001-editor-choice.md`
 - `architecture/adr/ADR-002-document-model.md`
@@ -26,3 +29,6 @@ Generated documentation set for Wiki Platform v9 — Block Document Edition.
 - `architecture/adr/ADR-006-confluence-integration.md`
 - `architecture/adr/ADR-007-rejection-qtextedit-djot-first.md`
 - `architecture/adr/ADR-008-authentik-auth-model.md`
+- `architecture/spikes/Couchbase_Sync_Gateway_OIDC_Example.md`
+- `backlog/Desktop_Collaboration_Backlog.md`
+- `backlog/Admin_Surface_Backlog.md`

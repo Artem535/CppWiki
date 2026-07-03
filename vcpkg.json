@@ -3,11 +3,24 @@
   "version-string": "0.1.0",
   "description": "Desktop-first offline-first wiki platform built with Qt and C++20.",
   "dependencies": [
-    "reflectcpp",
-    "spdlog",
+    "cli11",
     {
-      "name": "drogon",
-      "default-features": false
-    }
-  ]
+      "name": "reflectcpp",
+      "features": [
+        "yaml"
+      ]
+    },
+    "spdlog",
+    "openssl",
+    "grpc",
+    "protobuf",
+    "curl",
+    "yaml-cpp",
+    "cctz",
+    "benchmark",
+    "c-ares",
+    "re2",
+    "abseil"
+  ],
+  "builtin-baseline": "195276f71622bc41392db5c5c5c5141c95ff9a36"
 }

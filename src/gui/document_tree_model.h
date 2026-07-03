@@ -3,7 +3,7 @@
 
 #include <QAbstractItemModel>
 #include <QMimeData>
-
+#include <QStringList>
 #include <memory>
 #include <optional>
 #include <string>
@@ -17,21 +17,37 @@ namespace cppwiki::gui {
 class DocumentTreeItem {
  public:
   enum class Kind {
+    kWorkspace,
     kDocument,
     kAddChildAction,  // "+" action attached to a document
   };
 
-  explicit DocumentTreeItem(const storage::DocumentSummary& summary, DocumentTreeItem* parent = nullptr);
-  explicit DocumentTreeItem(Kind kind, std::string id, std::string title, DocumentTreeItem* parent = nullptr);
+  explicit DocumentTreeItem(const storage::DocumentSummary& summary,
+                            DocumentTreeItem* parent = nullptr);
+  explicit DocumentTreeItem(Kind kind, std::string id, std::string title,
+                            DocumentTreeItem* parent = nullptr);
   explicit DocumentTreeItem(DocumentTreeItem* parent = nullptr);
   ~DocumentTreeItem();
 
-  [[nodiscard]] const std::string& id() const { return id_; }
-  [[nodiscard]] const std::string& title() const { return title_; }
-  [[nodiscard]] int sortOrder() const { return sort_order_; }
-  [[nodiscard]] Kind kind() const { return kind_; }
+  [[nodiscard]] const std::string& id() const {
+    return id_;
+  }
+  [[nodiscard]] const std::string& title() const {
+    return title_;
+  }
+  [[nodiscard]] const std::string& workspaceId() const {
+    return workspace_id_;
+  }
+  [[nodiscard]] int sortOrder() const {
+    return sort_order_;
+  }
+  [[nodiscard]] Kind kind() const {
+    return kind_;
+  }
 
-  [[nodiscard]] DocumentTreeItem* parent() const { return parent_; }
+  [[nodiscard]] DocumentTreeItem* parent() const {
+    return parent_;
+  }
   [[nodiscard]] const std::vector<std::unique_ptr<DocumentTreeItem>>& children() const {
     return children_;
   }
@@ -42,10 +58,24 @@ class DocumentTreeItem {
 
   [[nodiscard]] int childRow(const DocumentTreeItem* child) const;
   [[nodiscard]] DocumentTreeItem* childAt(int row) const;
-  [[nodiscard]] int rowCount() const { return static_cast<int>(children_.size()); }
-  [[nodiscard]] bool isContainer() const { return !children_.empty(); }
-  [[nodiscard]] bool isAction() const { return kind_ != Kind::kDocument; }
-  [[nodiscard]] bool isAddChildAction() const { return kind_ == Kind::kAddChildAction; }
+  [[nodiscard]] int rowCount() const {
+    return static_cast<int>(children_.size());
+  }
+  [[nodiscard]] bool isContainer() const {
+    return !children_.empty();
+  }
+  [[nodiscard]] bool isAction() const {
+    return kind_ == Kind::kAddChildAction;
+  }
+  [[nodiscard]] bool isWorkspace() const {
+    return kind_ == Kind::kWorkspace;
+  }
+  [[nodiscard]] bool isDocument() const {
+    return kind_ == Kind::kDocument;
+  }
+  [[nodiscard]] bool isAddChildAction() const {
+    return kind_ == Kind::kAddChildAction;
+  }
 
   // Iterative lookup helpers
   [[nodiscard]] DocumentTreeItem* findItemById(std::string_view id);
@@ -55,6 +85,7 @@ class DocumentTreeItem {
   Kind kind_ = Kind::kDocument;
   std::string id_;
   std::string title_;
+  std::string workspace_id_;
   int sort_order_ = 0;
   DocumentTreeItem* parent_ = nullptr;
   std::vector<std::unique_ptr<DocumentTreeItem>> children_;
@@ -86,12 +117,20 @@ class DocumentTreeModel : public QAbstractItemModel {
   [[nodiscard]] Qt::DropActions supportedDropActions() const override;
 
   // Custom interface
+  void setWorkspaces(const QStringList& workspace_ids);
   void setDocuments(const std::vector<storage::DocumentSummary>& documents);
   void appendDocument(const storage::DocumentSummary& document);
   [[nodiscard]] std::optional<std::string> documentId(const QModelIndex& index) const;
+  [[nodiscard]] std::optional<std::string> workspaceId(const QModelIndex& index) const;
   [[nodiscard]] QModelIndex indexForDocumentId(std::string_view id) const;
+  [[nodiscard]] QModelIndex indexForWorkspaceId(std::string_view workspace_id) const;
   [[nodiscard]] bool isContainer(const QModelIndex& index) const;
+  [[nodiscard]] bool isWorkspace(const QModelIndex& index) const;
   void requestAddChild(const QModelIndex& parent_document_index);
+
+  // Workspace hydration decoration
+  void setWorkspaceDecoration(const QString& workspace_id, const QString& decoration);
+  [[nodiscard]] QString workspaceDecoration(const QString& workspace_id) const;
 
   // Icon roles
   static constexpr int kIsContainerRole = Qt::UserRole + 1;
@@ -99,19 +138,25 @@ class DocumentTreeModel : public QAbstractItemModel {
   static constexpr int kSyncStatusRole = Qt::UserRole + 3;
   static constexpr int kIsActionRole = Qt::UserRole + 4;
   static constexpr int kAddChildActionRole = Qt::UserRole + 5;
+  static constexpr int kIsWorkspaceRole = Qt::UserRole + 6;
+  static constexpr int kWorkspaceIdRole = Qt::UserRole + 7;
   static constexpr auto kDocumentIdMimeType = "application/x-cppwiki-document-id";
 
  signals:
   void addChildRequested(const QModelIndex& parent_document_index);
   void documentMoveRequested(const QString& source_document_id, const QString& target_parent_id,
-                             bool has_parent_id, int target_sort_order);
+                             bool has_parent_id, int target_sort_order,
+                             const QString& workspace_id);
 
  private:
   void buildTree(const std::vector<storage::DocumentSummary>& documents);
   [[nodiscard]] DocumentTreeItem* itemFromIndex(const QModelIndex& index) const;
   [[nodiscard]] QModelIndex indexForItem(const DocumentTreeItem* item) const;
+  [[nodiscard]] DocumentTreeItem* findWorkspaceItem(std::string_view workspace_id) const;
 
   std::unique_ptr<DocumentTreeItem> root_item_;
+  QStringList workspace_ids_;
+  QHash<QString, QString> workspace_decorations_;
 };
 
 }  // namespace cppwiki::gui

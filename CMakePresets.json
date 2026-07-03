@@ -27,6 +27,38 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
       }
+    },
+    {
+      "name": "server-debug",
+      "displayName": "Server Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/server-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "BUILD_SHARED_LIBS": "OFF",
+        "CPPWIKI_BUILD_DESKTOP_APP": "OFF",
+        "CPPWIKI_BUILD_SERVER": "ON",
+        "CPPWIKI_BUILD_TESTS": "OFF",
+        "CPPWIKI_ENABLE_CBLITE_STORAGE": "OFF"
+      }
+    },
+    {
+      "name": "server-release",
+      "displayName": "Server Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/server-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "BUILD_SHARED_LIBS": "OFF",
+        "CPPWIKI_BUILD_DESKTOP_APP": "OFF",
+        "CPPWIKI_BUILD_SERVER": "ON",
+        "CPPWIKI_BUILD_TESTS": "OFF",
+        "CPPWIKI_ENABLE_CBLITE_STORAGE": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -37,6 +69,20 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "server-debug",
+      "configurePreset": "server-debug",
+      "targets": [
+        "cppwiki_server"
+      ]
+    },
+    {
+      "name": "server-release",
+      "configurePreset": "server-release",
+      "targets": [
+        "cppwiki_server"
+      ]
     }
   ]
 }

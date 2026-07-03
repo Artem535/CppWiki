@@ -376,28 +376,34 @@ Replace the proof-of-connection UI with a minimal Qt-owned wiki workspace shell.
 
 ## Goal
 
-Introduce backend infrastructure only after local document editing works.
+Start the server phase only after local document editing works and the native shell is stable enough to consume backend configuration.
 
 ## Scope
 
-- Add Drogon server target.
-- Add health endpoint.
-- Add structured logging.
-- Add placeholder JWT middleware.
+- Replace the legacy `oat++` server with `userver`.
+- Add `userver` server target (`cppwiki_server`).
+- Add health endpoint and CORS preflight.
+- Add structured logging with `spdlog` and userver span tags.
+- Add OpenTelemetry-ready observability boundaries: request IDs, trace/span hooks and OTLP configuration point.
+- Add placeholder auth checker and explicit public/protected route separation (`401` on protected routes).
 - Add lock API stubs:
   - acquire lock;
   - heartbeat;
   - release lock;
   - force release placeholder.
-- Add presence WebSocket stub.
-- Add integration tests for health and lock stubs if feasible.
+- Add presence HTTP stub.
+- Add DTO/handler/service layout for future workspace, page and lock APIs.
+- Add integration tests for health, lock stubs and auth checker.
 
 ## Exit Gate
 
 - Backend starts independently.
 - Health endpoint works.
+- Observability configuration can be wired without touching editor code.
 - Lock endpoints return stable JSON envelopes.
 - Desktop app can be configured with backend URL without requiring it for local editing.
+- Server module layout is compatible with expanding into authenticated page APIs in the next phase.
+- Public routes remain accessible without JWT while protected routes have a clear boundary.
 
 ## Do Not Include
 
@@ -421,7 +427,7 @@ Validate the Authentik desktop login path without entangling it with sync.
 - Store tokens in system keyring.
 - Refresh token flow.
 - Logout flow.
-- Backend JWT validation path.
+- Backend JWT validation middleware.
 - Never expose tokens to the web editor.
 
 ## Exit Gate
@@ -430,6 +436,7 @@ Validate the Authentik desktop login path without entangling it with sync.
 - Refresh works.
 - Logout clears local token state.
 - Protected backend endpoint rejects invalid tokens.
+- Protected backend endpoint accepts a valid Authentik access token and exposes authenticated identity.
 - Editor has no token access.
 
 ## Do Not Include
@@ -454,6 +461,8 @@ Close the Single Writer / Multi Reader path before sync.
 - Open editor in read-only mode when another user owns the lock.
 - Show lock owner and lock status.
 - Add force release for authorized users as a backend-audited action.
+- Drive lock and presence identity from authenticated desktop JWT state.
+- Replace `anonymous` collaboration identities with authenticated default principals.
 - Add presence display placeholder.
 
 ## Exit Gate
@@ -462,6 +471,7 @@ Close the Single Writer / Multi Reader path before sync.
 - Lock timeout makes stale locks recoverable.
 - Read-only mode is enforced through the editor bridge.
 - Lock takeover is logged.
+- Lock owner shown in the desktop UI matches authenticated backend identity.
 
 ## Do Not Include
 
@@ -633,12 +643,12 @@ Some work can run in parallel after the first vertical slice is stable.
 | Workstream | Can Start After | Notes |
 | :--- | :--- | :--- |
 | UI shell polish | Phase 1 | Qt-owned shell only; must not fake unavailable sync/auth states as working |
-| Backend skeleton | Phase 3 | Keep desktop local editing independent |
-| Auth spike | Phase 5 | Keep tokens out of editor runtime |
+| Backend skeleton | Phase 5 | Keep desktop local editing independent |
+| Auth spike | Phase 6 | Keep tokens out of editor runtime |
 | RenderService | Phase 2 | Can start once DTO shape is stable |
 | Confluence fixtures | Phase 9 | Needs canonical AST/rendering conventions |
 | Plugin runtime | Phase 9 | Safer after rendering boundary exists |
-| Sync spike | Phase 6 | Needs auth path and local persistence |
+| Sync spike | Phase 8 | Needs auth path and local persistence |
 
 ---
 

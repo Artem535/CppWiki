@@ -1,0 +1,22 @@
+{
+  "api": {
+    "public_interface": ":4984",
+    "admin_interface": ":4985",
+    "admin_interface_authentication": false
+  },
+
+  "bootstrap": {
+    "server": "couchbase://couchbase",
+    "username": "sync_gateway",
+    "password": "sync_gateway_password",
+    "use_tls_server": false
+  },
+
+  "logging": {
+    "console": {
+      "enabled": true,
+      "log_level": "info",
+      "log_keys": ["*"]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+bind_host: 0.0.0.0
+port: 8080
+log_level: info
+
+auth:
+  issuer: http://authentik.cppwiki.local:9000/application/o/cpp-wiki/
+  audience: cpp-wiki
+  jwks_url: http://authentik.cppwiki.local:9000/application/o/cpp-wiki/jwks/
+
+sync:
+  enabled: true
+  gateway_url: http://sync-gateway:4984/cppwiki
+  admin_url: http://sync-gateway:4985/cppwiki
+  database_name: cppwiki
+  role_channels:
+    wiki.admin: []
+    wiki.editor: ["workspace:default"]
+  group_channels:
+    team.engineering: ["workspace:engineering"]

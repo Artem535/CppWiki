@@ -30,7 +30,7 @@ C++ Core
     ↓
 Couchbase Lite + Sync Gateway
     ↓
-Drogon Backend
+oat++ Backend
 ```
 
 Расширяемость обеспечивается через безопасную систему плагинов:
@@ -224,7 +224,7 @@ The smallest shippable slice for v9 is:
 ┌─────────────────────────────────────────────────────────────┐
 │                         Backend                             │
 ├─────────────────────────────────────────────────────────────┤
-│ Drogon Server                                                 │
+│ oat++ Server                                                  │
 │  ├─ REST API                                                   │
 │  ├─ WebSocket API                                               │
 │  ├─ Lock Service                                                │
@@ -261,7 +261,7 @@ The smallest shippable slice for v9 is:
 | Collaboration Future | Yjs | CRDT ecosystem for ProseMirror/Tiptap |
 | Local DB | Couchbase Lite | Offline-first local storage and replication |
 | Sync | Couchbase Sync Gateway | Replication, channels, access control |
-| Backend | Drogon | C++ async HTTP/WebSocket server |
+| Backend | oat++ | C++ HTTP/WebSocket server with explicit DTO/controller model and good fit for typed API contracts |
 | Plugin Runtime | Wasmtime | Safe WASM execution |
 | Plugin SDK | C++20 | Native plugin developer experience |
 | Auth Provider | Authentik | Self-hosted OIDC/OAuth2/SAML/LDAP-capable identity platform |
@@ -762,7 +762,7 @@ Yjs
     ↓
 WebSocket Provider
     ↓
-Drogon Collaboration Gateway or Hocuspocus-compatible service
+oat++ collaboration gateway or Hocuspocus-compatible service
 ```
 
 ## FR-COL-8. Phase 2 features
@@ -903,7 +903,7 @@ Tokens shall not be stored in plain text config files.
 
 ## FR-AUTH-5. Backend API auth
 
-Drogon backend shall validate access tokens.
+The oat++ backend shall validate access tokens.
 
 Validation shall use:
 
@@ -1010,9 +1010,9 @@ The system shall audit:
 
 # 16. Functional Requirements — Backend
 
-## FR-SRV-1. Drogon server
+## FR-SRV-1. oat++ server
 
-The backend shall be implemented with Drogon.
+The backend shall be implemented with oat++.
 
 ## FR-SRV-2. REST API
 
@@ -1305,7 +1305,7 @@ Desktop App
   ↓
 Authentik OIDC
   ↓
-Drogon API
+oat++ API
   ↓
 Couchbase Sync Gateway
 ```
@@ -1329,7 +1329,7 @@ Recommended claims:
 ```text
 Request with Bearer token
     ↓
-Drogon Auth Middleware
+oat++ Auth Middleware
     ↓
 Validate JWT with JWKS
     ↓
@@ -1498,7 +1498,7 @@ project.alpha                 project:alpha
 - Authentik OIDC.
 - Desktop login flow.
 - Token keyring storage.
-- Drogon JWT middleware.
+- oat++ JWT middleware on the backend skeleton.
 - RBAC/ABAC.
 - Audit log.
 

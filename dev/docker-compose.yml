@@ -1,0 +1,342 @@
+services:
+  postgresql:
+    image: docker.io/library/postgres:16-alpine
+    container_name: cppwiki-authentik-postgresql
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      POSTGRES_DB: ${PG_DB:-authentik}
+      POSTGRES_USER: ${PG_USER:-authentik}
+      POSTGRES_PASSWORD: ${PG_PASS:?database password required}
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    volumes:
+      - authentik_database:/var/lib/postgresql/data
+
+  redis:
+    image: docker.io/library/redis:alpine
+    container_name: cppwiki-authentik-redis
+    restart: unless-stopped
+
+    command: --save 60 1 --loglevel warning
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli ping | grep PONG
+      interval: 30s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+    volumes:
+      - authentik_redis:/data
+
+  authentik-server:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}
+    container_name: cppwiki-authentik-server
+    restart: unless-stopped
+
+    command: server
+
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    env_file:
+      - .env
+
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS:?database password required}
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+
+      # Нужно, чтобы Authentik генерировал OIDC issuer именно с этим host.
+      AUTHENTIK_HOST: http://authentik.cppwiki.local:9000
+
+    ports:
+      - "${COMPOSE_PORT_HTTP:-9000}:9000"
+      - "${COMPOSE_PORT_HTTPS:-9443}:9443"
+
+    networks:
+      default:
+        aliases:
+          - authentik.cppwiki.local
+
+    shm_size: 512mb
+
+    volumes:
+      - ./authentik/media:/media
+      - ./authentik/custom-templates:/templates
+
+  authentik-worker:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}
+    container_name: cppwiki-authentik-worker
+    restart: unless-stopped
+
+    command: worker
+
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    env_file:
+      - .env
+
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS:?database password required}
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+      AUTHENTIK_HOST: http://authentik.cppwiki.local:9000
+
+    user: root
+    shm_size: 512mb
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./authentik/media:/media
+      - ./authentik/certs:/certs
+      - ./authentik/custom-templates:/templates
+
+  couchbase:
+    image: docker.io/couchbase/server:community-8.0.0
+    container_name: cppwiki-couchbase
+    hostname: couchbase
+    restart: unless-stopped
+
+    ports:
+      - "8091:8091"
+      - "8092:8092"
+      - "8093:8093"
+      - "8094:8094"
+      - "11210:11210"
+
+    volumes:
+      - couchbase_data:/opt/couchbase/var
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://localhost:8091/pools >/dev/null || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  couchbase-init:
+    image: docker.io/couchbase/server:community-8.0.0
+    container_name: cppwiki-couchbase-init
+    restart: "no"
+
+    depends_on:
+      couchbase:
+        condition: service_healthy
+
+    environment:
+      CB_HOST: couchbase
+      CB_ADMIN_USER: Administrator
+      CB_ADMIN_PASSWORD: password
+      CB_BUCKET: cppwiki
+      CB_BUCKET_RAMSIZE_MB: 256
+      CB_SYNC_USER: sync_gateway
+      CB_SYNC_PASSWORD: sync_gateway_password
+
+    volumes:
+      - ./couchbase-init.sh:/couchbase-init.sh:ro
+
+    entrypoint:
+      - /bin/bash
+      - /couchbase-init.sh
+
+  sync-gateway:
+    image: docker.io/couchbase/sync-gateway:4.0.0-community
+    container_name: cppwiki-sync-gateway
+    restart: unless-stopped
+
+    depends_on:
+      couchbase-init:
+        condition: service_completed_successfully
+      authentik-server:
+        condition: service_started
+
+    ports:
+      - "4984:4984"
+      - "127.0.0.1:4985:4985"
+
+    volumes:
+      - ./sync-gateway/bootstrap.json:/etc/sync_gateway/bootstrap.json:ro
+
+    command:
+      - /etc/sync_gateway/bootstrap.json
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://localhost:4985/ >/dev/null || exit 1
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  sync-gateway-init:
+    image: docker.io/curlimages/curl:8.10.1
+    container_name: cppwiki-sync-gateway-init
+    restart: "no"
+
+    depends_on:
+      sync-gateway:
+        condition: service_healthy
+
+    volumes:
+      - ./sync-gateway/cppwiki-db.json:/cppwiki-db.json:ro
+
+    entrypoint:
+      - /bin/sh
+      - -c
+
+    command:
+      - |
+        set -eu
+
+        echo "Waiting for Sync Gateway Admin API to become reachable..."
+        i=0
+        until curl -fsS "http://sync-gateway:4985/" >/dev/null; do
+          i=$$((i + 1))
+          if [ "$$i" -ge 60 ]; then
+            echo "Sync Gateway Admin API did not become ready in time"
+            exit 1
+          fi
+          sleep 1
+        done
+
+        echo "Creating Sync Gateway database cppwiki..."
+
+        status="$$(curl -sS -o /tmp/sg-create-db-response.txt -w "%{http_code}" \
+          -X PUT "http://sync-gateway:4985/cppwiki/" \
+          -H "Content-Type: application/json" \
+          --data-binary "@/cppwiki-db.json")"
+
+        cat /tmp/sg-create-db-response.txt || true
+        echo
+
+        case "$$status" in
+          200|201)
+            echo "Sync Gateway database cppwiki created."
+            ;;
+          409|412)
+            echo "Sync Gateway database cppwiki already exists."
+            ;;
+          *)
+            echo "Unexpected HTTP status from Sync Gateway database create: $$status"
+            exit 1
+            ;;
+        esac
+
+        echo "Applying Sync Gateway database config (idempotent update)..."
+
+        config_status="$$(curl -sS -o /tmp/sg-db-config-response.txt -w "%{http_code}" \
+          -X PUT "http://sync-gateway:4985/cppwiki/_config" \
+          -H "Content-Type: application/json" \
+          --data-binary "@/cppwiki-db.json")"
+
+        cat /tmp/sg-db-config-response.txt || true
+        echo
+
+        case "$$config_status" in
+          200|201)
+            echo "Sync Gateway database cppwiki config applied."
+            ;;
+          *)
+            echo "Unexpected HTTP status from Sync Gateway database config update: $$config_status"
+            exit 1
+            ;;
+        esac
+
+        echo "Disabling GUEST user..."
+
+        guest_status="$$(curl -sS -o /tmp/sg-guest-response.txt -w "%{http_code}" \
+          -X PUT "http://sync-gateway:4985/cppwiki/_user/GUEST" \
+          -H "Content-Type: application/json" \
+          --data-binary '{"disabled": true}')"
+
+        cat /tmp/sg-guest-response.txt || true
+        echo
+
+        case "$$guest_status" in
+          200|201)
+            echo "GUEST user disabled."
+            ;;
+          *)
+            echo "Unexpected HTTP status from Sync Gateway GUEST update: $$guest_status"
+            exit 1
+            ;;
+        esac
+
+        echo "Bootstrapping Sync Gateway roles..."
+
+        role_default_status="$$(curl -sS -o /tmp/sg-role-default-response.txt -w "%{http_code}" \
+          -X PUT "http://sync-gateway:4985/cppwiki/_role/workspace_default" \
+          -H "Content-Type: application/json" \
+          --data-binary '{"collection_access":{"_default":{"documents":{"admin_channels":["workspace:default"]}}}}')"
+
+        cat /tmp/sg-role-default-response.txt || true
+        echo
+
+        case "$$role_default_status" in
+          200|201)
+            echo "Role workspace_default bootstrapped."
+            ;;
+          *)
+            echo "Unexpected HTTP status from Sync Gateway role workspace_default bootstrap: $$role_default_status"
+            exit 1
+            ;;
+        esac
+
+        role_engineering_status="$$(curl -sS -o /tmp/sg-role-engineering-response.txt -w "%{http_code}" \
+          -X PUT "http://sync-gateway:4985/cppwiki/_role/workspace_engineering" \
+          -H "Content-Type: application/json" \
+          --data-binary '{"collection_access":{"_default":{"documents":{"admin_channels":["workspace:engineering"]}}}}')"
+
+        cat /tmp/sg-role-engineering-response.txt || true
+        echo
+
+        case "$$role_engineering_status" in
+          200|201)
+            echo "Role workspace_engineering bootstrapped."
+            ;;
+          *)
+            echo "Unexpected HTTP status from Sync Gateway role workspace_engineering bootstrap: $$role_engineering_status"
+            exit 1
+            ;;
+        esac
+
+volumes:
+  authentik_database:
+    driver: local
+
+  authentik_redis:
+    driver: local
+
+  couchbase_data:
+    driver: local

@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QDateTime>
+#include <QProcessEnvironment>
 #include <QVariant>
 
 #include <cstdint>
@@ -162,16 +163,73 @@ auto OptionalStringToVariant(const std::optional<std::string>& value) -> QVarian
   return QString::fromStdString(*value);
 }
 
-auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& documents)
+auto NormalizeWorkspaceId(QString workspace_id) -> QString {
+  const auto trimmed = workspace_id.trimmed();
+  return trimmed.isEmpty() ? QStringLiteral("default") : trimmed;
+}
+
+auto EffectiveWorkspaceId(const std::string& workspace_id) -> std::string {
+  return workspace_id.empty() ? std::string("default") : workspace_id;
+}
+
+auto ProcessAuthorId() -> std::string {
+  const auto environment = QProcessEnvironment::systemEnvironment();
+  const auto author = environment.value(QStringLiteral("USER"));
+  if (!author.isEmpty()) {
+    return author.toStdString();
+  }
+
+  const auto username = environment.value(QStringLiteral("USERNAME"));
+  if (!username.isEmpty()) {
+    return username.toStdString();
+  }
+
+  return "unknown";
+}
+
+auto EffectiveAuthorId(const QString& author_id) -> std::string {
+  const auto trimmed = author_id.trimmed();
+  if (!trimmed.isEmpty()) {
+    return trimmed.toStdString();
+  }
+  return ProcessAuthorId();
+}
+
+auto MetadataToVariant(const document::PageMetadata& metadata) -> QVariantMap {
+  return QVariantMap{
+      {QStringLiteral("id"), QString::fromStdString(metadata.id)},
+      {QStringLiteral("title"), QString::fromStdString(metadata.title)},
+      {QStringLiteral("parentId"), OptionalStringToVariant(metadata.parent_id)},
+      {QStringLiteral("sortOrder"), metadata.sort_order},
+      {QStringLiteral("workspaceId"),
+       QString::fromStdString(EffectiveWorkspaceId(metadata.workspace_id))},
+      {QStringLiteral("createdBy"), QString::fromStdString(metadata.created_by)},
+      {QStringLiteral("updatedBy"), QString::fromStdString(metadata.updated_by)},
+      {QStringLiteral("contentVersion"), static_cast<qlonglong>(metadata.content_version)},
+      {QStringLiteral("createdAt"), QString::fromStdString(metadata.created_at)},
+      {QStringLiteral("updatedAt"), QString::fromStdString(metadata.updated_at)},
+  };
+}
+
+auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& documents,
+                                const QString& current_workspace_id)
     -> QVariantList {
   QVariantList result;
-  result.reserve(static_cast<int>(documents.size()));
   for (const auto& document : documents) {
+    const auto workspace_id = QString::fromStdString(EffectiveWorkspaceId(document.workspace_id));
+    if (workspace_id != current_workspace_id) {
+      continue;
+    }
+
     result.append(QVariantMap{
         {QStringLiteral("id"), QString::fromStdString(document.id)},
         {QStringLiteral("title"), QString::fromStdString(document.title)},
         {QStringLiteral("parentId"), OptionalStringToVariant(document.parent_id)},
         {QStringLiteral("sortOrder"), document.sort_order},
+        {QStringLiteral("workspaceId"), workspace_id},
+        {QStringLiteral("createdBy"), QString::fromStdString(document.created_by)},
+        {QStringLiteral("updatedBy"), QString::fromStdString(document.updated_by)},
+        {QStringLiteral("contentVersion"), static_cast<qlonglong>(document.content_version)},
         {QStringLiteral("createdAt"), QString::fromStdString(document.created_at)},
         {QStringLiteral("updatedAt"), QString::fromStdString(document.updated_at)},
     });
@@ -183,7 +241,18 @@ auto CurrentUtcTimestamp() -> std::string {
   return QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString();
 }
 
-auto MakeWelcomeRecord() -> storage::DocumentRecord {
+void ApplyDocumentMutationAudit(document::PageMetadata& metadata, const QString& author_id) {
+  metadata.updated_at = CurrentUtcTimestamp();
+  metadata.updated_by = EffectiveAuthorId(author_id);
+  if (metadata.content_version < 1) {
+    metadata.content_version = 1;
+  } else {
+    ++metadata.content_version;
+  }
+}
+
+auto MakeWelcomeRecord(const QString& workspace_id, const QString& author_id)
+    -> storage::DocumentRecord {
   const auto id = GenerateUuidString();
   const auto title = std::string(constants::kDefaultPageTitle);
   const auto now = CurrentUtcTimestamp();
@@ -196,10 +265,14 @@ auto MakeWelcomeRecord() -> storage::DocumentRecord {
               .id = id,
               .schema_version = document::SchemaVersion::kV1,
               .title = title,
+              .workspace_id = workspace_id.toStdString(),
               .parent_id = std::nullopt,
               .sort_order = 0,
               .created_at = now,
               .updated_at = now,
+              .created_by = EffectiveAuthorId(author_id),
+              .updated_by = EffectiveAuthorId(author_id),
+              .content_version = 1,
           },
       .snapshot =
           document::BlockNoteDocumentSnapshot{
@@ -214,7 +287,10 @@ auto MakeWelcomeRecord() -> storage::DocumentRecord {
 }
 
 auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
-                           std::int32_t sort_order = 0) -> storage::DocumentRecord {
+                           std::int32_t sort_order = 0,
+                           QString workspace_id = QStringLiteral("default"),
+                           QString author_id = {})
+    -> storage::DocumentRecord {
   const auto id = GenerateUuidString();
   const auto title = std::string(constants::kNewDocumentTitle);
   const auto now = CurrentUtcTimestamp();
@@ -227,10 +303,14 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
               .id = id,
               .schema_version = document::SchemaVersion::kV1,
               .title = title,
+              .workspace_id = workspace_id.toStdString(),
               .parent_id = std::move(parent_id),
               .sort_order = sort_order,
               .created_at = now,
               .updated_at = now,
+              .created_by = EffectiveAuthorId(author_id),
+              .updated_by = EffectiveAuthorId(author_id),
+              .content_version = 1,
           },
       .snapshot =
           document::BlockNoteDocumentSnapshot{
@@ -275,12 +355,20 @@ auto ExtractTitle(const document::Document& document, std::string_view fallback_
 }
 
 auto LoadDocumentRecord(std::shared_ptr<storage::LocalDocumentRepository> repository,
-                        const QString& page_id) -> std::variant<storage::DocumentRecord, QVariantMap> {
+                        const QString& page_id,
+                        const QString& current_workspace_id)
+    -> std::variant<storage::DocumentRecord, QVariantMap> {
   auto result = repository->LoadDocument(page_id.toStdString());
   if (!result.document) {
     return ErrorResponse(QStringLiteral("load_failed"),
                          QString::fromStdString(result.error ? result.error->message
                                                              : "Document was not found."));
+  }
+  if (NormalizeWorkspaceId(
+          QString::fromStdString(EffectiveWorkspaceId(result.document->metadata.workspace_id))) !=
+      current_workspace_id) {
+    return ErrorResponse(QStringLiteral("workspace_mismatch"),
+                         QStringLiteral("Document belongs to another workspace."));
   }
   return std::move(*result.document);
 }
@@ -330,12 +418,44 @@ void QEditorBridge::SetRepository(
   repository_ = std::move(repository);
 }
 
+void QEditorBridge::SetSyncStateProvider(const sync::SyncStateProvider* provider) {
+  sync_state_provider_ = provider;
+}
+
+void QEditorBridge::SetPendingDocumentAccess(bool editable, QString lock_owner,
+                                             QString access_message) {
+  pending_document_editable_ = editable;
+  pending_lock_owner_ = std::move(lock_owner);
+  pending_access_message_ = std::move(access_message);
+}
+
+void QEditorBridge::SetCurrentDocumentAccess(bool editable, QString lock_owner,
+                                             QString access_message) {
+  current_document_editable_ = editable;
+  current_lock_owner_ = std::move(lock_owner);
+  current_access_message_ = std::move(access_message);
+  emit documentAccessChanged(current_document_editable_, current_lock_owner_,
+                             current_access_message_);
+}
+
+void QEditorBridge::SetCurrentAuthorId(QString author_id) {
+  current_author_id_ = std::move(author_id);
+}
+
+void QEditorBridge::SetCurrentWorkspaceId(QString workspace_id) {
+  current_workspace_id_ = NormalizeWorkspaceId(std::move(workspace_id));
+  ClearCurrentDocumentSelection();
+}
+
 void QEditorBridge::RequestOpenDocument(const QString& page_id) {
   emit documentOpenRequested(page_id);
 }
 
 void QEditorBridge::ClearCurrentDocumentSelection() {
   current_page_id_.clear();
+  current_document_editable_ = true;
+  current_lock_owner_.clear();
+  current_access_message_.clear();
   emit documentSelectionCleared();
 }
 
@@ -347,55 +467,106 @@ QVariantMap QEditorBridge::getInitialDocument() {
   return SuccessResponse(QVariantList{});
 }
 
-QVariantMap QEditorBridge::listDocuments() {
+QVariantMap QEditorBridge::listDocumentsInWorkspace(const QString& workspace_id) {
   if (!repository_) {
     return ErrorResponse(QStringLiteral("repository_unavailable"),
                          QStringLiteral("Document repository is not configured."));
   }
 
+  const auto normalized_workspace_id = NormalizeWorkspaceId(workspace_id);
   auto result = repository_->ListDocuments();
   if (result.error) {
     return ErrorResponse(QStringLiteral("list_failed"),
                          QString::fromStdString(result.error->message));
   }
 
-  if (result.documents.empty()) {
-    auto welcome = MakeWelcomeRecord();
+  auto documents = DocumentSummariesToVariant(result.documents, normalized_workspace_id);
+  if (documents.empty()) {
+    const bool should_create_welcome = sync_state_provider_ == nullptr ||
+                                       sync_state_provider_->ShouldCreateSyntheticWelcomePage(
+                                           normalized_workspace_id);
+    const bool sync_expected = repository_->SupportsSync() &&
+                               sync_state_provider_ != nullptr &&
+                               sync_state_provider_->ShouldExpectRemoteDocuments(
+                                   normalized_workspace_id);
+    if (sync_expected) {
+      spdlog::info(
+          "Workspace '{}' is empty locally, but remote sync is expected; skipping welcome creation",
+          normalized_workspace_id.toStdString());
+      return SuccessResponse(QVariantList{});
+    }
+
+    if (!should_create_welcome) {
+      spdlog::info(
+          "Workspace '{}' is empty locally and synthetic welcome creation is suppressed while sync mode is active",
+          normalized_workspace_id.toStdString());
+      return SuccessResponse(QVariantList{});
+    }
+
+    spdlog::info(
+        "Workspace '{}' is empty locally and no remote sync is expected; creating local welcome page",
+                 normalized_workspace_id.toStdString());
+    auto welcome = MakeWelcomeRecord(normalized_workspace_id, current_author_id_);
     const auto save_result = repository_->SaveDocument(welcome);
     if (save_result.error) {
       return ErrorResponse(QStringLiteral("default_page_failed"),
                            QString::fromStdString(save_result.error->message));
     }
-    result.documents.push_back(storage::DocumentSummaryFromMetadata(welcome.metadata));
+
+    // Materialize a local workspace root/meta record so this workspace is
+    // treated as a real, fact-proven entity (not just an id inferred from a
+    // channel list), consistent with synced workspaces that gain their root
+    // document via replication. For a purely local-only workspace this root
+    // is created immediately since there is no remote pull to wait for.
+    if (!repository_->LoadWorkspaceRoot(normalized_workspace_id.toStdString()).has_value()) {
+      const auto workspace_root_result = repository_->SaveWorkspaceRoot(storage::WorkspaceRootRecord{
+          .workspace_id = normalized_workspace_id.toStdString(),
+          .title = normalized_workspace_id.toStdString(),
+          .created_at = CurrentUtcTimestamp(),
+          .schema_version = 1,
+      });
+      if (workspace_root_result.error) {
+        spdlog::warn("Failed to materialize local workspace root for '{}': {}",
+                     normalized_workspace_id.toStdString(),
+                     workspace_root_result.error->message);
+      }
+    }
+
+    documents = DocumentSummariesToVariant(
+        std::vector<storage::DocumentSummary>{storage::DocumentSummaryFromMetadata(welcome.metadata)},
+        normalized_workspace_id);
   }
 
-  return SuccessResponse(DocumentSummariesToVariant(result.documents));
+  return SuccessResponse(documents);
 }
 
-QVariantMap QEditorBridge::createDocument() {
+QVariantMap QEditorBridge::listDocuments() {
+  return listDocumentsInWorkspace(current_workspace_id_);
+}
+
+QVariantMap QEditorBridge::createDocumentInWorkspace(const QString& workspace_id) {
   if (!repository_) {
     return ErrorResponse(QStringLiteral("repository_unavailable"),
                          QStringLiteral("Document repository is not configured."));
   }
 
-  auto record = MakeNewDocumentRecord();
+  auto record = MakeNewDocumentRecord(std::nullopt, 0, NormalizeWorkspaceId(workspace_id),
+                                      current_author_id_);
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
     return ErrorResponse(QStringLiteral("create_failed"),
                          QString::fromStdString(save_result.error->message));
   }
 
-  return SuccessResponse(QVariantMap{
-      {QStringLiteral("id"), QString::fromStdString(record.metadata.id)},
-      {QStringLiteral("title"), QString::fromStdString(record.metadata.title)},
-      {QStringLiteral("parentId"), OptionalStringToVariant(record.metadata.parent_id)},
-      {QStringLiteral("sortOrder"), record.metadata.sort_order},
-      {QStringLiteral("createdAt"), QString::fromStdString(record.metadata.created_at)},
-      {QStringLiteral("updatedAt"), QString::fromStdString(record.metadata.updated_at)},
-  });
+  return SuccessResponse(MetadataToVariant(record.metadata));
 }
 
-QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
+QVariantMap QEditorBridge::createDocument() {
+  return createDocumentInWorkspace(current_workspace_id_);
+}
+
+QVariantMap QEditorBridge::createChildDocumentInWorkspace(const QString& workspace_id,
+                                                          const QString& parent_id) {
   if (!repository_) {
     return ErrorResponse(QStringLiteral("repository_unavailable"),
                          QStringLiteral("Document repository is not configured."));
@@ -406,22 +577,32 @@ QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
                          QStringLiteral("Parent document id is required."));
   }
 
+  const auto normalized_workspace_id = NormalizeWorkspaceId(workspace_id);
   const auto sort_order = NextChildSortOrder(repository_, parent_id.toStdString());
-  auto record = MakeNewDocumentRecord(parent_id.toStdString(), sort_order);
+  auto parent_loaded = repository_->LoadDocument(parent_id.toStdString());
+  if (!parent_loaded.document) {
+    return ErrorResponse(QStringLiteral("invalid_parent"),
+                         QStringLiteral("Parent document was not found."));
+  }
+  if (NormalizeWorkspaceId(QString::fromStdString(
+          EffectiveWorkspaceId(parent_loaded.document->metadata.workspace_id))) != normalized_workspace_id) {
+    return ErrorResponse(QStringLiteral("invalid_parent"),
+                         QStringLiteral("Parent document belongs to another workspace."));
+  }
+
+  auto record = MakeNewDocumentRecord(parent_id.toStdString(), sort_order, normalized_workspace_id,
+                                      current_author_id_);
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
     return ErrorResponse(QStringLiteral("create_failed"),
                          QString::fromStdString(save_result.error->message));
   }
 
-  return SuccessResponse(QVariantMap{
-      {QStringLiteral("id"), QString::fromStdString(record.metadata.id)},
-      {QStringLiteral("title"), QString::fromStdString(record.metadata.title)},
-      {QStringLiteral("parentId"), OptionalStringToVariant(record.metadata.parent_id)},
-      {QStringLiteral("sortOrder"), record.metadata.sort_order},
-      {QStringLiteral("createdAt"), QString::fromStdString(record.metadata.created_at)},
-      {QStringLiteral("updatedAt"), QString::fromStdString(record.metadata.updated_at)},
-  });
+  return SuccessResponse(MetadataToVariant(record.metadata));
+}
+
+QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
+  return createChildDocumentInWorkspace(current_workspace_id_, parent_id);
 }
 
 QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString& title) {
@@ -441,14 +622,14 @@ QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString&
                          QStringLiteral("Document title cannot be empty."));
   }
 
-  auto loaded_or_error = LoadDocumentRecord(repository_, page_id);
+  auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
   if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
     return std::get<QVariantMap>(std::move(loaded_or_error));
   }
 
   auto record = std::move(std::get<storage::DocumentRecord>(loaded_or_error));
   record.metadata.title = trimmed_title.toStdString();
-  record.metadata.updated_at = CurrentUtcTimestamp();
+  ApplyDocumentMutationAudit(record.metadata, current_author_id_);
   record.snapshot.title = record.metadata.title;
 
   auto blocks_or_error = ExtractBlocks(QByteArray::fromStdString(record.raw_snapshot_json));
@@ -469,14 +650,7 @@ QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString&
                          QString::fromStdString(save_result.error->message));
   }
 
-  return SuccessResponse(QVariantMap{
-      {QStringLiteral("id"), QString::fromStdString(record.metadata.id)},
-      {QStringLiteral("title"), QString::fromStdString(record.metadata.title)},
-      {QStringLiteral("parentId"), OptionalStringToVariant(record.metadata.parent_id)},
-      {QStringLiteral("sortOrder"), record.metadata.sort_order},
-      {QStringLiteral("createdAt"), QString::fromStdString(record.metadata.created_at)},
-      {QStringLiteral("updatedAt"), QString::fromStdString(record.metadata.updated_at)},
-  });
+  return SuccessResponse(MetadataToVariant(record.metadata));
 }
 
 QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const QString& parent_id,
@@ -486,7 +660,7 @@ QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const
                          QStringLiteral("Document repository is not configured."));
   }
 
-  auto loaded_or_error = LoadDocumentRecord(repository_, page_id);
+  auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
   if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
     return std::get<QVariantMap>(std::move(loaded_or_error));
   }
@@ -494,7 +668,7 @@ QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const
   auto record = std::move(std::get<storage::DocumentRecord>(loaded_or_error));
   record.metadata.parent_id = has_parent_id ? std::make_optional(parent_id.toStdString()) : std::nullopt;
   record.metadata.sort_order = sort_order;
-  record.metadata.updated_at = CurrentUtcTimestamp();
+  ApplyDocumentMutationAudit(record.metadata, current_author_id_);
 
   auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
@@ -502,14 +676,7 @@ QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const
                          QString::fromStdString(save_result.error->message));
   }
 
-  return SuccessResponse(QVariantMap{
-      {QStringLiteral("id"), QString::fromStdString(record.metadata.id)},
-      {QStringLiteral("title"), QString::fromStdString(record.metadata.title)},
-      {QStringLiteral("parentId"), OptionalStringToVariant(record.metadata.parent_id)},
-      {QStringLiteral("sortOrder"), record.metadata.sort_order},
-      {QStringLiteral("createdAt"), QString::fromStdString(record.metadata.created_at)},
-      {QStringLiteral("updatedAt"), QString::fromStdString(record.metadata.updated_at)},
-  });
+  return SuccessResponse(MetadataToVariant(record.metadata));
 }
 
 QVariantMap QEditorBridge::deleteDocument(const QString& page_id) {
@@ -520,6 +687,11 @@ QVariantMap QEditorBridge::deleteDocument(const QString& page_id) {
   if (page_id.isEmpty()) {
     return ErrorResponse(QStringLiteral("invalid_document"),
                          QStringLiteral("Document id is required."));
+  }
+
+  auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
+  if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
+    return std::get<QVariantMap>(std::move(loaded_or_error));
   }
 
   if (const auto error = DeleteDocumentTree(repository_, page_id.toStdString())) {
@@ -545,6 +717,12 @@ QVariantMap QEditorBridge::loadDocument(const QString& page_id) {
                          QString::fromStdString(result.error ? result.error->message
                                                              : "Document was not found."));
   }
+  if (NormalizeWorkspaceId(
+          QString::fromStdString(EffectiveWorkspaceId(result.document->metadata.workspace_id))) !=
+      current_workspace_id_) {
+    return ErrorResponse(QStringLiteral("workspace_mismatch"),
+                         QStringLiteral("Document belongs to another workspace."));
+  }
 
   auto blocks = BlocksFromRawSnapshotJson(result.document->raw_snapshot_json);
   if (std::holds_alternative<QString>(blocks)) {
@@ -552,15 +730,15 @@ QVariantMap QEditorBridge::loadDocument(const QString& page_id) {
   }
 
   current_page_id_ = page_id;
-  return SuccessResponse(QVariantMap{
-      {QStringLiteral("id"), QString::fromStdString(result.document->metadata.id)},
-      {QStringLiteral("title"), QString::fromStdString(result.document->metadata.title)},
-      {QStringLiteral("parentId"), OptionalStringToVariant(result.document->metadata.parent_id)},
-      {QStringLiteral("sortOrder"), result.document->metadata.sort_order},
-      {QStringLiteral("createdAt"), QString::fromStdString(result.document->metadata.created_at)},
-      {QStringLiteral("updatedAt"), QString::fromStdString(result.document->metadata.updated_at)},
-      {QStringLiteral("blocks"), std::get<QVariantList>(std::move(blocks))},
-  });
+  current_document_editable_ = pending_document_editable_;
+  current_lock_owner_ = pending_lock_owner_;
+  current_access_message_ = pending_access_message_;
+  auto response = MetadataToVariant(result.document->metadata);
+  response.insert(QStringLiteral("blocks"), std::get<QVariantList>(std::move(blocks)));
+  response.insert(QStringLiteral("editable"), current_document_editable_);
+  response.insert(QStringLiteral("lockOwner"), current_lock_owner_);
+  response.insert(QStringLiteral("accessMessage"), current_access_message_);
+  return SuccessResponse(response);
 }
 
 QVariantMap QEditorBridge::openDocument(const QString& page_id) {
@@ -572,6 +750,8 @@ QVariantMap QEditorBridge::openDocument(const QString& page_id) {
   }
 
   emit documentLoaded(response.value(QStringLiteral("result")).toMap());
+  emit documentAccessChanged(current_document_editable_, current_lock_owner_,
+                             current_access_message_);
   return response;
 }
 
@@ -580,6 +760,19 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
     return ErrorResponse(QStringLiteral("no_document_selected"),
                          QStringLiteral("No document is selected."));
   }
+
+  if (!current_document_editable_) {
+    emit saveStatusChanged(current_page_id_, false,
+                           current_access_message_.isEmpty()
+                               ? QStringLiteral("Document is read-only.")
+                               : current_access_message_);
+    return ErrorResponse(QStringLiteral("document_read_only"),
+                         current_access_message_.isEmpty()
+                             ? QStringLiteral("Document is read-only.")
+                             : current_access_message_);
+  }
+
+  emit saveStatusChanged(current_page_id_, true, QStringLiteral("Saving..."));
 
   const auto snapshot_bytes = snapshot_json.toUtf8();
   const auto validation = document::DocumentValidator::ParseAndValidateSnapshot(snapshot_bytes);
@@ -610,6 +803,18 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
     }
     record.metadata.id = current_page_id_.toStdString();
     record.metadata.schema_version = document::SchemaVersion::kV1;
+    if (record.metadata.workspace_id.empty()) {
+      record.metadata.workspace_id = "default";
+    }
+    if (record.metadata.created_by.empty()) {
+      record.metadata.created_by = EffectiveAuthorId(current_author_id_);
+    }
+    if (record.metadata.updated_by.empty()) {
+      record.metadata.updated_by = record.metadata.created_by;
+    }
+    if (record.metadata.content_version < 1) {
+      record.metadata.content_version = 1;
+    }
     const auto fallback_title = record.metadata.title.empty()
                                     ? std::string_view(constants::kNewDocumentTitle)
                                     : std::string_view(record.metadata.title);
@@ -617,7 +822,7 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
     if (record.metadata.created_at.empty()) {
       record.metadata.created_at = CurrentUtcTimestamp();
     }
-    record.metadata.updated_at = CurrentUtcTimestamp();
+    ApplyDocumentMutationAudit(record.metadata, current_author_id_);
     record.snapshot = *validation.snapshot;
     record.snapshot.id = record.metadata.id;
     record.snapshot.schema_version = static_cast<std::int32_t>(document::SchemaVersion::kV1);

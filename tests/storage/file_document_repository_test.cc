@@ -1,0 +1,126 @@
+#include "storage/file_document_repository.h"
+
+#include <spdlog/spdlog.h>
+
+#include <cstdlib>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace {
+
+auto Require(bool condition, std::string_view message) -> void {
+  if (!condition) {
+    spdlog::error("FAIL: {}", message);
+    std::exit(EXIT_FAILURE);
+  }
+}
+
+auto MakeDocument() -> cppwiki::storage::DocumentRecord {
+  return cppwiki::storage::DocumentRecord{
+      .metadata =
+          cppwiki::document::PageMetadata{
+              .id = "page-1",
+              .schema_version = cppwiki::document::SchemaVersion::kV1,
+              .title = "File Repo Page",
+              .workspace_id = "engineering",
+              .parent_id = std::make_optional<std::string>("workspace-root"),
+              .sort_order = 3,
+              .created_at = "2026-06-30T10:00:00.000Z",
+              .updated_at = "2026-06-30T10:05:00.000Z",
+              .created_by = "creator",
+              .updated_by = "editor",
+              .content_version = 4,
+          },
+      .snapshot =
+          cppwiki::document::BlockNoteDocumentSnapshot{
+              .id = std::string("page-1"),
+              .schema_version = 1,
+              .title = std::string("File Repo Page"),
+              .blocks = std::vector<cppwiki::document::BlockNoteBlockSnapshot>{},
+          },
+      .raw_snapshot_json =
+          R"({"id":"page-1","schema_version":1,"title":"File Repo Page","blocks":[]})",
+  };
+}
+
+auto MakeConflict() -> cppwiki::storage::DocumentConflictRecord {
+  return cppwiki::storage::DocumentConflictRecord{
+      .id = "conflict-1",
+      .document_id = "page-1",
+      .workspace_id = "engineering",
+      .base_version = 4,
+      .local_snapshot = R"({"title":"Local"})",
+      .remote_snapshot = R"({"title":"Remote"})",
+      .local_updated_by = "alice",
+      .remote_updated_by = "bob",
+      .detected_at = "2026-06-30T10:06:00.000Z",
+      .resolution_state = "pending",
+  };
+}
+
+auto TestFileRepositoryPersistsDocumentsAndConflicts() -> void {
+  const auto storage_directory = std::filesystem::temp_directory_path() / "cppwiki-file-repo-test";
+  std::filesystem::remove_all(storage_directory);
+
+  cppwiki::storage::FileDocumentRepository repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+
+  const auto document = MakeDocument();
+  const auto save_document = repository.SaveDocument(document);
+  Require(!save_document.error, "file repository document save should succeed");
+
+  const auto load_document = repository.LoadDocument("page-1");
+  Require(load_document.document.has_value(), "file repository should load saved document");
+  Require(load_document.document->metadata.updated_by == "editor",
+          "file repository should preserve updated_by");
+  Require(load_document.document->metadata.content_version == 4,
+          "file repository should preserve content_version");
+
+  const auto save_conflict = repository.SaveConflict(MakeConflict());
+  Require(!save_conflict.error, "file repository conflict save should succeed");
+
+  const auto load_conflict = repository.LoadConflict("conflict-1");
+  Require(load_conflict.conflict.has_value(), "file repository should load saved conflict");
+  Require(load_conflict.conflict->remote_updated_by == "bob",
+          "file repository should preserve remote_updated_by");
+
+  const auto list_conflicts = repository.ListConflicts();
+  Require(!list_conflicts.error, "file repository conflict list should succeed");
+  Require(list_conflicts.conflicts.size() == 1, "file repository should list saved conflict");
+
+  const auto resolve_conflict = repository.ResolveConflict("conflict-1");
+  Require(!resolve_conflict.error, "file repository should resolve conflict");
+  Require(repository.LoadConflict("conflict-1").conflict->resolution_state == "resolved",
+          "file repository should persist resolved state");
+
+  const auto dismiss_conflict = repository.DismissConflict("conflict-1");
+  Require(!dismiss_conflict.error, "file repository should dismiss conflict");
+  Require(repository.LoadConflict("conflict-1").conflict->resolution_state == "dismissed",
+          "file repository should persist dismissed state");
+
+  const auto sync_status = repository.GetSyncStatus();
+  Require(!sync_status.has_conflicts,
+          "file repository sync status should ignore non-pending conflicts");
+  Require(sync_status.conflict_count == 0,
+          "file repository sync status should count only pending conflicts");
+
+  const auto delete_document = repository.DeleteDocument("page-1");
+  Require(!delete_document.error, "file repository document delete should succeed");
+  Require(!repository.LoadDocument("page-1").document.has_value(),
+          "file repository should delete document");
+  Require(!repository.LoadConflict("conflict-1").conflict.has_value(),
+          "file repository should delete related conflicts with document");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
+}  // namespace
+
+auto main() -> int {
+  TestFileRepositoryPersistsDocumentsAndConflicts();
+  spdlog::info("cppwiki_file_document_repository_tests passed");
+  return EXIT_SUCCESS;
+}

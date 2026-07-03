@@ -43,6 +43,21 @@ auto RequireErrorEnvelope(const QVariantMap& response, const QString& expected_c
           "error message must not be empty");
 }
 
+class FakeSyncStateProvider final : public cppwiki::sync::SyncStateProvider {
+ public:
+  explicit FakeSyncStateProvider(QStringList remote_workspaces = {})
+      : remote_workspaces_(std::move(remote_workspaces)) {}
+
+  [[nodiscard]] auto ShouldExpectRemoteDocuments(const QString& workspace_id) const
+      -> bool override {
+    return remote_workspaces_.contains(workspace_id.trimmed().isEmpty() ? QStringLiteral("default")
+                                                                        : workspace_id.trimmed());
+  }
+
+ private:
+  QStringList remote_workspaces_;
+};
+
 class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepository {
  public:
   [[nodiscard]] auto SaveDocument(const cppwiki::storage::DocumentRecord& document)
@@ -84,6 +99,37 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     }
     return result;
   }
+
+  [[nodiscard]] auto SaveConflict(const cppwiki::storage::DocumentConflictRecord&)
+      -> cppwiki::storage::SaveConflictResult override {
+    return {};
+  }
+
+  [[nodiscard]] auto DeleteConflict(std::string_view)
+      -> cppwiki::storage::DeleteConflictResult override {
+    return {};
+  }
+
+  [[nodiscard]] auto LoadConflict(std::string_view)
+      -> cppwiki::storage::LoadConflictResult override {
+    return {};
+  }
+
+  [[nodiscard]] auto ListConflicts() -> cppwiki::storage::ListConflictsResult override {
+    return {};
+  }
+
+  [[nodiscard]] auto ResolveConflict(std::string_view)
+      -> cppwiki::storage::UpdateConflictResolutionResult override {
+    return {};
+  }
+
+  [[nodiscard]] auto DismissConflict(std::string_view)
+      -> cppwiki::storage::UpdateConflictResolutionResult override {
+    return {};
+  }
+
+  [[nodiscard]] auto SupportsSync() const -> bool override { return true; }
 
  private:
   std::map<std::string, cppwiki::storage::DocumentRecord> documents_;
@@ -138,6 +184,7 @@ auto TestDocumentListBootstrapsWelcomePage() -> QString {
   auto repository = std::make_shared<FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
+  bridge.SetSyncStateProvider(nullptr);
 
   const auto response = bridge.listDocuments();
   RequireSuccessEnvelope(response);
@@ -148,6 +195,15 @@ auto TestDocumentListBootstrapsWelcomePage() -> QString {
   const auto page = pages.front().toMap();
   Require(page.value(QStringLiteral("title")).toString() == QStringLiteral("Welcome to CppWiki"),
           "bootstrap page title should match");
+  Require(page.value(QStringLiteral("workspaceId")).toString() == QStringLiteral("default"),
+          "bootstrap page workspace should default to default");
+  Require(!page.value(QStringLiteral("createdBy")).toString().isEmpty(),
+          "bootstrap page creator should not be empty");
+  Require(page.value(QStringLiteral("updatedBy")).toString() ==
+              page.value(QStringLiteral("createdBy")).toString(),
+          "bootstrap page updatedBy should initially match createdBy");
+  Require(page.value(QStringLiteral("contentVersion")).toLongLong() == 1,
+          "bootstrap page contentVersion should start at 1");
   return page.value(QStringLiteral("id")).toString();
 }
 
@@ -167,6 +223,15 @@ auto TestCreateDocument() -> QString {
   Require(created.value(QStringLiteral("parentId")).isNull() ||
               !created.value(QStringLiteral("parentId")).isValid(),
           "created root document should not have a parent");
+  Require(created.value(QStringLiteral("workspaceId")).toString() == QStringLiteral("default"),
+          "created document workspace should default to default");
+  Require(!created.value(QStringLiteral("createdBy")).toString().isEmpty(),
+          "created document creator should not be empty");
+  Require(created.value(QStringLiteral("updatedBy")).toString() ==
+              created.value(QStringLiteral("createdBy")).toString(),
+          "created document updatedBy should initially match createdBy");
+  Require(created.value(QStringLiteral("contentVersion")).toLongLong() == 1,
+          "created document contentVersion should start at 1");
   return created.value(QStringLiteral("id")).toString();
 }
 
@@ -202,6 +267,8 @@ auto TestCreateDocumentLoadsEmptyAndSaves() -> void {
   Require(reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
               QStringLiteral("Untitled note"),
           "document without h1 should keep its existing title");
+  Require(reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("contentVersion")).toLongLong() == 2,
+          "saving a snapshot should increment contentVersion");
 }
 
 auto TestCreateDocumentDoesNotHijackAutosaveSelection() -> void {
@@ -239,6 +306,10 @@ auto TestCreateDocumentDoesNotHijackAutosaveSelection() -> void {
   const auto created_result = loaded_created.value(QStringLiteral("result")).toMap();
   Require(created_result.value(QStringLiteral("title")).toString() == QStringLiteral("Untitled note"),
           "creating a document should not change bridge selection before open");
+  Require(created_result.value(QStringLiteral("workspaceId")).toString() == QStringLiteral("default"),
+          "loaded created document workspace should default to default");
+  Require(!created_result.value(QStringLiteral("createdBy")).toString().isEmpty(),
+          "loaded created document creator should not be empty");
   Require(created_result.value(QStringLiteral("blocks")).toList().isEmpty(),
           "newly created document should remain empty until it is opened and edited");
 
@@ -317,6 +388,123 @@ auto TestOpenDocumentReturnsLoadedDocument() -> void {
           "opened welcome document should include blocks");
 }
 
+auto TestWorkspaceListIsolation() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  RequireSuccessEnvelope(bridge.createDocument());
+
+  bridge.SetCurrentWorkspaceId(QStringLiteral("team-b"));
+  const auto team_b_list = bridge.listDocuments();
+  RequireSuccessEnvelope(team_b_list);
+  const auto team_b_pages = team_b_list.value(QStringLiteral("result")).toList();
+  Require(team_b_pages.size() == 1, "new workspace should bootstrap its own welcome page");
+  Require(team_b_pages.front().toMap().value(QStringLiteral("workspaceId")).toString() ==
+              QStringLiteral("team-b"),
+          "bootstrapped page should belong to active workspace");
+
+  bridge.SetCurrentWorkspaceId(QStringLiteral("default"));
+  const auto default_list = bridge.listDocuments();
+  RequireSuccessEnvelope(default_list);
+  const auto default_pages = default_list.value(QStringLiteral("result")).toList();
+  Require(!default_pages.isEmpty(), "default workspace should still have its own documents");
+  for (const auto& page_value : default_pages) {
+    Require(page_value.toMap().value(QStringLiteral("workspaceId")).toString() ==
+                QStringLiteral("default"),
+            "listDocuments should only return documents from active workspace");
+  }
+}
+
+auto TestEmptyRepositoryWithRemoteSyncExpectedSkipsWelcome() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  FakeSyncStateProvider sync_provider(QStringList{QStringLiteral("default")});
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+  bridge.SetSyncStateProvider(&sync_provider);
+
+  const auto response = bridge.listDocuments();
+  RequireSuccessEnvelope(response);
+
+  const auto pages = response.value(QStringLiteral("result")).toList();
+  Require(pages.isEmpty(),
+          "empty repository with expected remote sync should not bootstrap a welcome page");
+}
+
+auto TestEmptyRepositoryWithUnreadySyncStillBootstrapsWelcome() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  FakeSyncStateProvider sync_provider;
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+  bridge.SetSyncStateProvider(&sync_provider);
+
+  const auto response = bridge.listDocuments();
+  RequireSuccessEnvelope(response);
+
+  const auto pages = response.value(QStringLiteral("result")).toList();
+  Require(pages.size() == 1,
+          "empty repository without confirmed remote sync should bootstrap a welcome page");
+}
+
+auto TestNonEmptyRepositoryWithRemoteSyncExpectedReturnsDocuments() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  FakeSyncStateProvider sync_provider(QStringList{QStringLiteral("default")});
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+  bridge.SetSyncStateProvider(&sync_provider);
+
+  const auto created = bridge.createDocument();
+  RequireSuccessEnvelope(created);
+
+  const auto response = bridge.listDocuments();
+  RequireSuccessEnvelope(response);
+
+  const auto pages = response.value(QStringLiteral("result")).toList();
+  Require(pages.size() == 1,
+          "non-empty repository with expected remote sync should return existing documents");
+}
+
+auto TestWorkspaceMismatchBlocksCrossWorkspaceLoad() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created = bridge.createDocument();
+  RequireSuccessEnvelope(created);
+  const auto created_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+
+  bridge.SetCurrentWorkspaceId(QStringLiteral("team-b"));
+  const auto loaded = bridge.loadDocument(created_id);
+  RequireErrorEnvelope(loaded, QStringLiteral("workspace_mismatch"));
+}
+
+auto TestSessionContextOverridesWorkspaceAndAuthor() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+  bridge.SetCurrentAuthorId(QStringLiteral("subject-42"));
+  bridge.SetCurrentWorkspaceId(QStringLiteral("workspace-blue"));
+
+  const auto created = bridge.createDocument();
+  RequireSuccessEnvelope(created);
+  const auto result = created.value(QStringLiteral("result")).toMap();
+  Require(result.value(QStringLiteral("workspaceId")).toString() == QStringLiteral("workspace-blue"),
+          "created document should use current workspace from session context");
+  Require(result.value(QStringLiteral("createdBy")).toString() == QStringLiteral("subject-42"),
+          "created document should use current author from session context");
+
+  const auto loaded = bridge.loadDocument(result.value(QStringLiteral("id")).toString());
+  RequireSuccessEnvelope(loaded);
+  const auto loaded_result = loaded.value(QStringLiteral("result")).toMap();
+  Require(loaded_result.value(QStringLiteral("workspaceId")).toString() ==
+              QStringLiteral("workspace-blue"),
+          "loaded document should preserve session-derived workspace");
+  Require(loaded_result.value(QStringLiteral("createdBy")).toString() ==
+              QStringLiteral("subject-42"),
+          "loaded document should preserve session-derived author");
+}
+
 auto TestValidSnapshot() -> void {
   auto repository = std::make_shared<FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
@@ -392,6 +580,12 @@ auto main() -> int {
   TestRenameDocumentUpdatesTitle();
   TestDeleteDocumentRemovesItFromList();
   TestOpenDocumentReturnsLoadedDocument();
+  TestWorkspaceListIsolation();
+  TestEmptyRepositoryWithRemoteSyncExpectedSkipsWelcome();
+  TestEmptyRepositoryWithUnreadySyncStillBootstrapsWelcome();
+  TestNonEmptyRepositoryWithRemoteSyncExpectedReturnsDocuments();
+  TestWorkspaceMismatchBlocksCrossWorkspaceLoad();
+  TestSessionContextOverridesWorkspaceAndAuthor();
   TestValidSnapshot();
   TestInvalidJsonSnapshot();
   TestInvalidRootSnapshot();

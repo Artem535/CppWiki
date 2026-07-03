@@ -12,7 +12,7 @@
 The project currently has:
 
 - Qt/C++ project skeleton with CMake presets.
-- vcpkg manifest for reflect-cpp, spdlog and Drogon.
+- vcpkg manifest for `reflectcpp`, `spdlog` and `cli11`.
 - Qt is resolved from the system or external Qt installation, not from vcpkg.
 - `cppwiki::Application` and `cppwiki::MainWindow`.
 - Qlementine wired as the desktop Qt style.
@@ -27,6 +27,8 @@ The project currently has:
 - UUID helper for generated document IDs.
 - Native Qt navigation tree with add-child affordance, context menu actions, delete, move up/down and drag-and-drop reordering.
 - Dedicated popup widget for document row actions instead of `QMenu`.
+- Server scaffold now exists under `src/server/{app,components,config,handlers,middleware,service,dto}`, with userver, reflect-cpp YAML runtime config, generated userver static config, CLI11 parsing, structured logging and a health endpoint with CORS preflight.
+- Observability is being laid in as an OpenTelemetry-ready boundary on top of the current logging layer.
 - Architecture and project-structure documentation.
 
 The current UI is a minimal working shell, not the final native product shell. The navigation surface is moving from the temporary list view toward the native tree view and row actions.
@@ -130,24 +132,33 @@ Exit criteria:
 - editor is the primary screen, not a landing page;
 - UI layout remains stable during resize.
 
+Server work starts after this milestone, with only small Phase 3.5 shell fixes allowed in parallel.
+
 ---
 
 # 3. Medium-Term Milestones
 
-## Milestone 6: Auth Spike
+## Milestone 6: Server Skeleton
+
+- add `userver` application target (`cppwiki_server`).
+- health endpoint and CORS preflight.
+- runtime config -> userver static-config generation.
+- public/protected route split and JWT-ready auth boundary.
+- lock and presence API stubs.
+- typed DTO/handler/service baseline for future page APIs.
+- structured logging with spdlog and userver span tags; configurable log level.
+- Swagger/OpenAPI page for manual protected-route verification.
+
+## Milestone 7: Auth Spike
 
 - Authentik OIDC Authorization Code Flow with PKCE.
-- System browser login.
+- system browser login.
 - token storage in system keyring.
-- backend JWT validation path.
-
-## Milestone 7: Backend Skeleton
-
-- Drogon application target.
-- health endpoint.
-- auth middleware placeholder.
-- lock and presence API stubs.
-- structured logging with spdlog.
+- refresh/logout flow.
+- backend JWT validation middleware.
+- editor never gets token access.
+- protected backend routes verified with real Authentik access tokens.
+- desktop shell shows authenticated user identity and handles token expiry without restart.
 
 ## Milestone 8: Sync Spike
 
@@ -197,14 +208,17 @@ Exit criteria:
 | Frontend package manager | Tentative | npm is used now; can revisit if workspace tooling changes |
 | Document hash / dirty check | Deferred | Not required for current autosave loop. Revisit for Phase 3.5 when adding conflict detection, skip-save optimization or sync |
 | Page navigation shape | Tree migration underway | Current UI has native Qt navigation and row actions. Tree view is now the active path; list-only navigation is no longer the target shape |
+| Server framework migration | Closed (Phase 5) | `userver` is the chosen backend framework; dependency manifest and server skeleton are now aligned. ADR-009 records the rationale. |
+| Auth spike | Closed (Phase 6) | Desktop OIDC login, keyring persistence, refresh flow, server JWT validation and protected-route verification are now working on the dev setup. |
+| Observability baseline | Active decision | OpenTelemetry is the backend observability contract; exporter wiring stays decoupled from business code and editor runtime |
 
 ---
 
 # 6. Immediate Next Actions
 
-1. Exercise the Phase 3 path manually: empty repository -> default page -> select page -> edit -> autosave -> restart -> load.
-2. Finish Phase 3.5 hardening around navigation state: preserve selection across reloads, avoid tree flicker on updates, and keep context actions stable.
-3. Decide whether document hash belongs in Phase 3.5 after the autosave loop is stable.
-4. Add Qt-owned light/dark theme switching through Qlementine and propagate the active theme into the WebView editor.
-5. Add a native settings dialog backed by QSettings and Qlementine widgets for font size and database folder access.
-6. Add a small user-visible save/error state in the desktop shell.
+1. Start Phase 7 and make the backend lock owner authoritative instead of treating lock/presence endpoints as authenticated stubs.
+2. Wire desktop editing flow to acquire/release locks and send heartbeat while the editor is active.
+3. Enforce read-only fallback in the desktop editor bridge when another user owns the lock.
+4. Surface lock owner and presence state in the desktop shell using the authenticated identity that now comes from JWT.
+5. Add OpenTelemetry request-span and metrics wiring without coupling the editor to the telemetry backend.
+6. Keep local editing and local persistence operational when the backend is unavailable.
