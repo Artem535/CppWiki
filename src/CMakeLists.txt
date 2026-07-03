@@ -1,3 +1,4 @@
+if (CPPWIKI_BUILD_DESKTOP_APP)
 qt_add_executable(cppwiki_app
         MANUAL_FINALIZATION
         WIN32
@@ -153,6 +154,7 @@ set_target_properties(cppwiki_app
 )
 
 qt_finalize_executable(cppwiki_app)
+endif ()
 
 if (CPPWIKI_BUILD_SERVER)
     find_package(absl CONFIG REQUIRED)

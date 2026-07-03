@@ -78,6 +78,34 @@ auto ConvertLevel(const std::string& level) -> std::string {
   throw std::invalid_argument("Unsupported log level: " + level);
 }
 
+auto ReadEnv(std::string_view name) -> std::optional<std::string> {
+  const auto* value = std::getenv(std::string(name).c_str());
+  if (value == nullptr || std::string_view(value).empty()) {
+    return std::nullopt;
+  }
+  return std::string(value);
+}
+
+auto ReadBoolEnv(std::string_view name) -> std::optional<bool> {
+  const auto value = ReadEnv(name);
+  if (!value) {
+    return std::nullopt;
+  }
+
+  const auto normalized = Normalize(*value);
+  if (normalized == "1" || normalized == "true" || normalized == "yes" ||
+      normalized == "on") {
+    return true;
+  }
+  if (normalized == "0" || normalized == "false" || normalized == "no" ||
+      normalized == "off") {
+    return false;
+  }
+
+  throw std::invalid_argument("Unsupported boolean environment value for " + std::string(name) +
+                              ": " + *value);
+}
+
 auto LoadRuntimeConfigFile(const std::string& path) -> RuntimeConfigFile {
   const auto yaml = ReadFile(path);
   auto parsed = rfl::yaml::read<RuntimeConfigFile>(yaml);
@@ -95,6 +123,41 @@ auto LoadRuntimeConfigFile(const std::string& path) -> RuntimeConfigFile {
   }
 
   return file_config;
+}
+
+void ApplyEnvironmentOverrides(RuntimeConfig& cfg) {
+  if (auto value = ReadEnv("CPPWIKI_BIND_HOST")) {
+    cfg.bind_host = std::move(value);
+  }
+  if (auto value = ReadEnv("CPPWIKI_PORT")) {
+    cfg.port = ConvertToUint16(*value);
+  }
+  if (auto value = ReadEnv("CPPWIKI_LOG_LEVEL")) {
+    cfg.log_level = ConvertLevel(*value);
+  }
+
+  if (auto value = ReadEnv("CPPWIKI_AUTH_ISSUER")) {
+    cfg.auth_issuer = std::move(value);
+  }
+  if (auto value = ReadEnv("CPPWIKI_AUTH_AUDIENCE")) {
+    cfg.auth_audience = std::move(value);
+  }
+  if (auto value = ReadEnv("CPPWIKI_AUTH_JWKS_URL")) {
+    cfg.auth_jwks_url = std::move(value);
+  }
+
+  if (auto value = ReadBoolEnv("CPPWIKI_SYNC_ENABLED")) {
+    cfg.sync_enabled = *value;
+  }
+  if (auto value = ReadEnv("CPPWIKI_SYNC_GATEWAY_URL")) {
+    cfg.sync_gateway_url = std::move(value);
+  }
+  if (auto value = ReadEnv("CPPWIKI_SYNC_ADMIN_URL")) {
+    cfg.sync_admin_url = std::move(value);
+  }
+  if (auto value = ReadEnv("CPPWIKI_SYNC_DATABASE_NAME")) {
+    cfg.sync_database_name = std::move(value);
+  }
 }
 
 }  // namespace detail
@@ -181,6 +244,8 @@ auto RuntimeConfig::FromCli(int argc, char* argv[]) -> RuntimeConfig {
   } else if (swagger_disabled) {
     cfg.swagger = false;
   }
+
+  detail::ApplyEnvironmentOverrides(cfg);
 
   return cfg;
 }

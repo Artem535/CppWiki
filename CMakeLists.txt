@@ -21,6 +21,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(CPPWIKI_BUILD_TESTS "Build CppWiki tests" ON)
 option(CPPWIKI_BUILD_SERVER "Build CppWiki userver server" ON)
+option(CPPWIKI_BUILD_DESKTOP_APP "Build CppWiki Qt desktop application" ON)
 option(CPPWIKI_ENABLE_CLANG_TIDY "Enable clang-tidy when available" OFF)
 option(CPPWIKI_ENABLE_CBLITE_STORAGE "Enable Couchbase Lite storage adapter" OFF)
 option(
@@ -33,24 +34,31 @@ include(cmake/ProjectOptions.cmake)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(FetchContent)
 
-find_package(
-        Qt6 6.5 REQUIRED
-        COMPONENTS Core DBus Gui NetworkAuth Widgets WebChannel WebEngineWidgets Svg Qml Quick QuickWidgets
-)
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
-set(BUILD_WITH_QT6 ON CACHE BOOL "Build qtkeychain with Qt 6" FORCE)
-set(BUILD_TEST_APPLICATION OFF CACHE BOOL "Disable qtkeychain test app" FORCE)
-set(BUILD_TRANSLATIONS OFF CACHE BOOL "Disable qtkeychain translations" FORCE)
-set(LIBSECRET_SUPPORT ON CACHE BOOL "Enable qtkeychain libsecret backend" FORCE)
-FetchContent_Declare(
-        qtkeychain
-        GIT_REPOSITORY https://github.com/frankosterfeld/qtkeychain.git
-        GIT_TAG 0.16.0
-        GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(qtkeychain)
+if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
+    find_package(
+            Qt6 6.5 REQUIRED
+            COMPONENTS Core DBus Gui NetworkAuth Widgets WebChannel WebEngineWidgets Svg Qml Quick QuickWidgets
+    )
+
+    qt_standard_project_setup(REQUIRES 6.5)
+endif ()
+
+if (CPPWIKI_BUILD_DESKTOP_APP)
+    set(BUILD_WITH_QT6 ON CACHE BOOL "Build qtkeychain with Qt 6" FORCE)
+    set(BUILD_TEST_APPLICATION OFF CACHE BOOL "Disable qtkeychain test app" FORCE)
+    set(BUILD_TRANSLATIONS OFF CACHE BOOL "Disable qtkeychain translations" FORCE)
+    set(LIBSECRET_SUPPORT ON CACHE BOOL "Enable qtkeychain libsecret backend" FORCE)
+    FetchContent_Declare(
+            qtkeychain
+            GIT_REPOSITORY https://github.com/frankosterfeld/qtkeychain.git
+            GIT_TAG 0.16.0
+            GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(qtkeychain)
+endif ()
 
 if (CPPWIKI_BUILD_SERVER)
     find_package(CLI11 CONFIG REQUIRED)
@@ -76,11 +84,11 @@ if (CPPWIKI_ENABLE_CBLITE_STORAGE)
     find_package(CBLite REQUIRED)
 endif ()
 
-qt_standard_project_setup(REQUIRES 6.5)
-
-set(QLEMENTINE_SANDBOX OFF CACHE BOOL "Build qlementine sandbox" FORCE)
-set(QLEMENTINE_SHOWCASE OFF CACHE BOOL "Build qlementine showcase" FORCE)
-add_subdirectory(third_party/qlementine)
+if (CPPWIKI_BUILD_DESKTOP_APP)
+    set(QLEMENTINE_SANDBOX OFF CACHE BOOL "Build qlementine sandbox" FORCE)
+    set(QLEMENTINE_SHOWCASE OFF CACHE BOOL "Build qlementine showcase" FORCE)
+    add_subdirectory(third_party/qlementine)
+endif ()
 
 if (CPPWIKI_BUILD_TESTS)
     enable_testing()
