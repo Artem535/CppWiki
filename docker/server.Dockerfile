@@ -2,7 +2,7 @@
 
 ARG UBUNTU_VERSION=24.04
 
-FROM ubuntu:${UBUNTU_VERSION} AS builder
+FROM ubuntu:${UBUNTU_VERSION} AS deps
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG VCPKG_COMMIT=195276f71622bc41392db5c5c5c5141c95ff9a36
@@ -51,6 +51,8 @@ RUN --mount=type=cache,target=/root/.cache/vcpkg \
     vcpkg install \
         --triplet x64-linux \
         --x-install-root=/src/build/server-release/vcpkg_installed
+
+FROM deps AS builder
 
 COPY . .
 
