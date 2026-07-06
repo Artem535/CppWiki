@@ -42,8 +42,6 @@ if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
             Qt6 6.5 REQUIRED
             COMPONENTS Core DBus Gui NetworkAuth Widgets WebChannel WebEngineWidgets Svg Qml Quick QuickWidgets
     )
-
-    qt_standard_project_setup(REQUIRES 6.5)
 endif ()
 
 if (CPPWIKI_BUILD_DESKTOP_APP)
@@ -78,6 +76,10 @@ if (CPPWIKI_BUILD_SERVER)
             GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(userver)
+endif ()
+
+if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
+    qt_standard_project_setup(REQUIRES 6.5)
 endif ()
 
 if (CPPWIKI_ENABLE_CBLITE_STORAGE)
