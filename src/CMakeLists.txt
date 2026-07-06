@@ -182,6 +182,8 @@ if (CPPWIKI_BUILD_SERVER)
             server/components/cppwiki_server_component.h
             server/components/sync_bootstrap_component.cc
             server/components/sync_bootstrap_component.h
+            server/handlers/admin_handler.cc
+            server/handlers/admin_handler.h
             server/handlers/health_handler.cc
             server/handlers/health_handler.h
             server/handlers/handler_utils.cc
@@ -213,6 +215,7 @@ if (CPPWIKI_BUILD_SERVER)
             server/service/sync_gateway_adapter.cc
             server/service/sync_gateway_adapter.h
             server/dto/json_adapter.h
+            server/dto/admin_response.h
             server/dto/response_envelope.cc
             server/dto/response_envelope.h
             server/dto/health_response.cc
