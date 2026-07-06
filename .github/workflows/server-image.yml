@@ -60,6 +60,7 @@ jobs:
           target: deps
           platforms: linux/amd64
           push: false
+          outputs: type=cacheonly
           cache-from: type=gha,scope=server-image
           cache-to: type=gha,scope=server-image,mode=max
 
