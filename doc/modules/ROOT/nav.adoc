@@ -1,4 +1,5 @@
 * xref:index.adoc[Overview]
+* xref:CONTEXT.adoc[Context glossary]
 * xref:PRD_v9_Block_Document_Edition.adoc[PRD v9 — Block Document Edition]
 * Architecture
 ** xref:architecture/Architecture_Baseline_Libraries_and_Approaches.adoc[Baseline libraries and approaches]
@@ -22,6 +23,10 @@
 *** xref:architecture/adr/ADR-007-rejection-qtextedit-djot-first.adoc[ADR-007]
 *** xref:architecture/adr/ADR-008-authentik-auth-model.adoc[ADR-008]
 *** xref:architecture/adr/ADR-009-server-framework.adoc[ADR-009]
+*** xref:architecture/adr/ADR-010-blocknote-ai-integration-scope.adoc[ADR-010]
+*** xref:architecture/adr/ADR-011-agpl-licensing-for-blocknote-ai.adoc[ADR-011]
+*** xref:architecture/adr/ADR-012-ai-chat-transport-over-editor-bridge.adoc[ADR-012]
+*** xref:architecture/adr/ADR-013-conflict-state-extends-editability-gate.adoc[ADR-013]
 ** Spikes
 *** xref:architecture/spikes/Couchbase_Lite_C_Integration.adoc[Couchbase Lite C integration]
 *** xref:architecture/spikes/Couchbase_Sync_Gateway_OIDC_Example.adoc[Couchbase Sync Gateway OIDC example]
