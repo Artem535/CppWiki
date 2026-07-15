@@ -1,0 +1,93 @@
+////
+tags: template, delivery, rollout, work
+status: draft
+date: <% tp.file.creation_date("YYYY-MM-DD") %>
+////
+= 06 Delivery Plan: [Service Name]
+
+**Status:** Draft / In Review / Approved +
+**Owner:** [Team Lead] +
+**Related Docs:** xref:02-system-design-doc-template.adoc[02 System Design], xref:05-evaluation-plan-template.adoc[05 Evaluation Plan], xref:07-runbook-template.adoc[07 Runbook]
+
+'''
+
+== 1. Delivery Scope (Объем поставки)
+
+* **Target release:** [Дата / этап]
+* **What is being delivered:** [Что конкретно отдаем]
+* **Smallest shippable slice:** [Минимальный инкремент для offline eval и пилота]
+* **Dependencies:** [От чего зависит]
+* **Out of scope for this delivery:** [Что в эту поставку не входит]
+
+== 2. Workstreams and Owners (Потоки работ и владельцы)
+
+[cols="1,1,1,1"]
+|===
+|Workstream |Owner |Scope |Dependency
+
+|Discovery / Product |[Owner] |[Scope, success metrics, pilot acceptance] |[Stakeholders]
+|Data / Integrations |[Owner] |[Sources, contracts, access] |[Systems]
+|ML / LLM |[Owner] |[Prompt/model/RAG/eval artifacts] |[Data, vendor]
+|Backend / Platform |[Owner] |[Service, APIs, deployment] |[Architecture, contracts]
+|QA / Evaluation |[Owner] |[Acceptance, regression, test cases] |[Evaluation Plan]
+|Operations / Security |[Owner] |[Runbook, monitoring, access, rollback] |[Infra, policies]
+|===
+
+== 3. Dependency Map (Карта зависимостей)
+
+[cols="1,1,1,1"]
+|===
+|Dependency |Type |Owner |Impact if Delayed
+
+|[Dependency] |[Internal / External] |[Owner] |[Impact]
+|===
+
+== 4. Rollout Plan (План rollout)
+
+. [Step 1]
+. [Step 2]
+. [Step 3]
+
+== 5. Delivery Gates (Delivery gates)
+
+[cols="1,1,1"]
+|===
+|Gate |Required Evidence |Decision
+
+|Discovery ready |[PRD has problem, non-goals, journeys, metrics, smallest slice] |[Go / No-go]
+|Offline eval ready |[Eval report, thresholds, blocking failures] |[Go / No-go]
+|Pilot ready |[Limited users, rollback, monitoring, support owner] |[Go / No-go]
+|Production ready |[Runbook, security note, cost/latency/safety gates] |[Go / No-go]
+|===
+
+== 6. Risks and Blockers (Риски и блокеры)
+
+[cols="1,1,1,1"]
+|===
+|Risk |Impact |Mitigation |Owner
+
+|[Risk] |[High/Med/Low] |[Action] |[Name]
+|===
+
+== 7. Readiness Checklist (Чеклист готовности)
+
+* [ ] Problem statement, non-goals and smallest shippable slice are approved
+* [ ] Success metrics cover product, quality, latency, cost, safety and operations
+* [ ] Deterministic behavior is separated from ML/LLM behavior
+* [ ] Архитектура согласована
+* [ ] Контракты зафиксированы
+* [ ] Качество подтверждено
+* [ ] Интеграции готовы
+* [ ] Владельцы назначены
+* [ ] Rollback / fallback decision is documented
+
+== 8. Migration / Transition Notes (Заметки по миграции / переходу)
+
+* [Нужна ли миграция]
+* [Какой переходный режим]
+* [Что нужно сделать до cutover]
+
+== 9. Open Questions (Открытые вопросы)
+
+* [Question]
+* [Question]
