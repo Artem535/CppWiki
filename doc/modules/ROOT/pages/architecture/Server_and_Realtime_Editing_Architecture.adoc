@@ -1,0 +1,545 @@
+= Server and Realtime Editing Architecture
+
+*Product:* CppWiki / Wiki Platform v9 - Block Document Edition +
+*Status:* Draft / aligned with the selected `userver` backend +
+*Date:* 2026-06-18 +
+*Related docs:* `doc/PRD_v9_Block_Document_Edition.md` (not yet converted to AsciiDoc), xref:roadmap/Current_Roadmap.adoc[], xref:roadmap/Realistic_Delivery_Pipeline.adoc[], xref:architecture/Architecture_Baseline_Libraries_and_Approaches.adoc[], xref:architecture/adr/ADR-003-collaboration-strategy.adoc[], xref:architecture/adr/ADR-008-authentik-auth-model.adoc[], xref:architecture/adr/ADR-009-server-framework.adoc[]
+
+'''
+
+== 1. Purpose
+
+This document fixes the backend architecture for CppWiki after the framework decision has been settled on `userver`.
+
+The goal is to keep the server useful without making it the center of the product too early. The desktop app must keep working offline. The backend must be optional in the early phases, but the architecture must already support:
+
+* health and diagnostics;
+* explicit public/protected route separation;
+* document lock ownership and heartbeat;
+* presence updates;
+* future authenticated APIs;
+* a later realtime collaboration path.
+
+The backend must not become a hidden second editor. It coordinates access and collaboration state. The editor remains BlockNote inside QWebEngine, and local document persistence remains the desktop application's responsibility in the MVP path.
+
+'''
+
+== 2. Core Decisions
+
+=== 2.1. Fixed backend stack
+
+Use these libraries and tools for the server layer:
+
+* `userver` for HTTP endpoints and future WebSocket/websocket handler support;
+* `CLI11` for command-line overrides;
+* `reflect-cpp` for typed YAML runtime config loading (server static config is generated, not manually edited);
+* `spdlog` for developer-facing structured logging;
+* userver span tags / tracing for OpenTelemetry-ready observability.
+
+Swagger/OpenAPI UI is intentionally deferred in Phase 5; it can be reintroduced later with userver tooling or an external spec.
+
+=== 2.2. Collaboration model
+
+Use `Single Writer / Multi Reader` for the MVP path.
+
+That means:
+
+* one active editor owns the document lock;
+* other users can view the latest saved version;
+* presence is visible but not collaborative merging;
+* stale locks can be force released by authorized users;
+* realtime co-editing is deferred until the stable document model and server contracts exist.
+
+=== 2.3. Realtime future
+
+Keep the architecture compatible with a later collaborative editing layer.
+
+The future path should remain possible through:
+
+[source,text]
+----
+BlockNote -> Tiptap -> ProseMirror -> Yjs -> WebSocket provider
+----
+
+The backend should therefore transport document IDs, page IDs, lock state, presence and collaboration events. It should not depend on editor DOM, browser internals or raw BlockNote runtime state.
+
+'''
+
+== 3. System Overview
+
+[source,text]
+----
+Qt Desktop Shell
+  - navigation
+  - settings
+  - title bar
+  - local document repository
+  - editor host
+        |
+        | QWebChannel
+        v
+BlockNote Editor in QWebEngine
+  - edit document
+  - emit snapshot updates
+  - receive initial document and read-only state
+
+Desktop App <---- HTTP/WebSocket ----> userver Backend
+  - health
+  - locks
+  - presence
+  - auth boundary
+  - future workspace/page APIs
+
+Backend <----> Authentik
+Backend <----> Couchbase Sync Gateway / Couchbase Server
+Backend <----> future collaboration gateway
+----
+
+Responsibility split:
+
+* Qt owns the product shell and the local document experience.
+* The web editor owns only the block editing surface.
+* The backend owns access control, lock state, presence and API boundaries.
+* Sync and auth integrations remain behind clear service boundaries.
+
+'''
+
+== 4. Current Server Layout
+
+The current code layout maps to the phase 5 skeleton:
+
+[source,text]
+----
+src/server/
+  app/
+    main.cc
+    server_application.cc
+    server_application.h
+  components/
+    cppwiki_server_component.cc
+    cppwiki_server_component.h
+  config/
+    runtime_config.cc
+    runtime_config.h
+  dto/
+    health_response.cc
+    health_response.h
+    lock_response.cc
+    lock_response.h
+    presence_response.cc
+    presence_response.h
+    response_envelope.cc
+    response_envelope.h
+  handlers/
+    health_handler.cc
+    health_handler.h
+    lock_handler.cc
+    lock_handler.h
+    options_handler.cc
+    options_handler.h
+    presence_handler.cc
+    presence_handler.h
+    protected_page_handler.cc
+    protected_page_handler.h
+  middleware/
+    auth_checker_impl.cc
+    auth_checker_impl.h
+    logging_middleware.cc
+    logging_middleware.h
+  service/
+    lock_service.cc
+    lock_service.h
+    presence_service.cc
+    presence_service.h
+----
+
+Current responsibilities:
+
+* `main.cc` parses CLI options and starts the application.
+* `runtime_config.*` parses CLI + YAML overrides and generates userver static config.
+* `server_application.*` wires logging and runs the userver components manager.
+* `cppwiki_server_component.*` registers handlers and the auth-checker factory.
+* `health_handler.*` exposes public health endpoint and CORS headers.
+* `options_handler.*` exposes CORS preflight for public/protected routes.
+* `lock_handler.*` and `presence_handler.*` expose protected stub APIs.
+* `auth_checker_impl.*` enforces the Phase 5 "reject all" boundary on protected routes.
+* `logging_middleware.*` attaches request_id / component / operation / document_id tags.
+
+Planned additions should stay narrow and explicit:
+
+[source,text]
+----
+src/server/
+  auth/       # real JWT validation (Phase 6)
+  locks/      # authoritative lock service with persistence (Phase 7)
+  presence/   # persistent presence / websocket broadcaster
+  realtime/   # Yjs/WebSocket integration (Phase 8+)
+----
+
+If a new server feature cannot fit in one of those boundaries, it probably needs a smaller boundary first.
+
+'''
+
+== 5. Request Pipeline
+
+=== 5.1. Startup
+
+Startup order:
+
+. configure base logging (`spdlog`);
+. parse CLI overrides (`CLI11`);
+. load YAML runtime config through `reflect-cpp`;
+. apply CLI overrides on top of config;
+. configure log level;
+. generate userver static config YAML;
+. register userver components (handlers, auth-checker factory);
+. start the userver components manager.
+
+The runtime config contract is intentionally small:
+
+[source,yaml]
+----
+bind_host: 127.0.0.1
+port: 8080
+log_level: info
+----
+
+CLI overrides remain available for local development and tests:
+
+* `--config`
+* `--bind-host`
+* `--port`
+* `--log-level`
+* `--swagger` (ignored placeholder)
+* `--no-swagger` (ignored placeholder)
+
+Generated static config includes the server listener, logging, handlers and auth checker definitions.
+
+=== 5.2. Middleware meaning
+
+Middleware is code that runs before or around a handler.
+
+Its job is to:
+
+* log the request;
+* attach request metadata;
+* reject unauthorized traffic;
+* separate public routes from protected routes;
+* normalize response headers and error handling.
+
+For this project, middleware should stay boring and predictable. It is not a place for business logic.
+
+=== 5.3. Route layers
+
+Use explicit route layers:
+
+==== Public routes
+
+* `GET /api/v1/health`
+* `OPTIONS /api/v1/health`
+* later: login callback or public metadata endpoints if needed
+
+==== Protected routes
+
+Protected APIs use JWT validation starting in Phase 6. The public/private boundary is still important, but protected routes are no longer stubbed: they already validate bearer tokens against Authentik JWKS and place the validated principal into request context.
+
+* `GET/POST/PUT/DELETE /api/v1/locks/\{document_id}`
+* `GET/POST /api/v1/presence/\{workspace_id}`
+* workspace APIs
+* page APIs
+* document metadata APIs
+* audit or admin APIs
+
+The public layer must remain reachable without JWT. The protected layer must be the only place where authentication and authorization are enforced.
+
+'''
+
+== 6. API Shape
+
+=== 6.1. Envelope
+
+Keep the response shape explicit and stable:
+
+[source,json]
+----
+{
+  "apiVersion": 1,
+  "ok": true,
+  "result": {}
+}
+----
+
+Errors use the same outer envelope with an error payload:
+
+[source,json]
+----
+{
+  "apiVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "method_not_allowed",
+    "message": "Method not allowed"
+  }
+}
+----
+
+=== 6.2. DTO rules
+
+Use typed DTOs for transport payloads.
+
+Rules:
+
+* transport DTOs are not domain models;
+* typed runtime config parsing uses `reflect-cpp`;
+* handler JSON uses `userver/formats/json` (not raw dynamic JSON);
+* raw JSON should be preserved only where the editor snapshot must remain lossless;
+* document IDs and block IDs must stay stable;
+* API contracts must be versioned.
+
+=== 6.3. Health endpoint
+
+The current health endpoint is intentionally simple:
+
+* `GET /api/v1/health`
+* `OPTIONS /api/v1/health`
+
+It reports basic liveness and returns CORS headers for local development and browser-based tooling.
+
+'''
+
+== 7. Realtime Editing Strategy
+
+=== 7.1. MVP path
+
+The MVP path is not simultaneous co-editing. It is lock-based coordination around local editing.
+
+Flow:
+
+. user selects a page;
+. desktop app requests lock ownership from backend;
+. backend grants or denies the lock;
+. if granted, editor opens in editable mode;
+. desktop app sends heartbeat every 10 seconds;
+. if heartbeat stops, the lock expires;
+. authorized users can force release stale locks;
+. other users see read-only content and presence state.
+
+This gives the product a stable collaboration boundary without pretending that realtime merge is already solved.
+
+=== 7.2. Presence
+
+Presence is ephemeral state.
+
+It should carry information like:
+
+* who is viewing the page;
+* whether the user is editing or reading;
+* last seen time;
+* current page or workspace scope.
+
+NOTE: Presence must not mutate document content.
+
+=== 7.3. Future realtime collaboration
+
+When the block model, IDs and persistence are stable, the backend can evolve toward a realtime collaboration gateway.
+
+That future layer should:
+
+* operate on document IDs and block IDs;
+* exchange patches or CRDT updates, not DOM fragments;
+* keep editor implementation details out of the transport protocol;
+* preserve fallback lock-based behavior for environments that do not use realtime co-editing.
+
+The realtime path may live inside `userver` (WebSocket handlers) or as a separate collaboration service if protocol complexity grows. The architecture should not force that decision too early.
+
+'''
+
+== 8. Authentication and Middleware
+
+=== 8.1. Auth phase
+
+The server auth phase is separate from the health and lock skeleton.
+
+When auth lands, the server should:
+
+* validate JWTs on protected routes;
+* keep public routes readable without a token;
+* map identity claims to workspace and page permissions;
+* log access denials and lock takeovers;
+* never expose tokens to the web editor.
+
+=== 8.2. Middleware chain
+
+Recommended request chain for protected routes:
+
+. request ID middleware;
+. logging middleware (userver span tags);
+. auth middleware;
+. permission or role checks;
+. controller handler;
+. structured error conversion.
+
+The auth middleware should stay narrow. It validates identity and exposes claims. It should not contain workspace business rules.
+
+=== 8.3. Desktop token handling
+
+Desktop login must keep tokens out of plain text config files.
+
+The expected desktop flow is:
+
+* system browser login;
+* local callback or custom URI scheme;
+* token exchange on the native side;
+* secure storage in system keyring;
+* backend receives only the access token when needed.
+
+'''
+
+== 9. Data and Storage Boundaries
+
+=== 9.1. Local editing remains local
+
+The desktop application remains responsible for:
+
+* local document list;
+* local document selection;
+* autosave;
+* validation before persistence;
+* offline recovery.
+
+The backend should not become the canonical local document store in the MVP path.
+
+=== 9.2. Stable identity
+
+Required stable fields:
+
+* `workspace_id`;
+* `page_id`;
+* `document_id`;
+* `block_id`;
+* `parent_id`;
+* `sort_order`;
+* timestamps.
+
+These IDs are what make future sync, lock takeover and realtime collaboration possible without a data migration rewrite.
+
+=== 9.3. Hashes
+
+Document hash storage is optional and deferred.
+
+Only add a hash if it helps one of these:
+
+* dirty-state optimization;
+* sync conflict detection;
+* save skipping;
+* change auditing.
+
+Do not add it just because it is possible.
+
+'''
+
+== 10. Observability
+
+Logging should make the phase boundaries visible.
+
+Minimum log fields:
+
+* component;
+* operation;
+* request ID;
+* page ID or document ID when relevant;
+* lock owner when relevant;
+* error category.
+
+WARNING: Do not log access tokens, refresh tokens, raw confidential document content, or browser callback secrets.
+
+=== 10.1. OpenTelemetry baseline
+
+Use OpenTelemetry as the tracing and metrics contract for the server.
+
+The initial observability shape should be:
+
+* request IDs on every HTTP request;
+* trace/span context available in backend logs through userver span tags;
+* exporter configuration kept external to business code (USERVER_FEATURE_OTLP);
+* `spdlog` retained as the local developer log sink;
+* no dependency from the web editor to the telemetry backend.
+
+The current health endpoint is the minimum liveness check. Future routes should return structured errors and logs that can be correlated with user-facing problems.
+
+'''
+
+== 11. Testing Strategy
+
+Minimum server tests:
+
+* runtime config load, override and static-config generation tests;
+* health endpoint JSON envelope test;
+* protected/public route separation test (auth checker rejects);
+* lock acquire/release/heartbeat/force-release tests;
+* presence stub test;
+* auth checker unit test;
+* integration test that the backend starts with the configured port and log level.
+
+Minimum architecture tests for the product flow:
+
+* desktop app must still run without the backend;
+* local editing must still work if the server is down;
+* lock denial must switch the editor to read-only mode;
+* presence must not mutate document snapshots.
+
+'''
+
+== 12. Phase Map
+
+=== Phase 5
+
+Implement the server skeleton:
+
+* health endpoint;
+* logging;
+* runtime config + userver static-config generation;
+* CLI11 overrides;
+* public/protected route split;
+* lock and presence stubs;
+* CORS preflight.
+
+=== Phase 6
+
+Add auth:
+
+* OIDC flow;
+* keyring token storage;
+* JWT validation middleware;
+* protected API enforcement;
+* Swagger/OpenAPI bearer-token verification path;
+* desktop identity shown in the native shell;
+* refresh and runtime token-expiry handling.
+
+=== Phase 7
+
+Make the lock model authoritative:
+
+* lock ownership;
+* heartbeat;
+* read-only fallback;
+* force release;
+* authenticated identity becomes the default lock/presence owner;
+* desktop edit flow depends on successful lock acquisition.
+
+=== Phase 8 and later
+
+Add sync and then realtime collaboration:
+
+* Sync Gateway integration;
+* channel mapping;
+* conflict handling;
+* future collaboration gateway.
+
+'''
+
+== 13. Change Rule
+
+Any future change that affects the backend framework, the auth model, the lock model, the WebSocket protocol or the request envelope requires an ADR update.
+
+The `userver` choice is fixed for the current architecture.

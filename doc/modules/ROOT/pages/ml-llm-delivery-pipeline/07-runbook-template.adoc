@@ -1,0 +1,70 @@
+////
+tags: template, runbook, operations, work
+status: draft
+date: <% tp.file.creation_date("YYYY-MM-DD") %>
+////
+= 07 Runbook: [Service Name]
+
+**Status:** Draft / In Review / Approved +
+**Owner:** [DevOps / Service Owner] +
+**Related Docs:** xref:ml-llm-delivery-pipeline/02-system-design-doc-template.adoc[02 System Design], xref:ml-llm-delivery-pipeline/06-delivery-plan-template.adoc[06 Delivery Plan], xref:ml-llm-delivery-pipeline/08-security-note-template.adoc[08 Security Note]
+
+'''
+
+== 1. Operational Overview (Эксплуатационный обзор)
+
+* **Service owner:** [Имя / команда]
+* **Criticality:** [Low / Medium / High]
+* **Support channel:** [Slack / email / on-call]
+
+== 2. Ownership and Support Model (Модель владения и поддержки)
+
+* **Primary owner:** [Кто отвечает за сервис]
+* **Secondary owner / backup:** [Кто подхватывает]
+* **Support model:** [On-call / business hours / ad hoc]
+* **Escalation path:** [Куда эскалировать]
+
+== 3. Key Signals and Alerts (Ключевые сигналы и алерты)
+
+[cols="1,1,1"]
+|===
+|Signal |Threshold |Alert Action
+
+|[Latency] |[Value] |[Action]
+|===
+
+== 4. Common Failure Modes (Типовые сценарии отказов)
+
+[cols="1,1,1"]
+|===
+|Failure Mode |Symptom |First Response
+
+|[Failure] |[Symptom] |[Action]
+|===
+
+== 5. Incident Response (Реакция на инциденты)
+
+. [Detect]
+. [Triage]
+. [Mitigate]
+. [Recover]
+. [Communicate]
+
+== 6. Degradation Modes (Режимы деградации)
+
+* [Fallback mode]
+* [Read-only mode]
+* [Disable optional dependency]
+
+== 7. Recovery and Validation (Восстановление и проверка)
+
+* [How to restart]
+* [How to validate recovery]
+* [What to check after restore]
+
+== 8. Escalation Contacts (Контакты для эскалации)
+
+* **DevOps:** [Контакт]
+* **Team Lead:** [Контакт]
+* **DS Lead / ML owner:** [Контакт]
+* **Business / Project contact:** [Контакт]
