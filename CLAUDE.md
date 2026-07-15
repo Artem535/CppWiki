@@ -13,7 +13,7 @@ Every task in this repo follows this sequence:
 5. After each significant action, leave a comment on the issue.
 6. When done, open an MR.
 7. The MR description must state that it closes the issue (e.g. `Closes #N`).
-8. The MR description must be written in Russian.
+8. Issues and MR descriptions/titles are written in English.
 
 ## Conventions
 
