@@ -1,0 +1,63 @@
+= CppWiki — Context Glossary
+
+Single bounded context: the CppWiki desktop app, its `cppwiki_server` backend, and their
+shared sync/collaboration model. This glossary captures project-specific terms sharpened
+during design discussions; general programming concepts are intentionally left out.
+
+== Language
+
+*Editability gate*:
+The check in `EditorBridge` that decides whether a document mutation (rename, move,
+delete, snapshot update) is allowed to proceed. It has two independent sources of "no":
+another party holding the document's collaboration lock, and the document having an
+unresolved sync conflict (see ADR-010, ADR-013). A mutation is rejected the same way
+regardless of which source triggered it.
+_Avoid_: "read-only mode" (too vague — always ask *why* it's read-only).
+
+*Locked document*:
+A document another collaborator currently holds the edit lock on, per the lock model in
+`src/sync/`. Distinct from a *conflicted document* — both are read-only, but for different
+reasons, and the document tree shows a different indicator for each.
+_Avoid_: "blocked document", "read-only document" (conflates with conflicted state).
+
+*Conflicted document*:
+A document with an unresolved sync conflict between its local and remote versions,
+tracked by `DocumentSyncService`/`DocumentSyncSnapshot`. Read-only until resolved (Use
+local / Use remote / Merge) — see ADR-013.
+_Avoid_: "locked document" (that's the other read-only source).
+
+*Conflict resolution window*:
+The standalone, non-modal window that shows the conflict list and local/remote comparison
+for the currently open document. Auto-opens when the user opens or switches to a
+conflicted document; does not live inside the sync-status panel/dialog and is not opened
+by clicking the sync icon.
+_Avoid_: "merge dialog" (legacy name from before this redesign — the underlying
+`ConflictMergeDialog` widget is being repurposed into this window, but "merge dialog"
+undersells that it now auto-opens and is conflict-scoped, not sync-panel-scoped).
+
+*Sync panel* / *Sync details dialog*:
+The dialog opened via the sync icon, showing sync/auth/repository status. After this
+redesign it no longer contains the conflict list or resolution actions — only an
+aggregate "N conflicts" indicator with no actions of its own.
+
+*BlockNote AI (MVP scope)*:
+For issue #3, exactly two AI capabilities: rewriting/improving a selected block via the
+formatting toolbar, and autocomplete ("continue writing") via a slash-menu command. Both
+share the same `@blocknote/xl-ai` `AIExtension` plumbing and the same custom transport
+(see below). Full chat-agent/RAG workflows are explicitly out of scope for this MVP.
+_Avoid_: "AI chat" (that's a separate, later Phase 2/3 feature from the AI Vision
+Proposal, not part of this MVP).
+
+*AI chat transport*:
+The custom `ChatTransport` implementation (matching the `ai` SDK's interface consumed by
+BlockNote's `AIExtension`) that relays AI requests through `EditorBridge`/`QWebChannel`
+instead of `fetch`-ing a URL directly from browser JS. This is what keeps `QWebEngineView`
+free of direct network access even for AI features — see ADR-012.
+_Avoid_: "AI proxy" (the relay is bridge-based, not a network proxy).
+
+*cppwiki-admin*:
+The administrative tooling surface, delivered separately from the main `cppwiki` desktop
+app (never as a mode inside it). Ships as a CLI first (C++, `ftxui`), with a web panel as
+a distinct, later, not-yet-started piece. See `doc/backlog/Admin_Surface_Backlog.md`.
+_Avoid_: "admin mode", "admin tab" (there is no admin surface inside the main app beyond
+the temporary, soon-to-be-removed `New workspace` testing button).

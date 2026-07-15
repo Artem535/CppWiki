@@ -27,7 +27,23 @@
 - The current `New workspace` button in the desktop client stays only for short-term testing.
 - When `cppwiki-admin` exists, workspace creation must move there and be removed from the main desktop UI.
 
+## `cppwiki-admin` Delivery Plan (2026-07-16)
+
+- `cppwiki-admin` is not a mode inside the main `cppwiki` desktop app — it is delivered as
+  separate tooling, in two parts:
+  1. **CLI first** (MVP): a C++ command-line tool using `ftxui` for its terminal UI, talking to
+     `admin_handler` on `cppwiki_server` the same way `BackendClient` does. This directly closes
+     the "manual curl against the admin API" pain already flagged as urgent in the Desktop
+     Collaboration Backlog.
+  2. **Web panel** (later, separate issue, not started yet): a small standalone frontend calling
+     `admin_handler` directly from the browser. Deferred because the CLI covers the operational
+     need at lower cost, and starting it now would compete with frontend effort already going
+     into BlockNote AI work.
+- The admin CLI reuses `qt-keychain` (already vendored via `FetchContent`, see
+  `src/auth/AuthTokenStore`) to store its own admin session token securely, rather than a
+  second, separate secret-storage mechanism.
+
 ## Non-Goals For Now
 
-- Do not scaffold `cppwiki-admin` yet.
+- Do not build the `cppwiki-admin` web panel yet — CLI ships first.
 - Do not expand the temporary desktop admin control beyond workspace creation testing.

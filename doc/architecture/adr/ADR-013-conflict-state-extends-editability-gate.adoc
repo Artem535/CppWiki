@@ -1,0 +1,59 @@
+= ADR-013 — Unresolved Sync Conflicts Extend the Document Editability Gate
+
+== Status
+
+Accepted
+
+== Date
+
+2026-07-16
+
+---
+
+== Context
+
+`EditorBridge` already treats a document as read-only when another party holds its
+collaboration lock (`current_document_editable_`, gated by `RejectIfCurrentDocumentLocked()`,
+see ADR-010). Separately, the conflict-resolution UI is being redesigned: instead of a
+list embedded in the sync-status dialog, it becomes a standalone, non-modal window that
+auto-opens when the user opens a document that has an unresolved sync conflict.
+
+This raises a question the redesign can't dodge: if the user closes that window (via its
+close button) without resolving the conflict, and keeps the document open, can they keep
+editing it? Local edits made on top of an unresolved conflict would make the "local
+version" side of the conflict comparison stale the moment the window is reopened, forcing
+either a re-diff step or a decision to discard those edits.
+
+---
+
+== Decision
+
+A document with an unresolved sync conflict is read-only, exactly like a document locked
+by another collaborator — this is a second, independent source feeding the same
+editability gate in `EditorBridge`, not a special case bolted onto the conflict window.
+Editing is only re-enabled once the conflict is resolved (Use local / Use remote / Merge).
+
+Because the document tree already needs to show *why* a document is read-only (locked vs.
+conflicted are different situations the user should be able to tell apart at a glance),
+the two states are rendered with distinct indicators in `document_tree_item_delegate`
+rather than a single generic "read-only" icon.
+
+---
+
+== Consequences
+
+=== Positive
+
+* No stale-local-version problem: since editing is blocked, the "local version" shown in
+  the conflict window is always exactly what was on disk when the conflict was detected.
+* Reuses the existing lock-gate mechanism and its tests (ADR-010) instead of inventing a
+  parallel read-only path.
+
+=== Negative
+
+* A user who wants to keep working on a conflicted document while "dealing with sync
+  later" cannot — they must resolve the conflict (or discard the sync provider's view of
+  it) before editing resumes.
+* `EditorBridge`'s editability check now has two independent reasons to say no (lock vs.
+  conflict), which future gates (if any) must also account for when deciding whether a
+  mutation is allowed.

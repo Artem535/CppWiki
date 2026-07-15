@@ -1,0 +1,63 @@
+= ADR-011 — Project Licensed Under AGPL-3.0 to Enable BlockNote AI
+
+== Status
+
+Accepted
+
+== Date
+
+2026-07-16
+
+---
+
+== Context
+
+Issue #3 requires BlockNote AI features (rewrite/improve selection, autocomplete). The
+official, model-agnostic implementation is the `@blocknote/xl-ai` package
+(`frontend/editor`). That package is licensed under GPL-3.0, not a permissive or
+BlockNote-proprietary license.
+
+CppWiki had no `LICENSE` file at the time this decision was made. Combining GPL-3.0
+code into a distributed product (desktop app or server image) creates a combined work
+that must, on distribution, be offered under GPL-3.0-compatible terms — "the source is
+public on GitHub" is not sufficient on its own; an explicit compatible license is
+required.
+
+Separately, the project wants to prevent a SaaS competitor from taking CppWiki's server
+code, running it as a hosted service, and never sharing modifications back — plain
+GPL-3.0 does not cover that "run it as a network service" case, only distribution of the
+binary/source itself.
+
+---
+
+== Decision
+
+CppWiki is licensed under AGPL-3.0 (not plain GPL-3.0, not a permissive license). AGPL-3.0
+is GPL-3.0-compatible for combined works (GPL-3.0 §13), so it satisfies `@blocknote/xl-ai`'s
+license, and its network-use clause additionally closes the SaaS loophole for the server
+component.
+
+This applies to the whole repository, not just `frontend/editor` — once any GPL-3.0/AGPL-3.0
+code is combined into the shipped product, the combined work's license governs the whole
+thing.
+
+---
+
+== Consequences
+
+=== Positive
+
+* Legally clears the way to use `@blocknote/xl-ai` for the BlockNote AI MVP (issue #3)
+  instead of re-implementing an AI toolbar from scratch.
+* Closes the "fork it, host it, never contribute back" SaaS gap the project wanted closed
+  anyway.
+
+=== Negative
+
+* Anyone who distributes a modified CppWiki (desktop binary or server image) must offer
+  the corresponding source under AGPL-3.0-compatible terms, including over a network
+  (SaaS use).
+* Rules out ever repackaging CppWiki (or a fork of it) under a proprietary/closed license
+  without removing `@blocknote/xl-ai` first.
+* A `LICENSE` file and per-file license headers need to be added; this is tracked as
+  follow-up work alongside the BlockNote AI issue, not a separate initiative.
