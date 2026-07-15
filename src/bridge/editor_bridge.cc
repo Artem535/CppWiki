@@ -605,6 +605,17 @@ QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
   return createChildDocumentInWorkspace(current_workspace_id_, parent_id);
 }
 
+std::optional<QVariantMap> QEditorBridge::RejectIfCurrentDocumentLocked(
+    const QString& page_id) const {
+  if (page_id != current_page_id_ || current_document_editable_) {
+    return std::nullopt;
+  }
+  return ErrorResponse(QStringLiteral("document_read_only"),
+                       current_access_message_.isEmpty()
+                           ? QStringLiteral("Document is read-only.")
+                           : current_access_message_);
+}
+
 QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString& title) {
   if (!repository_) {
     return ErrorResponse(QStringLiteral("repository_unavailable"),
@@ -620,6 +631,10 @@ QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString&
   if (trimmed_title.isEmpty()) {
     return ErrorResponse(QStringLiteral("invalid_title"),
                          QStringLiteral("Document title cannot be empty."));
+  }
+
+  if (auto lock_error = RejectIfCurrentDocumentLocked(page_id)) {
+    return std::move(*lock_error);
   }
 
   auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
@@ -660,6 +675,10 @@ QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const
                          QStringLiteral("Document repository is not configured."));
   }
 
+  if (auto lock_error = RejectIfCurrentDocumentLocked(page_id)) {
+    return std::move(*lock_error);
+  }
+
   auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
   if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
     return std::get<QVariantMap>(std::move(loaded_or_error));
@@ -687,6 +706,10 @@ QVariantMap QEditorBridge::deleteDocument(const QString& page_id) {
   if (page_id.isEmpty()) {
     return ErrorResponse(QStringLiteral("invalid_document"),
                          QStringLiteral("Document id is required."));
+  }
+
+  if (auto lock_error = RejectIfCurrentDocumentLocked(page_id)) {
+    return std::move(*lock_error);
   }
 
   auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);

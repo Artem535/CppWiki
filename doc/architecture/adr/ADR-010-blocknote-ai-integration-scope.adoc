@@ -1,0 +1,79 @@
+= ADR-010 — BlockNote AI Integration Scope
+
+== Status
+
+Accepted
+
+== Date
+
+2026-07-15
+
+---
+
+== Context
+
+Issue #3 ("Прокачать BlockNote для работы с ИИ") asks for AI-assisted editing on top of
+the BlockNote editor chosen in xref:ADR-001-editor-choice.md[ADR-001]. Any AI feature that
+drives document mutations (content edits, rename, move, delete) must call into
+`EditorBridge` the same way the human editor UI does — the bridge is the declared trust
+boundary between the in-browser editor and the desktop app (see `CLAUDE.md`,
+`src/bridge/`).
+
+A code-analysis pass ahead of this work found that `EditorBridge::updateSnapshot()`
+correctly rejected content edits when the currently open document was locked/read-only
+(`current_document_editable_ == false`), but `renameDocument()`, `updateDocumentPlacement()`,
+and `deleteDocument()` did not perform the same check — only repository presence and
+workspace match were verified. A locked document (being edited by someone else, per the
+lock model in `src/sync/`) could therefore still be renamed, moved in the tree, or
+deleted through the bridge. This was fixed by adding a shared
+`RejectIfCurrentDocumentLocked()` gate applied to all three mutating entry points, returning
+the same `document_read_only` error envelope `updateSnapshot()` already used.
+
+This bug matters directly to issue #3: any AI-driven mutation path added on top of the
+bridge would have inherited (and, being more automated and less supervised than a human
+click, plausibly worsened) this gap.
+
+---
+
+== Decision
+
+Any AI-driven document mutation — content edits, rename, move/reparent, or delete —
+MUST go through the exact same `EditorBridge` entry points a human edit uses, and is
+therefore subject to the same `current_document_editable_` / lock-ownership gate. There
+is no separate, elevated, or bypassing code path for AI-originated calls.
+
+Concretely:
+
+- AI features do not get direct repository or storage access; they call
+  `renameDocument()`, `updateDocumentPlacement()`, `deleteDocument()`,
+  `updateSnapshot()`, or successors, exactly as the BlockNote UI does.
+- If the target document is locked by another party or otherwise read-only, an
+  AI-initiated mutation is rejected with the same `document_read_only` error envelope,
+  not silently queued, retried with elevated rights, or routed around the lock.
+- Any new AI-specific bridge method that mutates a document must call the same lock
+  gate before performing the mutation; this is a required review item for such changes.
+
+---
+
+== Consequences
+
+=== Positive
+
+* AI mutation paths cannot be used to bypass the collaboration lock model.
+* A single, already-tested gate (`RejectIfCurrentDocumentLocked()`) is reused instead of
+  each AI feature re-implementing (and possibly getting wrong) its own check.
+* Keeps the bridge's trust-boundary property intact as AI surface area grows.
+
+=== Negative
+
+* AI features cannot silently "merge" or auto-resolve edits on a locked document; they
+  must surface the same read-only/locked state to the user that a human editor sees.
+* Any future bulk/batch AI mutation API must still check per-document lock state, which
+  may add latency versus an unchecked bulk path.
+
+---
+
+== Notes
+
+This ADR only scopes the trust-boundary constraint for future AI mutation work; it does
+not itself specify the AI feature set, prompts, or UX for issue #3.
