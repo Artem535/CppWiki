@@ -105,6 +105,10 @@ auto TestStaticConfigGeneration() -> void {
           "static config must not contain openapi handler when swagger is disabled");
   Require(yaml.find("handler-swagger-ui:") == std::string::npos,
           "static config must not contain swagger ui handler when swagger is disabled");
+  Require(yaml.find("handler-admin-sync:") != std::string::npos,
+          "static config must contain admin sync handler");
+  Require(yaml.find("path: /api/v1/admin/sync") != std::string::npos,
+          "static config must contain admin sync path");
   Require(yaml.find("\n        default\n") == std::string::npos,
           "static config must not contain malformed logger entries");
 

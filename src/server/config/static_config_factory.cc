@@ -107,6 +107,7 @@ struct ComponentsConfig final {
   rfl::Rename<"handler-locks", ProtectedHandlerConfig> handler_locks;
   rfl::Rename<"handler-presence", ProtectedHandlerConfig> handler_presence;
   rfl::Rename<"handler-sync-config", ProtectedHandlerConfig> handler_sync_config;
+  rfl::Rename<"handler-admin-sync", ProtectedHandlerConfig> handler_admin_sync;
   rfl::Rename<"handler-workspaces", ProtectedHandlerConfig> handler_workspaces;
   rfl::Rename<"handler-protected-page", ProtectedHandlerConfig> handler_protected_page;
   rfl::Rename<"sync-config", SyncBootstrapComponentConfig> sync_config{};
@@ -217,6 +218,7 @@ auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::st
       .handler_presence =
           MakeProtectedHandler("/api/v1/presence/{workspace_id}", "GET,POST", auth_config),
       .handler_sync_config = MakeProtectedHandler("/api/v1/sync/config", "GET", auth_config),
+      .handler_admin_sync = MakeProtectedHandler("/api/v1/admin/sync", "GET", auth_config),
       .handler_workspaces = MakeProtectedHandler("/api/v1/workspaces", "GET,POST", auth_config),
       .handler_protected_page = MakeProtectedHandler("/api/v1/protected", "GET", auth_config),
       .sync_config = MakeSyncBootstrapConfig(sync_config),

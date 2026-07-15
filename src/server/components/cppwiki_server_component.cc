@@ -6,6 +6,7 @@
 #include <userver/server/handlers/auth/handler_auth_config.hpp>
 
 #include "server/handlers/health_handler.h"
+#include "server/handlers/admin_handler.h"
 #include "server/handlers/lock_handler.h"
 #include "server/handlers/openapi_handler.h"
 #include "server/handlers/options_handler.h"
@@ -53,6 +54,7 @@ auto RegisterCppWikiComponents(userver::components::ComponentList& component_lis
   component_list.Append<handlers::LockHandler>();
   component_list.Append<handlers::PresenceHandler>();
   component_list.Append<SyncBootstrapComponent>();
+  component_list.Append<handlers::AdminHandler>();
   component_list.Append<handlers::SyncConfigHandler>();
   component_list.Append<handlers::WorkspaceHandler>();
   component_list.Append<handlers::ProtectedPageHandler>();
