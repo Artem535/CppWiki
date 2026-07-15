@@ -1,0 +1,106 @@
+= ADR-008 — Authentication and Authorization with Authentik
+
+== Status
+
+Accepted
+
+== Date
+
+2026-06-11
+
+'''
+
+== Context
+
+The platform requires enterprise-ready authentication and authorization.
+
+Requirements:
+
+* SSO;
+* self-hosted deployment;
+* group/role claims;
+* desktop login;
+* backend JWT validation;
+* Sync Gateway authentication;
+* future integration with LDAP/SAML/OIDC providers.
+
+'''
+
+== Decision
+
+Use Authentik as the recommended identity provider.
+
+Use OpenID Connect / OAuth2 Authorization Code Flow with PKCE for desktop login.
+
+Use JWT access tokens for backend API authentication.
+
+Use OIDC integration for Couchbase Sync Gateway replication.
+
+'''
+
+== Architecture
+
+----
+Desktop App
+    ↓
+System Browser
+    ↓
+Authentik OIDC
+    ↓
+Desktop Callback
+    ↓
+Access Token / Refresh Token
+    ↓
+oat++ API + Sync Gateway
+----
+
+'''
+
+== Authorization model
+
+Use combined RBAC + ABAC.
+
+Global roles:
+
+* `wiki.admin`
+* `wiki.workspace_admin`
+* `wiki.editor`
+* `wiki.viewer`
+* `wiki.plugin_admin`
+* `wiki.confluence_admin`
+
+Attributes:
+
+* workspace ID;
+* group membership;
+* page owner;
+* page sensitivity;
+* project/team;
+* Confluence space mapping.
+
+'''
+
+== Consequences
+
+=== Positive
+
+* Enterprise-friendly SSO.
+* Works with OIDC/OAuth2.
+* Can integrate with LDAP/SAML upstreams.
+* Group and role claims can drive platform permissions.
+* Compatible with Sync Gateway OIDC model.
+
+=== Negative
+
+* Requires Authentik deployment and configuration.
+* Requires careful claim mapping.
+* Requires token lifecycle handling in desktop app.
+
+'''
+
+== Security requirements
+
+* Tokens must be stored in system keyring.
+* Backend must validate JWKS signature, issuer, audience and expiration.
+* Force lock takeover and admin actions must be audited.
+* Sync Gateway roles/channels must be mapped from trusted claims only.

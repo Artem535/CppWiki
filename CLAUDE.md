@@ -20,6 +20,19 @@ Every task in this repo follows this sequence:
 - All documentation is written in AsciiDoc.
 - All commands/programs are run through `rtk` (not invoked directly).
 
+### Documentation site (Antora)
+
+Documentation lives under `doc/` as AsciiDoc, organized as a single Antora component (`doc/antora.yml`,
+pages under `doc/modules/ROOT/pages/**`). A root `antora-playbook.yml` builds the site from that source.
+
+```bash
+rtk npx antora generate antora-playbook.yml   # output: build/site/index.html
+rtk npx http-server build/site                # optional local preview server
+```
+
+All docs under `doc/` and the former `ML LLM Delivery Pipeline/` templates, including the PRD, have been
+migrated to AsciiDoc.
+
 ## What this is
 
 CppWiki — a desktop-first, offline-first wiki platform. A Qt6/C++20 desktop app (`cppwiki_app`) embeds a
@@ -35,12 +48,12 @@ Vcpkg manifest mode; `VCPKG_ROOT` must be set. Qt6 (6.5+) is *not* installed via
 export VCPKG_ROOT=/path/to/vcpkg
 
 # Desktop app + tests
-cmake --preset debug [-DCMAKE_PREFIX_PATH=/path/to/Qt/6.x.x/gcc_64]
-cmake --build --preset debug
+rtk cmake --preset debug [-DCMAKE_PREFIX_PATH=/path/to/Qt/6.x.x/gcc_64]
+rtk cmake --build --preset debug
 
 # Server only (no Qt/desktop app, no tests)
-cmake --preset server-debug
-cmake --build --preset server-debug
+rtk cmake --preset server-debug
+rtk cmake --build --preset server-debug
 ```
 
 Presets: `debug`, `release`, `server-debug`, `server-release` (see `CMakePresets.json`). Relevant `CPPWIKI_*`
@@ -51,13 +64,13 @@ options are in the root `CMakeLists.txt` (`CPPWIKI_BUILD_TESTS`, `CPPWIKI_BUILD_
 clang-tidy is configured but off by default:
 
 ```bash
-cmake --preset debug -DCPPWIKI_ENABLE_CLANG_TIDY=ON
+rtk cmake --preset debug -DCPPWIKI_ENABLE_CLANG_TIDY=ON
 ```
 
 Formatting:
 
 ```bash
-clang-format -i src/**/*.h src/**/*.cc
+rtk clang-format -i src/**/*.h src/**/*.cc
 ```
 
 ### Frontend editor bundle
@@ -66,8 +79,8 @@ The BlockNote editor lives in `frontend/editor` (Vite + React + TypeScript, npm)
 
 ```bash
 cd frontend/editor
-npm ci
-npm run build   # tsc --noEmit && vite build
+rtk npm ci
+rtk npm run build   # tsc --noEmit && vite build
 ```
 
 The desktop app loads `frontend/editor/dist/index.html`; if the bundle is missing it falls back to a
@@ -82,9 +95,9 @@ Tests are only built with `CPPWIKI_BUILD_TESTS=ON` (default on the `debug`/`rele
 `cppwiki_server_config_tests`, `cppwiki_conflict_merge_model_tests`.
 
 ```bash
-cmake --build --preset debug
-ctest --test-dir build/debug                       # all tests
-ctest --test-dir build/debug -R cppwiki_document_validator_tests   # single test
+rtk cmake --build --preset debug
+rtk ctest --test-dir build/debug                       # all tests
+rtk ctest --test-dir build/debug -R cppwiki_document_validator_tests   # single test
 ```
 
 Or run a built test binary directly, e.g. `./build/debug/tests/cppwiki_bridge_tests`.
@@ -137,9 +150,9 @@ config (bind address, auth issuer/JWKS, sync gateway URLs, role/group → channe
   `response_envelope.h` (common envelope), `json_adapter.h`.
 
 The server's auth model, sync channel mapping, and lock/presence concepts are documented in
-`doc/architecture/Server_and_Realtime_Editing_Architecture.md`, `Desktop_Backend_Sync_Interaction.md`, and
-`Sync_Document_Model_and_Conflict_Contract.md` — read these before making non-trivial changes to sync,
-locking, or auth flows.
+`doc/modules/ROOT/pages/architecture/Server_and_Realtime_Editing_Architecture.adoc`,
+`Desktop_Backend_Sync_Interaction.adoc`, and `Sync_Document_Model_and_Conflict_Contract.adoc` — read these
+before making non-trivial changes to sync, locking, or auth flows.
 
 ### Third-party / vendored
 
@@ -164,13 +177,15 @@ obvious from the config alone (full rationale in `doc/architecture/Project_Struc
 
 ## Documentation map
 
-- `doc/PRD_v9_Block_Document_Edition.md` — product requirements.
-- `doc/roadmap/Current_Roadmap.md`, `doc/backlog/` — active planning.
-- `doc/architecture/adr/` — architecture decision records (editor choice, document model, collaboration
-  strategy, plugin system, rendering pipeline, Confluence integration, Authentik auth model, server
-  framework choice).
-- `doc/architecture/*.md` — deep-dives on desktop/backend sync interaction, the sync document model and
-  conflict contract, the QWebChannel editor bridge, and server internals (some have `_ru` Russian variants).
+- `doc/modules/ROOT/pages/PRD_v9_Block_Document_Edition.adoc` — product requirements.
+- `doc/modules/ROOT/pages/roadmap/Current_Roadmap.adoc`, `doc/modules/ROOT/pages/backlog/` — active
+  planning.
+- `doc/modules/ROOT/pages/architecture/adr/` — architecture decision records (editor choice, document
+  model, collaboration strategy, plugin system, rendering pipeline, Confluence integration, Authentik auth
+  model, server framework choice).
+- `doc/modules/ROOT/pages/architecture/*.adoc` — deep-dives on desktop/backend sync interaction, the sync
+  document model and conflict contract, the QWebChannel editor bridge, and server internals (some have
+  `_ru` Russian variants).
 - Docs are expected to trace back to delivery-discovery decisions (problem statement, scope, success
   criteria, gates) rather than replace them; AI/LLM/RAG-flavored initiatives use the templates in
-  `ML LLM Delivery Pipeline/`.
+  `doc/modules/ROOT/pages/ml-llm-delivery-pipeline/`.

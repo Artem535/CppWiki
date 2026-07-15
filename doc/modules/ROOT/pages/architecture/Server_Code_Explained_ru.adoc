@@ -1,0 +1,481 @@
+= Server Code Explained (RU)
+
+Этот документ объясняет текущий код в `src/server/` простыми словами.
+
+Его цель не в том, чтобы разобрать каждую строку.
+Его цель ответить на вопросы:
+
+* за что отвечает каждый слой сервера;
+* как запрос проходит через код;
+* зачем существуют вспомогательные файлы;
+* куда вносить изменения, если нужно расширить поведение.
+
+'''
+
+== 1. Общий поток
+
+Запуск сервера сейчас специально сделан линейным:
+
+. `main.cc` парсит CLI-аргументы в `RuntimeConfig`.
+. `RunServer(...)` настраивает логирование, генерирует static config YAML для userver и запускает userver.
+. `RegisterCppWikiComponents(...)` регистрирует handlers и factory для auth checker.
+. userver загружает сгенерированный static config и создаёт зарегистрированные компоненты.
+
+Во время обработки запроса поток такой:
+
+. userver маршрутизирует запрос в handler по имени/пути из generated static config;
+. handler подготавливает response headers и tracing/logging tags;
+. handler парсит request JSON, если это нужно;
+. handler вызывает маленький in-memory service;
+. handler превращает результат в response DTO;
+. DTO сериализуется в JSON и возвращается в userver.
+
+'''
+
+== 2. Карта директорий
+
+`src/server/` разбит по ответственности:
+
+* `app/`
+  Точка входа и верхнеуровневый запуск.
+* `config/`
+  Парсинг runtime config и генерация static config для userver.
+* `components/`
+  Регистрация компонентов userver.
+* `handlers/`
+  HTTP endpoints.
+* `dto/`
+  Transport models для request/response и JSON adapters.
+* `service/`
+  In-memory бизнес-логика для lock и presence.
+* `middleware/`
+  Сквозное поведение запроса: auth, tracing tags и т.д.
+* `assets/`
+  Встроенные OpenAPI JSON и Swagger UI HTML.
+
+'''
+
+== 3. Слой запуска
+
+=== `src/server/app/main.cc`
+
+Ответственность:
+
+* распарсить CLI args;
+* превратить их в `RuntimeConfig`;
+* вызвать `RunServer(config)`;
+* залогировать фатальную ошибку, если запуск не удался.
+
+Этот файл должен оставаться маленьким.
+
+=== `src/server/app/server_application.{h,cc}`
+
+Ответственность:
+
+* предоставить `RunServer(const RuntimeConfig&)`;
+* настроить логирование;
+* запросить у `RuntimeConfig` generated static config YAML;
+* записать этот YAML во временный файл;
+* создать минимальный `ComponentList` userver;
+* зарегистрировать компоненты проекта;
+* вызвать `userver::components::Run(...)`.
+
+Это bootstrap-граница между "нашей конфигурацией" и "рантаймом userver".
+
+'''
+
+== 4. Слой конфигурации
+
+=== `src/server/config/runtime_config.{h,cc}`
+
+Ответственность:
+
+* определить маленький runtime contract:
+** `config_path`
+** `bind_host`
+** `port`
+** `log_level`
+** `swagger`
+* распарсить CLI options через `CLI11`;
+* загрузить `config/server.yaml` через `reflect-cpp`;
+* применить CLI overrides поверх file config;
+* дать доступ к итоговым значениям через `Host()`, `Port()`, `LogLevel()`;
+* делегировать генерацию static config в `MakeStaticConfigYaml(...)`.
+
+Важная идея:
+
+NOTE: `RuntimeConfig` это *не* полный userver config. Это только маленький человеко-ориентированный контракт конфигурации проекта.
+
+=== `src/server/config/static_config_factory.{h,cc}`
+
+Ответственность:
+
+* превратить маленькие значения из `RuntimeConfig` в большой `components_manager` YAML для userver;
+* определить внутреннее дерево C++ DTO, которое нужно для генерации этого YAML через `reflect-cpp`;
+* зарегистрировать блоки конфигурации handler'ов:
+** `handler-health`
+** `handler-openapi`
+** `handler-locks`
+** `handler-presence`
+** `handler-protected-page`
+** `handler-swagger-ui`
+
+Зачем нужен этот файл:
+
+userver требует довольно многословный static config.
+Мы не хотим, чтобы эта многословность протекала в `RuntimeConfig`.
+
+Поэтому этот файл работает как слой перевода:
+
+* вход: простой runtime config;
+* выход: полный startup config для userver.
+
+'''
+
+== 5. Регистрация компонентов
+
+=== `src/server/components/cppwiki_server_component.{h,cc}`
+
+Ответственность:
+
+* добавить все handler-классы в `userver::components::ComponentList`;
+* зарегистрировать auth checker factory под auth type `cppwiki-auth-checker`.
+
+Регистрация auth важна, потому что protected routes в generated static config ссылаются именно на этот auth type.
+
+NOTE: Если handler зарегистрирован здесь, он должен существовать и в generated static config. Если auth type используется в generated static config, он должен быть зарегистрирован здесь.
+
+Это главная связка, которую нужно помнить в этом файле.
+
+'''
+
+== 6. Handler helpers
+
+=== `src/server/handlers/handler_utils.{h,cc}`
+
+Ответственность:
+
+* выставлять общие HTTP headers;
+* добавлять tracing/request tags;
+* подготавливать типовые варианты response:
+** JSON API response
+** HTML response
+** JSON document response
+
+Зачем нужен этот файл:
+
+Без него каждый handler повторял один и тот же boilerplate:
+
+* получить `HttpResponse`
+* выставить CORS/content headers
+* вызвать helper для tracing/tagging
+
+Этот файл позволяет handler'ам заниматься только логикой конкретного запроса.
+
+'''
+
+== 7. HTTP handlers
+
+=== `health_handler`
+
+Ответственность:
+
+* `GET /api/v1/health`
+* вернуть маленький success envelope с именем сервиса и статусом `"ok"`.
+
+Это самый простой пример паттерна handler'а:
+
+. подготовить headers/tags;
+. собрать DTO;
+. обернуть DTO в response envelope.
+
+=== `options_handler`
+
+Ответственность:
+
+* отвечать на CORS preflight requests;
+* возвращать `204 No Content`.
+
+=== `openapi_handler`
+
+Ответственность:
+
+* отдавать OpenAPI document как JSON;
+* возвращать встроенный контент из `assets/openapi_spec.h`.
+
+=== `swagger_ui_handler`
+
+Ответственность:
+
+* отдавать HTML-страницу Swagger UI;
+* возвращать встроенный контент из `assets/swagger_ui_page.h`.
+
+=== `lock_handler`
+
+Ответственность:
+
+* обрабатывать lock operations на `/api/v1/locks/\{document_id}`;
+* маршрутизировать логику по HTTP method:
+** `GET` = прочитать состояние lock
+** `POST` = acquire
+** `PUT` = heartbeat
+** `DELETE` = release или force release
+
+Что происходит внутри:
+
+* request body парсится в `LockRequestDto` через общий JSON adapter;
+* owner сначала берётся из JSON, потом из header, потом по умолчанию `"anonymous"`;
+* вызывается `LockService`;
+* результат сервиса превращается в response DTO и success/error envelope.
+
+=== `presence_handler`
+
+Ответственность:
+
+* обрабатывать presence на `/api/v1/presence/\{workspace_id}`;
+* для `POST` обновлять heartbeat presence;
+* для `GET` и после `POST` возвращать текущий список presence.
+
+Что происходит внутри:
+
+* request JSON парсится в `PresenceHeartbeatRequestDto`;
+* если полей нет, используются значения по умолчанию:
+** `user_id = "anonymous"`
+** `scope = "view"`
+* вызывается `PresenceService`;
+* возвращается типизированный presence response DTO.
+
+=== `protected_page_handler`
+
+Ответственность:
+
+* простой protected smoke endpoint;
+* проверяет, что plumbing для protected route/auth работает;
+* сейчас возвращает stub message.
+
+Этот handler в основном нужен как тест auth boundary.
+
+'''
+
+== 8. Слой DTO
+
+=== `src/server/dto/json_adapter.h`
+
+Ответственность:
+
+* общая граница конвертации между:
+** `userver::formats::json::Value`
+** типизированными `reflect-cpp` struct'ами
+
+Он даёт два generic helper'а:
+
+* `ParseJsonBody<T>(...)`
+* `ToJsonValue(...)`
+
+Это файл, который централизует политику JSON conversion.
+
+=== `src/server/dto/response_envelope.{h,cc}`
+
+Ответственность:
+
+* определить общие формы API envelope;
+* предоставить:
+** `SuccessEnvelope<T>`
+** `ErrorEnvelope`
+** `ErrorDto`
+* сериализовать их обратно в `userver::formats::json::Value`.
+
+Контракт API здесь такой:
+
+[source,json]
+----
+{
+  "apiVersion": 1,
+  "ok": true,
+  "result": { ... }
+}
+----
+
+или
+
+[source,json]
+----
+{
+  "apiVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "...",
+    "message": "..."
+  }
+}
+----
+
+=== `health_response`
+
+Ответственность:
+
+* определить типизированный DTO для health result.
+
+=== `lock_response`
+
+Ответственность:
+
+* определить:
+** request DTO для lock payload;
+** internal struct результата lock action;
+** response DTO для состояния lock.
+
+=== `presence_response`
+
+Ответственность:
+
+* определить:
+** request DTO для presence heartbeat payload;
+** response DTO для выдачи списка users.
+
+Важная заметка про DTO:
+
+NOTE: DTO это transport models. Они должны описывать то, что идёт по HTTP, а не обязательно внутреннюю форму хранения.
+
+'''
+
+== 9. Слой service
+
+=== `src/server/service/lock_service.{h,cc}`
+
+Ответственность:
+
+* держать in-memory lock state по `document_id`;
+* поддерживать:
+** acquire
+** heartbeat
+** release
+** force release
+** чтение owner
+
+Текущие свойства:
+
+* защищён mutex'ом;
+* только in-memory;
+* без persistence;
+* acquire тем же owner трактуется как refresh;
+* acquire другим owner отклоняется.
+
+Это stub business logic, а не финальная production lock management.
+
+=== `src/server/service/presence_service.{h,cc}`
+
+Ответственность:
+
+* держать in-memory presence state, сгруппированный по workspace и user;
+* поддерживать:
+** обновление heartbeat
+** выдачу текущего presence для одного workspace
+
+Текущая схема хранения:
+
+* `workspace_id -> user_id -> PresenceInfo`
+
+Она специально простая и достаточная для текущего stub-этапа.
+
+'''
+
+== 10. Слой middleware
+
+=== `src/server/middleware/logging_middleware.{h,cc}`
+
+Ответственность:
+
+* добавлять tracing/span tags из request data;
+* пробрасывать `x-request-id` обратно в response, если он есть;
+* размечать запрос тегами:
+** method + URL
+** `document_id`, если он есть
+** `workspace_id`, если он есть
+
+Это не business logic.
+Это request observability plumbing.
+
+=== `src/server/middleware/auth_checker_impl.{h,cc}`
+
+Ответственность:
+
+* реализовать auth checker, на который ссылаются protected handlers;
+* сейчас отклонять protected traffic stub-ответом.
+
+Это заглушка до будущей реальной auth integration.
+
+'''
+
+== 11. Слой assets
+
+=== `src/server/assets/openapi_spec.h`
+
+Ответственность:
+
+* хранить встроенный OpenAPI JSON document.
+
+=== `src/server/assets/swagger_ui_page.h`
+
+Ответственность:
+
+* хранить встроенную Swagger UI HTML page.
+
+Зачем нужны эти файлы:
+
+Handlers должны описывать HTTP behavior, а не быть контейнерами для огромных строк.
+
+'''
+
+== 12. Как менять код
+
+Если нужно менять загрузку host/port/log level:
+
+* править `runtime_config.{h,cc}`
+
+Если нужно менять форму userver startup config:
+
+* править `static_config_factory.cc`
+
+Если нужно добавить новый endpoint:
+
+. добавить handler в `handlers/`
+. при необходимости добавить DTO в `dto/`
+. если handler требует доменной логики, добавить service
+. зарегистрировать handler в `cppwiki_server_component.cc`
+. добавить его config block в `static_config_factory.cc`
+
+Если нужно менять общий JSON/request/response glue:
+
+* править `dto/json_adapter.h`
+* править `dto/response_envelope.{h,cc}`
+
+Если нужно менять поведение lock/presence:
+
+* править `service/lock_service.cc`
+* править `service/presence_service.cc`
+
+Если нужно менять tracing/CORS preparation:
+
+* править `handlers/handler_utils.cc`
+* править `middleware/logging_middleware.cc`
+
+Если нужно менять auth на protected routes:
+
+* править `middleware/auth_checker_impl.cc`
+
+'''
+
+== 13. Удобная mental model
+
+Проще всего понимать этот сервер так:
+
+* `RuntimeConfig` = маленькая человеко-ориентированная конфигурация
+* `StaticConfigFactory` = переводчик в startup YAML для userver
+* `Component registration` = сообщаем userver, какие классы вообще существуют
+* `Handler` = HTTP adapter
+* `DTO` = wire format
+* `Service` = in-memory logic
+* `Middleware/helper` = сквозная plumbing-логика запроса
+
+Если держать эти границы в голове, код перестаёт выглядеть как один большой server blob и начинает читаться как набор очень узких слоёв.

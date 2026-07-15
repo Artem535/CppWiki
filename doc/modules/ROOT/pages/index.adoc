@@ -1,0 +1,53 @@
+= Wiki Platform v9 Documentation
+
+Generated documentation set for Wiki Platform v9 — Block Document Edition.
+
+== Delivery Discovery Alignment
+
+Документация должна начинаться с delivery discovery: сначала фиксируются problem statement, users/workflows, scope/non-goals, measurable success criteria, data/integration assumptions, risks, pilot gates and release gates. Архитектурные документы и ADR должны ссылаться на эти discovery decisions, а не заменять их.
+
+Для инициатив с AI/LLM/RAG используйте шаблоны из xref:ml-llm-delivery-pipeline/01-prd-template.adoc[ML LLM Delivery Pipeline]:
+
+* xref:ml-llm-delivery-pipeline/01-prd-template.adoc[01 PRD Template] для service PRD / PRD-lite.
+* xref:ml-llm-delivery-pipeline/05-evaluation-plan-template.adoc[05 Evaluation Plan Template] для offline eval, release gates and regression policy.
+* xref:ml-llm-delivery-pipeline/06-delivery-plan-template.adoc[06 Delivery Plan Template] для workstreams, owners, dependencies, rollout and delivery gates.
+
+== Files
+
+* xref:PRD_v9_Block_Document_Edition.adoc[]
+* xref:roadmap/Current_Roadmap.adoc[]
+* xref:architecture/Architecture_Baseline_Libraries_and_Approaches.adoc[]
+* xref:architecture/Desktop_Backend_Sync_Interaction.adoc[]
+* xref:architecture/Sync_Document_Model_and_Conflict_Contract.adoc[]
+* xref:architecture/Server_and_Realtime_Editing_Architecture.adoc[]
+* xref:architecture/Project_Structure_and_Style.adoc[]
+* xref:architecture/adr/ADR-001-editor-choice.adoc[]
+* xref:architecture/adr/ADR-002-document-model.adoc[]
+* xref:architecture/adr/ADR-003-collaboration-strategy.adoc[]
+* xref:architecture/adr/ADR-004-plugin-system.adoc[]
+* xref:architecture/adr/ADR-005-rendering-pipeline.adoc[]
+* xref:architecture/adr/ADR-006-confluence-integration.adoc[]
+* xref:architecture/adr/ADR-007-rejection-qtextedit-djot-first.adoc[]
+* xref:architecture/adr/ADR-008-authentik-auth-model.adoc[]
+* xref:architecture/spikes/Couchbase_Sync_Gateway_OIDC_Example.adoc[]
+* xref:backlog/Desktop_Collaboration_Backlog.adoc[]
+* xref:backlog/Admin_Surface_Backlog.adoc[]
+
+== Building the Documentation Site Locally
+
+The docs are published as an Antora site. The playbook lives at the repository root
+(`antora-playbook.yml`).
+
+Generate the site:
+
+[source,bash]
+----
+npx antora generate antora-playbook.yml
+----
+
+Output goes to `build/site/index.html`. Open it directly in a browser, or serve it:
+
+[source,bash]
+----
+npx http-server build/site
+----
