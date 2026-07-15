@@ -13,7 +13,7 @@ Accepted
 == Context
 
 Issue #3 ("Прокачать BlockNote для работы с ИИ") asks for AI-assisted editing on top of
-the BlockNote editor chosen in xref:ADR-001-editor-choice.md[ADR-001]. Any AI feature that
+the BlockNote editor chosen in xref:ADR-001-editor-choice.adoc[ADR-001]. Any AI feature that
 drives document mutations (content edits, rename, move, delete) must call into
 `EditorBridge` the same way the human editor UI does — the bridge is the declared trust
 boundary between the in-browser editor and the desktop app (see `CLAUDE.md`,
