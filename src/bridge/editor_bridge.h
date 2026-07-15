@@ -4,7 +4,6 @@
 #include <QObject>
 #include <QString>
 #include <QVariant>
-
 #include <memory>
 #include <optional>
 
@@ -29,6 +28,11 @@ class QEditorBridge final : public QObject {
                                 QString access_message = {});
   void SetCurrentDocumentAccess(bool editable, QString lock_owner = {},
                                 QString access_message = {});
+  // Marks whether the currently open document has an unresolved sync conflict.
+  // Independent of the lock-based access gate above (see ADR-013): a document
+  // can be simultaneously unlocked and conflicted, and mutations must be
+  // rejected for either reason.
+  void SetCurrentDocumentConflicted(bool has_conflict);
   void SetCurrentAuthorId(QString author_id);
   void SetCurrentWorkspaceId(QString workspace_id);
   void RequestOpenDocument(const QString& page_id);
@@ -51,12 +55,13 @@ class QEditorBridge final : public QObject {
   Q_INVOKABLE QVariantMap openDocument(const QString& page_id);
   Q_INVOKABLE QVariantMap updateSnapshot(const QString& snapshot_json);
 
-signals:
+ signals:
   void documentOpenRequested(const QString& pageId);
   void documentLoaded(const QVariantMap& document);
   void documentLoadFailed(const QString& pageId, const QString& message);
   void documentSelectionCleared();
-  void documentAccessChanged(bool editable, const QString& lock_owner, const QString& access_message);
+  void documentAccessChanged(bool editable, const QString& lock_owner,
+                             const QString& access_message);
 
   // Emitted when document save status changes (for UI feedback).
   void saveStatusChanged(const QString& pageId, bool success, const QString& message);
@@ -66,10 +71,18 @@ signals:
   // open document and that document is locked/read-only; otherwise returns std::nullopt.
   // Mirrors the gate applied in updateSnapshot() so rename/move/delete cannot bypass
   // the lock model that mutations through the editor are subject to.
-  [[nodiscard]] std::optional<QVariantMap> RejectIfCurrentDocumentLocked(const QString& page_id) const;
+  [[nodiscard]] std::optional<QVariantMap> RejectIfCurrentDocumentLocked(
+      const QString& page_id) const;
+
+  // Returns a document_read_only error envelope if `page_id` refers to the currently
+  // open document and that document has an unresolved sync conflict; otherwise
+  // returns std::nullopt. Independent of RejectIfCurrentDocumentLocked() (see ADR-013).
+  [[nodiscard]] std::optional<QVariantMap> RejectIfCurrentDocumentConflicted(
+      const QString& page_id) const;
 
   bool pending_document_editable_ = true;
   bool current_document_editable_ = true;
+  bool current_document_has_conflict_ = false;
   QString pending_lock_owner_;
   QString current_lock_owner_;
   QString pending_access_message_;

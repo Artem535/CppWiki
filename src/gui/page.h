@@ -2,7 +2,6 @@
 #define CPPWIKI_SRC_GUI_PAGE_H_
 
 #include <QWidget>
-
 #include <memory>
 #include <optional>
 #include <set>
@@ -29,7 +28,7 @@ class QEditorBridge;
 namespace cppwiki::gui {
 class DocumentTreeModel;
 class DocumentTreeView;
-}
+}  // namespace cppwiki::gui
 
 namespace cppwiki {
 
@@ -51,11 +50,20 @@ class Page final : public QWidget, public IPage {
   void ToggleEditMode();
   void SetEditModeEnabled(bool enabled);
 
-signals:
+  // Re-evaluates the sync-conflict state for the currently open document and
+  // re-applies it to the editability gate / tree indicators. Called after a
+  // conflict is resolved elsewhere (e.g. from the auto-popup conflict window).
+  void RefreshCurrentDocumentConflictState();
+
+ signals:
   void settingsRequested();
   void documentStatusChanged(const QString& message, bool is_error);
   void collaborationStatusChanged(const QString& summary, const QString& details, bool is_warning);
   void editModeStateChanged(const QString& label, bool checked, bool enabled);
+  // Emitted when the document just opened/loaded has an unresolved sync
+  // conflict (ADR-013) — MainWindow uses this to auto-open the standalone
+  // conflict resolution window.
+  void documentConflictDetected(const QString& page_id, const QString& conflict_id);
 
  private:
   void BuildUi();
@@ -101,6 +109,8 @@ signals:
   void UpdateAuthCard();
   void RefreshPageListIfChanged();
   void RefreshWorkspaceHydrationState();
+  void ApplyConflictStateForDocument(const QString& page_id);
+  void RefreshConflictedDocumentIndicators();
 
   const AppContext& context_;
   QWidget* page_panel_ = nullptr;

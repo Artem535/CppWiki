@@ -83,10 +83,11 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     if (it == documents_.end()) {
       return cppwiki::storage::LoadDocumentResult{
           .document = std::nullopt,
-          .error = cppwiki::storage::RepositoryError{
-              .code = cppwiki::storage::RepositoryErrorCode::kReadFailed,
-              .message = "Document was not found.",
-          },
+          .error =
+              cppwiki::storage::RepositoryError{
+                  .code = cppwiki::storage::RepositoryErrorCode::kReadFailed,
+                  .message = "Document was not found.",
+              },
       };
     }
 
@@ -99,8 +100,7 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
   [[nodiscard]] auto ListDocuments() -> cppwiki::storage::ListDocumentsResult override {
     cppwiki::storage::ListDocumentsResult result;
     for (const auto& [id, document] : documents_) {
-      result.documents.push_back(
-          cppwiki::storage::DocumentSummaryFromMetadata(document.metadata));
+      result.documents.push_back(cppwiki::storage::DocumentSummaryFromMetadata(document.metadata));
     }
     return result;
   }
@@ -134,7 +134,9 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     return {};
   }
 
-  [[nodiscard]] auto SupportsSync() const -> bool override { return true; }
+  [[nodiscard]] auto SupportsSync() const -> bool override {
+    return true;
+  }
 
  private:
   std::map<std::string, cppwiki::storage::DocumentRecord> documents_;
@@ -163,8 +165,9 @@ auto TestBridgeInfo() -> void {
           "missing list documents method");
   Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodCreateDocument)),
           "missing create document method");
-  Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodCreateChildDocument)),
-          "missing create child document method");
+  Require(
+      methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodCreateChildDocument)),
+      "missing create child document method");
   Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodRenameDocument)),
           "missing rename document method");
   Require(methods.contains(cppwiki::ToQString(cppwiki::constants::kBridgeMethodLoadDocument)),
@@ -252,7 +255,11 @@ auto TestCreateDocumentLoadsEmptyAndSaves() -> void {
 
   const auto loaded = bridge.loadDocument(created_id);
   RequireSuccessEnvelope(loaded);
-  Require(loaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("blocks")).toList().isEmpty(),
+  Require(loaded.value(QStringLiteral("result"))
+              .toMap()
+              .value(QStringLiteral("blocks"))
+              .toList()
+              .isEmpty(),
           "new document should load with no initial blocks");
 
   const auto saved = bridge.updateSnapshot(QStringLiteral(R"([
@@ -269,10 +276,14 @@ auto TestCreateDocumentLoadsEmptyAndSaves() -> void {
 
   const auto reloaded = bridge.loadDocument(created_id);
   RequireSuccessEnvelope(reloaded);
-  Require(reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
-              QStringLiteral("Untitled note"),
-          "document without h1 should keep its existing title");
-  Require(reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("contentVersion")).toLongLong() == 2,
+  Require(
+      reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
+          QStringLiteral("Untitled note"),
+      "document without h1 should keep its existing title");
+  Require(reloaded.value(QStringLiteral("result"))
+                  .toMap()
+                  .value(QStringLiteral("contentVersion"))
+                  .toLongLong() == 2,
           "saving a snapshot should increment contentVersion");
 }
 
@@ -283,8 +294,12 @@ auto TestCreateDocumentDoesNotHijackAutosaveSelection() -> void {
 
   const auto listed = bridge.listDocuments();
   RequireSuccessEnvelope(listed);
-  const auto welcome_id =
-      listed.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("id")).toString();
+  const auto welcome_id = listed.value(QStringLiteral("result"))
+                              .toList()
+                              .front()
+                              .toMap()
+                              .value(QStringLiteral("id"))
+                              .toString();
 
   RequireSuccessEnvelope(bridge.openDocument(welcome_id));
 
@@ -309,10 +324,12 @@ auto TestCreateDocumentDoesNotHijackAutosaveSelection() -> void {
   const auto loaded_created = bridge.loadDocument(created_id);
   RequireSuccessEnvelope(loaded_created);
   const auto created_result = loaded_created.value(QStringLiteral("result")).toMap();
-  Require(created_result.value(QStringLiteral("title")).toString() == QStringLiteral("Untitled note"),
-          "creating a document should not change bridge selection before open");
-  Require(created_result.value(QStringLiteral("workspaceId")).toString() == QStringLiteral("default"),
-          "loaded created document workspace should default to default");
+  Require(
+      created_result.value(QStringLiteral("title")).toString() == QStringLiteral("Untitled note"),
+      "creating a document should not change bridge selection before open");
+  Require(
+      created_result.value(QStringLiteral("workspaceId")).toString() == QStringLiteral("default"),
+      "loaded created document workspace should default to default");
   Require(!created_result.value(QStringLiteral("createdBy")).toString().isEmpty(),
           "loaded created document creator should not be empty");
   Require(created_result.value(QStringLiteral("blocks")).toList().isEmpty(),
@@ -321,8 +338,9 @@ auto TestCreateDocumentDoesNotHijackAutosaveSelection() -> void {
   const auto loaded_welcome = bridge.loadDocument(welcome_id);
   RequireSuccessEnvelope(loaded_welcome);
   const auto welcome_result = loaded_welcome.value(QStringLiteral("result")).toMap();
-  Require(welcome_result.value(QStringLiteral("title")).toString() == QStringLiteral("Welcome heading"),
-          "autosave should still apply to the previously opened document");
+  Require(
+      welcome_result.value(QStringLiteral("title")).toString() == QStringLiteral("Welcome heading"),
+      "autosave should still apply to the previously opened document");
 }
 
 auto TestRenameDocumentUpdatesTitle() -> void {
@@ -332,25 +350,35 @@ auto TestRenameDocumentUpdatesTitle() -> void {
 
   const auto listed = bridge.listDocuments();
   RequireSuccessEnvelope(listed);
-  const auto page_id =
-      listed.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("id")).toString();
+  const auto page_id = listed.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
 
   const auto renamed = bridge.renameDocument(page_id, QStringLiteral("Renamed title"));
   RequireSuccessEnvelope(renamed);
-  Require(renamed.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
-              QStringLiteral("Renamed title"),
-          "rename should return the updated title");
+  Require(
+      renamed.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
+          QStringLiteral("Renamed title"),
+      "rename should return the updated title");
 
   const auto reloaded = bridge.loadDocument(page_id);
   RequireSuccessEnvelope(reloaded);
-  Require(reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
-              QStringLiteral("Renamed title"),
-          "rename should persist in loadDocument");
+  Require(
+      reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
+          QStringLiteral("Renamed title"),
+      "rename should persist in loadDocument");
 
   const auto relisted = bridge.listDocuments();
   RequireSuccessEnvelope(relisted);
-  Require(relisted.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("title")).toString() ==
-              QStringLiteral("Renamed title"),
+  Require(relisted.value(QStringLiteral("result"))
+                  .toList()
+                  .front()
+                  .toMap()
+                  .value(QStringLiteral("title"))
+                  .toString() == QStringLiteral("Renamed title"),
           "rename should persist in listDocuments");
 }
 
@@ -380,8 +408,12 @@ auto TestOpenDocumentReturnsLoadedDocument() -> void {
 
   const auto list_response = bridge.listDocuments();
   RequireSuccessEnvelope(list_response);
-  const auto page_id = list_response.value(QStringLiteral("result")).toList().front().toMap().value(
-      QStringLiteral("id")).toString();
+  const auto page_id = list_response.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
 
   const auto response = bridge.openDocument(page_id);
   RequireSuccessEnvelope(response);
@@ -494,8 +526,9 @@ auto TestSessionContextOverridesWorkspaceAndAuthor() -> void {
   const auto created = bridge.createDocument();
   RequireSuccessEnvelope(created);
   const auto result = created.value(QStringLiteral("result")).toMap();
-  Require(result.value(QStringLiteral("workspaceId")).toString() == QStringLiteral("workspace-blue"),
-          "created document should use current workspace from session context");
+  Require(
+      result.value(QStringLiteral("workspaceId")).toString() == QStringLiteral("workspace-blue"),
+      "created document should use current workspace from session context");
   Require(result.value(QStringLiteral("createdBy")).toString() == QStringLiteral("subject-42"),
           "created document should use current author from session context");
 
@@ -505,9 +538,9 @@ auto TestSessionContextOverridesWorkspaceAndAuthor() -> void {
   Require(loaded_result.value(QStringLiteral("workspaceId")).toString() ==
               QStringLiteral("workspace-blue"),
           "loaded document should preserve session-derived workspace");
-  Require(loaded_result.value(QStringLiteral("createdBy")).toString() ==
-              QStringLiteral("subject-42"),
-          "loaded document should preserve session-derived author");
+  Require(
+      loaded_result.value(QStringLiteral("createdBy")).toString() == QStringLiteral("subject-42"),
+      "loaded document should preserve session-derived author");
 }
 
 auto TestValidSnapshot() -> void {
@@ -516,8 +549,12 @@ auto TestValidSnapshot() -> void {
   bridge.SetRepository(repository);
   const auto list_response = bridge.listDocuments();
   RequireSuccessEnvelope(list_response);
-  const auto page_id = list_response.value(QStringLiteral("result")).toList().front().toMap().value(
-      QStringLiteral("id")).toString();
+  const auto page_id = list_response.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
 
   RequireSuccessEnvelope(bridge.loadDocument(page_id));
 
@@ -549,8 +586,12 @@ auto TestInvalidJsonSnapshot() -> void {
   bridge.SetRepository(repository);
   const auto list_response = bridge.listDocuments();
   RequireSuccessEnvelope(list_response);
-  const auto page_id = list_response.value(QStringLiteral("result")).toList().front().toMap().value(
-      QStringLiteral("id")).toString();
+  const auto page_id = list_response.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
   RequireSuccessEnvelope(bridge.loadDocument(page_id));
 
   const auto response = bridge.updateSnapshot(QStringLiteral("{"));
@@ -564,8 +605,12 @@ auto TestInvalidRootSnapshot() -> void {
   bridge.SetRepository(repository);
   const auto list_response = bridge.listDocuments();
   RequireSuccessEnvelope(list_response);
-  const auto page_id = list_response.value(QStringLiteral("result")).toList().front().toMap().value(
-      QStringLiteral("id")).toString();
+  const auto page_id = list_response.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
   RequireSuccessEnvelope(bridge.loadDocument(page_id));
 
   const auto response = bridge.updateSnapshot(QStringLiteral(R"({ "type": "paragraph" })"));
@@ -580,8 +625,12 @@ auto TestRenameDocumentRejectedWhenCurrentDocumentLocked() -> void {
 
   const auto listed = bridge.listDocuments();
   RequireSuccessEnvelope(listed);
-  const auto page_id =
-      listed.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("id")).toString();
+  const auto page_id = listed.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
 
   RequireSuccessEnvelope(bridge.openDocument(page_id));
   bridge.SetCurrentDocumentAccess(false, QStringLiteral("someone-else"),
@@ -592,9 +641,10 @@ auto TestRenameDocumentRejectedWhenCurrentDocumentLocked() -> void {
 
   const auto reloaded = bridge.loadDocument(page_id);
   RequireSuccessEnvelope(reloaded);
-  Require(reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() !=
-              QStringLiteral("Should not apply"),
-          "rename must not apply while the current document is locked/read-only");
+  Require(
+      reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() !=
+          QStringLiteral("Should not apply"),
+      "rename must not apply while the current document is locked/read-only");
 }
 
 auto TestRenameDocumentSucceedsWhenCurrentDocumentEditable() -> void {
@@ -604,17 +654,22 @@ auto TestRenameDocumentSucceedsWhenCurrentDocumentEditable() -> void {
 
   const auto listed = bridge.listDocuments();
   RequireSuccessEnvelope(listed);
-  const auto page_id =
-      listed.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("id")).toString();
+  const auto page_id = listed.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
 
   RequireSuccessEnvelope(bridge.openDocument(page_id));
   bridge.SetCurrentDocumentAccess(true, QString{}, QString{});
 
   const auto response = bridge.renameDocument(page_id, QStringLiteral("Editable rename"));
   RequireSuccessEnvelope(response);
-  Require(response.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
-              QStringLiteral("Editable rename"),
-          "rename should still succeed when the current document is editable");
+  Require(
+      response.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
+          QStringLiteral("Editable rename"),
+      "rename should still succeed when the current document is editable");
 }
 
 auto TestUpdateDocumentPlacementRejectedWhenCurrentDocumentLocked() -> void {
@@ -624,8 +679,12 @@ auto TestUpdateDocumentPlacementRejectedWhenCurrentDocumentLocked() -> void {
 
   const auto listed = bridge.listDocuments();
   RequireSuccessEnvelope(listed);
-  const auto page_id =
-      listed.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("id")).toString();
+  const auto page_id = listed.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
 
   RequireSuccessEnvelope(bridge.openDocument(page_id));
   bridge.SetCurrentDocumentAccess(false, QStringLiteral("someone-else"),
@@ -642,16 +701,22 @@ auto TestUpdateDocumentPlacementSucceedsWhenCurrentDocumentEditable() -> void {
 
   const auto listed = bridge.listDocuments();
   RequireSuccessEnvelope(listed);
-  const auto page_id =
-      listed.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("id")).toString();
+  const auto page_id = listed.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
 
   RequireSuccessEnvelope(bridge.openDocument(page_id));
   bridge.SetCurrentDocumentAccess(true, QString{}, QString{});
 
   const auto response = bridge.updateDocumentPlacement(page_id, QString{}, false, 5);
   RequireSuccessEnvelope(response);
-  Require(response.value(QStringLiteral("result")).toMap().value(QStringLiteral("sortOrder")).toInt() == 5,
-          "placement update should still succeed when the current document is editable");
+  Require(
+      response.value(QStringLiteral("result")).toMap().value(QStringLiteral("sortOrder")).toInt() ==
+          5,
+      "placement update should still succeed when the current document is editable");
 }
 
 auto TestDeleteDocumentRejectedWhenCurrentDocumentLocked() -> void {
@@ -673,6 +738,131 @@ auto TestDeleteDocumentRejectedWhenCurrentDocumentLocked() -> void {
 
   const auto reloaded = bridge.loadDocument(created_id);
   RequireSuccessEnvelope(reloaded);
+}
+
+auto TestRenameDocumentRejectedWhenCurrentDocumentConflicted() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed);
+  const auto page_id = listed.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
+
+  RequireSuccessEnvelope(bridge.openDocument(page_id));
+  bridge.SetCurrentDocumentConflicted(true);
+
+  const auto response = bridge.renameDocument(page_id, QStringLiteral("Should not apply"));
+  RequireErrorEnvelope(response, QStringLiteral("document_read_only"));
+
+  const auto reloaded = bridge.loadDocument(page_id);
+  RequireSuccessEnvelope(reloaded);
+  Require(
+      reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() !=
+          QStringLiteral("Should not apply"),
+      "rename must not apply while the current document has an unresolved conflict");
+}
+
+auto TestUpdateDocumentPlacementRejectedWhenCurrentDocumentConflicted() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed);
+  const auto page_id = listed.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
+
+  RequireSuccessEnvelope(bridge.openDocument(page_id));
+  bridge.SetCurrentDocumentConflicted(true);
+
+  const auto response = bridge.updateDocumentPlacement(page_id, QString{}, false, 5);
+  RequireErrorEnvelope(response, QStringLiteral("document_read_only"));
+}
+
+auto TestDeleteDocumentRejectedWhenCurrentDocumentConflicted() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created = bridge.createDocument();
+  RequireSuccessEnvelope(created);
+  const auto created_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+
+  RequireSuccessEnvelope(bridge.openDocument(created_id));
+  bridge.SetCurrentDocumentConflicted(true);
+
+  const auto response = bridge.deleteDocument(created_id);
+  RequireErrorEnvelope(response, QStringLiteral("document_read_only"));
+
+  const auto reloaded = bridge.loadDocument(created_id);
+  RequireSuccessEnvelope(reloaded);
+}
+
+auto TestUpdateSnapshotRejectedWhenCurrentDocumentConflicted() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed);
+  const auto page_id = listed.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
+  RequireSuccessEnvelope(bridge.loadDocument(page_id));
+  bridge.SetCurrentDocumentConflicted(true);
+
+  const auto response = bridge.updateSnapshot(QStringLiteral(R"([
+    {
+      "id": "b1",
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "Should not save", "styles": {} }
+      ],
+      "children": []
+    }
+  ])"));
+
+  RequireErrorEnvelope(response, QStringLiteral("document_read_only"));
+}
+
+auto TestConflictFlagClearsOnFreshLoad() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed);
+  const auto page_id = listed.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
+
+  RequireSuccessEnvelope(bridge.openDocument(page_id));
+  bridge.SetCurrentDocumentConflicted(true);
+  RequireErrorEnvelope(bridge.renameDocument(page_id, QStringLiteral("nope")),
+                       QStringLiteral("document_read_only"));
+
+  // Reloading the same document resets the conflict flag until the caller
+  // re-applies it (mirrors how the lock's pending/current state resets).
+  RequireSuccessEnvelope(bridge.loadDocument(page_id));
+  const auto response = bridge.renameDocument(page_id, QStringLiteral("Now editable"));
+  RequireSuccessEnvelope(response);
 }
 
 auto TestDeleteDocumentSucceedsWhenCurrentDocumentEditable() -> void {
@@ -709,6 +899,11 @@ auto main() -> int {
   TestDeleteDocumentRemovesItFromList();
   TestDeleteDocumentRejectedWhenCurrentDocumentLocked();
   TestDeleteDocumentSucceedsWhenCurrentDocumentEditable();
+  TestRenameDocumentRejectedWhenCurrentDocumentConflicted();
+  TestUpdateDocumentPlacementRejectedWhenCurrentDocumentConflicted();
+  TestDeleteDocumentRejectedWhenCurrentDocumentConflicted();
+  TestUpdateSnapshotRejectedWhenCurrentDocumentConflicted();
+  TestConflictFlagClearsOnFreshLoad();
   TestOpenDocumentReturnsLoadedDocument();
   TestWorkspaceListIsolation();
   TestEmptyRepositoryWithRemoteSyncExpectedSkipsWelcome();

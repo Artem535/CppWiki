@@ -1,13 +1,11 @@
 #include "gui/document_tree_item_delegate.h"
 
-#include <algorithm>
-
 #include <QCursor>
 #include <QPainter>
 #include <QStyleOptionViewItem>
 #include <QTreeView>
 #include <QWidget>
-
+#include <algorithm>
 #include <oclero/qlementine/style/QlementineStyle.hpp>
 #include <oclero/qlementine/utils/ImageUtils.hpp>
 #include <oclero/qlementine/utils/StateUtils.hpp>
@@ -31,6 +29,54 @@ void DrawAddChildButton(QPainter* painter, const QRect& rect, const QColor& fore
   painter->setPen(QPen(foreground, 1.8, Qt::SolidLine, Qt::RoundCap));
   painter->drawLine(QPoint(center.x() - half, center.y()), QPoint(center.x() + half, center.y()));
   painter->drawLine(QPoint(center.x(), center.y() - half), QPoint(center.x(), center.y() + half));
+
+  painter->restore();
+}
+
+// "Locked by another collaborator" indicator: a small padlock glyph.
+// Distinct on purpose from the conflict indicator below (ADR-013 requires the
+// two read-only sources to be visually distinguishable, not collapsed into a
+// single generic read-only icon).
+void DrawLockedBadge(QPainter* painter, const QRect& rect) {
+  painter->save();
+  painter->setRenderHint(QPainter::Antialiasing, true);
+
+  const QColor color(0xC9, 0x8A, 0x2E);  // amber
+  const int width = rect.width();
+  const int height = rect.height();
+  const QRect body(rect.left(), rect.top() + height * 2 / 5, width, height * 3 / 5);
+  painter->setPen(Qt::NoPen);
+  painter->setBrush(color);
+  painter->drawRoundedRect(body, 1.5, 1.5);
+
+  QRectF shackle(rect.left() + width / 4.0, rect.top(), width / 2.0, height * 3 / 5.0);
+  painter->setPen(QPen(color, std::max(1.0, width / 6.0)));
+  painter->setBrush(Qt::NoBrush);
+  painter->drawArc(shackle, 0, 180 * 16);
+
+  painter->restore();
+}
+
+// "Unresolved sync conflict" indicator: a warning triangle glyph.
+void DrawConflictBadge(QPainter* painter, const QRect& rect) {
+  painter->save();
+  painter->setRenderHint(QPainter::Antialiasing, true);
+
+  const QColor color(0xC0, 0x39, 0x2B);  // red
+
+  QPolygonF triangle;
+  triangle << QPointF(rect.center().x(), rect.top()) << QPointF(rect.right(), rect.bottom())
+           << QPointF(rect.left(), rect.bottom());
+  painter->setPen(Qt::NoPen);
+  painter->setBrush(color);
+  painter->drawPolygon(triangle);
+
+  painter->setPen(QPen(Qt::white, std::max(1.0, rect.width() / 7.0), Qt::SolidLine, Qt::RoundCap));
+  const int cx = rect.center().x();
+  const int top = rect.top() + rect.height() * 4 / 10;
+  const int bottom = rect.bottom() - rect.height() / 5;
+  painter->drawLine(QPoint(cx, top), QPoint(cx, bottom - rect.height() / 6));
+  painter->drawPoint(QPoint(cx, bottom));
 
   painter->restore();
 }
@@ -92,21 +138,21 @@ void DocumentTreeItemDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     foreground = qlementine_style->listItemForegroundColor(mouse, selected, focus, active);
     if (selected == oclero::qlementine::SelectionState::Selected) {
       foreground = qlementine_style->listItemForegroundColor(
-          oclero::qlementine::MouseState::Normal,
-          oclero::qlementine::SelectionState::NotSelected, focus, active);
+          oclero::qlementine::MouseState::Normal, oclero::qlementine::SelectionState::NotSelected,
+          focus, active);
     }
   } else {
     foreground = opt.palette.text().color();
   }
 
-  const QRect selected_row_rect = opt.rect.adjusted(0, vertical_padding / 2, 0, -vertical_padding / 2);
+  const QRect selected_row_rect =
+      opt.rect.adjusted(0, vertical_padding / 2, 0, -vertical_padding / 2);
   QRect content_rect = selected_row_rect.adjusted(margin, 0, -margin, 0);
 
   const QRect add_child_button_rect = addChildButtonRect(opt, index);
   content_rect = content_rect.adjusted(
       0, 0,
-      add_child_button_rect.isValid() ? -(margin + kAddChildButtonSize + margin / 2) : -margin,
-      0);
+      add_child_button_rect.isValid() ? -(margin + kAddChildButtonSize + margin / 2) : -margin, 0);
 
   const QVariant icon_variant = index.data(Qt::DecorationRole);
   const QIcon icon = icon_variant.isValid() ? icon_variant.value<QIcon>() : QIcon{};
@@ -117,14 +163,30 @@ void DocumentTreeItemDelegate::paint(QPainter* painter, const QStyleOptionViewIt
 
     const auto pixmap = icon.pixmap(kIconSize, kIconSize);
     if (!pixmap.isNull()) {
-      const auto auto_icon_color = qlementine_style
-                                       ? qlementine_style->autoIconColor(opt.widget)
-                                       : oclero::qlementine::AutoIconColor::None;
-      const auto colorized_pixmap = qlementine_style
-                                        ? qlementine_style->getColorizedPixmap(
-                                              pixmap, auto_icon_color, foreground, theme.secondaryColor)
-                                        : pixmap;
+      const auto auto_icon_color = qlementine_style ? qlementine_style->autoIconColor(opt.widget)
+                                                    : oclero::qlementine::AutoIconColor::None;
+      const auto colorized_pixmap =
+          qlementine_style ? qlementine_style->getColorizedPixmap(pixmap, auto_icon_color,
+                                                                  foreground, theme.secondaryColor)
+                           : pixmap;
       painter->drawPixmap(icon_rect, colorized_pixmap);
+    }
+
+    // Locked and conflicted are two independent, visually distinct read-only
+    // sources (ADR-013) — draw both badges if somehow both apply, rather than
+    // collapsing into one generic indicator.
+    const bool is_locked = index.data(DocumentTreeModel::kIsLockedRole).toBool();
+    const bool is_conflicted = index.data(DocumentTreeModel::kIsConflictedRole).toBool();
+    const int badge_size = std::max(8, kIconSize / 2);
+    if (is_conflicted) {
+      const QRect badge_rect(icon_rect.right() - badge_size / 2, icon_rect.top() - badge_size / 3,
+                             badge_size, badge_size);
+      DrawConflictBadge(painter, badge_rect);
+    }
+    if (is_locked) {
+      const QRect badge_rect(icon_rect.right() - badge_size / 2,
+                             icon_rect.bottom() - badge_size * 2 / 3, badge_size, badge_size);
+      DrawLockedBadge(painter, badge_rect);
     }
   }
 

@@ -14,7 +14,7 @@ class QWidget;
 namespace oclero::qlementine {
 class StatusBadgeWidget;
 class Switch;
-}
+}  // namespace oclero::qlementine
 
 namespace cppwiki::gui {
 class PresenceStripWidget;
@@ -22,6 +22,10 @@ class PresenceStripWidget;
 
 namespace cppwiki::sync {
 enum class DocumentSyncState;
+}
+
+namespace cppwiki::gui::merge {
+class ConflictMergeDialog;
 }
 
 namespace cppwiki {
@@ -47,7 +51,7 @@ class MainWindow final : public QMainWindow {
   void settingsChanged();
 
  private:
- void BuildUi();
+  void BuildUi();
   void CreateInitialPage();
   void ShowSettingsDialog();
   void UpdateBackendStatus();
@@ -59,14 +63,14 @@ class MainWindow final : public QMainWindow {
   void UpdateAuthCollaborationHint();
   void RefreshCollaborationSecondaryText();
   void RefreshSyncDetailsDialog();
-  void UseLocalForSelectedSyncConflict(const QString& conflict_id);
-  void UseRemoteForSelectedSyncConflict(const QString& conflict_id);
-  void OpenMergeEditorForSelectedSyncConflict(const QString& conflict_id);
-  void DismissSelectedSyncConflict(const QString& conflict_id);
-  void UseLocalForNextSyncConflict();
-  void UseRemoteForNextSyncConflict();
-  void OpenMergeEditorForNextSyncConflict();
-  void DismissNextSyncConflict();
+  // Opens (or reuses) the standalone, non-modal conflict resolution window for
+  // the given conflict. See ADR-013 / doc/CONTEXT.adoc "Conflict resolution
+  // window".
+  void ShowConflictWindow(const QString& conflict_id);
+  // Reopen affordance for a conflict window the user previously closed via its
+  // close button: re-raises the existing window if still alive, otherwise
+  // opens one for the current document's conflict (or the first pending one).
+  void ReopenConflictWindow();
 
   AppContext* context_ = nullptr;
   Page* current_page_ = nullptr;
@@ -97,11 +101,8 @@ class MainWindow final : public QMainWindow {
   QWidget* sync_conflicts_widget_ = nullptr;
   oclero::qlementine::StatusBadgeWidget* sync_conflicts_badge_ = nullptr;
   QLabel* sync_conflicts_label_ = nullptr;
-  QToolButton* sync_conflict_use_local_button_ = nullptr;
-  QToolButton* sync_conflict_use_remote_button_ = nullptr;
-  QToolButton* sync_conflict_merge_button_ = nullptr;
-  QToolButton* sync_conflict_dismiss_button_ = nullptr;
   QPointer<SyncDetailsDialog> sync_details_dialog_;
+  QPointer<gui::merge::ConflictMergeDialog> conflict_window_;
 };
 
 }  // namespace cppwiki

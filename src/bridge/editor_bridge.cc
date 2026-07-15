@@ -2,14 +2,13 @@
 
 #include <spdlog/spdlog.h>
 
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
-#include <QDateTime>
 #include <QProcessEnvironment>
 #include <QVariant>
-
 #include <cstdint>
 #include <map>
 #include <queue>
@@ -53,7 +52,7 @@ auto BridgeInfo() -> QVariantMap {
   return QVariantMap{
       {QStringLiteral("apiVersion"), constants::kBridgeApiVersion},
       {QStringLiteral("namespace"), ToQString(constants::kDocumentsBridgeNamespace)},
-       {QStringLiteral("methods"),
+      {QStringLiteral("methods"),
        QVariantList{
            ToQString(constants::kBridgeMethodGetBridgeInfo),
            ToQString(constants::kBridgeMethodGetInitialDocument),
@@ -76,9 +75,7 @@ auto InlineText(QString text) -> QJsonArray {
   return QJsonArray{content};
 }
 
-auto MakeBlock(const QString& id,
-               const QString& type,
-               const QJsonArray& content,
+auto MakeBlock(const QString& id, const QString& type, const QJsonArray& content,
                QJsonObject props = {}) -> QJsonObject {
   QJsonObject block;
   block.insert(QStringLiteral("id"), id);
@@ -96,23 +93,18 @@ auto WelcomeBlocks() -> QJsonArray {
   heading_props.insert(QStringLiteral("level"), 1);
 
   return QJsonArray{
-      MakeBlock(QString::fromStdString(GenerateUuidString()),
-                QStringLiteral("heading"),
-                InlineText(ToQString(constants::kDefaultPageTitle)),
-                heading_props),
-      MakeBlock(QString::fromStdString(GenerateUuidString()),
-                QStringLiteral("paragraph"),
+      MakeBlock(QString::fromStdString(GenerateUuidString()), QStringLiteral("heading"),
+                InlineText(ToQString(constants::kDefaultPageTitle)), heading_props),
+      MakeBlock(QString::fromStdString(GenerateUuidString()), QStringLiteral("paragraph"),
                 InlineText(ToQString(constants::kDefaultPageBodyText))),
   };
 }
 
-auto MakeDocumentSnapshotJson(const std::string& id,
-                              const std::string& title,
+auto MakeDocumentSnapshotJson(const std::string& id, const std::string& title,
                               const QJsonArray& blocks) -> QByteArray {
   QJsonObject document;
   document.insert(QStringLiteral("id"), QString::fromStdString(id));
-  document.insert(QStringLiteral("schema_version"),
-                  static_cast<int>(document::SchemaVersion::kV1));
+  document.insert(QStringLiteral("schema_version"), static_cast<int>(document::SchemaVersion::kV1));
   document.insert(QStringLiteral("title"), QString::fromStdString(title));
   document.insert(QStringLiteral("blocks"), blocks);
   return QJsonDocument(document).toJson(QJsonDocument::Compact);
@@ -123,7 +115,8 @@ auto BlocksFromRawSnapshotJson(const std::string& raw_snapshot_json)
   QJsonParseError error;
   const auto json = QJsonDocument::fromJson(QByteArray::fromStdString(raw_snapshot_json), &error);
   if (error.error != QJsonParseError::NoError) {
-    return QStringLiteral("Stored document snapshot is not valid JSON: %1").arg(error.errorString());
+    return QStringLiteral("Stored document snapshot is not valid JSON: %1")
+        .arg(error.errorString());
   }
   if (json.isArray()) {
     return json.array().toVariantList();
@@ -212,8 +205,7 @@ auto MetadataToVariant(const document::PageMetadata& metadata) -> QVariantMap {
 }
 
 auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& documents,
-                                const QString& current_workspace_id)
-    -> QVariantList {
+                                const QString& current_workspace_id) -> QVariantList {
   QVariantList result;
   for (const auto& document : documents) {
     const auto workspace_id = QString::fromStdString(EffectiveWorkspaceId(document.workspace_id));
@@ -288,8 +280,7 @@ auto MakeWelcomeRecord(const QString& workspace_id, const QString& author_id)
 
 auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
                            std::int32_t sort_order = 0,
-                           QString workspace_id = QStringLiteral("default"),
-                           QString author_id = {})
+                           QString workspace_id = QStringLiteral("default"), QString author_id = {})
     -> storage::DocumentRecord {
   const auto id = GenerateUuidString();
   const auto title = std::string(constants::kNewDocumentTitle);
@@ -355,18 +346,16 @@ auto ExtractTitle(const document::Document& document, std::string_view fallback_
 }
 
 auto LoadDocumentRecord(std::shared_ptr<storage::LocalDocumentRepository> repository,
-                        const QString& page_id,
-                        const QString& current_workspace_id)
+                        const QString& page_id, const QString& current_workspace_id)
     -> std::variant<storage::DocumentRecord, QVariantMap> {
   auto result = repository->LoadDocument(page_id.toStdString());
   if (!result.document) {
-    return ErrorResponse(QStringLiteral("load_failed"),
-                         QString::fromStdString(result.error ? result.error->message
-                                                             : "Document was not found."));
+    return ErrorResponse(
+        QStringLiteral("load_failed"),
+        QString::fromStdString(result.error ? result.error->message : "Document was not found."));
   }
-  if (NormalizeWorkspaceId(
-          QString::fromStdString(EffectiveWorkspaceId(result.document->metadata.workspace_id))) !=
-      current_workspace_id) {
+  if (NormalizeWorkspaceId(QString::fromStdString(
+          EffectiveWorkspaceId(result.document->metadata.workspace_id))) != current_workspace_id) {
     return ErrorResponse(QStringLiteral("workspace_mismatch"),
                          QStringLiteral("Document belongs to another workspace."));
   }
@@ -413,8 +402,7 @@ auto DeleteDocumentTree(std::shared_ptr<storage::LocalDocumentRepository> reposi
 
 QEditorBridge::QEditorBridge(QObject* parent) : QObject(parent) {}
 
-void QEditorBridge::SetRepository(
-    std::shared_ptr<storage::LocalDocumentRepository> repository) {
+void QEditorBridge::SetRepository(std::shared_ptr<storage::LocalDocumentRepository> repository) {
   repository_ = std::move(repository);
 }
 
@@ -438,6 +426,10 @@ void QEditorBridge::SetCurrentDocumentAccess(bool editable, QString lock_owner,
                              current_access_message_);
 }
 
+void QEditorBridge::SetCurrentDocumentConflicted(bool has_conflict) {
+  current_document_has_conflict_ = has_conflict;
+}
+
 void QEditorBridge::SetCurrentAuthorId(QString author_id) {
   current_author_id_ = std::move(author_id);
 }
@@ -454,6 +446,7 @@ void QEditorBridge::RequestOpenDocument(const QString& page_id) {
 void QEditorBridge::ClearCurrentDocumentSelection() {
   current_page_id_.clear();
   current_document_editable_ = true;
+  current_document_has_conflict_ = false;
   current_lock_owner_.clear();
   current_access_message_.clear();
   emit documentSelectionCleared();
@@ -482,13 +475,12 @@ QVariantMap QEditorBridge::listDocumentsInWorkspace(const QString& workspace_id)
 
   auto documents = DocumentSummariesToVariant(result.documents, normalized_workspace_id);
   if (documents.empty()) {
-    const bool should_create_welcome = sync_state_provider_ == nullptr ||
-                                       sync_state_provider_->ShouldCreateSyntheticWelcomePage(
-                                           normalized_workspace_id);
-    const bool sync_expected = repository_->SupportsSync() &&
-                               sync_state_provider_ != nullptr &&
-                               sync_state_provider_->ShouldExpectRemoteDocuments(
-                                   normalized_workspace_id);
+    const bool should_create_welcome =
+        sync_state_provider_ == nullptr ||
+        sync_state_provider_->ShouldCreateSyntheticWelcomePage(normalized_workspace_id);
+    const bool sync_expected =
+        repository_->SupportsSync() && sync_state_provider_ != nullptr &&
+        sync_state_provider_->ShouldExpectRemoteDocuments(normalized_workspace_id);
     if (sync_expected) {
       spdlog::info(
           "Workspace '{}' is empty locally, but remote sync is expected; skipping welcome creation",
@@ -498,14 +490,16 @@ QVariantMap QEditorBridge::listDocumentsInWorkspace(const QString& workspace_id)
 
     if (!should_create_welcome) {
       spdlog::info(
-          "Workspace '{}' is empty locally and synthetic welcome creation is suppressed while sync mode is active",
+          "Workspace '{}' is empty locally and synthetic welcome creation is suppressed while sync "
+          "mode is active",
           normalized_workspace_id.toStdString());
       return SuccessResponse(QVariantList{});
     }
 
     spdlog::info(
-        "Workspace '{}' is empty locally and no remote sync is expected; creating local welcome page",
-                 normalized_workspace_id.toStdString());
+        "Workspace '{}' is empty locally and no remote sync is expected; creating local welcome "
+        "page",
+        normalized_workspace_id.toStdString());
     auto welcome = MakeWelcomeRecord(normalized_workspace_id, current_author_id_);
     const auto save_result = repository_->SaveDocument(welcome);
     if (save_result.error) {
@@ -519,21 +513,22 @@ QVariantMap QEditorBridge::listDocumentsInWorkspace(const QString& workspace_id)
     // document via replication. For a purely local-only workspace this root
     // is created immediately since there is no remote pull to wait for.
     if (!repository_->LoadWorkspaceRoot(normalized_workspace_id.toStdString()).has_value()) {
-      const auto workspace_root_result = repository_->SaveWorkspaceRoot(storage::WorkspaceRootRecord{
-          .workspace_id = normalized_workspace_id.toStdString(),
-          .title = normalized_workspace_id.toStdString(),
-          .created_at = CurrentUtcTimestamp(),
-          .schema_version = 1,
-      });
+      const auto workspace_root_result =
+          repository_->SaveWorkspaceRoot(storage::WorkspaceRootRecord{
+              .workspace_id = normalized_workspace_id.toStdString(),
+              .title = normalized_workspace_id.toStdString(),
+              .created_at = CurrentUtcTimestamp(),
+              .schema_version = 1,
+          });
       if (workspace_root_result.error) {
         spdlog::warn("Failed to materialize local workspace root for '{}': {}",
-                     normalized_workspace_id.toStdString(),
-                     workspace_root_result.error->message);
+                     normalized_workspace_id.toStdString(), workspace_root_result.error->message);
       }
     }
 
     documents = DocumentSummariesToVariant(
-        std::vector<storage::DocumentSummary>{storage::DocumentSummaryFromMetadata(welcome.metadata)},
+        std::vector<storage::DocumentSummary>{
+            storage::DocumentSummaryFromMetadata(welcome.metadata)},
         normalized_workspace_id);
   }
 
@@ -584,8 +579,8 @@ QVariantMap QEditorBridge::createChildDocumentInWorkspace(const QString& workspa
     return ErrorResponse(QStringLiteral("invalid_parent"),
                          QStringLiteral("Parent document was not found."));
   }
-  if (NormalizeWorkspaceId(QString::fromStdString(
-          EffectiveWorkspaceId(parent_loaded.document->metadata.workspace_id))) != normalized_workspace_id) {
+  if (NormalizeWorkspaceId(QString::fromStdString(EffectiveWorkspaceId(
+          parent_loaded.document->metadata.workspace_id))) != normalized_workspace_id) {
     return ErrorResponse(QStringLiteral("invalid_parent"),
                          QStringLiteral("Parent document belongs to another workspace."));
   }
@@ -611,9 +606,18 @@ std::optional<QVariantMap> QEditorBridge::RejectIfCurrentDocumentLocked(
     return std::nullopt;
   }
   return ErrorResponse(QStringLiteral("document_read_only"),
-                       current_access_message_.isEmpty()
-                           ? QStringLiteral("Document is read-only.")
-                           : current_access_message_);
+                       current_access_message_.isEmpty() ? QStringLiteral("Document is read-only.")
+                                                         : current_access_message_);
+}
+
+std::optional<QVariantMap> QEditorBridge::RejectIfCurrentDocumentConflicted(
+    const QString& page_id) const {
+  if (page_id != current_page_id_ || !current_document_has_conflict_) {
+    return std::nullopt;
+  }
+  return ErrorResponse(
+      QStringLiteral("document_read_only"),
+      QStringLiteral("Document has an unresolved sync conflict. Resolve it before editing."));
 }
 
 QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString& title) {
@@ -636,6 +640,9 @@ QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString&
   if (auto lock_error = RejectIfCurrentDocumentLocked(page_id)) {
     return std::move(*lock_error);
   }
+  if (auto conflict_error = RejectIfCurrentDocumentConflicted(page_id)) {
+    return std::move(*conflict_error);
+  }
 
   auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
   if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
@@ -656,8 +663,8 @@ QVariantMap QEditorBridge::renameDocument(const QString& page_id, const QString&
   const auto blocks = std::get<QJsonArray>(std::move(blocks_or_error));
   const auto raw_snapshot_json =
       MakeDocumentSnapshotJson(record.metadata.id, record.metadata.title, blocks);
-  record.raw_snapshot_json =
-      std::string(raw_snapshot_json.constData(), static_cast<std::size_t>(raw_snapshot_json.size()));
+  record.raw_snapshot_json = std::string(raw_snapshot_json.constData(),
+                                         static_cast<std::size_t>(raw_snapshot_json.size()));
 
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
@@ -678,6 +685,9 @@ QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const
   if (auto lock_error = RejectIfCurrentDocumentLocked(page_id)) {
     return std::move(*lock_error);
   }
+  if (auto conflict_error = RejectIfCurrentDocumentConflicted(page_id)) {
+    return std::move(*conflict_error);
+  }
 
   auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
   if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
@@ -685,7 +695,8 @@ QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const
   }
 
   auto record = std::move(std::get<storage::DocumentRecord>(loaded_or_error));
-  record.metadata.parent_id = has_parent_id ? std::make_optional(parent_id.toStdString()) : std::nullopt;
+  record.metadata.parent_id =
+      has_parent_id ? std::make_optional(parent_id.toStdString()) : std::nullopt;
   record.metadata.sort_order = sort_order;
   ApplyDocumentMutationAudit(record.metadata, current_author_id_);
 
@@ -711,6 +722,9 @@ QVariantMap QEditorBridge::deleteDocument(const QString& page_id) {
   if (auto lock_error = RejectIfCurrentDocumentLocked(page_id)) {
     return std::move(*lock_error);
   }
+  if (auto conflict_error = RejectIfCurrentDocumentConflicted(page_id)) {
+    return std::move(*conflict_error);
+  }
 
   auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
   if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
@@ -718,8 +732,7 @@ QVariantMap QEditorBridge::deleteDocument(const QString& page_id) {
   }
 
   if (const auto error = DeleteDocumentTree(repository_, page_id.toStdString())) {
-    return ErrorResponse(QStringLiteral("delete_failed"),
-                         QString::fromStdString(error->message));
+    return ErrorResponse(QStringLiteral("delete_failed"), QString::fromStdString(error->message));
   }
 
   if (current_page_id_ == page_id) {
@@ -736,13 +749,12 @@ QVariantMap QEditorBridge::loadDocument(const QString& page_id) {
 
   auto result = repository_->LoadDocument(page_id.toStdString());
   if (!result.document) {
-    return ErrorResponse(QStringLiteral("load_failed"),
-                         QString::fromStdString(result.error ? result.error->message
-                                                             : "Document was not found."));
+    return ErrorResponse(
+        QStringLiteral("load_failed"),
+        QString::fromStdString(result.error ? result.error->message : "Document was not found."));
   }
-  if (NormalizeWorkspaceId(
-          QString::fromStdString(EffectiveWorkspaceId(result.document->metadata.workspace_id))) !=
-      current_workspace_id_) {
+  if (NormalizeWorkspaceId(QString::fromStdString(
+          EffectiveWorkspaceId(result.document->metadata.workspace_id))) != current_workspace_id_) {
     return ErrorResponse(QStringLiteral("workspace_mismatch"),
                          QStringLiteral("Document belongs to another workspace."));
   }
@@ -754,6 +766,7 @@ QVariantMap QEditorBridge::loadDocument(const QString& page_id) {
 
   current_page_id_ = page_id;
   current_document_editable_ = pending_document_editable_;
+  current_document_has_conflict_ = false;
   current_lock_owner_ = pending_lock_owner_;
   current_access_message_ = pending_access_message_;
   auto response = MetadataToVariant(result.document->metadata);
@@ -795,13 +808,19 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
                              : current_access_message_);
   }
 
+  if (current_document_has_conflict_) {
+    const auto message =
+        QStringLiteral("Document has an unresolved sync conflict. Resolve it before editing.");
+    emit saveStatusChanged(current_page_id_, false, message);
+    return ErrorResponse(QStringLiteral("document_read_only"), message);
+  }
+
   emit saveStatusChanged(current_page_id_, true, QStringLiteral("Saving..."));
 
   const auto snapshot_bytes = snapshot_json.toUtf8();
   const auto validation = document::DocumentValidator::ParseAndValidateSnapshot(snapshot_bytes);
   if (validation.error) {
-    spdlog::warn("editor snapshot rejected: {}: {}",
-                 document::ToString(validation.error->code),
+    spdlog::warn("editor snapshot rejected: {}: {}", document::ToString(validation.error->code),
                  validation.error->message);
     emit saveStatusChanged(current_page_id_, false,
                            QString::fromStdString(validation.error->message));
@@ -851,11 +870,10 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
     record.snapshot.schema_version = static_cast<std::int32_t>(document::SchemaVersion::kV1);
     record.snapshot.title = record.metadata.title;
 
-    const auto raw_snapshot_json = MakeDocumentSnapshotJson(record.metadata.id,
-                                                            record.metadata.title,
-                                                            std::get<QJsonArray>(blocks));
-    record.raw_snapshot_json =
-        std::string(raw_snapshot_json.constData(), static_cast<std::size_t>(raw_snapshot_json.size()));
+    const auto raw_snapshot_json = MakeDocumentSnapshotJson(
+        record.metadata.id, record.metadata.title, std::get<QJsonArray>(blocks));
+    record.raw_snapshot_json = std::string(raw_snapshot_json.constData(),
+                                           static_cast<std::size_t>(raw_snapshot_json.size()));
 
     auto save_result = repository_->SaveDocument(record);
     if (save_result.error) {
