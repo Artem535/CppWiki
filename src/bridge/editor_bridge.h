@@ -6,6 +6,7 @@
 #include <QVariant>
 
 #include <memory>
+#include <optional>
 
 #include "sync/sync_state_provider.h"
 
@@ -61,6 +62,12 @@ signals:
   void saveStatusChanged(const QString& pageId, bool success, const QString& message);
 
  private:
+  // Returns a document_read_only error envelope if `page_id` refers to the currently
+  // open document and that document is locked/read-only; otherwise returns std::nullopt.
+  // Mirrors the gate applied in updateSnapshot() so rename/move/delete cannot bypass
+  // the lock model that mutations through the editor are subject to.
+  [[nodiscard]] std::optional<QVariantMap> RejectIfCurrentDocumentLocked(const QString& page_id) const;
+
   bool pending_document_editable_ = true;
   bool current_document_editable_ = true;
   QString pending_lock_owner_;

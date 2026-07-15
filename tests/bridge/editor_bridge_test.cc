@@ -54,6 +54,11 @@ class FakeSyncStateProvider final : public cppwiki::sync::SyncStateProvider {
                                                                         : workspace_id.trimmed());
   }
 
+  [[nodiscard]] auto ShouldCreateSyntheticWelcomePage(const QString& workspace_id) const
+      -> bool override {
+    return !ShouldExpectRemoteDocuments(workspace_id);
+  }
+
  private:
   QStringList remote_workspaces_;
 };
@@ -568,6 +573,125 @@ auto TestInvalidRootSnapshot() -> void {
   RequireErrorEnvelope(response, QStringLiteral("missing_schema_version"));
 }
 
+auto TestRenameDocumentRejectedWhenCurrentDocumentLocked() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed);
+  const auto page_id =
+      listed.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("id")).toString();
+
+  RequireSuccessEnvelope(bridge.openDocument(page_id));
+  bridge.SetCurrentDocumentAccess(false, QStringLiteral("someone-else"),
+                                  QStringLiteral("Locked by someone else."));
+
+  const auto response = bridge.renameDocument(page_id, QStringLiteral("Should not apply"));
+  RequireErrorEnvelope(response, QStringLiteral("document_read_only"));
+
+  const auto reloaded = bridge.loadDocument(page_id);
+  RequireSuccessEnvelope(reloaded);
+  Require(reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() !=
+              QStringLiteral("Should not apply"),
+          "rename must not apply while the current document is locked/read-only");
+}
+
+auto TestRenameDocumentSucceedsWhenCurrentDocumentEditable() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed);
+  const auto page_id =
+      listed.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("id")).toString();
+
+  RequireSuccessEnvelope(bridge.openDocument(page_id));
+  bridge.SetCurrentDocumentAccess(true, QString{}, QString{});
+
+  const auto response = bridge.renameDocument(page_id, QStringLiteral("Editable rename"));
+  RequireSuccessEnvelope(response);
+  Require(response.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
+              QStringLiteral("Editable rename"),
+          "rename should still succeed when the current document is editable");
+}
+
+auto TestUpdateDocumentPlacementRejectedWhenCurrentDocumentLocked() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed);
+  const auto page_id =
+      listed.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("id")).toString();
+
+  RequireSuccessEnvelope(bridge.openDocument(page_id));
+  bridge.SetCurrentDocumentAccess(false, QStringLiteral("someone-else"),
+                                  QStringLiteral("Locked by someone else."));
+
+  const auto response = bridge.updateDocumentPlacement(page_id, QString{}, false, 5);
+  RequireErrorEnvelope(response, QStringLiteral("document_read_only"));
+}
+
+auto TestUpdateDocumentPlacementSucceedsWhenCurrentDocumentEditable() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed);
+  const auto page_id =
+      listed.value(QStringLiteral("result")).toList().front().toMap().value(QStringLiteral("id")).toString();
+
+  RequireSuccessEnvelope(bridge.openDocument(page_id));
+  bridge.SetCurrentDocumentAccess(true, QString{}, QString{});
+
+  const auto response = bridge.updateDocumentPlacement(page_id, QString{}, false, 5);
+  RequireSuccessEnvelope(response);
+  Require(response.value(QStringLiteral("result")).toMap().value(QStringLiteral("sortOrder")).toInt() == 5,
+          "placement update should still succeed when the current document is editable");
+}
+
+auto TestDeleteDocumentRejectedWhenCurrentDocumentLocked() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created = bridge.createDocument();
+  RequireSuccessEnvelope(created);
+  const auto created_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+
+  RequireSuccessEnvelope(bridge.openDocument(created_id));
+  bridge.SetCurrentDocumentAccess(false, QStringLiteral("someone-else"),
+                                  QStringLiteral("Locked by someone else."));
+
+  const auto response = bridge.deleteDocument(created_id);
+  RequireErrorEnvelope(response, QStringLiteral("document_read_only"));
+
+  const auto reloaded = bridge.loadDocument(created_id);
+  RequireSuccessEnvelope(reloaded);
+}
+
+auto TestDeleteDocumentSucceedsWhenCurrentDocumentEditable() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created = bridge.createDocument();
+  RequireSuccessEnvelope(created);
+  const auto created_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+
+  RequireSuccessEnvelope(bridge.openDocument(created_id));
+  bridge.SetCurrentDocumentAccess(true, QString{}, QString{});
+
+  const auto response = bridge.deleteDocument(created_id);
+  RequireSuccessEnvelope(response);
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -578,7 +702,13 @@ auto main() -> int {
   TestCreateDocumentLoadsEmptyAndSaves();
   TestCreateDocumentDoesNotHijackAutosaveSelection();
   TestRenameDocumentUpdatesTitle();
+  TestRenameDocumentRejectedWhenCurrentDocumentLocked();
+  TestRenameDocumentSucceedsWhenCurrentDocumentEditable();
+  TestUpdateDocumentPlacementRejectedWhenCurrentDocumentLocked();
+  TestUpdateDocumentPlacementSucceedsWhenCurrentDocumentEditable();
   TestDeleteDocumentRemovesItFromList();
+  TestDeleteDocumentRejectedWhenCurrentDocumentLocked();
+  TestDeleteDocumentSucceedsWhenCurrentDocumentEditable();
   TestOpenDocumentReturnsLoadedDocument();
   TestWorkspaceListIsolation();
   TestEmptyRepositoryWithRemoteSyncExpectedSkipsWelcome();
