@@ -9,7 +9,7 @@ date: <% tp.file.creation_date("YYYY-MM-DD") %>
 **Owner:** [Руководитель проекта] +
 **Team Lead:** [Имя] +
 **Stakeholders:** [Клиент / BDM / Аналитик / Delivery Team] +
-**Related Docs:** xref:02-system-design-doc-template.adoc[02 System Design], xref:03-adr-template.adoc[03 ADR], xref:04-service-spec-template.adoc[04 Service Spec]
+**Related Docs:** xref:ml-llm-delivery-pipeline/02-system-design-doc-template.adoc[02 System Design], xref:ml-llm-delivery-pipeline/03-adr-template.adoc[03 ADR], xref:ml-llm-delivery-pipeline/04-service-spec-template.adoc[04 Service Spec]
 
 '''
 

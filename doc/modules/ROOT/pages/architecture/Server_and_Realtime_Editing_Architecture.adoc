@@ -243,8 +243,8 @@ Use explicit route layers:
 
 Protected APIs use JWT validation starting in Phase 6. The public/private boundary is still important, but protected routes are no longer stubbed: they already validate bearer tokens against Authentik JWKS and place the validated principal into request context.
 
-* `GET/POST/PUT/DELETE /api/v1/locks/{document_id}`
-* `GET/POST /api/v1/presence/{workspace_id}`
+* `GET/POST/PUT/DELETE /api/v1/locks/\{document_id}`
+* `GET/POST /api/v1/presence/\{workspace_id}`
 * workspace APIs
 * page APIs
 * document metadata APIs

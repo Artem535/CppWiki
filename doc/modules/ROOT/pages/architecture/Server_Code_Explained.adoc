@@ -214,7 +214,7 @@ Responsibility:
 
 Responsibility:
 
-* handle lock operations on `/api/v1/locks/{document_id}`;
+* handle lock operations on `/api/v1/locks/\{document_id}`;
 * dispatch by HTTP method:
 ** `GET` = read lock state
 ** `POST` = acquire
@@ -232,7 +232,7 @@ What it does internally:
 
 Responsibility:
 
-* handle presence operations on `/api/v1/presence/{workspace_id}`;
+* handle presence operations on `/api/v1/presence/\{workspace_id}`;
 * for `POST`, update presence heartbeat;
 * for `GET` and after `POST`, return current presence list.
 

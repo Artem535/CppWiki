@@ -8,7 +8,7 @@ date: <% tp.file.creation_date("YYYY-MM-DD") %>
 **Status:** Draft / In Review / Approved +
 **Owner:** [Архитектор] +
 **Team Lead:** [Имя] +
-**Related Docs:** xref:01-prd-template.adoc[01 PRD], xref:03-adr-template.adoc[03 ADR], xref:04-service-spec-template.adoc[04 Service Spec], xref:07-runbook-template.adoc[07 Runbook], xref:09-prompt-template.adoc[09 Prompt Template]
+**Related Docs:** xref:ml-llm-delivery-pipeline/01-prd-template.adoc[01 PRD], xref:ml-llm-delivery-pipeline/03-adr-template.adoc[03 ADR], xref:ml-llm-delivery-pipeline/04-service-spec-template.adoc[04 Service Spec], xref:ml-llm-delivery-pipeline/07-runbook-template.adoc[07 Runbook], xref:ml-llm-delivery-pipeline/09-prompt-template.adoc[09 Prompt Template]
 
 '''
 

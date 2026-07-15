@@ -7,7 +7,7 @@ date: <% tp.file.creation_date("YYYY-MM-DD") %>
 
 **Status:** Draft / In Review / Approved +
 **Owner:** [Team Lead] +
-**Related Docs:** xref:02-system-design-doc-template.adoc[02 System Design], xref:05-evaluation-plan-template.adoc[05 Evaluation Plan], xref:07-runbook-template.adoc[07 Runbook]
+**Related Docs:** xref:ml-llm-delivery-pipeline/02-system-design-doc-template.adoc[02 System Design], xref:ml-llm-delivery-pipeline/05-evaluation-plan-template.adoc[05 Evaluation Plan], xref:ml-llm-delivery-pipeline/07-runbook-template.adoc[07 Runbook]
 
 '''
 

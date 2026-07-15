@@ -7,7 +7,7 @@ date: 2026-04-03
 
 **Status:** Draft +
 **Owner:** DS Lead / Team Lead +
-**Related Docs:** xref:04-service-spec-template.adoc[04 Service Spec], xref:05-evaluation-plan-template.adoc[05 Evaluation Plan]
+**Related Docs:** xref:ml-llm-delivery-pipeline/04-service-spec-template.adoc[04 Service Spec], xref:ml-llm-delivery-pipeline/05-evaluation-plan-template.adoc[05 Evaluation Plan]
 
 '''
 

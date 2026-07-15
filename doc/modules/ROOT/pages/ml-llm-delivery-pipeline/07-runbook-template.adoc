@@ -7,7 +7,7 @@ date: <% tp.file.creation_date("YYYY-MM-DD") %>
 
 **Status:** Draft / In Review / Approved +
 **Owner:** [DevOps / Service Owner] +
-**Related Docs:** xref:02-system-design-doc-template.adoc[02 System Design], xref:06-delivery-plan-template.adoc[06 Delivery Plan], xref:08-security-note-template.adoc[08 Security Note]
+**Related Docs:** xref:ml-llm-delivery-pipeline/02-system-design-doc-template.adoc[02 System Design], xref:ml-llm-delivery-pipeline/06-delivery-plan-template.adoc[06 Delivery Plan], xref:ml-llm-delivery-pipeline/08-security-note-template.adoc[08 Security Note]
 
 '''
 
