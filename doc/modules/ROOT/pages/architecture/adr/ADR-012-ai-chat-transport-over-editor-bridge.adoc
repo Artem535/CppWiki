@@ -1,0 +1,63 @@
+= ADR-012 — BlockNote AI Traffic Routes Through EditorBridge, Not Direct Fetch
+
+== Status
+
+Accepted
+
+== Date
+
+2026-07-16
+
+---
+
+== Context
+
+`@blocknote/xl-ai`'s `AIExtension` is designed, out of the box, to call `fetch`/streaming
+requests directly from browser JS to a configured API URL (via `DefaultChatTransport` from
+the Vercel `ai` SDK), with the API key held server-side.
+
+This conflicts with the standing rule for this project (`CLAUDE.md`, `src/bridge/`):
+the in-browser BlockNote editor must never get raw or unrestricted network access —
+`EditorBridge`/`QWebChannel` is the single declared trust boundary between JS and the
+desktop app. `AIExtension`'s default transport would give the `QWebEngineView` content a
+direct network egress path, bypassing that boundary for the first time.
+
+An allowlist exception (permit exactly one URL through `QWebEngineView`'s network layer)
+was considered and rejected: it would be the first crack in an otherwise absolute rule,
+and the rule was called out explicitly in the code-analysis pass ahead of this work
+(see ADR-010) as the property to protect while iterating quickly on AI features.
+
+---
+
+== Decision
+
+BlockNote AI features use a custom `ChatTransport` implementation (matching the `ai` SDK's
+`ChatTransport` interface consumed by `AIExtension`) that does not call `fetch` at all.
+Instead, it forwards each request through `EditorBridge`/`QWebChannel` to C++, which makes
+the actual HTTP request to `cppwiki_server` and streams the response back to JS via bridge
+signals.
+
+`QWebEngineView` retains zero direct network access; the only network egress for AI, as
+for everything else, is mediated by `EditorBridge`.
+
+---
+
+== Consequences
+
+=== Positive
+
+* No exception to the "editor gets no raw network access" rule — the trust boundary stays
+  singular and absolute rather than acquiring a first carve-out.
+* AI requests naturally inherit whatever auth/session context `EditorBridge` already
+  attaches to other calls, instead of needing their own credential-passing story into the
+  browser.
+
+=== Negative
+
+* Requires writing and maintaining a custom `ChatTransport` against the `ai` SDK's
+  streaming contract, instead of using `DefaultChatTransport` as documented upstream —
+  more work than the out-of-the-box path, and needs to be kept in sync if BlockNote changes
+  that interface in future releases.
+* Streaming responses must be relayed as a sequence of bridge signals (chunk-by-chunk)
+  rather than a native browser `ReadableStream`, which is more plumbing on both the C++ and
+  JS sides than the default integration.
