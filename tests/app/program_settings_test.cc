@@ -91,8 +91,8 @@ auto TestSettingsOverrides() -> void {
                     auth_redirect_uri);
   settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsAuthEnabledKey), true);
   settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsSyncEnabledKey), true);
-  settings.setValue(
-      cppwiki::ToQString(cppwiki::constants::kSettingsApplicationFontPointSizeKey), 15);
+  settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsApplicationFontPointSizeKey),
+                    15);
 
   const auto program_settings = cppwiki::ProgramSettings::FromSettings(settings);
 
@@ -126,8 +126,10 @@ auto TestSettingsRoundTrip() -> void {
   const auto settings_path = temporary_directory.filePath(QStringLiteral("cppwiki-roundtrip.ini"));
   QSettings settings(settings_path, QSettings::IniFormat);
 
-  const auto app_data_directory = temporary_directory.filePath(QStringLiteral("app-data-roundtrip"));
-  const auto database_directory = temporary_directory.filePath(QStringLiteral("database-roundtrip"));
+  const auto app_data_directory =
+      temporary_directory.filePath(QStringLiteral("app-data-roundtrip"));
+  const auto database_directory =
+      temporary_directory.filePath(QStringLiteral("database-roundtrip"));
   const auto editor_dist_directory =
       temporary_directory.filePath(QStringLiteral("editor-dist-roundtrip"));
   const auto backend_base_url = QStringLiteral("https://cppwiki.internal:9443");
@@ -141,9 +143,9 @@ auto TestSettingsRoundTrip() -> void {
       cppwiki::ToQString(cppwiki::constants::kApplicationName),
       cppwiki::ToQString(cppwiki::constants::kApplicationVersion),
       cppwiki::ToQString(cppwiki::constants::kOrganizationName), app_data_directory,
-      database_directory, editor_dist_directory, backend_base_url, true,
-      auth_authorization_url, auth_token_url, auth_client_id, auth_redirect_uri, true, false,
-      QString(), true, 15);
+      database_directory, editor_dist_directory, backend_base_url, true, auth_authorization_url,
+      auth_token_url, auth_client_id, auth_redirect_uri, true, false, QString(), true, 15, true,
+      true);
   program_settings.SaveToSettings(settings);
   settings.sync();
 
@@ -156,7 +158,8 @@ auto TestSettingsRoundTrip() -> void {
           "saved editor dist directory should round-trip through QSettings");
   Require(reloaded.BackendBaseUrl() == backend_base_url,
           "saved backend base url should round-trip through QSettings");
-  Require(reloaded.BackendEnabled(), "saved backend enabled flag should round-trip through QSettings");
+  Require(reloaded.BackendEnabled(),
+          "saved backend enabled flag should round-trip through QSettings");
   Require(reloaded.AuthAuthorizationUrl() == auth_authorization_url,
           "saved auth authorization url should round-trip through QSettings");
   Require(reloaded.AuthTokenUrl() == auth_token_url,
@@ -169,6 +172,10 @@ auto TestSettingsRoundTrip() -> void {
   Require(reloaded.SyncEnabled(), "saved sync enabled flag should round-trip through QSettings");
   Require(reloaded.ApplicationFontPointSize() == 15,
           "saved font size should round-trip through QSettings");
+  Require(reloaded.AiFeaturesEnabled(),
+          "saved AI features enabled flag should round-trip through QSettings");
+  Require(reloaded.AiAutocompleteEnabled(),
+          "saved AI autocomplete enabled flag should round-trip through QSettings");
 }
 
 }  // namespace

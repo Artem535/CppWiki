@@ -12,11 +12,11 @@ class ProgramSettings final {
   ProgramSettings(QString application_name, QString application_version, QString organization_name,
                   QString app_data_directory, QString database_directory,
                   QString editor_dist_directory, QString backend_base_url, bool backend_enabled,
-                  QString auth_authorization_url, QString auth_token_url,
-                  QString auth_client_id, QString auth_redirect_uri, bool auth_enabled,
-                  bool demo_collaboration_enabled, QString demo_collaboration_user_id,
-                  bool sync_enabled,
-                  int application_font_point_size);
+                  QString auth_authorization_url, QString auth_token_url, QString auth_client_id,
+                  QString auth_redirect_uri, bool auth_enabled, bool demo_collaboration_enabled,
+                  QString demo_collaboration_user_id, bool sync_enabled,
+                  int application_font_point_size, bool ai_features_enabled,
+                  bool ai_autocomplete_enabled);
 
   [[nodiscard]] static auto FromDefaults() -> ProgramSettings;
   [[nodiscard]] static auto FromSettings(const QSettings& settings) -> ProgramSettings;
@@ -39,6 +39,8 @@ class ProgramSettings final {
   [[nodiscard]] auto DemoCollaborationUserId() const -> const QString&;
   [[nodiscard]] auto SyncEnabled() const -> bool;
   [[nodiscard]] auto ApplicationFontPointSize() const -> int;
+  [[nodiscard]] auto AiFeaturesEnabled() const -> bool;
+  [[nodiscard]] auto AiAutocompleteEnabled() const -> bool;
 
  private:
   QString application_name_;
@@ -58,6 +60,8 @@ class ProgramSettings final {
   QString demo_collaboration_user_id_;
   bool sync_enabled_;
   int application_font_point_size_;
+  bool ai_features_enabled_;
+  bool ai_autocomplete_enabled_;
 };
 
 }  // namespace cppwiki

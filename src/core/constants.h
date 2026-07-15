@@ -51,8 +51,7 @@ inline constexpr bool kDefaultServerSwaggerEnabled = true;
 inline constexpr std::string_view kDefaultServerLogLevel = "info";
 inline constexpr std::string_view kDefaultServerConfigPath = "config/server.yaml";
 inline constexpr std::string_view kDefaultSwaggerTitle = "CppWiki Server API";
-inline constexpr std::string_view kDefaultSwaggerDescription =
-    "CppWiki local/backend service API.";
+inline constexpr std::string_view kDefaultSwaggerDescription = "CppWiki local/backend service API.";
 
 inline constexpr std::string_view kSettingsAppDataDirectoryKey = "paths/appDataDirectory";
 inline constexpr std::string_view kSettingsDatabaseDirectoryKey = "paths/databaseDirectory";
@@ -66,11 +65,12 @@ inline constexpr std::string_view kSettingsAuthClientIdKey = "auth/clientId";
 inline constexpr std::string_view kSettingsAuthRedirectUriKey = "auth/redirectUri";
 inline constexpr std::string_view kSettingsDemoCollaborationEnabledKey =
     "demo/collaborationEnabled";
-inline constexpr std::string_view kSettingsDemoCollaborationUserIdKey =
-    "demo/collaborationUserId";
+inline constexpr std::string_view kSettingsDemoCollaborationUserIdKey = "demo/collaborationUserId";
 inline constexpr std::string_view kSettingsSyncEnabledKey = "sync/enabled";
 inline constexpr std::string_view kSettingsApplicationFontPointSizeKey =
     "appearance/applicationFontPointSize";
+inline constexpr std::string_view kSettingsAiFeaturesEnabledKey = "ai/featuresEnabled";
+inline constexpr std::string_view kSettingsAiAutocompleteEnabledKey = "ai/autocompleteEnabled";
 
 inline constexpr std::string_view kDocumentsCollectionName = "documents";
 inline constexpr std::string_view kLocalDocumentsCollectionName = "local_documents";
@@ -80,8 +80,7 @@ inline constexpr std::string_view kConflictsIndexDocumentId = "cppwiki-conflict-
 inline constexpr std::string_view kConflictDocumentIdPrefix = "cppwiki-conflict-";
 inline constexpr std::string_view kWorkspaceDocumentIdPrefix = "workspace:";
 inline constexpr std::string_view kWorkspaceRootDocumentType = "workspace";
-inline constexpr std::string_view kDefaultAuthRedirectUri =
-    "http://127.0.0.1:38080/auth/callback";
+inline constexpr std::string_view kDefaultAuthRedirectUri = "http://127.0.0.1:38080/auth/callback";
 inline constexpr std::string_view kDefaultAuthScopes =
     "openid profile email groups roles offline_access";
 inline constexpr std::string_view kAuthTokenStoreEntryKey = "desktop-auth-session";

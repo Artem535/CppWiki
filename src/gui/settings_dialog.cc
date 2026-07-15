@@ -1,20 +1,22 @@
 #include "gui/settings_dialog.h"
 
-#include <oclero/qlementine/widgets/ActionButton.hpp>
-#include <oclero/qlementine/widgets/Label.hpp>
-#include <oclero/qlementine/widgets/LineEdit.hpp>
-
 #include <QAction>
 #include <QCheckBox>
-#include <QDialogButtonBox>
 #include <QDesktopServices>
+#include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QWidget>
+#include <oclero/qlementine/widgets/ActionButton.hpp>
+#include <oclero/qlementine/widgets/Label.hpp>
+#include <oclero/qlementine/widgets/LineEdit.hpp>
+#include <oclero/qlementine/widgets/SegmentedControl.hpp>
 
 namespace cppwiki::gui {
 
@@ -29,6 +31,17 @@ auto MakeReadOnlyPathLineEdit(const QString& value, QWidget* parent)
   return edit;
 }
 
+auto MakeSectionPage(QWidget* parent, QFormLayout** out_form_layout) -> QWidget* {
+  auto* page = new QWidget(parent);
+  auto* form_layout = new QFormLayout(page);
+  form_layout->setLabelAlignment(Qt::AlignLeft);
+  form_layout->setFormAlignment(Qt::AlignTop);
+  form_layout->setHorizontalSpacing(12);
+  form_layout->setVerticalSpacing(10);
+  *out_form_layout = form_layout;
+  return page;
+}
+
 }  // namespace
 
 SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
@@ -41,101 +54,70 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   root_layout->setContentsMargins(16, 16, 16, 16);
   root_layout->setSpacing(14);
 
-  auto* title =
-      new oclero::qlementine::Label(QStringLiteral("Application settings"),
-                                    oclero::qlementine::TextRole::H2, this);
+  auto* title = new oclero::qlementine::Label(QStringLiteral("Application settings"),
+                                              oclero::qlementine::TextRole::H2, this);
   root_layout->addWidget(title);
 
   auto* hint = new oclero::qlementine::Label(
-      QStringLiteral("Adjust desktop appearance, inspect local storage and prepare optional backend and auth settings."),
+      QStringLiteral("Adjust desktop appearance, inspect local storage and prepare optional "
+                     "backend and auth settings."),
       oclero::qlementine::TextRole::Caption, this);
   hint->setWordWrap(true);
   root_layout->addWidget(hint);
 
-  form_layout_ = new QFormLayout();
-  form_layout_->setLabelAlignment(Qt::AlignLeft);
-  form_layout_->setFormAlignment(Qt::AlignTop);
-  form_layout_->setHorizontalSpacing(12);
-  form_layout_->setVerticalSpacing(10);
-  root_layout->addLayout(form_layout_);
+  section_control_ = new oclero::qlementine::SegmentedControl(this);
+  section_control_->addItem(QStringLiteral("General"));
+  section_control_->addItem(QStringLiteral("Backend & Sync"));
+  section_control_->addItem(QStringLiteral("Auth"));
+  section_control_->addItem(QStringLiteral("Collaboration (demo)"));
+  section_control_->addItem(QStringLiteral("AI"));
+  root_layout->addWidget(section_control_);
 
-  font_size_spinbox_ = new QSpinBox(this);
+  section_stack_ = new QStackedWidget(this);
+  root_layout->addWidget(section_stack_, 1);
+
+  connect(section_control_, &oclero::qlementine::SegmentedControl::currentIndexChanged, this,
+          [this]() { section_stack_->setCurrentIndex(section_control_->currentIndex()); });
+
+  // General.
+  QFormLayout* general_form_layout = nullptr;
+  auto* general_page = MakeSectionPage(section_stack_, &general_form_layout);
+  section_stack_->addWidget(general_page);
+
+  font_size_spinbox_ = new QSpinBox(general_page);
   font_size_spinbox_->setRange(8, 24);
   font_size_spinbox_->setSuffix(QStringLiteral(" pt"));
   font_size_spinbox_->setValue(current_settings_.ApplicationFontPointSize());
-  form_layout_->addRow(QStringLiteral("Font size"), font_size_spinbox_);
+  general_form_layout->addRow(QStringLiteral("Font size"), font_size_spinbox_);
 
-  backend_enabled_checkbox_ = new QCheckBox(QStringLiteral("Use backend when available"), this);
+  // Backend & Sync.
+  QFormLayout* backend_form_layout = nullptr;
+  auto* backend_page = MakeSectionPage(section_stack_, &backend_form_layout);
+  section_stack_->addWidget(backend_page);
+
+  backend_enabled_checkbox_ =
+      new QCheckBox(QStringLiteral("Use backend when available"), backend_page);
   backend_enabled_checkbox_->setChecked(current_settings_.BackendEnabled());
-  form_layout_->addRow(QStringLiteral("Backend"), backend_enabled_checkbox_);
+  backend_form_layout->addRow(QStringLiteral("Backend"), backend_enabled_checkbox_);
 
-  backend_base_url_edit_ = new oclero::qlementine::LineEdit(this);
+  backend_base_url_edit_ = new oclero::qlementine::LineEdit(backend_page);
   backend_base_url_edit_->setText(current_settings_.BackendBaseUrl());
   backend_base_url_edit_->setPlaceholderText(QStringLiteral("http://127.0.0.1:8080"));
   backend_base_url_edit_->setEnabled(current_settings_.BackendEnabled());
   connect(backend_enabled_checkbox_, &QCheckBox::toggled, backend_base_url_edit_,
           &QWidget::setEnabled);
-  form_layout_->addRow(QStringLiteral("Backend URL"), backend_base_url_edit_);
+  backend_form_layout->addRow(QStringLiteral("Backend URL"), backend_base_url_edit_);
 
-  auth_enabled_checkbox_ = new QCheckBox(QStringLiteral("Use desktop auth spike"), this);
-  auth_enabled_checkbox_->setChecked(current_settings_.AuthEnabled());
-  form_layout_->addRow(QStringLiteral("Auth"), auth_enabled_checkbox_);
-
-  auth_authorization_url_edit_ = new oclero::qlementine::LineEdit(this);
-  auth_authorization_url_edit_->setText(current_settings_.AuthAuthorizationUrl());
-  auth_authorization_url_edit_->setPlaceholderText(
-      QStringLiteral("https://auth.example/application/o/authorize/"));
-  auth_authorization_url_edit_->setEnabled(current_settings_.AuthEnabled());
-  form_layout_->addRow(QStringLiteral("Auth URL"), auth_authorization_url_edit_);
-
-  auth_token_url_edit_ = new oclero::qlementine::LineEdit(this);
-  auth_token_url_edit_->setText(current_settings_.AuthTokenUrl());
-  auth_token_url_edit_->setPlaceholderText(
-      QStringLiteral("https://auth.example/application/o/token/"));
-  auth_token_url_edit_->setEnabled(current_settings_.AuthEnabled());
-  form_layout_->addRow(QStringLiteral("Auth token URL"), auth_token_url_edit_);
-
-  auth_client_id_edit_ = new oclero::qlementine::LineEdit(this);
-  auth_client_id_edit_->setText(current_settings_.AuthClientId());
-  auth_client_id_edit_->setPlaceholderText(QStringLiteral("cppwiki-desktop"));
-  auth_client_id_edit_->setEnabled(current_settings_.AuthEnabled());
-  form_layout_->addRow(QStringLiteral("Auth client ID"), auth_client_id_edit_);
-
-  auth_redirect_uri_edit_ = new oclero::qlementine::LineEdit(this);
-  auth_redirect_uri_edit_->setText(current_settings_.AuthRedirectUri());
-  auth_redirect_uri_edit_->setPlaceholderText(QStringLiteral("http://127.0.0.1:38080/auth/callback"));
-  auth_redirect_uri_edit_->setEnabled(current_settings_.AuthEnabled());
-  form_layout_->addRow(QStringLiteral("Auth redirect URI"), auth_redirect_uri_edit_);
-
-  connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_authorization_url_edit_,
-          &QWidget::setEnabled);
-  connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_token_url_edit_, &QWidget::setEnabled);
-  connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_client_id_edit_, &QWidget::setEnabled);
-  connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_redirect_uri_edit_,
-          &QWidget::setEnabled);
-
-  demo_collaboration_enabled_checkbox_ =
-      new QCheckBox(QStringLiteral("Override collaboration identity for local testing"), this);
-  demo_collaboration_enabled_checkbox_->setChecked(current_settings_.DemoCollaborationEnabled());
-  form_layout_->addRow(QStringLiteral("Demo mode"), demo_collaboration_enabled_checkbox_);
-
-  demo_collaboration_user_id_edit_ = new oclero::qlementine::LineEdit(this);
-  demo_collaboration_user_id_edit_->setText(current_settings_.DemoCollaborationUserId());
-  demo_collaboration_user_id_edit_->setPlaceholderText(QStringLiteral("demo-alice"));
-  demo_collaboration_user_id_edit_->setEnabled(current_settings_.DemoCollaborationEnabled());
-  connect(demo_collaboration_enabled_checkbox_, &QCheckBox::toggled,
-          demo_collaboration_user_id_edit_, &QWidget::setEnabled);
-  form_layout_->addRow(QStringLiteral("Demo profile"), demo_collaboration_user_id_edit_);
-
-  sync_enabled_checkbox_ = new QCheckBox(QStringLiteral("Prepare authenticated document sync"), this);
+  sync_enabled_checkbox_ =
+      new QCheckBox(QStringLiteral("Prepare authenticated document sync"), backend_page);
   sync_enabled_checkbox_->setChecked(current_settings_.SyncEnabled());
-  form_layout_->addRow(QStringLiteral("Sync"), sync_enabled_checkbox_);
+  backend_form_layout->addRow(QStringLiteral("Sync"), sync_enabled_checkbox_);
 
-  database_directory_edit_ = MakeReadOnlyPathLineEdit(current_settings_.DatabaseDirectory(), this);
-  auto* open_folder_action =
-      new QAction(QIcon::fromTheme(QStringLiteral("folder-open")),
-                  QStringLiteral("Open database folder"), this);
-  auto* open_folder_button = new oclero::qlementine::ActionButton(this);
+  database_directory_edit_ =
+      MakeReadOnlyPathLineEdit(current_settings_.DatabaseDirectory(), backend_page);
+  auto* open_folder_action = new QAction(QIcon::fromTheme(QStringLiteral("folder-open")),
+                                         QStringLiteral("Open database folder"), this);
+  auto* open_folder_button = new oclero::qlementine::ActionButton(backend_page);
   open_folder_button->setAction(open_folder_action);
   open_folder_button->setMinimumWidth(160);
   connect(open_folder_action, &QAction::triggered, this, [this]() {
@@ -144,13 +126,90 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
       QDesktopServices::openUrl(QUrl::fromLocalFile(path));
     }
   });
-  auto* folder_row = new QWidget(this);
+  auto* folder_row = new QWidget(backend_page);
   auto* folder_layout = new QHBoxLayout(folder_row);
   folder_layout->setContentsMargins(0, 0, 0, 0);
   folder_layout->setSpacing(8);
   folder_layout->addWidget(database_directory_edit_, 1);
   folder_layout->addWidget(open_folder_button, 0);
-  form_layout_->addRow(QStringLiteral("Database folder"), folder_row);
+  backend_form_layout->addRow(QStringLiteral("Database folder"), folder_row);
+
+  // Auth.
+  QFormLayout* auth_form_layout = nullptr;
+  auto* auth_page = MakeSectionPage(section_stack_, &auth_form_layout);
+  section_stack_->addWidget(auth_page);
+
+  auth_enabled_checkbox_ = new QCheckBox(QStringLiteral("Use desktop auth spike"), auth_page);
+  auth_enabled_checkbox_->setChecked(current_settings_.AuthEnabled());
+  auth_form_layout->addRow(QStringLiteral("Auth"), auth_enabled_checkbox_);
+
+  auth_authorization_url_edit_ = new oclero::qlementine::LineEdit(auth_page);
+  auth_authorization_url_edit_->setText(current_settings_.AuthAuthorizationUrl());
+  auth_authorization_url_edit_->setPlaceholderText(
+      QStringLiteral("https://auth.example/application/o/authorize/"));
+  auth_authorization_url_edit_->setEnabled(current_settings_.AuthEnabled());
+  auth_form_layout->addRow(QStringLiteral("Auth URL"), auth_authorization_url_edit_);
+
+  auth_token_url_edit_ = new oclero::qlementine::LineEdit(auth_page);
+  auth_token_url_edit_->setText(current_settings_.AuthTokenUrl());
+  auth_token_url_edit_->setPlaceholderText(
+      QStringLiteral("https://auth.example/application/o/token/"));
+  auth_token_url_edit_->setEnabled(current_settings_.AuthEnabled());
+  auth_form_layout->addRow(QStringLiteral("Auth token URL"), auth_token_url_edit_);
+
+  auth_client_id_edit_ = new oclero::qlementine::LineEdit(auth_page);
+  auth_client_id_edit_->setText(current_settings_.AuthClientId());
+  auth_client_id_edit_->setPlaceholderText(QStringLiteral("cppwiki-desktop"));
+  auth_client_id_edit_->setEnabled(current_settings_.AuthEnabled());
+  auth_form_layout->addRow(QStringLiteral("Auth client ID"), auth_client_id_edit_);
+
+  auth_redirect_uri_edit_ = new oclero::qlementine::LineEdit(auth_page);
+  auth_redirect_uri_edit_->setText(current_settings_.AuthRedirectUri());
+  auth_redirect_uri_edit_->setPlaceholderText(
+      QStringLiteral("http://127.0.0.1:38080/auth/callback"));
+  auth_redirect_uri_edit_->setEnabled(current_settings_.AuthEnabled());
+  auth_form_layout->addRow(QStringLiteral("Auth redirect URI"), auth_redirect_uri_edit_);
+
+  connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_authorization_url_edit_,
+          &QWidget::setEnabled);
+  connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_token_url_edit_, &QWidget::setEnabled);
+  connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_client_id_edit_, &QWidget::setEnabled);
+  connect(auth_enabled_checkbox_, &QCheckBox::toggled, auth_redirect_uri_edit_,
+          &QWidget::setEnabled);
+
+  // Collaboration (demo).
+  QFormLayout* demo_form_layout = nullptr;
+  auto* demo_page = MakeSectionPage(section_stack_, &demo_form_layout);
+  section_stack_->addWidget(demo_page);
+
+  demo_collaboration_enabled_checkbox_ =
+      new QCheckBox(QStringLiteral("Override collaboration identity for local testing"), demo_page);
+  demo_collaboration_enabled_checkbox_->setChecked(current_settings_.DemoCollaborationEnabled());
+  demo_form_layout->addRow(QStringLiteral("Demo mode"), demo_collaboration_enabled_checkbox_);
+
+  demo_collaboration_user_id_edit_ = new oclero::qlementine::LineEdit(demo_page);
+  demo_collaboration_user_id_edit_->setText(current_settings_.DemoCollaborationUserId());
+  demo_collaboration_user_id_edit_->setPlaceholderText(QStringLiteral("demo-alice"));
+  demo_collaboration_user_id_edit_->setEnabled(current_settings_.DemoCollaborationEnabled());
+  connect(demo_collaboration_enabled_checkbox_, &QCheckBox::toggled,
+          demo_collaboration_user_id_edit_, &QWidget::setEnabled);
+  demo_form_layout->addRow(QStringLiteral("Demo profile"), demo_collaboration_user_id_edit_);
+
+  // AI.
+  QFormLayout* ai_form_layout = nullptr;
+  auto* ai_page = MakeSectionPage(section_stack_, &ai_form_layout);
+  section_stack_->addWidget(ai_page);
+
+  ai_features_enabled_checkbox_ = new QCheckBox(QStringLiteral("Enable AI features"), ai_page);
+  ai_features_enabled_checkbox_->setChecked(current_settings_.AiFeaturesEnabled());
+  ai_form_layout->addRow(QStringLiteral("AI features"), ai_features_enabled_checkbox_);
+
+  ai_autocomplete_enabled_checkbox_ = new QCheckBox(QStringLiteral("Enable autocomplete"), ai_page);
+  ai_autocomplete_enabled_checkbox_->setChecked(current_settings_.AiAutocompleteEnabled());
+  ai_form_layout->addRow(QStringLiteral("Autocomplete"), ai_autocomplete_enabled_checkbox_);
+
+  section_control_->setCurrentIndex(0);
+  section_stack_->setCurrentIndex(0);
 
   auto* buttons = new QDialogButtonBox(this);
   auto* cancel_button = buttons->addButton(QDialogButtonBox::Cancel);
@@ -181,8 +240,8 @@ auto SettingsDialog::BuildProgramSettings() const -> ProgramSettings {
       backend_base_url, backend_enabled_checkbox_->isChecked(), auth_authorization_url,
       auth_token_url, auth_client_id, auth_redirect_uri, auth_enabled_checkbox_->isChecked(),
       demo_collaboration_enabled_checkbox_->isChecked(), demo_collaboration_user_id,
-      sync_enabled_checkbox_->isChecked(),
-      font_size_spinbox_->value());
+      sync_enabled_checkbox_->isChecked(), font_size_spinbox_->value(),
+      ai_features_enabled_checkbox_->isChecked(), ai_autocomplete_enabled_checkbox_->isChecked());
 }
 
 }  // namespace cppwiki::gui

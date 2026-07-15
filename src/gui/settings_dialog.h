@@ -8,9 +8,11 @@
 class QFormLayout;
 class QCheckBox;
 class QSpinBox;
+class QStackedWidget;
 
 namespace oclero::qlementine {
 class LineEdit;
+class SegmentedControl;
 }  // namespace oclero::qlementine
 
 namespace cppwiki::gui {
@@ -25,7 +27,8 @@ class SettingsDialog final : public QDialog {
 
  private:
   ProgramSettings current_settings_;
-  QFormLayout* form_layout_ = nullptr;
+  oclero::qlementine::SegmentedControl* section_control_ = nullptr;
+  QStackedWidget* section_stack_ = nullptr;
   QSpinBox* font_size_spinbox_ = nullptr;
   QCheckBox* backend_enabled_checkbox_ = nullptr;
   oclero::qlementine::LineEdit* backend_base_url_edit_ = nullptr;
@@ -38,6 +41,8 @@ class SettingsDialog final : public QDialog {
   oclero::qlementine::LineEdit* demo_collaboration_user_id_edit_ = nullptr;
   QCheckBox* sync_enabled_checkbox_ = nullptr;
   oclero::qlementine::LineEdit* database_directory_edit_ = nullptr;
+  QCheckBox* ai_features_enabled_checkbox_ = nullptr;
+  QCheckBox* ai_autocomplete_enabled_checkbox_ = nullptr;
 };
 
 }  // namespace cppwiki::gui
