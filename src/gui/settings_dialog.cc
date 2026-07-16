@@ -54,6 +54,16 @@ auto MakeSectionPage(QWidget* parent, QFormLayout** out_form_layout) -> QWidget*
 
 SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
     : QDialog(parent), current_settings_(settings) {
+  // Callers should avoid passing a QWidget parent whose subtree has its own style sheet applied
+  // (e.g. MainWindow — see ApplyApplicationStylesheet()): Qt cascades a style sheet down the
+  // QObject parent/child tree to every descendant, including dialogs that only pop up as their
+  // own top-level window because a parent was supplied for ownership/centering. That would wrap
+  // this dialog's (and SegmentedControl's) QStyle in an internal QStyleSheetStyle proxy, which
+  // breaks qobject_cast<QlementineStyle*>(style()) inside AbstractItemListWidget/SegmentedControl
+  // the same way an app-wide qApp->setStyleSheet() would — confirmed empirically that even giving
+  // this dialog its own explicit *empty* style sheet does not prevent that wrap, it only
+  // neutralizes the inherited rules. See MainWindow::ShowSettingsDialog() for how this is
+  // constructed (parent == nullptr, centered manually) to avoid it.
   setWindowTitle(QStringLiteral("Settings"));
   setModal(true);
   resize(680, 460);
@@ -75,20 +85,10 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
 
   section_control_ = new oclero::qlementine::SegmentedControl(this);
   // AbstractItemListWidget (SegmentedControl's base) paints itself entirely by hand and reads
-  // theme colors/fonts via qobject_cast<QlementineStyle*>(style()). This used to fail (silently
-  // falling back to plain QPalette colors and a zero border radius/spacing) because the app-wide
-  // stylesheet was applied via qApp->setStyleSheet(), which makes Qt wrap *every* widget's style
-  // in an internal QStyleSheetStyle proxy — that cast fails against the proxy even when this
-  // widget's own style is explicitly pinned below, since QStyleSheetStyle still forwards
-  // QStyle::pixelMetric() calls to the real style (which is why spacing/margins looked almost
-  // right) but the direct qobject_cast in AbstractItemListWidget's color/radius helpers does not
-  // see through it. The actual fix is in ApplyApplicationStylesheet() (see
-  // app/application_stylesheet.h): the app-wide QSS is now scoped to MainWindow's subtree
-  // instead of the whole QApplication, since every one of its selectors targets an objectName
-  // that only exists under MainWindow. SettingsDialog is a separate top-level widget, so it and
-  // its children are no longer wrapped at all, and style() here already returns the real
-  // QlementineStyle. This explicit setStyle() call is kept as a defense-in-depth belt-and-braces
-  // measure in case that scoping assumption ever changes.
+  // theme colors/fonts via qobject_cast<QlementineStyle*>(style()). As long as this dialog isn't
+  // parented into a style-sheet-wrapped subtree (see the constructor comment above), style()
+  // already returns the real QlementineStyle here. This explicit setStyle() call is kept as
+  // defense-in-depth in case that ever changes.
   if (auto* qlementine_style = cppwiki::GetQlementineStyle()) {
     section_control_->setStyle(qlementine_style);
   }

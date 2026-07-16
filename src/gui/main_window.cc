@@ -342,7 +342,23 @@ void MainWindow::ShowSettingsDialog() {
     return;
   }
 
-  gui::SettingsDialog dialog(context_->settings, this);
+  // Deliberately not parented to `this` (MainWindow). Qt cascades an ancestor's style sheet
+  // down to *all* descendants for style-sheet-cascade purposes, including dialogs that pop up as
+  // their own top-level window solely because a QWidget parent was supplied for
+  // ownership/centering — see ApplyApplicationStylesheet() for why MainWindow has its own style
+  // sheet. If this dialog were parented to MainWindow, Qt would wrap its (and its children's,
+  // e.g. the SegmentedControl's) QStyle in an internal QStyleSheetStyle proxy purely from that
+  // inherited style sheet, which breaks qobject_cast<QlementineStyle*>(style()) inside
+  // AbstractItemListWidget/SegmentedControl the same way an app-wide qApp->setStyleSheet() does
+  // (confirmed empirically: even giving the dialog its own explicit *empty* style sheet does not
+  // prevent the wrap, it only neutralizes inherited rules). Centering is done manually below to
+  // preserve the "opens over the main window" UX without the QWidget parent/child link.
+  gui::SettingsDialog dialog(context_->settings, nullptr);
+  dialog.setModal(true);
+  if (!frameGeometry().isEmpty()) {
+    const auto center = frameGeometry().center();
+    dialog.move(center.x() - dialog.width() / 2, center.y() - dialog.height() / 2);
+  }
   if (dialog.exec() != QDialog::Accepted) {
     return;
   }
