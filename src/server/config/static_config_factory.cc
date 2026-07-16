@@ -74,6 +74,13 @@ struct SyncBootstrapComponentConfig final {
   rfl::Rename<"group_channels", std::map<std::string, std::vector<std::string>>> group_channels;
 };
 
+struct AiConfigComponentConfig final {
+  bool enabled{false};
+  rfl::Rename<"base_url", std::string> base_url{"https://api.openai.com/v1/chat/completions"};
+  rfl::Rename<"api_key", std::string> api_key;
+  std::string model;
+};
+
 struct HttpClientMiddlewarePipelineConfig final {
   struct Middlewares final {} middlewares{};
 };
@@ -110,7 +117,9 @@ struct ComponentsConfig final {
   rfl::Rename<"handler-admin-sync", ProtectedHandlerConfig> handler_admin_sync;
   rfl::Rename<"handler-workspaces", ProtectedHandlerConfig> handler_workspaces;
   rfl::Rename<"handler-protected-page", ProtectedHandlerConfig> handler_protected_page;
+  rfl::Rename<"handler-ai-chat", ProtectedHandlerConfig> handler_ai_chat;
   rfl::Rename<"sync-config", SyncBootstrapComponentConfig> sync_config{};
+  rfl::Rename<"ai-config", AiConfigComponentConfig> ai_config{};
 };
 
 struct MainTaskProcessorConfig final {
@@ -199,9 +208,20 @@ auto MakeSyncBootstrapConfig(const ServerSyncConfig& sync_config) -> SyncBootstr
   };
 }
 
+auto MakeAiConfig(const ServerAiConfig& ai_config) -> AiConfigComponentConfig {
+  AiConfigComponentConfig result;
+  result.enabled = ai_config.enabled;
+  if (ai_config.base_url) {
+    result.base_url = *ai_config.base_url;
+  }
+  result.api_key = ai_config.api_key.value_or("");
+  result.model = ai_config.model.value_or("");
+  return result;
+}
+
 auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::string& log_level,
                       const ServerAuthConfig& auth_config, const ServerSyncConfig& sync_config,
-                      bool swagger_enabled) -> StaticConfig {
+                      const ServerAiConfig& ai_config, bool swagger_enabled) -> StaticConfig {
   ComponentsConfig components{
       .logging = MakeLoggingConfig(log_level),
       .server = MakeServerConfig(host, port),
@@ -221,7 +241,9 @@ auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::st
       .handler_admin_sync = MakeProtectedHandler("/api/v1/admin/sync", "GET", auth_config),
       .handler_workspaces = MakeProtectedHandler("/api/v1/workspaces", "GET,POST", auth_config),
       .handler_protected_page = MakeProtectedHandler("/api/v1/protected", "GET", auth_config),
+      .handler_ai_chat = MakeProtectedHandler("/api/v1/ai/chat", "POST", auth_config),
       .sync_config = MakeSyncBootstrapConfig(sync_config),
+      .ai_config = MakeAiConfig(ai_config),
   };
 
   return StaticConfig{
@@ -236,9 +258,10 @@ auto MakeStaticConfig(const std::string& host, std::uint16_t port, const std::st
 
 auto MakeStaticConfigYaml(const std::string& host, std::uint16_t port, const std::string& log_level,
                           const ServerAuthConfig& auth_config,
-                          const ServerSyncConfig& sync_config, bool swagger_enabled) -> std::string {
-  return rfl::yaml::write(
-             MakeStaticConfig(host, port, log_level, auth_config, sync_config, swagger_enabled)) +
+                          const ServerSyncConfig& sync_config, const ServerAiConfig& ai_config,
+                          bool swagger_enabled) -> std::string {
+  return rfl::yaml::write(MakeStaticConfig(host, port, log_level, auth_config, sync_config,
+                                           ai_config, swagger_enabled)) +
          "\n";
 }
 

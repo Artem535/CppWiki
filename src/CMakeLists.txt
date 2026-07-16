@@ -14,6 +14,8 @@ qt_add_executable(cppwiki_app
         app/cppwiki.qss
         app/program_settings.cc
         app/program_settings.h
+        auth/ai_api_key_store.cc
+        auth/ai_api_key_store.h
         auth/auth_token_bundle.h
         auth/auth_session_manager.cc
         auth/auth_session_manager.h
@@ -221,12 +223,16 @@ if (CPPWIKI_BUILD_SERVER)
             server/config/static_config_factory.h
             server/assets/openapi_spec.h
             server/assets/swagger_ui_page.h
+            server/components/ai_config_component.cc
+            server/components/ai_config_component.h
             server/components/cppwiki_server_component.cc
             server/components/cppwiki_server_component.h
             server/components/sync_bootstrap_component.cc
             server/components/sync_bootstrap_component.h
             server/handlers/admin_handler.cc
             server/handlers/admin_handler.h
+            server/handlers/ai_handler.cc
+            server/handlers/ai_handler.h
             server/handlers/health_handler.cc
             server/handlers/health_handler.h
             server/handlers/handler_utils.cc
@@ -251,12 +257,15 @@ if (CPPWIKI_BUILD_SERVER)
             server/middleware/auth_checker_impl.h
             server/middleware/logging_middleware.cc
             server/middleware/logging_middleware.h
+            server/service/ai_chat_service.cc
+            server/service/ai_chat_service.h
             server/service/lock_service.cc
             server/service/lock_service.h
             server/service/presence_service.cc
             server/service/presence_service.h
             server/service/sync_gateway_adapter.cc
             server/service/sync_gateway_adapter.h
+            server/dto/ai_response.h
             server/dto/json_adapter.h
             server/dto/admin_response.h
             server/dto/response_envelope.cc

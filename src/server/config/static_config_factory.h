@@ -24,10 +24,18 @@ struct ServerSyncConfig final {
   std::map<std::string, std::vector<std::string>> group_channels;
 };
 
+struct ServerAiConfig final {
+  bool enabled{false};
+  std::optional<std::string> base_url;
+  std::optional<std::string> api_key;
+  std::optional<std::string> model;
+};
+
 [[nodiscard]] auto MakeStaticConfigYaml(const std::string& host, std::uint16_t port,
                                         const std::string& log_level,
                                         const ServerAuthConfig& auth_config,
                                         const ServerSyncConfig& sync_config,
+                                        const ServerAiConfig& ai_config,
                                         bool swagger_enabled) -> std::string;
 
 }  // namespace cppwiki::server::config

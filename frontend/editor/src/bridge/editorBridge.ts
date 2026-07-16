@@ -39,6 +39,8 @@ export type BridgeInfo = {
   apiVersion: typeof bridgeApiVersion;
   namespace: "wiki.documents";
   methods: string[];
+  aiFeaturesEnabled?: boolean;
+  aiAutocompleteEnabled?: boolean;
 };
 
 export interface EditorBridge {
@@ -55,4 +57,12 @@ export interface EditorBridge {
   ): () => void;
   onDocumentLoadFailed(callback: (pageId: string, message: string) => void): () => void;
   onDocumentSelectionCleared(callback: () => void): () => void;
+
+  // AI transport (ADR-012): every AI request is forwarded through the bridge
+  // to C++, never fetched directly from this JS context. `mode` matches the
+  // MVP scope (ADR-010): "rewrite" or "autocomplete".
+  startAiRequest(prompt: string, contextText: string, mode: "rewrite" | "autocomplete"): Promise<string>;
+  onAiChunkReceived(callback: (requestId: string, chunk: string) => void): () => void;
+  onAiRequestCompleted(callback: (requestId: string) => void): () => void;
+  onAiRequestFailed(callback: (requestId: string, error: string) => void): () => void;
 }

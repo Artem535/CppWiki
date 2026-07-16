@@ -2,11 +2,13 @@
 #define CPPWIKI_SRC_GUI_SETTINGS_DIALOG_H_
 
 #include <QDialog>
+#include <memory>
 
 #include "app/program_settings.h"
 
 class QFormLayout;
 class QCheckBox;
+class QLabel;
 class QSpinBox;
 class QStackedWidget;
 
@@ -15,6 +17,10 @@ class LineEdit;
 class SegmentedControl;
 }  // namespace oclero::qlementine
 
+namespace cppwiki::auth {
+class AiApiKeyStore;
+}
+
 namespace cppwiki::gui {
 
 class SettingsDialog final : public QDialog {
@@ -22,6 +28,7 @@ class SettingsDialog final : public QDialog {
 
  public:
   explicit SettingsDialog(const ProgramSettings& settings, QWidget* parent = nullptr);
+  ~SettingsDialog() override;
 
   [[nodiscard]] auto BuildProgramSettings() const -> ProgramSettings;
 
@@ -43,6 +50,12 @@ class SettingsDialog final : public QDialog {
   oclero::qlementine::LineEdit* database_directory_edit_ = nullptr;
   QCheckBox* ai_features_enabled_checkbox_ = nullptr;
   QCheckBox* ai_autocomplete_enabled_checkbox_ = nullptr;
+  // Local-key fallback (ADR-012 addendum): only used/shown when no backend
+  // is configured. The key itself is never held in ProgramSettings/QSettings
+  // — it's read from and written to the OS keychain via ai_api_key_store_.
+  oclero::qlementine::LineEdit* ai_local_api_key_edit_ = nullptr;
+  QLabel* ai_local_api_key_hint_ = nullptr;
+  std::unique_ptr<auth::AiApiKeyStore> ai_api_key_store_;
 };
 
 }  // namespace cppwiki::gui

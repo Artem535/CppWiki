@@ -25,6 +25,10 @@ struct RuntimeConfig final {
   std::optional<std::string> sync_admin_url;
   std::map<std::string, std::vector<std::string>> sync_role_channels;
   std::map<std::string, std::vector<std::string>> sync_group_channels;
+  bool ai_enabled{false};
+  std::optional<std::string> ai_base_url;
+  std::optional<std::string> ai_api_key;
+  std::optional<std::string> ai_model;
   bool swagger{false};
 
   [[nodiscard]] static auto FromDefaults() -> RuntimeConfig;

@@ -42,6 +42,24 @@ type QtEditorBridgeObject = {
     connect(callback: () => void): void;
     disconnect(callback: () => void): void;
   };
+  aiChunkReceived: {
+    connect(callback: (requestId: string, chunk: string) => void): void;
+    disconnect(callback: (requestId: string, chunk: string) => void): void;
+  };
+  aiRequestCompleted: {
+    connect(callback: (requestId: string) => void): void;
+    disconnect(callback: (requestId: string) => void): void;
+  };
+  aiRequestFailed: {
+    connect(callback: (requestId: string, error: string) => void): void;
+    disconnect(callback: (requestId: string, error: string) => void): void;
+  };
+  startAiRequest(
+    prompt: string,
+    contextText: string,
+    mode: string,
+    callback: (requestId: string) => void,
+  ): void;
   getBridgeInfo(callback: (response: BridgeResult<BridgeInfo>) => void): void;
   getInitialDocument(
     callback: (response: BridgeResult<InitialDocumentSnapshot>) => void,
@@ -141,6 +159,33 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
       qtObject.documentSelectionCleared.connect(callback);
       return () => {
         qtObject.documentSelectionCleared.disconnect(callback);
+      };
+    },
+
+    startAiRequest(prompt, contextText, mode) {
+      return new Promise((resolve) => {
+        qtObject.startAiRequest(prompt, contextText, mode, resolve);
+      });
+    },
+
+    onAiChunkReceived(callback) {
+      qtObject.aiChunkReceived.connect(callback);
+      return () => {
+        qtObject.aiChunkReceived.disconnect(callback);
+      };
+    },
+
+    onAiRequestCompleted(callback) {
+      qtObject.aiRequestCompleted.connect(callback);
+      return () => {
+        qtObject.aiRequestCompleted.disconnect(callback);
+      };
+    },
+
+    onAiRequestFailed(callback) {
+      qtObject.aiRequestFailed.connect(callback);
+      return () => {
+        qtObject.aiRequestFailed.disconnect(callback);
       };
     },
   };

@@ -9,8 +9,17 @@
 
 #include "sync/sync_state_provider.h"
 
+class QNetworkAccessManager;
+class QNetworkReply;
+class QUrl;
+class QByteArray;
+
 namespace cppwiki::storage {
 class LocalDocumentRepository;
+}
+
+namespace cppwiki::auth {
+class AiApiKeyStore;
 }
 
 namespace cppwiki::bridge {
@@ -35,6 +44,18 @@ class QEditorBridge final : public QObject {
   void SetCurrentDocumentConflicted(bool has_conflict);
   void SetCurrentAuthorId(QString author_id);
   void SetCurrentWorkspaceId(QString workspace_id);
+
+  // AI transport wiring (ADR-012 + addendum). Selects the server-mediated
+  // backend when `backend_enabled` and `backend_base_url` are set; otherwise
+  // startAiRequest() falls back to the local-key path via `key_store`
+  // (never both, never a direct-fetch path from JS).
+  void SetAiTransportConfig(bool backend_enabled, QString backend_base_url,
+                            QString backend_access_token);
+  void SetAiApiKeyStore(auth::AiApiKeyStore* key_store);
+  // Mirrors ProgramSettings::AiFeaturesEnabled()/AiAutocompleteEnabled(); the
+  // JS side reads these from getBridgeInfo() to decide whether to render the
+  // AI toolbar button / slash-menu items at all.
+  void SetAiFeatureFlags(bool features_enabled, bool autocomplete_enabled);
   void RequestOpenDocument(const QString& page_id);
   void ClearCurrentDocumentSelection();
   [[nodiscard]] QVariantMap listDocumentsInWorkspace(const QString& workspace_id);
@@ -55,7 +76,21 @@ class QEditorBridge final : public QObject {
   Q_INVOKABLE QVariantMap openDocument(const QString& page_id);
   Q_INVOKABLE QVariantMap updateSnapshot(const QString& snapshot_json);
 
+  // Starts an AI request (rewrite or autocomplete, per ADR-010's MVP scope)
+  // and returns a request id immediately; the actual provider call happens
+  // asynchronously and its result streams back via the ai* signals below.
+  // `mode` is "rewrite" or "autocomplete". This never performs a fetch from
+  // JS: the request always originates from this C++ method (ADR-012).
+  Q_INVOKABLE QString startAiRequest(const QString& prompt, const QString& context_text,
+                                     const QString& mode);
+
  signals:
+  // AI streaming relay (ADR-012): chunks of the AI provider's response,
+  // relayed one at a time because a bridge signal cannot expose a native
+  // ReadableStream to JS.
+  void aiChunkReceived(const QString& request_id, const QString& chunk);
+  void aiRequestCompleted(const QString& request_id);
+  void aiRequestFailed(const QString& request_id, const QString& error);
   void documentOpenRequested(const QString& pageId);
   void documentLoaded(const QVariantMap& document);
   void documentLoadFailed(const QString& pageId, const QString& message);
@@ -80,6 +115,14 @@ class QEditorBridge final : public QObject {
   [[nodiscard]] std::optional<QVariantMap> RejectIfCurrentDocumentConflicted(
       const QString& page_id) const;
 
+  void StartServerMediatedAiRequest(const QString& request_id, const QString& prompt,
+                                    const QString& context_text, const QString& mode);
+  void StartLocalKeyAiRequest(const QString& request_id, const QString& prompt,
+                              const QString& context_text, const QString& mode);
+  void CallProviderAndRelay(const QString& request_id, const QUrl& url,
+                           const QByteArray& body, const QString& auth_header_value);
+  void EmitChunkedCompletion(const QString& request_id, const QString& full_text);
+
   bool pending_document_editable_ = true;
   bool current_document_editable_ = true;
   bool current_document_has_conflict_ = false;
@@ -92,6 +135,14 @@ class QEditorBridge final : public QObject {
   QString current_page_id_;
   QString current_author_id_;
   QString current_workspace_id_{QStringLiteral("default")};
+
+  bool ai_backend_enabled_ = false;
+  QString ai_backend_base_url_;
+  QString ai_backend_access_token_;
+  auth::AiApiKeyStore* ai_api_key_store_ = nullptr;
+  QNetworkAccessManager* network_manager_ = nullptr;
+  bool ai_features_enabled_ = false;
+  bool ai_autocomplete_enabled_ = false;
 };
 
 }  // namespace cppwiki::bridge

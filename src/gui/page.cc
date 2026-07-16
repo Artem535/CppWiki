@@ -33,6 +33,7 @@
 #include <utility>
 
 #include "app/editor_fallback.h"
+#include "auth/ai_api_key_store.h"
 #include "auth/auth_session_manager.h"
 #include "backend/backend_client.h"
 #include "bridge/editor_bridge.h"
@@ -83,6 +84,24 @@ void Page::BuildUi() {
   // Set the document repository for the bridge
   editor_bridge_->SetRepository(context_.document_repository);
   editor_bridge_->SetSyncStateProvider(context_.document_sync_service);
+
+  // BlockNote AI wiring (ADR-010/ADR-012): the bridge decides server-mediated
+  // vs. local-key fallback based on whether a backend is configured; the
+  // settings toggles gate whether the JS side even shows AI UI at all.
+  editor_bridge_->SetAiFeatureFlags(context_.settings.AiFeaturesEnabled(),
+                                    context_.settings.AiAutocompleteEnabled());
+  editor_bridge_->SetAiTransportConfig(context_.settings.BackendEnabled(),
+                                      context_.settings.BackendBaseUrl(), QString{});
+  auto* ai_api_key_store =
+      new auth::AiApiKeyStore(ToQString(constants::kApplicationName), editor_bridge_);
+  editor_bridge_->SetAiApiKeyStore(ai_api_key_store);
+  if (context_.auth_session_manager != nullptr) {
+    connect(context_.auth_session_manager, &auth::AuthSessionManager::accessTokenChanged,
+            editor_bridge_, [this](const QString& access_token) {
+              editor_bridge_->SetAiTransportConfig(context_.settings.BackendEnabled(),
+                                                  context_.settings.BackendBaseUrl(), access_token);
+            });
+  }
 
   editor_view_ = new QWebEngineView(this);
   editor_view_->page()->setWebChannel(channel_);

@@ -7,6 +7,8 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStackedWidget>
@@ -19,6 +21,9 @@
 #include <oclero/qlementine/widgets/LineEdit.hpp>
 #include <oclero/qlementine/widgets/SegmentedControl.hpp>
 
+#include "auth/ai_api_key_store.h"
+#include "core/constants.h"
+#include "core/qt_string.h"
 #include "app/application.h"
 
 namespace cppwiki::gui {
@@ -220,6 +225,36 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   ai_autocomplete_enabled_checkbox_->setChecked(current_settings_.AiAutocompleteEnabled());
   ai_form_layout->addRow(QStringLiteral("Autocomplete"), ai_autocomplete_enabled_checkbox_);
 
+  // Local-key fallback (ADR-012 addendum): only relevant when no backend is
+  // configured for this profile. The key is read from / written to the OS
+  // keychain, never QSettings.
+  ai_local_api_key_edit_ = new oclero::qlementine::LineEdit(ai_page);
+  ai_local_api_key_edit_->setPlaceholderText(QStringLiteral("sk-..."));
+  ai_local_api_key_edit_->setEchoMode(QLineEdit::Password);
+  ai_form_layout->addRow(QStringLiteral("Local AI provider API key"), ai_local_api_key_edit_);
+
+  ai_local_api_key_hint_ = new QLabel(
+      QStringLiteral("Only used when no backend is configured (Backend & Sync tab). In that "
+                     "mode, AI requests go directly from this machine to the AI provider, not "
+                     "through cppwiki_server."),
+      ai_page);
+  ai_local_api_key_hint_->setWordWrap(true);
+  ai_form_layout->addRow(QString{}, ai_local_api_key_hint_);
+
+  const auto update_local_api_key_visibility = [this]() {
+    const auto show_local_key = !backend_enabled_checkbox_->isChecked();
+    ai_local_api_key_edit_->setVisible(show_local_key);
+    ai_local_api_key_hint_->setVisible(show_local_key);
+  };
+  update_local_api_key_visibility();
+  connect(backend_enabled_checkbox_, &QCheckBox::toggled, this, update_local_api_key_visibility);
+
+  ai_api_key_store_ =
+      std::make_unique<auth::AiApiKeyStore>(ToQString(constants::kApplicationName), this);
+  connect(ai_api_key_store_.get(), &auth::AiApiKeyStore::apiKeyLoaded, this,
+          [this](const QString& api_key) { ai_local_api_key_edit_->setText(api_key); });
+  ai_api_key_store_->Load();
+
   section_control_->setCurrentIndex(0);
   section_stack_->setCurrentIndex(0);
 
@@ -229,9 +264,19 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   save_button->setDefault(true);
 
   connect(cancel_button, &QPushButton::clicked, this, &QDialog::reject);
-  connect(save_button, &QPushButton::clicked, this, &QDialog::accept);
+  connect(save_button, &QPushButton::clicked, this, [this]() {
+    const auto api_key = ai_local_api_key_edit_->text().trimmed();
+    if (api_key.isEmpty()) {
+      ai_api_key_store_->Clear();
+    } else {
+      ai_api_key_store_->Save(api_key);
+    }
+    accept();
+  });
   root_layout->addWidget(buttons);
 }
+
+SettingsDialog::~SettingsDialog() = default;
 
 auto SettingsDialog::BuildProgramSettings() const -> ProgramSettings {
   const auto backend_base_url = backend_base_url_edit_->text().trimmed().isEmpty()
