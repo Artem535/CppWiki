@@ -58,6 +58,32 @@ add_test(
   COMMAND cppwiki_document_validator_tests
 )
 
+if (CPPWIKI_BUILD_ADMIN_CLI)
+  add_executable(cppwiki_admin_cli_tests
+    admin/admin_response_parsing_test.cc
+    ${CMAKE_SOURCE_DIR}/src/admin/admin_response_parsing.cc
+    ${CMAKE_SOURCE_DIR}/src/admin/admin_response_parsing.h
+  )
+
+  target_include_directories(cppwiki_admin_cli_tests
+    PRIVATE
+      ${CMAKE_SOURCE_DIR}/src
+  )
+
+  target_link_libraries(cppwiki_admin_cli_tests
+    PRIVATE
+      spdlog::spdlog
+      reflectcpp::reflectcpp
+  )
+
+  cppwiki_apply_common_options(cppwiki_admin_cli_tests)
+
+  add_test(
+    NAME cppwiki_admin_cli_tests
+    COMMAND cppwiki_admin_cli_tests
+  )
+endif ()
+
 add_executable(cppwiki_program_settings_tests
   app/program_settings_test.cc
   ${CMAKE_SOURCE_DIR}/src/app/program_settings.cc

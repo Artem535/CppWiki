@@ -22,6 +22,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(CPPWIKI_BUILD_TESTS "Build CppWiki tests" ON)
 option(CPPWIKI_BUILD_SERVER "Build CppWiki userver server" ON)
 option(CPPWIKI_BUILD_DESKTOP_APP "Build CppWiki Qt desktop application" ON)
+option(CPPWIKI_BUILD_ADMIN_CLI "Build the cppwiki-admin ftxui CLI" ON)
 option(CPPWIKI_ENABLE_CLANG_TIDY "Enable clang-tidy when available" OFF)
 option(CPPWIKI_ENABLE_CBLITE_STORAGE "Enable Couchbase Lite storage adapter" OFF)
 option(
@@ -36,6 +37,22 @@ include(FetchContent)
 
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+
+if (CPPWIKI_BUILD_ADMIN_CLI)
+    find_package(CURL REQUIRED)
+
+    set(FTXUI_BUILD_DOCS OFF CACHE BOOL "Disable ftxui docs" FORCE)
+    set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "Disable ftxui examples" FORCE)
+    set(FTXUI_BUILD_TESTS OFF CACHE BOOL "Disable ftxui tests" FORCE)
+    set(FTXUI_ENABLE_INSTALL OFF CACHE BOOL "Disable ftxui install rules" FORCE)
+    FetchContent_Declare(
+            ftxui
+            GIT_REPOSITORY https://github.com/ArthurSonzogni/ftxui.git
+            GIT_TAG v5.0.0
+            GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(ftxui)
+endif ()
 
 if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
     find_package(
