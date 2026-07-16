@@ -2,12 +2,12 @@
 
 #include <array>
 
-#include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QIODevice>
+#include <QWidget>
 
 #include "core/constants.h"
 #include "core/qt_string.h"
@@ -37,20 +37,24 @@ auto ResolveApplicationStylesheetPath() -> QString {
   return {};
 }
 
-void ApplyApplicationStylesheet() {
+void ApplyApplicationStylesheet(QWidget* target) {
+  if (target == nullptr) {
+    return;
+  }
+
   const auto path = ResolveApplicationStylesheetPath();
   if (path.isEmpty()) {
-    qApp->setStyleSheet(QString{});
+    target->setStyleSheet(QString{});
     return;
   }
 
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    qApp->setStyleSheet(QString{});
+    target->setStyleSheet(QString{});
     return;
   }
 
-  qApp->setStyleSheet(QString::fromUtf8(file.readAll()));
+  target->setStyleSheet(QString::fromUtf8(file.readAll()));
 }
 
 }  // namespace cppwiki

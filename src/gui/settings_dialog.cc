@@ -75,11 +75,20 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
 
   section_control_ = new oclero::qlementine::SegmentedControl(this);
   // AbstractItemListWidget (SegmentedControl's base) paints itself entirely by hand and reads
-  // theme colors/fonts via qobject_cast<QlementineStyle*>(style()). Once the app-wide stylesheet
-  // is applied, QApplication::style() returns an internal QStyleSheetStyle proxy instead of the
-  // real QlementineStyle, so that cast fails and the control falls back to plain QPalette
-  // colors, i.e. it renders unstyled. Explicitly pinning this widget's style to the real
-  // QlementineStyle instance sidesteps that proxy.
+  // theme colors/fonts via qobject_cast<QlementineStyle*>(style()). This used to fail (silently
+  // falling back to plain QPalette colors and a zero border radius/spacing) because the app-wide
+  // stylesheet was applied via qApp->setStyleSheet(), which makes Qt wrap *every* widget's style
+  // in an internal QStyleSheetStyle proxy — that cast fails against the proxy even when this
+  // widget's own style is explicitly pinned below, since QStyleSheetStyle still forwards
+  // QStyle::pixelMetric() calls to the real style (which is why spacing/margins looked almost
+  // right) but the direct qobject_cast in AbstractItemListWidget's color/radius helpers does not
+  // see through it. The actual fix is in ApplyApplicationStylesheet() (see
+  // app/application_stylesheet.h): the app-wide QSS is now scoped to MainWindow's subtree
+  // instead of the whole QApplication, since every one of its selectors targets an objectName
+  // that only exists under MainWindow. SettingsDialog is a separate top-level widget, so it and
+  // its children are no longer wrapped at all, and style() here already returns the real
+  // QlementineStyle. This explicit setStyle() call is kept as a defense-in-depth belt-and-braces
+  // measure in case that scoping assumption ever changes.
   if (auto* qlementine_style = cppwiki::GetQlementineStyle()) {
     section_control_->setStyle(qlementine_style);
   }

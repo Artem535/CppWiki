@@ -60,7 +60,7 @@ Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   auto* qlementine_style = new oclero::qlementine::QlementineStyle(&qt_application_);
   g_qlementine_style = qlementine_style;
   QApplication::setStyle(qlementine_style);
-  ApplyApplicationStylesheet();
+  ApplyApplicationStylesheet(&main_window_);
   auth_session_manager_ = std::make_unique<auth::AuthSessionManager>(&qt_application_);
   backend_client_ = std::make_unique<backend::BackendClient>(&qt_application_);
   document_sync_service_ = std::make_unique<sync::DocumentSyncService>(&qt_application_);
