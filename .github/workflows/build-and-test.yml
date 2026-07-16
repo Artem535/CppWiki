@@ -27,18 +27,11 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install system Qt6 and build tools
+      - name: Install build tools and runtime libs
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build \
-            qt6-base-dev \
-            qt6-base-dev-tools \
-            qt6-declarative-dev \
-            qt6-webengine-dev \
-            qt6-webengine-dev-tools \
-            qt6-webchannel-dev \
-            qt6-networkauth-dev \
             libgl1-mesa-dev \
             libxkbcommon-dev \
             libxkbcommon-x11-0 \
@@ -56,6 +49,15 @@ jobs:
             unzip \
             tar \
             pkg-config
+
+      # The Ubuntu runner's system Qt6 (apt) is only 6.4.x, but this project requires Qt6 >= 6.5
+      # (see root CMakeLists.txt). Install a real Qt 6.5+ instead of relying on apt.
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.5.3"
+          modules: "qtwebengine qtwebchannel qtdeclarative qtnetworkauth"
+          cache: true
 
       - name: Set up vcpkg
         run: |
