@@ -6,35 +6,64 @@
 
 namespace cppwiki::admin {
 
-// Stores the cppwiki-admin session token.
-//
-// KNOWN LIMITATION (stage 1 MVP): this stores the token as plaintext in a file
-// under the user's config directory with 0600 permissions, rather than
-// reusing qt-keychain as originally intended in the Admin_Surface_Backlog
-// decision. qtkeychain in this repo is only fetched/built when
-// CPPWIKI_BUILD_DESKTOP_APP is ON, and it requires a full Qt6 find_package
-// call (Core/DBus/Gui/Widgets/WebEngineWidgets/...) — pulling that into a
-// lightweight ftxui CLI target would defeat the point of having a
-// Qt-GUI-free admin tool. A follow-up could split qtkeychain's CMake wiring
-// so only Qt6::Core/DBus is required, then swap this implementation to use
-// QKeychain::ReadPasswordJob/WritePasswordJob like src/auth/AuthTokenStore.
+// Narrow seam around a native OS secret store (libsecret on Linux, Keychain
+// on macOS, Credential Manager on Windows), so AdminTokenStore's logic can be
+// unit tested with a fake backend instead of touching a real secret-service
+// daemon. The production implementation (SystemKeychainBackend, in
+// system_keychain_backend.h/.cc) wraps the hrantzsch/keychain library.
+class KeychainBackend {
+ public:
+  virtual ~KeychainBackend() = default;
+
+  // Returns true and fills `out_password` if an entry was found; returns
+  // false (leaving `out_password` untouched) if the entry is missing or the
+  // backend reports an error.
+  [[nodiscard]] virtual auto GetPassword(const std::string& package,
+                                         const std::string& service,
+                                         const std::string& user,
+                                         std::string& out_password) -> bool = 0;
+
+  // Returns true on success.
+  [[nodiscard]] virtual auto SetPassword(const std::string& package,
+                                         const std::string& service,
+                                         const std::string& user,
+                                         const std::string& password) -> bool = 0;
+
+  // Returns true if the entry was deleted or did not exist; false only on a
+  // genuine backend error.
+  [[nodiscard]] virtual auto DeletePassword(const std::string& package,
+                                            const std::string& service,
+                                            const std::string& user) -> bool = 0;
+};
+
+// Stores the cppwiki-admin session token in the OS keychain via a
+// KeychainBackend (hrantzsch/keychain in production), rather than a
+// second, separate secret-storage mechanism — matching the
+// Admin_Surface_Backlog decision to reuse a real OS secret store instead of
+// a plaintext file.
 class AdminTokenStore final {
  public:
-  explicit AdminTokenStore(std::string token_file_path);
+  // Uses the process-wide default KeychainBackend (SystemKeychainBackend)
+  // and the default account identifier (current OS user, falling back to a
+  // fixed name if it cannot be determined).
+  AdminTokenStore();
+  explicit AdminTokenStore(KeychainBackend& backend, std::string account = DefaultAccount());
 
-  // Returns the default per-user token file path
-  // ($XDG_CONFIG_HOME/cppwiki-admin/token, falling back to
-  // $HOME/.config/cppwiki-admin/token).
-  [[nodiscard]] static auto DefaultTokenFilePath() -> std::string;
+  // Returns the account identifier used to namespace the stored token
+  // (defaults to the current OS user via $USER/$LOGNAME).
+  [[nodiscard]] static auto DefaultAccount() -> std::string;
+
+  // Human-readable description of where the token is stored, for status
+  // messages (e.g. "the OS keychain (service: cppwiki-admin-session)").
+  [[nodiscard]] static auto StorageDescription() -> std::string;
 
   [[nodiscard]] auto Load() const -> std::optional<std::string>;
-  // Writes the token to disk, creating parent directories as needed and
-  // restricting file permissions to the owner (chmod 0600).
   [[nodiscard]] auto Save(const std::string& token) const -> bool;
   [[nodiscard]] auto Clear() const -> bool;
 
  private:
-  std::string token_file_path_;
+  KeychainBackend& backend_;
+  std::string account_;
 };
 
 }  // namespace cppwiki::admin

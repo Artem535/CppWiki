@@ -166,6 +166,8 @@ if (CPPWIKI_BUILD_ADMIN_CLI)
             admin/admin_response_parsing.h
             admin/admin_token_store.cc
             admin/admin_token_store.h
+            admin/system_keychain_backend.cc
+            admin/system_keychain_backend.h
             admin/main.cc
     )
 
@@ -181,6 +183,7 @@ if (CPPWIKI_BUILD_ADMIN_CLI)
             ftxui::component
             ftxui::dom
             ftxui::screen
+            keychain
     )
 
     set_target_properties(cppwiki_admin_cli

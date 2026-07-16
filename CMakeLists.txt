@@ -52,6 +52,20 @@ if (CPPWIKI_BUILD_ADMIN_CLI)
             GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(ftxui)
+
+    # hrantzsch/keychain wraps the native OS secret store (libsecret on Linux,
+    # Keychain Services on macOS, Credential Manager on Windows) without
+    # requiring any Qt linkage, unlike qtkeychain below — a better fit for
+    # keeping the admin CLI Qt-GUI-free. On Linux it depends on GLib 2.0 and
+    # libsecret-1 (already required by qtkeychain's libsecret backend).
+    set(BUILD_TESTS OFF CACHE BOOL "Disable hrantzsch/keychain tests" FORCE)
+    FetchContent_Declare(
+            keychain
+            GIT_REPOSITORY https://github.com/hrantzsch/keychain.git
+            GIT_TAG v1.3.1
+            GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(keychain)
 endif ()
 
 if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)

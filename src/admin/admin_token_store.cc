@@ -1,80 +1,63 @@
 #include "admin/admin_token_store.h"
 
-#include <sys/stat.h>
-
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <utility>
+
+#include "admin/system_keychain_backend.h"
 
 namespace cppwiki::admin {
 
-AdminTokenStore::AdminTokenStore(std::string token_file_path)
-    : token_file_path_(std::move(token_file_path)) {}
+namespace {
 
-auto AdminTokenStore::DefaultTokenFilePath() -> std::string {
-  if (const char* xdg_config_home = std::getenv("XDG_CONFIG_HOME");
-      xdg_config_home != nullptr && *xdg_config_home != '\0') {
-    return std::filesystem::path(xdg_config_home) / "cppwiki-admin" / "token";
+constexpr const char* kKeychainPackage = "com.cppwiki.admin";
+constexpr const char* kKeychainService = "cppwiki-admin-session";
+constexpr const char* kFallbackAccount = "cppwiki-admin";
+
+auto DefaultKeychainBackend() -> KeychainBackend& {
+  static SystemKeychainBackend backend;
+  return backend;
+}
+
+}  // namespace
+
+AdminTokenStore::AdminTokenStore()
+    : AdminTokenStore(DefaultKeychainBackend(), DefaultAccount()) {}
+
+AdminTokenStore::AdminTokenStore(KeychainBackend& backend, std::string account)
+    : backend_(backend), account_(std::move(account)) {}
+
+auto AdminTokenStore::DefaultAccount() -> std::string {
+  if (const char* user = std::getenv("USER"); user != nullptr && *user != '\0') {
+    return user;
   }
-
-  if (const char* home = std::getenv("HOME"); home != nullptr && *home != '\0') {
-    return std::filesystem::path(home) / ".config" / "cppwiki-admin" / "token";
+  if (const char* login_name = std::getenv("LOGNAME");
+      login_name != nullptr && *login_name != '\0') {
+    return login_name;
   }
+  return kFallbackAccount;
+}
 
-  return "cppwiki-admin-token";
+auto AdminTokenStore::StorageDescription() -> std::string {
+  return std::string("the OS keychain (service: ") + kKeychainService + ")";
 }
 
 auto AdminTokenStore::Load() const -> std::optional<std::string> {
-  std::ifstream file(token_file_path_, std::ios::in | std::ios::binary);
-  if (!file.is_open()) {
+  std::string password;
+  if (!backend_.GetPassword(kKeychainPackage, kKeychainService, account_, password)) {
     return std::nullopt;
   }
-
-  std::ostringstream buffer;
-  buffer << file.rdbuf();
-  auto contents = buffer.str();
-  while (!contents.empty() && (contents.back() == '\n' || contents.back() == '\r')) {
-    contents.pop_back();
-  }
-  if (contents.empty()) {
+  if (password.empty()) {
     return std::nullopt;
   }
-  return contents;
+  return password;
 }
 
 auto AdminTokenStore::Save(const std::string& token) const -> bool {
-  std::error_code error_code;
-  const std::filesystem::path path(token_file_path_);
-  if (path.has_parent_path()) {
-    std::filesystem::create_directories(path.parent_path(), error_code);
-    if (error_code) {
-      return false;
-    }
-  }
-
-  std::ofstream file(token_file_path_, std::ios::out | std::ios::binary | std::ios::trunc);
-  if (!file.is_open()) {
-    return false;
-  }
-  file << token;
-  file.close();
-  if (file.fail()) {
-    return false;
-  }
-
-#ifndef _WIN32
-  ::chmod(token_file_path_.c_str(), S_IRUSR | S_IWUSR);
-#endif
-
-  return true;
+  return backend_.SetPassword(kKeychainPackage, kKeychainService, account_, token);
 }
 
 auto AdminTokenStore::Clear() const -> bool {
-  std::error_code error_code;
-  std::filesystem::remove(token_file_path_, error_code);
-  return !error_code;
+  return backend_.DeletePassword(kKeychainPackage, kKeychainService, account_);
 }
 
 }  // namespace cppwiki::admin

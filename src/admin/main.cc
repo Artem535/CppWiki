@@ -45,7 +45,7 @@ void SetStatus(AppState& state, std::string message, bool is_error) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  cppwiki::admin::AdminTokenStore token_store(cppwiki::admin::AdminTokenStore::DefaultTokenFilePath());
+  cppwiki::admin::AdminTokenStore token_store;
 
   AppState state;
   if (const char* env_base_url = std::getenv("CPPWIKI_ADMIN_BASE_URL");
@@ -54,7 +54,8 @@ int main(int argc, char** argv) {
   }
   if (const auto loaded_token = token_store.Load(); loaded_token) {
     state.access_token = *loaded_token;
-    SetStatus(state, "Loaded a stored admin session token from " + token_store.DefaultTokenFilePath(),
+    SetStatus(state, "Loaded a stored admin session token from " +
+                          cppwiki::admin::AdminTokenStore::StorageDescription(),
               false);
   }
 
@@ -71,8 +72,8 @@ int main(int argc, char** argv) {
                 << "Environment:\n"
                 << "  CPPWIKI_ADMIN_BASE_URL   Base URL of cppwiki_server "
                 << "(default: " << kDefaultBaseUrl << ")\n\n"
-                << "The admin session token is stored at:\n  "
-                << cppwiki::admin::AdminTokenStore::DefaultTokenFilePath() << "\n";
+                << "The admin session token is stored in:\n  "
+                << cppwiki::admin::AdminTokenStore::StorageDescription() << "\n";
       return 0;
     }
     if (arg == "--version") {
@@ -111,7 +112,7 @@ int main(int argc, char** argv) {
     client.SetAccessToken(state.access_token);
     if (!token_store.Save(state.access_token)) {
       SetStatus(state, "Signed in for this session, but failed to persist the token to "
-                            + token_store.DefaultTokenFilePath(),
+                            + cppwiki::admin::AdminTokenStore::StorageDescription(),
                 true);
     } else {
       SetStatus(state, "Signed in and saved admin session token.", false);
