@@ -15,6 +15,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <oclero/qlementine/style/QlementineStyle.hpp>
 #include <oclero/qlementine/widgets/ActionButton.hpp>
 #include <oclero/qlementine/widgets/Label.hpp>
 #include <oclero/qlementine/widgets/LineEdit.hpp>
@@ -23,6 +24,7 @@
 #include "auth/ai_api_key_store.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "app/application.h"
 
 namespace cppwiki::gui {
 
@@ -72,6 +74,15 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   root_layout->addWidget(hint);
 
   section_control_ = new oclero::qlementine::SegmentedControl(this);
+  // AbstractItemListWidget (SegmentedControl's base) paints itself entirely by hand and reads
+  // theme colors/fonts via qobject_cast<QlementineStyle*>(style()). Once the app-wide stylesheet
+  // is applied, QApplication::style() returns an internal QStyleSheetStyle proxy instead of the
+  // real QlementineStyle, so that cast fails and the control falls back to plain QPalette
+  // colors, i.e. it renders unstyled. Explicitly pinning this widget's style to the real
+  // QlementineStyle instance sidesteps that proxy.
+  if (auto* qlementine_style = cppwiki::GetQlementineStyle()) {
+    section_control_->setStyle(qlementine_style);
+  }
   section_control_->addItem(QStringLiteral("General"));
   section_control_->addItem(QStringLiteral("Backend & Sync"));
   section_control_->addItem(QStringLiteral("Auth"));

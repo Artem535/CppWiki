@@ -1,0 +1,351 @@
+name: Package Release
+
+# Packaging builds are slow (full release build + platform packaging on three OSes), so this only
+# runs for actual releases: on version tags, or manually via workflow_dispatch for validation.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Also create/update a GitHub Release with the built artifacts"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+  CPPWIKI_QT_VERSION: "6.5.3"
+  CPPWIKI_QT_MODULES: "qtwebengine qtwebchannel qtdeclarative qtnetworkauth"
+
+jobs:
+  package-linux:
+    name: Package Linux (AppImage)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build tools and runtime libs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build \
+            libgl1-mesa-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-0 \
+            libglib2.0-0 \
+            libnss3 \
+            libnspr4 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxrandr2 \
+            libxtst6 \
+            libatspi2.0-0 \
+            libgtk-3-0 \
+            libfuse2 \
+            curl \
+            wget \
+            file \
+            zip \
+            unzip \
+            tar \
+            pkg-config
+
+      # Ubuntu's apt Qt6 is only 6.4.x; this project requires Qt6 >= 6.5 (root CMakeLists.txt).
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.CPPWIKI_QT_VERSION }}
+          modules: ${{ env.CPPWIKI_QT_MODULES }}
+          cache: true
+
+      - name: Set up vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg "${VCPKG_ROOT}"
+          "${VCPKG_ROOT}/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Cache vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-binarycache-release-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-binarycache-release-${{ runner.os }}-
+
+      - name: Configure (release preset, server disabled)
+        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build --preset release
+
+      - name: Install to AppDir
+        run: |
+          mkdir -p build/release/AppDir/usr
+          cmake --install build/release --config Release --prefix "${{ github.workspace }}/build/release/AppDir/usr"
+
+      - name: Stage desktop file and icon
+        run: |
+          mkdir -p build/release/AppDir/usr/share/applications
+          mkdir -p build/release/AppDir/usr/share/icons/hicolor/256x256/apps
+          cp packaging/linux/cppwiki.desktop build/release/AppDir/usr/share/applications/cppwiki.desktop
+          cp third_party/qlementine/branding/icon/pngs/256x256.png \
+            build/release/AppDir/usr/share/icons/hicolor/256x256/apps/cppwiki.png
+
+      - name: Download linuxdeploy tools
+        run: |
+          mkdir -p build/release/tools
+          cd build/release/tools
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy-*.AppImage
+
+      - name: Build AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          QT_PREFIX="${QT_ROOT_DIR}"
+          export PATH="$QT_PREFIX/bin:$PATH"
+          export LD_LIBRARY_PATH="$QT_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+          mkdir -p dist
+          build/release/tools/linuxdeploy-x86_64.AppImage \
+            --appdir build/release/AppDir \
+            --executable build/release/AppDir/usr/bin/cppwiki \
+            --desktop-file build/release/AppDir/usr/share/applications/cppwiki.desktop \
+            --icon-file build/release/AppDir/usr/share/icons/hicolor/256x256/apps/cppwiki.png \
+            --plugin qt \
+            --output appimage
+          find . -maxdepth 1 -type f -name '*.AppImage' ! -name 'linuxdeploy*.AppImage' -exec mv {} dist/ \;
+
+      - name: Upload Linux AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: cppwiki-linux-appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  package-windows:
+    name: Package Windows (installer)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.CPPWIKI_QT_VERSION }}
+          modules: ${{ env.CPPWIKI_QT_MODULES }}
+          arch: win64_msvc2019_64
+          cache: true
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Set up vcpkg
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg "${{ github.workspace }}\vcpkg"
+          & "${{ github.workspace }}\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+
+      - name: Cache vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-binarycache-release-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-binarycache-release-${{ runner.os }}-
+
+      - name: Configure (release preset, server disabled)
+        shell: pwsh
+        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build --preset release
+
+      - name: Install to staging
+        shell: pwsh
+        run: cmake --install build/release --config Release --prefix "${{ github.workspace }}\stage"
+
+      - name: Deploy Qt runtime (windeployqt)
+        shell: pwsh
+        run: |
+          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" `
+            --release `
+            --compiler-runtime `
+            --no-translations `
+            "${{ github.workspace }}\stage\bin\cppwiki.exe"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Read app version
+        shell: pwsh
+        run: |
+          $cmakeText = Get-Content "${{ github.workspace }}\CMakeLists.txt" -Raw
+          $match = [regex]::Match($cmakeText, 'project\(\s*CppWiki\s+VERSION\s+([0-9.]+)')
+          if (-not $match.Success) {
+            throw "Failed to read CppWiki version from CMakeLists.txt"
+          }
+          "APP_VERSION=$($match.Groups[1].Value)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            "/DMyAppVersion=$env:APP_VERSION" `
+            "/DMySourceDir=${{ github.workspace }}\stage" `
+            "/DMyOutputDir=${{ github.workspace }}\dist" `
+            "${{ github.workspace }}\packaging\windows\CppWiki.iss"
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: cppwiki-windows-installer
+          path: dist/cppwiki-windows-setup.exe
+          if-no-files-found: error
+
+  package-macos:
+    name: Package macOS (DMG)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.CPPWIKI_QT_VERSION }}
+          modules: ${{ env.CPPWIKI_QT_MODULES }}
+          arch: clang_64
+          cache: true
+
+      - name: Export Qt environment
+        run: |
+          echo "Qt6_DIR=${QT_ROOT_DIR}/lib/cmake/Qt6" >> "$GITHUB_ENV"
+          echo "CMAKE_PREFIX_PATH=${QT_ROOT_DIR}${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}" >> "$GITHUB_ENV"
+          echo "${QT_ROOT_DIR}/bin" >> "$GITHUB_PATH"
+
+      - name: Set up vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg "${VCPKG_ROOT}"
+          "${VCPKG_ROOT}/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Cache vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-binarycache-release-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-binarycache-release-${{ runner.os }}-
+
+      - name: Configure (release preset, server disabled)
+        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build --preset release
+
+      - name: Install to staging
+        run: cmake --install build/release --config Release --prefix "${{ github.workspace }}/stage"
+
+      - name: Build macOS DMG
+        run: |
+          mkdir -p dist
+          APP_BUNDLE="${{ github.workspace }}/stage/cppwiki.app"
+          if [ ! -d "$APP_BUNDLE" ]; then
+            APP_BUNDLE="$(find "${{ github.workspace }}/stage" -maxdepth 1 -type d -name '*.app' | head -n 1)"
+          fi
+          test -n "$APP_BUNDLE"
+          test -d "$APP_BUNDLE"
+          macdeployqt "$APP_BUNDLE" -always-overwrite
+          # Known MVP limitation: no Apple Developer ID is available, so this is an ad-hoc
+          # signature only (not notarized). Gatekeeper will warn on first launch.
+          codesign --force --deep --sign - "$APP_BUNDLE"
+          codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+          DMG_SRC_DIR="${{ github.workspace }}/dist/dmg-root"
+          rm -rf "$DMG_SRC_DIR"
+          mkdir -p "$DMG_SRC_DIR"
+          cp -a "$APP_BUNDLE" "$DMG_SRC_DIR/"
+          hdiutil create \
+            -volname "CppWiki" \
+            -srcfolder "$DMG_SRC_DIR" \
+            -ov \
+            -format UDZO \
+            "dist/cppwiki-macos.dmg"
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: cppwiki-macos-dmg
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release (draft)
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish_release)
+    needs: [package-linux, package-windows, package-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine release tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "RELEASE_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_TAG=manual-test-${{ github.run_id }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cppwiki-linux-appimage
+          path: release/linux
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cppwiki-windows-installer
+          path: release/windows
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cppwiki-macos-dmg
+          path: release/macos
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # MVP: always create as a draft release so a human reviews artifacts before publishing.
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" \
+              --target "$GITHUB_SHA" \
+              --title "CppWiki $RELEASE_TAG" \
+              --generate-notes \
+              --draft
+          gh release upload "$RELEASE_TAG" \
+            release/linux/*.AppImage \
+            release/windows/*.exe \
+            release/macos/*.dmg \
+            --clobber

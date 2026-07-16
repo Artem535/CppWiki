@@ -19,6 +19,16 @@ namespace cppwiki {
 
 namespace {
 
+// Non-owning; owned by QApplication (parented to it). Kept outside the class so it can be
+// recovered even after QApplication::style() gets wrapped by a QStyleSheetStyle proxy once a
+// non-empty app-wide stylesheet is applied (see ApplyApplicationStylesheet()).
+oclero::qlementine::QlementineStyle* g_qlementine_style = nullptr;
+
+// QlementineStyle does not expose a getter for the currently applied theme path, so the last
+// value we set is tracked here to avoid reapplying it (and re-churning the style's caches) when
+// nothing actually changed.
+QString g_applied_theme_path;
+
 auto ResolveThemePath() -> QString {
   const auto theme_path = constants::kQlementineDarkThemePath;
 
@@ -40,12 +50,17 @@ auto ResolveThemePath() -> QString {
 
 }  // namespace
 
+auto GetQlementineStyle() -> oclero::qlementine::QlementineStyle* { return g_qlementine_style; }
+
 Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   QCoreApplication::setApplicationName(ToQString(constants::kApplicationName));
   QCoreApplication::setApplicationVersion(ToQString(constants::kApplicationVersion));
   QCoreApplication::setOrganizationName(ToQString(constants::kOrganizationName));
   QApplication::setQuitOnLastWindowClosed(true);
-  QApplication::setStyle(new oclero::qlementine::QlementineStyle(&qt_application_));
+  auto* qlementine_style = new oclero::qlementine::QlementineStyle(&qt_application_);
+  g_qlementine_style = qlementine_style;
+  QApplication::setStyle(qlementine_style);
+  ApplyApplicationStylesheet();
   auth_session_manager_ = std::make_unique<auth::AuthSessionManager>(&qt_application_);
   backend_client_ = std::make_unique<backend::BackendClient>(&qt_application_);
   document_sync_service_ = std::make_unique<sync::DocumentSyncService>(&qt_application_);
@@ -115,21 +130,30 @@ void Application::ReloadContext() {
 }
 
 void Application::ApplyAppearanceFromSettings(const ProgramSettings& settings) {
+  // Only touch QApplication::setFont()/QlementineStyle::setThemeJsonPath() when the value
+  // actually changes. Both operations invalidate Qt's font/style caches; calling them
+  // unconditionally on every settings save (even when nothing about appearance changed)
+  // repeatedly churns those caches for no reason and has been a source of teardown crashes.
+  //
+  // Note: the application-wide stylesheet (ApplyApplicationStylesheet()) is intentionally NOT
+  // reapplied here — it is static content unrelated to ProgramSettings and is applied once, in
+  // the constructor. Calling qApp->setStyleSheet() repeatedly wraps QApplication::style() in a
+  // fresh QStyleSheetStyle proxy each time, which both breaks qobject_cast<QlementineStyle*>
+  // (see GetQlementineStyle()) and adds unnecessary style-object churn during shutdown.
   auto font = QApplication::font();
-  if (settings.ApplicationFontPointSize() > 0) {
+  if (settings.ApplicationFontPointSize() > 0 &&
+      font.pointSize() != settings.ApplicationFontPointSize()) {
     font.setPointSize(settings.ApplicationFontPointSize());
     QApplication::setFont(font);
   }
 
-  if (auto* qlementine_style =
-          qobject_cast<oclero::qlementine::QlementineStyle*>(QApplication::style())) {
+  if (auto* qlementine_style = GetQlementineStyle()) {
     const auto theme_path = ResolveThemePath();
-    if (!theme_path.isEmpty()) {
+    if (!theme_path.isEmpty() && theme_path != g_applied_theme_path) {
       qlementine_style->setThemeJsonPath(theme_path);
+      g_applied_theme_path = theme_path;
     }
   }
-
-  ApplyApplicationStylesheet();
 }
 
 }  // namespace cppwiki

@@ -62,6 +62,62 @@ add_test(
   COMMAND cppwiki_document_validator_tests
 )
 
+if (CPPWIKI_BUILD_ADMIN_CLI)
+  add_executable(cppwiki_admin_cli_tests
+    admin/admin_response_parsing_test.cc
+    ${CMAKE_SOURCE_DIR}/src/admin/admin_response_parsing.cc
+    ${CMAKE_SOURCE_DIR}/src/admin/admin_response_parsing.h
+  )
+
+  target_include_directories(cppwiki_admin_cli_tests
+    PRIVATE
+      ${CMAKE_SOURCE_DIR}/src
+  )
+
+  target_link_libraries(cppwiki_admin_cli_tests
+    PRIVATE
+      spdlog::spdlog
+      reflectcpp::reflectcpp
+  )
+
+  cppwiki_apply_common_options(cppwiki_admin_cli_tests)
+
+  add_test(
+    NAME cppwiki_admin_cli_tests
+    COMMAND cppwiki_admin_cli_tests
+  )
+
+  # Exercises AdminTokenStore's Load/Save/Clear logic against a fake
+  # KeychainBackend — no real secret-service daemon needed, so this stays
+  # runnable in CI. SystemKeychainBackend (the hrantzsch/keychain-backed
+  # implementation) is intentionally not linked/exercised here.
+  add_executable(cppwiki_admin_token_store_tests
+    admin/admin_token_store_test.cc
+    ${CMAKE_SOURCE_DIR}/src/admin/admin_token_store.cc
+    ${CMAKE_SOURCE_DIR}/src/admin/admin_token_store.h
+    ${CMAKE_SOURCE_DIR}/src/admin/system_keychain_backend.cc
+    ${CMAKE_SOURCE_DIR}/src/admin/system_keychain_backend.h
+  )
+
+  target_include_directories(cppwiki_admin_token_store_tests
+    PRIVATE
+      ${CMAKE_SOURCE_DIR}/src
+  )
+
+  target_link_libraries(cppwiki_admin_token_store_tests
+    PRIVATE
+      spdlog::spdlog
+      keychain
+  )
+
+  cppwiki_apply_common_options(cppwiki_admin_token_store_tests)
+
+  add_test(
+    NAME cppwiki_admin_token_store_tests
+    COMMAND cppwiki_admin_token_store_tests
+  )
+endif ()
+
 add_executable(cppwiki_program_settings_tests
   app/program_settings_test.cc
   ${CMAKE_SOURCE_DIR}/src/app/program_settings.cc

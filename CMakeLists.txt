@@ -22,6 +22,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(CPPWIKI_BUILD_TESTS "Build CppWiki tests" ON)
 option(CPPWIKI_BUILD_SERVER "Build CppWiki userver server" ON)
 option(CPPWIKI_BUILD_DESKTOP_APP "Build CppWiki Qt desktop application" ON)
+option(CPPWIKI_BUILD_ADMIN_CLI "Build the cppwiki-admin ftxui CLI" ON)
 option(CPPWIKI_ENABLE_CLANG_TIDY "Enable clang-tidy when available" OFF)
 option(CPPWIKI_ENABLE_CBLITE_STORAGE "Enable Couchbase Lite storage adapter" OFF)
 option(
@@ -36,6 +37,49 @@ include(FetchContent)
 
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+
+if (CPPWIKI_BUILD_ADMIN_CLI)
+    # cpr wraps libcurl with a modern, requests-like C++ API (cpr::Get/Post,
+    # cpr::Header, cpr::Timeout) and no manual curl_easy_*/curl_slist_*
+    # calls. CPR_USE_SYSTEM_CURL keeps it linking against the system libcurl
+    # (matching this repo's existing `find_package(CURL REQUIRED)` usage)
+    # rather than vendoring its own copy.
+    set(CPR_USE_SYSTEM_CURL ON CACHE BOOL "Use system libcurl for cpr" FORCE)
+    set(CPR_BUILD_TESTS OFF CACHE BOOL "Disable cpr tests" FORCE)
+    FetchContent_Declare(
+            cpr
+            GIT_REPOSITORY https://github.com/libcpr/cpr.git
+            GIT_TAG 1.11.2
+            GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(cpr)
+
+    set(FTXUI_BUILD_DOCS OFF CACHE BOOL "Disable ftxui docs" FORCE)
+    set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "Disable ftxui examples" FORCE)
+    set(FTXUI_BUILD_TESTS OFF CACHE BOOL "Disable ftxui tests" FORCE)
+    set(FTXUI_ENABLE_INSTALL OFF CACHE BOOL "Disable ftxui install rules" FORCE)
+    FetchContent_Declare(
+            ftxui
+            GIT_REPOSITORY https://github.com/ArthurSonzogni/ftxui.git
+            GIT_TAG v5.0.0
+            GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(ftxui)
+
+    # hrantzsch/keychain wraps the native OS secret store (libsecret on Linux,
+    # Keychain Services on macOS, Credential Manager on Windows) without
+    # requiring any Qt linkage, unlike qtkeychain below — a better fit for
+    # keeping the admin CLI Qt-GUI-free. On Linux it depends on GLib 2.0 and
+    # libsecret-1 (already required by qtkeychain's libsecret backend).
+    set(BUILD_TESTS OFF CACHE BOOL "Disable hrantzsch/keychain tests" FORCE)
+    FetchContent_Declare(
+            keychain
+            GIT_REPOSITORY https://github.com/hrantzsch/keychain.git
+            GIT_TAG v1.3.1
+            GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(keychain)
+endif ()
 
 if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
     find_package(
