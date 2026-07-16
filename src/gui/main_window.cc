@@ -12,6 +12,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QSettings>
+#include <QStackedWidget>
 #include <QStatusBar>
 #include <QString>
 #include <QStyle>
@@ -28,12 +29,14 @@
 #include "backend/backend_client.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "gui/coming_soon_widget.h"
 #include "gui/main_window_helpers.h"
 #include "gui/merge/conflict_merge_dialog.h"
 #include "gui/page.h"
 #include "gui/page_helpers.h"
 #include "gui/presence_strip_widget.h"
 #include "gui/settings_dialog.h"
+#include "gui/workspace_rail_widget.h"
 #include "sync/sync_service.h"
 
 namespace cppwiki {
@@ -462,12 +465,61 @@ void MainWindow::BuildUi() {
 
   shell_layout_->addWidget(header_row, 0, 1);
 
-  setCentralWidget(shell_widget_);
+  // The workspace rail (ADR-014) fully replaces the central content area per
+  // mode. Documents mode is the pre-existing shell_widget_ (document tree +
+  // Page), now one of N pages behind the mode stack rather than the only
+  // thing MainWindow shows. AI Chat/Code are infrastructure-only placeholders
+  // here; their real content is separate follow-up work (issues #29-#32).
+  auto* root_widget = new QWidget(this);
+  auto* root_layout = new QHBoxLayout(root_widget);
+  root_layout->setContentsMargins(0, 0, 0, 0);
+  root_layout->setSpacing(0);
+
+  workspace_rail_ = new gui::WorkspaceRailWidget(root_widget);
+  connect(workspace_rail_, &gui::WorkspaceRailWidget::modeSelected, this,
+          &MainWindow::HandleModeSelected);
+  root_layout->addWidget(workspace_rail_, 0);
+
+  mode_stack_ = new QStackedWidget(root_widget);
+  mode_stack_->addWidget(shell_widget_);
+  ai_chat_page_ = new gui::ComingSoonWidget(
+      QStringLiteral("AI Chat"),
+      QStringLiteral("Coming soon: a conversational surface that can read, search and edit "
+                     "wiki documents. See ADR-014/ADR-015."),
+      mode_stack_);
+  mode_stack_->addWidget(ai_chat_page_);
+  code_page_ = new gui::ComingSoonWidget(
+      QStringLiteral("Code"),
+      QStringLiteral("Coming soon: an embedded coding agent working against a local "
+                     "directory. See ADR-014/ADR-015."),
+      mode_stack_);
+  mode_stack_->addWidget(code_page_);
+  mode_stack_->setCurrentWidget(shell_widget_);
+  root_layout->addWidget(mode_stack_, 1);
+
+  setCentralWidget(root_widget);
   statusBar()->addPermanentWidget(backend_refresh_button_);
   statusBar()->addPermanentWidget(document_status_widget_);
   statusBar()->addPermanentWidget(backend_status_widget_);
   statusBar()->addPermanentWidget(sync_status_widget_);
   menuBar()->hide();
+}
+
+void MainWindow::HandleModeSelected(gui::WorkspaceRailWidget::Mode mode) {
+  if (mode_stack_ == nullptr) {
+    return;
+  }
+  switch (mode) {
+    case gui::WorkspaceRailWidget::Mode::kDocuments:
+      mode_stack_->setCurrentWidget(shell_widget_);
+      break;
+    case gui::WorkspaceRailWidget::Mode::kAiChat:
+      mode_stack_->setCurrentWidget(ai_chat_page_);
+      break;
+    case gui::WorkspaceRailWidget::Mode::kCode:
+      mode_stack_->setCurrentWidget(code_page_);
+      break;
+  }
 }
 
 void MainWindow::UpdateBackendStatus() {
