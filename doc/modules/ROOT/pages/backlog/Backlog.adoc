@@ -10,3 +10,11 @@ This file tracks intentionally deferred work that is useful, but not part of the
 * Rework lock/auth/backend wording and status presentation so collaboration state reads as product UX instead of transport/debug output.
 * Add conflict surfacing UI that consumes explicit sync conflict metadata instead of implicit sync error strings.
 * Add manual conflict resolution flow for preserved local vs remote snapshots.
+
+== Workspace Rail: AI Chat and Code Modes (2026-07-16)
+
+Design decided and recorded in ADR-014 and ADR-015 (workspace rail navigation, AI Chat and
+Code as full-view modes, shared agent engine, Code mode's native UI/trust boundary/tool
+execution/sandboxing). Explicitly sequenced to start *after* the current in-flight wave
+(BlockNote AI MVP/issue #10, CI fixes/issue #12, admin CLI/issues #14 and #24, exit-crash
+and SegmentedControl fix/issue #21) — no implementation issue exists yet for this track.

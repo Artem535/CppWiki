@@ -1,0 +1,137 @@
+= ADR-015 — Code Agent: Native Trust Boundary, Tool Execution and Sandboxing
+
+== Status
+
+Accepted
+
+== Date
+
+2026-07-16
+
+---
+
+== Context
+
+ADR-014 establishes AI Chat and Code as full-view rail modes. Code, unlike anything
+CppWiki has built so far, needs an agent that can act like an embedded coding assistant:
+read/write arbitrary files in a user-chosen local directory, run shell commands, and
+iterate — full agentic capability, not a fixed, pre-approved tool list.
+
+This is a fundamentally larger trust surface than anything granted to the browser layer
+today. `EditorBridge` is CppWiki's one declared trust boundary specifically because the
+in-browser BlockNote editor (`QWebEngineView`) must never get raw filesystem, process, or
+unrestricted network access (`CLAUDE.md`, `src/bridge/`). A Code agent with real shell/FS
+access does not fit inside that boundary's threat model at all — it needs to be a
+different kind of surface, deliberately reasoned about on its own terms rather than
+squeezed into the browser-facing bridge's constraints.
+
+AI Chat, by contrast, needs to act on the user's *wiki documents* (read, search, and
+plausibly edit them on the user's behalf) — a narrower, already-gated surface, not the
+open-ended filesystem/shell access Code needs.
+
+Several sub-decisions were resolved together, since they constrain each other: where the
+UI lives (native vs. browser-hosted), what the underlying agent looks like (shared engine
+vs. separate), how much confirmation gates each side-effecting action, and how process
+execution is isolated (if at all).
+
+---
+
+== Decision
+
+=== UI: native Qt, no browser layer
+
+The Code mode is implemented as native Qt widgets (C++), not another
+`QWebEngineView`-hosted surface. There is therefore no browser-facing trust boundary to
+design for Code at all — the question "how much does the browser get access to" does not
+apply, because there is no browser layer in this mode. Code blocks/diffs inside the chat
+thread are rendered read-only via `KSyntaxHighlighting` (KDE Frameworks) over a native
+text widget; file viewing supports full-file display and minimal editing (no LSP) using
+the same or a sibling native widget. This was chosen over embedding a web code editor
+(e.g. Monaco/CodeMirror in a second, narrower bridge) because it keeps Code's UI
+entirely outside any browser-mediated attack surface by construction, and the actual
+scope needed turned out to be narrower than a full IDE editor — mostly rendering chat
+messages and diffs, since the workflow is agent-driven ("vibecoding") rather than
+manual editing.
+
+=== One shared agent engine, two tool registries
+
+AI Chat and Code are both built on one C++ agent engine (an OpenAI-compatible
+tool-use/function-calling loop: request → tool call → execute → result → repeat),
+configured with a different tool registry per mode rather than being two separate
+agent implementations:
+
+* *AI Chat*'s tools operate only on wiki documents, through the same gated entry points
+  `EditorBridge` already uses for human/BlockNote-AI edits (`updateSnapshot`,
+  `renameDocument`, `updateDocumentPlacement`, `deleteDocument`, plus read/search
+  operations) — inheriting the existing lock and conflict editability gates
+  (ADR-010, ADR-013) automatically. AI Chat's tools never touch the raw filesystem or a
+  shell.
+* *Code*'s tools operate on an arbitrary directory the user explicitly opens (not the
+  wiki workspace) — file read/write and shell command execution, unconstrained by the
+  document editability gate (it doesn't apply outside the wiki workspace).
+
+The engine talks to an OpenAI-compatible chat-completions API (function calling), not a
+provider-specific SDK — matching the provider-agnostic posture already used for the
+BlockNote AI MVP's server-mediated/local-key backend split (ADR-012 addendum). It reuses
+that same key-storage pattern (`AiApiKeyStore`/qt-keychain) rather than inventing a
+second credential store, but is otherwise a standalone subsystem — it does not reuse or
+extend `ChatTransport` (ADR-012), which is scoped to simple text streaming for the
+in-editor BlockNote AI rewrite/autocomplete feature and has no tool-use shape.
+
+=== Permission model: configurable, like Claude Code
+
+Every Code-agent action with a side effect (file write, shell command) is gated by a
+user-configurable permission mode: ask every time, allow for the rest of the session, or
+auto-accept. Read-only actions (viewing files) do not require confirmation. AI Chat's
+document-mutation tools go through the *existing* editability gate (ADR-010/013) as
+their safety mechanism; whether they additionally need their own confirmation prompt is
+left to be decided when AI Chat's implementation actually starts (not blocking this ADR).
+
+=== Sub-agent fan-out and sandboxing: Linux via forkd, elsewhere unsandboxed
+
+The Code agent is expected to fan out sub-agents (parallel isolated workers), similar in
+spirit to this project's own sub-agent-driven development workflow. On Linux, sub-agent
+process isolation uses `forkd` (a microVM sandbox runtime that forks children from a
+warmed parent snapshot via copy-on-write, built for fast agent fan-out) rather than
+building bespoke sandboxing. `forkd` requires KVM and is Linux-specific; on Windows and
+macOS, the MVP runs sub-agents (and the single-agent case) as plain child processes with
+the user's own privileges and no sandboxing — the permission-prompt model above is the
+only safety mechanism on those platforms. This asymmetry is accepted for MVP rather than
+either delaying Linux behind cross-platform parity or scoping out Windows/macOS Code-mode
+support entirely.
+
+---
+
+== Consequences
+
+=== Positive
+
+* No new trust-boundary exception is needed for `EditorBridge`/the browser layer — Code's
+  entire, much larger access surface exists in a mode that has no browser layer at all,
+  keeping the "browser gets no raw access" property intact for every existing feature.
+* AI Chat's document-editing tools get lock/conflict safety for free by routing through
+  existing gated bridge methods, rather than needing a parallel safety mechanism.
+* Sharing one agent engine across AI Chat and Code (differing only in tool registry)
+  avoids building and maintaining two separate agentic-loop implementations.
+* Using `forkd` for Linux sub-agent fan-out avoids building bespoke microVM/namespace
+  sandboxing from scratch, for the platform where the heaviest agentic workloads are
+  expected to run.
+
+=== Negative
+
+* Windows and macOS get materially weaker isolation than Linux for both the Code agent
+  and its sub-agents — "auto-accept" mode on those platforms means the agent can do
+  anything the user's own account can do, with no sandboxing safety net at all. This must
+  be surfaced clearly in the UI, not left implicit.
+* Two large, mostly-independent implementation efforts (AI Chat's document tool registry;
+  Code's filesystem/shell tool registry, permission UI, and `forkd` integration) still
+  need to happen behind the one shared engine — the engine's tool-registry abstraction
+  needs to be right the first time, or both consumers pay for a rework.
+* `forkd` is a comparatively new, narrow-purpose tool (built for AI-agent fan-out
+  specifically); depending on it for sandboxing carries more maturity/support risk than a
+  widely-used general-purpose sandbox like `bubblewrap` would, though it fits the actual
+  fan-out shape of this workload better.
+* Native `KSyntaxHighlighting`-based code rendering will not match the richness (LSP
+  hover/completion, semantic highlighting) of a web-based editor like Monaco — accepted
+  as sufficient because the workflow is agent-driven, not manual-editing-driven, but this
+  should be revisited if user feedback shows manual editing is more common than expected.

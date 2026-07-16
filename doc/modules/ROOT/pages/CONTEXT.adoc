@@ -45,8 +45,43 @@ For issue #3, exactly two AI capabilities: rewriting/improving a selected block 
 formatting toolbar, and autocomplete ("continue writing") via a slash-menu command. Both
 share the same `@blocknote/xl-ai` `AIExtension` plumbing and the same custom transport
 (see below). Full chat-agent/RAG workflows are explicitly out of scope for this MVP.
-_Avoid_: "AI chat" (that's a separate, later Phase 2/3 feature from the AI Vision
-Proposal, not part of this MVP).
+_Avoid_: "AI chat" (that's the separate, later rail mode described below — see ADR-014).
+
+*Workspace rail*:
+The narrow icon panel on the left edge of `MainWindow` for switching between full-view
+modes: Documents, AI Chat, Code. Selecting a rail entry fully replaces the central
+content area (document tree + `Page` are hidden entirely in AI Chat/Code modes, not kept
+alongside them). See ADR-014.
+_Avoid_: "tabs" (these are not `QTabWidget` tabs above the content; they are rail-driven
+full-mode swaps).
+
+*AI Chat mode*:
+A rail mode presenting a list of chat sessions plus the active session's message thread.
+Distinct from *BlockNote AI (MVP scope)* above: AI Chat is a standalone conversational
+surface whose agent tools act on wiki documents (read/search/edit through existing
+`EditorBridge`-gated methods), not an in-editor rewrite/autocomplete feature. See
+ADR-014, ADR-015.
+
+*Code mode*:
+A rail mode built on the same agent engine as AI Chat, but with tools scoped to an
+arbitrary user-opened local directory (not the wiki workspace): file read/write and
+shell command execution, gated by a configurable permission mode (ask always / allow for
+session / auto-accept). Implemented as native Qt widgets (no browser layer), with code
+rendered via `KSyntaxHighlighting`. See ADR-015.
+_Avoid_: "IDE" (Code mode is agent-driven/"vibecoding"-oriented, not a general-purpose
+manual code editor).
+
+*Agent engine*:
+The shared C++ tool-use/function-calling loop (OpenAI-compatible chat-completions API)
+underlying both AI Chat and Code mode. One engine, two tool registries — not two separate
+agent implementations. Distinct from *AI chat transport* below, which is a simple text
+streaming relay for the unrelated BlockNote AI MVP. See ADR-015.
+
+*forkd*:
+A microVM sandbox runtime (Linux/KVM-only) that forks sub-agent worker processes from a
+warmed parent snapshot via copy-on-write, used for Code mode's sub-agent fan-out
+isolation on Linux. Windows/macOS have no equivalent sandboxing in the MVP; the
+permission-mode confirmations are the only safety mechanism there. See ADR-015.
 
 *AI chat transport*:
 The custom `ChatTransport` implementation (matching the `ai` SDK's interface consumed by

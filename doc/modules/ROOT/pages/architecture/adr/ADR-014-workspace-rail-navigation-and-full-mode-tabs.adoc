@@ -1,0 +1,91 @@
+= ADR-014 — Workspace Rail Navigation: Documents, AI Chat and Code as Full-View Modes
+
+== Status
+
+Accepted
+
+== Date
+
+2026-07-16
+
+---
+
+== Context
+
+CppWiki's product vision is expanding beyond a document wiki into a broader desktop
+"home" workspace. Alongside the existing Documents experience (document tree +
+`Page`/BlockNote editor), the product should offer two more first-class modes:
+
+* *AI Chat* — a conversational AI surface that can also act on the user's wiki documents
+  (not just free-form chat).
+* *Code* — an agentic coding assistant, working against an arbitrary local
+  repository/directory, in the spirit of an embedded coding agent (comparable to how
+  Claude Code operates against a repo: reads/writes files, runs shell commands, iterates).
+
+This is a much larger scope decision than a UI tweak, and several structurally different
+options were considered for *how* these modes attach to the existing `MainWindow`:
+top-level tabs (`QTabWidget`) above the current layout, floating/dockable panels
+alongside the existing document tree + `Page`, separate top-level windows/processes (like
+`cppwiki-admin`), or a persistent narrow icon rail that fully replaces the central content
+area per mode.
+
+---
+
+== Decision
+
+`MainWindow` gains a narrow icon rail on the left edge (visually similar to an IDE
+"activity bar"). Selecting a rail entry — *Documents*, *AI Chat*, *Code* — fully replaces
+the central content area: the document tree and `Page`/BlockNote editor are hidden
+entirely when *AI Chat* or *Code* is active, not kept visible alongside the new mode's
+content. Each mode owns the entire content area while active; there is no shared
+"documents + X" split view.
+
+*AI Chat* and *Code* both present their content as a chat-style list view: a list of past
+chat/agent sessions on one side, the active session's message thread on the other — the
+same UI pattern for both modes, differing only in which tools the underlying agent has
+available (see ADR-015).
+
+This is a distinct, larger initiative from the BlockNote AI MVP already scoped in
+ADR-010/ADR-011/ADR-012/ADR-013 (issue #10): that work is in-editor rewrite/autocomplete
+inside the Documents mode's `Page`, unrelated to the AI Chat/Code rail modes described
+here. Per `CONTEXT.adoc`'s existing "BlockNote AI (MVP scope)" glossary entry, "AI chat"
+was already flagged as an explicitly out-of-scope, later phase for that MVP — this ADR is
+that later phase.
+
+---
+
+== Sequencing
+
+This ADR and ADR-015 record the *design* decided in this session. Implementation is
+explicitly deferred until after the current in-flight wave of work lands (BlockNote AI
+MVP/issue #10, CI fixes/issue #12, admin CLI/issues #14 and #24, the exit-crash and
+SegmentedControl-styling fix/issue #21). No sub-agent or issue is created for AI
+Chat/Code implementation as part of this ADR; that follows in a later, separate pass.
+
+---
+
+== Consequences
+
+=== Positive
+
+* One consistent navigation model (icon rail + full-mode-replacement) instead of three
+  different attachment styles for three different features — simpler for users to build
+  a mental model of, and simpler to reason about in code (one "active mode" concept in
+  `MainWindow` rather than ad-hoc panel toggling).
+* Reusing the same chat-list-view UI pattern for both AI Chat and Code means the two
+  modes can likely share a substantial amount of C++/UI code (message list widget,
+  session list widget), differing mainly in the tool registry passed to the shared agent
+  engine (ADR-015).
+* Explicitly deferring implementation keeps the current in-flight wave of work
+  unblocked and avoids splitting sub-agent attention across an even larger set of
+  concurrent changes.
+
+=== Negative
+
+* `MainWindow` needs a real internal refactor to support "fully swap the content area by
+  mode" rather than its current single-purpose (document-tree-plus-page) structure — this
+  is not a small addition on top of the existing shell.
+* Two large, mostly-new subsystems (a conversational surface and an agentic coding
+  assistant) are now committed to as product direction before either has been
+  prototyped, which carries the usual risk of a design looking different once real
+  implementation starts.
