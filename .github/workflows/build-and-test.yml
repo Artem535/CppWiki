@@ -44,6 +44,7 @@ jobs:
             libxtst6 \
             libatspi2.0-0 \
             libgtk-3-0 \
+            libsecret-1-dev \
             curl \
             zip \
             unzip \
