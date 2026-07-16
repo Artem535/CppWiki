@@ -41,6 +41,8 @@ qt_add_executable(cppwiki_app
         document/document.h
         document/document_validator.cc
         document/document_validator.h
+        gui/coming_soon_widget.cc
+        gui/coming_soon_widget.h
         gui/document_context_menu.cc
         gui/document_context_menu.h
         gui/document_tree_item_delegate.cc
@@ -62,6 +64,8 @@ qt_add_executable(cppwiki_app
         gui/page.h
         gui/page_helpers.cc
         gui/page_helpers.h
+        gui/workspace_rail_widget.cc
+        gui/workspace_rail_widget.h
 
         main.cc
         sync/document_sync_service.cc

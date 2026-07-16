@@ -4,10 +4,13 @@
 #include <QMainWindow>
 #include <QPointer>
 
+#include "gui/workspace_rail_widget.h"
+
 class QGridLayout;
 class QFrame;
 class QDialog;
 class QLabel;
+class QStackedWidget;
 class QToolButton;
 class QWidget;
 
@@ -18,7 +21,7 @@ class Switch;
 
 namespace cppwiki::gui {
 class PresenceStripWidget;
-}
+}  // namespace cppwiki::gui
 
 namespace cppwiki::sync {
 enum class DocumentSyncState;
@@ -71,9 +74,16 @@ class MainWindow final : public QMainWindow {
   // close button: re-raises the existing window if still alive, otherwise
   // opens one for the current document's conflict (or the first pending one).
   void ReopenConflictWindow();
+  // Handles a rail selection: swaps the mode-content stack's current page.
+  // Does not affect Documents-mode internal state.
+  void HandleModeSelected(gui::WorkspaceRailWidget::Mode mode);
 
   AppContext* context_ = nullptr;
   Page* current_page_ = nullptr;
+  gui::WorkspaceRailWidget* workspace_rail_ = nullptr;
+  QStackedWidget* mode_stack_ = nullptr;
+  QWidget* ai_chat_page_ = nullptr;
+  QWidget* code_page_ = nullptr;
   QWidget* shell_widget_ = nullptr;
   QGridLayout* shell_layout_ = nullptr;
   QWidget* current_sidebar_widget_ = nullptr;
