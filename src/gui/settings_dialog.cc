@@ -54,6 +54,16 @@ auto MakeSectionPage(QWidget* parent, QFormLayout** out_form_layout) -> QWidget*
 
 SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
     : QDialog(parent), current_settings_(settings) {
+  // Callers should avoid passing a QWidget parent whose subtree has its own style sheet applied
+  // (e.g. MainWindow — see ApplyApplicationStylesheet()): Qt cascades a style sheet down the
+  // QObject parent/child tree to every descendant, including dialogs that only pop up as their
+  // own top-level window because a parent was supplied for ownership/centering. That would wrap
+  // this dialog's (and SegmentedControl's) QStyle in an internal QStyleSheetStyle proxy, which
+  // breaks qobject_cast<QlementineStyle*>(style()) inside AbstractItemListWidget/SegmentedControl
+  // the same way an app-wide qApp->setStyleSheet() would — confirmed empirically that even giving
+  // this dialog its own explicit *empty* style sheet does not prevent that wrap, it only
+  // neutralizes the inherited rules. See MainWindow::ShowSettingsDialog() for how this is
+  // constructed (parent == nullptr, centered manually) to avoid it.
   setWindowTitle(QStringLiteral("Settings"));
   setModal(true);
   resize(680, 460);
@@ -75,11 +85,10 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
 
   section_control_ = new oclero::qlementine::SegmentedControl(this);
   // AbstractItemListWidget (SegmentedControl's base) paints itself entirely by hand and reads
-  // theme colors/fonts via qobject_cast<QlementineStyle*>(style()). Once the app-wide stylesheet
-  // is applied, QApplication::style() returns an internal QStyleSheetStyle proxy instead of the
-  // real QlementineStyle, so that cast fails and the control falls back to plain QPalette
-  // colors, i.e. it renders unstyled. Explicitly pinning this widget's style to the real
-  // QlementineStyle instance sidesteps that proxy.
+  // theme colors/fonts via qobject_cast<QlementineStyle*>(style()). As long as this dialog isn't
+  // parented into a style-sheet-wrapped subtree (see the constructor comment above), style()
+  // already returns the real QlementineStyle here. This explicit setStyle() call is kept as
+  // defense-in-depth in case that ever changes.
   if (auto* qlementine_style = cppwiki::GetQlementineStyle()) {
     section_control_->setStyle(qlementine_style);
   }
