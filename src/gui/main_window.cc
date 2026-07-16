@@ -3,34 +3,24 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QEvent>
-#include <QFrame>
 #include <QFormLayout>
+#include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonParseError>
-#include <QJsonValue>
 #include <QLabel>
-#include <QPointer>
 #include <QMenuBar>
-#include <QListWidget>
-#include <QPlainTextEdit>
-#include <QSettings>
+#include <QPointer>
 #include <QPushButton>
-#include <QSplitter>
+#include <QSettings>
 #include <QStatusBar>
 #include <QString>
 #include <QStyle>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
-
-#include <functional>
-#include <optional>
 #include <oclero/qlementine/widgets/StatusBadgeWidget.hpp>
 #include <oclero/qlementine/widgets/Switch.hpp>
+#include <optional>
 
 #include "app/app_context.h"
 #include "app/program_settings.h"
@@ -40,127 +30,15 @@
 #include "core/qt_string.h"
 #include "gui/main_window_helpers.h"
 #include "gui/merge/conflict_merge_dialog.h"
-#include "gui/merge/conflict_merge_resolution.h"
+#include "gui/page.h"
 #include "gui/page_helpers.h"
 #include "gui/presence_strip_widget.h"
 #include "gui/settings_dialog.h"
-#include "gui/page.h"
 #include "sync/sync_service.h"
 
 namespace cppwiki {
 
 using namespace gui::main_window_helpers;
-
-namespace {
-
-auto ExtractInlineText(const QJsonValue& value) -> QString {
-  if (value.isString()) {
-    return value.toString();
-  }
-
-  if (value.isObject()) {
-    const auto object = value.toObject();
-    if (object.value(QStringLiteral("type")).toString() == QStringLiteral("text")) {
-      return object.value(QStringLiteral("text")).toString();
-    }
-    return {};
-  }
-
-  if (!value.isArray()) {
-    return {};
-  }
-
-  QStringList parts;
-  for (const auto& entry : value.toArray()) {
-    const auto text = ExtractInlineText(entry).trimmed();
-    if (!text.isEmpty()) {
-      parts.push_back(text);
-    }
-  }
-  return parts.join(QStringLiteral(" "));
-}
-
-void AppendBlocksPreview(const QJsonArray& blocks, QStringList& lines) {
-  for (const auto& block_value : blocks) {
-    if (!block_value.isObject()) {
-      continue;
-    }
-
-    const auto block = block_value.toObject();
-    const auto type = block.value(QStringLiteral("type")).toString();
-    const auto text = ExtractInlineText(block.value(QStringLiteral("content"))).trimmed();
-    if (!text.isEmpty()) {
-      if (type == QStringLiteral("heading")) {
-        lines.push_back(QStringLiteral("# %1").arg(text));
-      } else if (type == QStringLiteral("bulletListItem")) {
-        lines.push_back(QStringLiteral("- %1").arg(text));
-      } else if (type == QStringLiteral("numberedListItem")) {
-        lines.push_back(QStringLiteral("1. %1").arg(text));
-      } else if (type == QStringLiteral("checkListItem")) {
-        const auto checked = block.value(QStringLiteral("checked")).toBool(
-            block.value(QStringLiteral("props")).toObject().value(QStringLiteral("checked")).toBool(false));
-        lines.push_back(QStringLiteral("%1 %2").arg(checked ? QStringLiteral("[x]")
-                                                            : QStringLiteral("[ ]"),
-                                                    text));
-      } else {
-        lines.push_back(text);
-      }
-    }
-
-    const auto children = block.value(QStringLiteral("children"));
-    if (children.isArray()) {
-      AppendBlocksPreview(children.toArray(), lines);
-    }
-  }
-}
-
-auto SnapshotPreview(QString raw_snapshot) -> QString {
-  const auto trimmed = raw_snapshot.trimmed();
-  if (trimmed.isEmpty()) {
-    return QStringLiteral("No snapshot payload.");
-  }
-
-  QJsonParseError error;
-  const auto json = QJsonDocument::fromJson(trimmed.toUtf8(), &error);
-  if (error.error != QJsonParseError::NoError) {
-    return QStringLiteral("Invalid snapshot JSON: %1\n\n%2")
-        .arg(error.errorString(), trimmed.left(1200));
-  }
-
-  QJsonObject object;
-  if (json.isObject()) {
-    object = json.object();
-  } else {
-    return trimmed.left(1200);
-  }
-
-  QStringList lines;
-  const auto title = object.value(QStringLiteral("title")).toString().trimmed();
-  if (!title.isEmpty()) {
-    lines.push_back(QStringLiteral("Title: %1").arg(title));
-    lines.push_back(QString{});
-  }
-
-  const auto blocks = object.value(QStringLiteral("blocks"));
-  if (blocks.isArray()) {
-    AppendBlocksPreview(blocks.toArray(), lines);
-  }
-
-  if (lines.isEmpty()) {
-    return QStringLiteral("Snapshot has no previewable text content.");
-  }
-
-  return lines.join(QStringLiteral("\n"));
-}
-
-auto ConflictSideSummary(QString author, std::int64_t base_version) -> QString {
-  const auto normalized_author =
-      author.trimmed().isEmpty() ? QStringLiteral("unknown author") : std::move(author);
-  return QStringLiteral("Author: %1\nBase version: %2")
-      .arg(normalized_author, QString::number(base_version));
-}
-
-}  // namespace
 
 class SyncDetailsDialog final : public QDialog {
  public:
@@ -187,11 +65,9 @@ class SyncDetailsDialog final : public QDialog {
     auth_enabled_value_ = CreateValueRow(form, this, QStringLiteral("Auth enabled"));
     sync_enabled_value_ = CreateValueRow(form, this, QStringLiteral("Sync enabled"));
     access_token_value_ = CreateValueRow(form, this, QStringLiteral("Access token"));
-    bootstrap_available_value_ =
-        CreateValueRow(form, this, QStringLiteral("Bootstrap available"));
+    bootstrap_available_value_ = CreateValueRow(form, this, QStringLiteral("Bootstrap available"));
     backend_sync_value_ = CreateValueRow(form, this, QStringLiteral("Backend sync"));
-    repository_attached_value_ =
-        CreateValueRow(form, this, QStringLiteral("Repository attached"));
+    repository_attached_value_ = CreateValueRow(form, this, QStringLiteral("Repository attached"));
     repository_supports_sync_value_ =
         CreateValueRow(form, this, QStringLiteral("Repository supports sync"));
     gateway_url_value_ = CreateValueRow(form, this, QStringLiteral("Gateway URL"));
@@ -201,116 +77,12 @@ class SyncDetailsDialog final : public QDialog {
     principal_value_ = CreateValueRow(form, this, QStringLiteral("Principal"));
     principal_email_value_ = CreateValueRow(form, this, QStringLiteral("Principal email"));
     initial_pull_value_ = CreateValueRow(form, this, QStringLiteral("Initial pull"));
-    hydrated_workspaces_value_ =
-        CreateValueRow(form, this, QStringLiteral("Hydrated workspaces"));
-    workspace_hydration_value_ =
-        CreateValueRow(form, this, QStringLiteral("Workspace hydration"));
+    hydrated_workspaces_value_ = CreateValueRow(form, this, QStringLiteral("Hydrated workspaces"));
+    workspace_hydration_value_ = CreateValueRow(form, this, QStringLiteral("Workspace hydration"));
     roles_value_ = CreateValueRow(form, this, QStringLiteral("Roles"));
     groups_value_ = CreateValueRow(form, this, QStringLiteral("Groups"));
     channels_value_ = CreateValueRow(form, this, QStringLiteral("Channels"));
     pending_conflicts_value_ = CreateValueRow(form, this, QStringLiteral("Pending conflicts"));
-
-    conflicts_list_ = new QListWidget(this);
-    conflicts_list_->setSelectionMode(QAbstractItemView::SingleSelection);
-    conflicts_list_->setMinimumHeight(140);
-    layout->addWidget(conflicts_list_);
-
-    auto* compare_splitter = new QSplitter(Qt::Horizontal, this);
-    compare_splitter->setChildrenCollapsible(false);
-
-    auto* local_panel = new QWidget(compare_splitter);
-    auto* local_layout = new QVBoxLayout(local_panel);
-    local_layout->setContentsMargins(0, 0, 0, 0);
-    local_layout->setSpacing(6);
-    auto* local_title = new QLabel(QStringLiteral("Local version"), local_panel);
-    local_title->setStyleSheet(QStringLiteral("font-weight: 600;"));
-    local_layout->addWidget(local_title);
-    local_meta_label_ = new QLabel(local_panel);
-    local_meta_label_->setWordWrap(true);
-    local_meta_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    local_layout->addWidget(local_meta_label_);
-    local_preview_ = new QPlainTextEdit(local_panel);
-    local_preview_->setReadOnly(true);
-    local_preview_->setPlaceholderText(QStringLiteral("No local snapshot selected."));
-    local_layout->addWidget(local_preview_, 1);
-
-    auto* remote_panel = new QWidget(compare_splitter);
-    auto* remote_layout = new QVBoxLayout(remote_panel);
-    remote_layout->setContentsMargins(0, 0, 0, 0);
-    remote_layout->setSpacing(6);
-    auto* remote_title = new QLabel(QStringLiteral("Remote version"), remote_panel);
-    remote_title->setStyleSheet(QStringLiteral("font-weight: 600;"));
-    remote_layout->addWidget(remote_title);
-    remote_meta_label_ = new QLabel(remote_panel);
-    remote_meta_label_->setWordWrap(true);
-    remote_meta_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    remote_layout->addWidget(remote_meta_label_);
-    remote_preview_ = new QPlainTextEdit(remote_panel);
-    remote_preview_->setReadOnly(true);
-    remote_preview_->setPlaceholderText(QStringLiteral("No remote snapshot selected."));
-    remote_layout->addWidget(remote_preview_, 1);
-
-    compare_splitter->addWidget(local_panel);
-    compare_splitter->addWidget(remote_panel);
-    compare_splitter->setStretchFactor(0, 1);
-    compare_splitter->setStretchFactor(1, 1);
-    compare_splitter->setMinimumHeight(220);
-    layout->addWidget(compare_splitter, 1);
-
-    auto* conflict_actions = new QHBoxLayout();
-    conflict_actions->setContentsMargins(0, 0, 0, 0);
-    conflict_actions->setSpacing(8);
-    use_local_button_ = new QPushButton(QStringLiteral("Use local"), this);
-    use_remote_button_ = new QPushButton(QStringLiteral("Use remote"), this);
-    merge_button_ = new QPushButton(QStringLiteral("Merge"), this);
-    dismiss_button_ = new QPushButton(QStringLiteral("Dismiss"), this);
-    use_local_button_->setEnabled(false);
-    use_remote_button_->setEnabled(false);
-    merge_button_->setEnabled(false);
-    dismiss_button_->setEnabled(false);
-    conflict_actions->addWidget(use_local_button_);
-    conflict_actions->addWidget(use_remote_button_);
-    conflict_actions->addWidget(merge_button_);
-    conflict_actions->addWidget(dismiss_button_);
-    conflict_actions->addStretch(1);
-    layout->addLayout(conflict_actions);
-
-    connect(conflicts_list_, &QListWidget::itemSelectionChanged, this, [this]() {
-      const auto has_selection = conflicts_list_->currentItem() != nullptr;
-      use_local_button_->setEnabled(has_selection);
-      use_remote_button_->setEnabled(has_selection);
-      merge_button_->setEnabled(has_selection);
-      dismiss_button_->setEnabled(has_selection);
-      UpdateConflictPreview();
-    });
-    connect(use_local_button_, &QPushButton::clicked, this, [this]() {
-      if (use_local_conflict_callback_ == nullptr || conflicts_list_->currentItem() == nullptr) {
-        return;
-      }
-      use_local_conflict_callback_(
-          conflicts_list_->currentItem()->data(Qt::UserRole).toString());
-    });
-    connect(use_remote_button_, &QPushButton::clicked, this, [this]() {
-      if (use_remote_conflict_callback_ == nullptr || conflicts_list_->currentItem() == nullptr) {
-        return;
-      }
-      use_remote_conflict_callback_(
-          conflicts_list_->currentItem()->data(Qt::UserRole).toString());
-    });
-    connect(merge_button_, &QPushButton::clicked, this, [this]() {
-      if (open_merge_editor_callback_ == nullptr || conflicts_list_->currentItem() == nullptr) {
-        return;
-      }
-      open_merge_editor_callback_(
-          conflicts_list_->currentItem()->data(Qt::UserRole).toString());
-    });
-    connect(dismiss_button_, &QPushButton::clicked, this, [this]() {
-      if (dismiss_conflict_callback_ == nullptr || conflicts_list_->currentItem() == nullptr) {
-        return;
-      }
-      dismiss_conflict_callback_(
-          conflicts_list_->currentItem()->data(Qt::UserRole).toString());
-    });
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -326,9 +98,9 @@ class SyncDetailsDialog final : public QDialog {
 
     SetValue(overall_status_value_, snapshot.status_text, is_error, is_warning, is_success);
     SetValue(repository_state_value_,
-             QStringLiteral("%1: %2")
-                 .arg(SyncLifecycleStateLabel(snapshot.repository_status.state),
-                      QString::fromStdString(snapshot.repository_status.status_text)),
+             QStringLiteral("%1: %2").arg(
+                 SyncLifecycleStateLabel(snapshot.repository_status.state),
+                 QString::fromStdString(snapshot.repository_status.status_text)),
              snapshot.repository_status.state == storage::SyncLifecycleState::kError,
              snapshot.repository_status.state == storage::SyncLifecycleState::kDisabled,
              snapshot.repository_status.state == storage::SyncLifecycleState::kRunning);
@@ -342,8 +114,7 @@ class SyncDetailsDialog final : public QDialog {
              BoolLabel(snapshot.backend_bootstrap_available, u"Available", u"Missing"),
              !snapshot.backend_bootstrap_available, !snapshot.backend_bootstrap_available,
              snapshot.backend_bootstrap_available);
-    SetValue(backend_sync_value_,
-             BoolLabel(snapshot.backend_sync_enabled, u"Allowed", u"Rejected"),
+    SetValue(backend_sync_value_, BoolLabel(snapshot.backend_sync_enabled, u"Allowed", u"Rejected"),
              !snapshot.backend_sync_enabled, !snapshot.backend_sync_enabled,
              snapshot.backend_sync_enabled);
     SetValue(repository_attached_value_,
@@ -353,19 +124,20 @@ class SyncDetailsDialog final : public QDialog {
              BoolLabel(snapshot.repository_supports_sync, u"Yes", u"No"),
              !snapshot.repository_supports_sync, !snapshot.repository_supports_sync,
              snapshot.repository_supports_sync);
-    SetValue(gateway_url_value_, snapshot.bootstrap.gateway_url.trimmed().isEmpty()
-                                     ? QStringLiteral("Not provided")
-                                     : snapshot.bootstrap.gateway_url,
+    SetValue(gateway_url_value_,
+             snapshot.bootstrap.gateway_url.trimmed().isEmpty() ? QStringLiteral("Not provided")
+                                                                : snapshot.bootstrap.gateway_url,
              false, snapshot.bootstrap.gateway_url.trimmed().isEmpty(),
              !snapshot.bootstrap.gateway_url.trimmed().isEmpty());
-    SetValue(database_value_, snapshot.bootstrap.database_name.trimmed().isEmpty()
-                                  ? QStringLiteral("Not provided")
-                                  : snapshot.bootstrap.database_name,
+    SetValue(database_value_,
+             snapshot.bootstrap.database_name.trimmed().isEmpty()
+                 ? QStringLiteral("Not provided")
+                 : snapshot.bootstrap.database_name,
              false, snapshot.bootstrap.database_name.trimmed().isEmpty(),
              !snapshot.bootstrap.database_name.trimmed().isEmpty());
-    SetValue(auth_mode_value_, snapshot.bootstrap.auth_mode.trimmed().isEmpty()
-                                   ? QStringLiteral("Not provided")
-                                   : snapshot.bootstrap.auth_mode,
+    SetValue(auth_mode_value_,
+             snapshot.bootstrap.auth_mode.trimmed().isEmpty() ? QStringLiteral("Not provided")
+                                                              : snapshot.bootstrap.auth_mode,
              false, snapshot.bootstrap.auth_mode.trimmed().isEmpty(),
              !snapshot.bootstrap.auth_mode.trimmed().isEmpty());
     SetValue(token_passthrough_value_,
@@ -384,14 +156,12 @@ class SyncDetailsDialog final : public QDialog {
              false, snapshot.bootstrap.principal_email.trimmed().isEmpty(),
              !snapshot.bootstrap.principal_email.trimmed().isEmpty());
     SetValue(initial_pull_value_,
-             snapshot.initial_pull_completed
-                 ? QStringLiteral("Completed")
-                 : snapshot.initial_pull_active ? QStringLiteral("In progress")
-                                                : QStringLiteral("Pending"),
+             snapshot.initial_pull_completed ? QStringLiteral("Completed")
+             : snapshot.initial_pull_active  ? QStringLiteral("In progress")
+                                             : QStringLiteral("Pending"),
              false, !snapshot.initial_pull_completed, snapshot.initial_pull_completed);
     SetValue(hydrated_workspaces_value_, JoinOrFallback(snapshot.hydrated_workspace_ids), false,
-             snapshot.hydrated_workspace_ids.isEmpty(),
-             !snapshot.hydrated_workspace_ids.isEmpty());
+             snapshot.hydrated_workspace_ids.isEmpty(), !snapshot.hydrated_workspace_ids.isEmpty());
     SetValue(workspace_hydration_value_, BuildWorkspaceHydrationSummary(snapshot),
              snapshot.workspace_hydration.isEmpty(),
              snapshot.workspace_hydration.isEmpty() ||
@@ -410,55 +180,6 @@ class SyncDetailsDialog final : public QDialog {
              snapshot.conflict_count == 0);
   }
 
-  void UpdateConflictList(const std::vector<storage::DocumentConflictRecord>& conflicts) {
-    current_conflicts_.clear();
-    const auto previous_id =
-        conflicts_list_->currentItem() != nullptr
-            ? conflicts_list_->currentItem()->data(Qt::UserRole).toString()
-            : QString{};
-
-    conflicts_list_->clear();
-    for (const auto& conflict : conflicts) {
-      const auto conflict_id = QString::fromStdString(conflict.id);
-      current_conflicts_.insert(conflict_id, conflict);
-      auto* item = new QListWidgetItem(
-          QStringLiteral("[%1] %2\n%3 vs %4\n%5")
-              .arg(QString::fromStdString(conflict.workspace_id),
-                   QString::fromStdString(conflict.document_id),
-                   QString::fromStdString(conflict.local_updated_by).isEmpty()
-                       ? QStringLiteral("local")
-                       : QString::fromStdString(conflict.local_updated_by),
-                   QString::fromStdString(conflict.remote_updated_by).isEmpty()
-                       ? QStringLiteral("remote")
-                       : QString::fromStdString(conflict.remote_updated_by),
-                   QString::fromStdString(conflict.detected_at)),
-          conflicts_list_);
-      item->setData(Qt::UserRole, conflict_id);
-      if (item->data(Qt::UserRole).toString() == previous_id) {
-        conflicts_list_->setCurrentItem(item);
-      }
-    }
-
-    if (conflicts_list_->currentItem() == nullptr && conflicts_list_->count() > 0) {
-      conflicts_list_->setCurrentRow(0);
-    }
-    use_local_button_->setEnabled(conflicts_list_->currentItem() != nullptr);
-    use_remote_button_->setEnabled(conflicts_list_->currentItem() != nullptr);
-    merge_button_->setEnabled(conflicts_list_->currentItem() != nullptr);
-    dismiss_button_->setEnabled(conflicts_list_->currentItem() != nullptr);
-    UpdateConflictPreview();
-  }
-
-  void SetConflictActions(std::function<void(const QString&)> use_local_conflict_callback,
-                          std::function<void(const QString&)> use_remote_conflict_callback,
-                          std::function<void(const QString&)> open_merge_editor_callback,
-                          std::function<void(const QString&)> dismiss_conflict_callback) {
-    use_local_conflict_callback_ = std::move(use_local_conflict_callback);
-    use_remote_conflict_callback_ = std::move(use_remote_conflict_callback);
-    open_merge_editor_callback_ = std::move(open_merge_editor_callback);
-    dismiss_conflict_callback_ = std::move(dismiss_conflict_callback);
-  }
-
  private:
   static auto CreateValueRow(QFormLayout* form, QWidget* parent, const QString& label_text)
       -> QLabel* {
@@ -473,41 +194,8 @@ class SyncDetailsDialog final : public QDialog {
                        bool is_success) {
     label->setText(text);
     label->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    label->setStyleSheet(QStringLiteral("color: %1;").arg(StateTextColor(is_error, is_warning,
-                                                                         is_success)));
-  }
-
-  void UpdateConflictPreview() {
-    if (local_meta_label_ == nullptr || remote_meta_label_ == nullptr ||
-        local_preview_ == nullptr || remote_preview_ == nullptr) {
-      return;
-    }
-
-    if (conflicts_list_->currentItem() == nullptr) {
-      local_meta_label_->setText(QStringLiteral("No conflict selected."));
-      remote_meta_label_->clear();
-      local_preview_->clear();
-      remote_preview_->clear();
-      return;
-    }
-
-    const auto conflict_id = conflicts_list_->currentItem()->data(Qt::UserRole).toString();
-    const auto it = current_conflicts_.find(conflict_id);
-    if (it == current_conflicts_.end()) {
-      local_meta_label_->setText(QStringLiteral("Conflict payload is unavailable."));
-      remote_meta_label_->clear();
-      local_preview_->clear();
-      remote_preview_->clear();
-      return;
-    }
-
-    const auto& conflict = it.value();
-    local_meta_label_->setText(
-        ConflictSideSummary(QString::fromStdString(conflict.local_updated_by), conflict.base_version));
-    remote_meta_label_->setText(
-        ConflictSideSummary(QString::fromStdString(conflict.remote_updated_by), conflict.base_version));
-    local_preview_->setPlainText(SnapshotPreview(QString::fromStdString(conflict.local_snapshot)));
-    remote_preview_->setPlainText(SnapshotPreview(QString::fromStdString(conflict.remote_snapshot)));
+    label->setStyleSheet(
+        QStringLiteral("color: %1;").arg(StateTextColor(is_error, is_warning, is_success)));
   }
 
   QLabel* summary_label_ = nullptr;
@@ -533,20 +221,6 @@ class SyncDetailsDialog final : public QDialog {
   QLabel* groups_value_ = nullptr;
   QLabel* channels_value_ = nullptr;
   QLabel* pending_conflicts_value_ = nullptr;
-  QListWidget* conflicts_list_ = nullptr;
-  QLabel* local_meta_label_ = nullptr;
-  QLabel* remote_meta_label_ = nullptr;
-  QPlainTextEdit* local_preview_ = nullptr;
-  QPlainTextEdit* remote_preview_ = nullptr;
-  QPushButton* use_local_button_ = nullptr;
-  QPushButton* use_remote_button_ = nullptr;
-  QPushButton* merge_button_ = nullptr;
-  QPushButton* dismiss_button_ = nullptr;
-  QHash<QString, storage::DocumentConflictRecord> current_conflicts_;
-  std::function<void(const QString&)> use_local_conflict_callback_;
-  std::function<void(const QString&)> use_remote_conflict_callback_;
-  std::function<void(const QString&)> open_merge_editor_callback_;
-  std::function<void(const QString&)> dismiss_conflict_callback_;
 };
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
@@ -556,11 +230,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 MainWindow::~MainWindow() = default;
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
-  if ((watched == sync_status_widget_ ||
-       (sync_status_widget_ != nullptr && watched != nullptr &&
-        watched->parent() == sync_status_widget_)) &&
-      event != nullptr &&
-      event->type() == QEvent::MouseButtonRelease) {
+  if ((watched == sync_status_widget_ || (sync_status_widget_ != nullptr && watched != nullptr &&
+                                          watched->parent() == sync_status_widget_)) &&
+      event != nullptr && event->type() == QEvent::MouseButtonRelease) {
     ShowSyncDetailsDialog();
     return true;
   }
@@ -568,9 +240,8 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
   if ((watched == sync_conflicts_widget_ ||
        (sync_conflicts_widget_ != nullptr && watched != nullptr &&
         watched->parent() == sync_conflicts_widget_)) &&
-      event != nullptr &&
-      event->type() == QEvent::MouseButtonRelease) {
-    ShowSyncDetailsDialog();
+      event != nullptr && event->type() == QEvent::MouseButtonRelease) {
+    ReopenConflictWindow();
     return true;
   }
 
@@ -578,7 +249,6 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void MainWindow::SetContext(AppContext* context) {
-
   context_ = context;
   if (context_ != nullptr && context_->backend_client != nullptr) {
     connect(context_->backend_client, &backend::BackendClient::statusChanged, this,
@@ -600,7 +270,7 @@ void MainWindow::SetContext(AppContext* context) {
                   presence_strip_widget_->ClearEditor();
                 } else {
                   presence_strip_widget_->SetEditor(fallback_editor_user_id_,
-                                                   fallback_editor_is_self_);
+                                                    fallback_editor_is_self_);
                 }
               } else {
                 presence_strip_widget_->SetEditor(editor_user_id, editor_is_self);
@@ -643,13 +313,16 @@ void MainWindow::CreateInitialPage() {
   // Create the main page with the application context
   auto* page = new Page(*context_, this);
   connect(page, &Page::settingsRequested, this, [this]() { ShowSettingsDialog(); });
-  connect(page, &Page::documentStatusChanged, this,
-          [this](const QString& message, bool is_error) { UpdateDocumentStatus(message, is_error); });
+  connect(page, &Page::documentStatusChanged, this, [this](const QString& message, bool is_error) {
+    UpdateDocumentStatus(message, is_error);
+  });
   connect(page, &Page::collaborationStatusChanged, this,
           [this](const QString& summary, const QString& details, bool is_warning) {
             UpdateCollaborationStatus(summary, details, is_warning);
           });
   connect(page, &Page::editModeStateChanged, this, &MainWindow::UpdateEditModeUi);
+  connect(page, &Page::documentConflictDetected, this,
+          [this](const QString&, const QString& conflict_id) { ShowConflictWindow(conflict_id); });
   current_page_ = page;
   current_sidebar_widget_ = current_page_->SidebarWidget();
   current_content_widget_ = current_page_->ContentWidget();
@@ -759,55 +432,15 @@ void MainWindow::BuildUi() {
     child->installEventFilter(this);
   }
   sync_conflicts_widget_->setCursor(Qt::PointingHandCursor);
-  sync_conflicts_widget_->setToolTip(QStringLiteral("Open conflict details"));
+  sync_conflicts_widget_->setToolTip(QStringLiteral("Open the conflict resolution window"));
   sync_conflicts_widget_->installEventFilter(this);
   for (auto* child : sync_conflicts_widget_->findChildren<QWidget*>()) {
     child->installEventFilter(this);
   }
-  sync_conflict_use_local_button_ = new QToolButton(collaboration_panel_);
-  sync_conflict_use_local_button_->setObjectName(QStringLiteral("statusLineButton"));
-  sync_conflict_use_local_button_->setText(QStringLiteral("Use local"));
-  sync_conflict_use_local_button_->setToolTip(
-      QStringLiteral("Apply the local version for the next pending sync conflict"));
-  sync_conflict_use_local_button_->setAutoRaise(true);
-  connect(sync_conflict_use_local_button_, &QToolButton::clicked, this,
-          &MainWindow::UseLocalForNextSyncConflict);
-  sync_conflict_use_remote_button_ = new QToolButton(collaboration_panel_);
-  sync_conflict_use_remote_button_->setObjectName(QStringLiteral("statusLineButton"));
-  sync_conflict_use_remote_button_->setText(QStringLiteral("Use remote"));
-  sync_conflict_use_remote_button_->setToolTip(
-      QStringLiteral("Apply the remote version for the next pending sync conflict"));
-  sync_conflict_use_remote_button_->setAutoRaise(true);
-  connect(sync_conflict_use_remote_button_, &QToolButton::clicked, this,
-          &MainWindow::UseRemoteForNextSyncConflict);
-  sync_conflict_merge_button_ = new QToolButton(collaboration_panel_);
-  sync_conflict_merge_button_->setObjectName(QStringLiteral("statusLineButton"));
-  sync_conflict_merge_button_->setText(QStringLiteral("Merge"));
-  sync_conflict_merge_button_->setToolTip(
-      QStringLiteral("Open the merge editor for the next pending sync conflict"));
-  sync_conflict_merge_button_->setAutoRaise(true);
-  connect(sync_conflict_merge_button_, &QToolButton::clicked, this,
-          &MainWindow::OpenMergeEditorForNextSyncConflict);
-  sync_conflict_dismiss_button_ = new QToolButton(collaboration_panel_);
-  sync_conflict_dismiss_button_->setObjectName(QStringLiteral("statusLineButton"));
-  sync_conflict_dismiss_button_->setText(QStringLiteral("Dismiss"));
-  sync_conflict_dismiss_button_->setToolTip(
-      QStringLiteral("Dismiss the next pending sync conflict"));
-  sync_conflict_dismiss_button_->setAutoRaise(true);
-  connect(sync_conflict_dismiss_button_, &QToolButton::clicked, this,
-          &MainWindow::DismissNextSyncConflict);
   sync_conflicts_widget_->hide();
-  sync_conflict_use_local_button_->hide();
-  sync_conflict_use_remote_button_->hide();
-  sync_conflict_merge_button_->hide();
-  sync_conflict_dismiss_button_->hide();
   collaboration_layout->addWidget(edit_mode_widget, 0, Qt::AlignVCenter);
   collaboration_layout->addStretch(1);
   collaboration_layout->addWidget(sync_conflicts_widget_, 0, Qt::AlignVCenter);
-  collaboration_layout->addWidget(sync_conflict_use_local_button_, 0, Qt::AlignVCenter);
-  collaboration_layout->addWidget(sync_conflict_use_remote_button_, 0, Qt::AlignVCenter);
-  collaboration_layout->addWidget(sync_conflict_merge_button_, 0, Qt::AlignVCenter);
-  collaboration_layout->addWidget(sync_conflict_dismiss_button_, 0, Qt::AlignVCenter);
   collaboration_layout->addWidget(presence_strip_widget_, 0, Qt::AlignVCenter);
   header_layout->addWidget(collaboration_panel_, 1);
 
@@ -871,15 +504,6 @@ void MainWindow::UpdateSyncStatus() {
     ApplyStatusTooltip(sync_status_widget_, sync_status_label_, sync_status_badge_,
                        QStringLiteral("Sync service is not configured."));
     sync_conflicts_widget_->hide();
-    if (sync_conflict_use_local_button_ != nullptr) {
-      sync_conflict_use_local_button_->hide();
-    }
-    if (sync_conflict_use_remote_button_ != nullptr) {
-      sync_conflict_use_remote_button_->hide();
-    }
-    if (sync_conflict_dismiss_button_ != nullptr) {
-      sync_conflict_dismiss_button_->hide();
-    }
     return;
   }
 
@@ -907,9 +531,9 @@ void MainWindow::UpdateSyncStatus() {
   const auto pending_conflicts = PendingConflicts(context_->document_repository);
   const auto pending_conflict_count = static_cast<qsizetype>(pending_conflicts.size());
   const auto snapshot_conflict_count = snapshot.conflict_count;
-  const auto effective_conflict_count =
-      snapshot_conflict_count > pending_conflict_count ? snapshot_conflict_count
-                                                       : pending_conflict_count;
+  const auto effective_conflict_count = snapshot_conflict_count > pending_conflict_count
+                                            ? snapshot_conflict_count
+                                            : pending_conflict_count;
   const auto has_pending_conflicts = pending_conflict_count > 0;
   const auto show_conflicts = snapshot.has_conflicts || has_pending_conflicts;
 
@@ -917,53 +541,25 @@ void MainWindow::UpdateSyncStatus() {
     sync_conflicts_label_->setText(
         QStringLiteral("Conflicts: %1").arg(QString::number(effective_conflict_count)));
     sync_conflicts_badge_->setBadge(oclero::qlementine::StatusBadge::Warning);
-    const auto snapshot_matches_repository =
-        snapshot.has_conflicts == has_pending_conflicts &&
-        snapshot_conflict_count == pending_conflict_count;
+    const auto snapshot_matches_repository = snapshot.has_conflicts == has_pending_conflicts &&
+                                             snapshot_conflict_count == pending_conflict_count;
     const auto tooltip =
         snapshot_matches_repository
-            ? QStringLiteral("%1 pending conflict%2. Open sync details to resolve or dismiss.")
+            ? QStringLiteral("%1 pending conflict%2. Click to open the conflict window.")
                   .arg(QString::number(effective_conflict_count),
                        effective_conflict_count == 1 ? QString{} : QStringLiteral("s"))
             : QStringLiteral(
-                  "Snapshot reports %1 conflict%2, repository currently has %3 pending conflict%4. Open sync details to resolve or dismiss.")
+                  "Snapshot reports %1 conflict%2, repository currently has %3 pending conflict%4. "
+                  "Click to open the conflict window.")
                   .arg(QString::number(snapshot_conflict_count),
                        snapshot_conflict_count == 1 ? QString{} : QStringLiteral("s"),
                        QString::number(pending_conflict_count),
                        pending_conflict_count == 1 ? QString{} : QStringLiteral("s"));
-    ApplyStatusTooltip(
-        sync_conflicts_widget_, sync_conflicts_label_, sync_conflicts_badge_, tooltip);
+    ApplyStatusTooltip(sync_conflicts_widget_, sync_conflicts_label_, sync_conflicts_badge_,
+                       tooltip);
     sync_conflicts_widget_->show();
-    if (sync_conflict_use_local_button_ != nullptr) {
-      sync_conflict_use_local_button_->show();
-      sync_conflict_use_local_button_->setEnabled(has_pending_conflicts);
-    }
-    if (sync_conflict_use_remote_button_ != nullptr) {
-      sync_conflict_use_remote_button_->show();
-      sync_conflict_use_remote_button_->setEnabled(has_pending_conflicts);
-    }
-    if (sync_conflict_merge_button_ != nullptr) {
-      sync_conflict_merge_button_->show();
-      sync_conflict_merge_button_->setEnabled(has_pending_conflicts);
-    }
-    if (sync_conflict_dismiss_button_ != nullptr) {
-      sync_conflict_dismiss_button_->show();
-      sync_conflict_dismiss_button_->setEnabled(has_pending_conflicts);
-    }
   } else {
     sync_conflicts_widget_->hide();
-    if (sync_conflict_use_local_button_ != nullptr) {
-      sync_conflict_use_local_button_->hide();
-    }
-    if (sync_conflict_use_remote_button_ != nullptr) {
-      sync_conflict_use_remote_button_->hide();
-    }
-    if (sync_conflict_merge_button_ != nullptr) {
-      sync_conflict_merge_button_->hide();
-    }
-    if (sync_conflict_dismiss_button_ != nullptr) {
-      sync_conflict_dismiss_button_->hide();
-    }
   }
 
   RefreshSyncDetailsDialog();
@@ -972,14 +568,8 @@ void MainWindow::UpdateSyncStatus() {
 void MainWindow::ShowSyncDetailsDialog() {
   if (sync_details_dialog_ == nullptr) {
     sync_details_dialog_ = new SyncDetailsDialog(this);
-    sync_details_dialog_->SetConflictActions(
-        [this](const QString& conflict_id) { UseLocalForSelectedSyncConflict(conflict_id); },
-        [this](const QString& conflict_id) { UseRemoteForSelectedSyncConflict(conflict_id); },
-        [this](const QString& conflict_id) { OpenMergeEditorForSelectedSyncConflict(conflict_id); },
-        [this](const QString& conflict_id) { DismissSelectedSyncConflict(conflict_id); });
-    connect(sync_details_dialog_, &QObject::destroyed, this, [this]() {
-      sync_details_dialog_.clear();
-    });
+    connect(sync_details_dialog_, &QObject::destroyed, this,
+            [this]() { sync_details_dialog_.clear(); });
   }
 
   RefreshSyncDetailsDialog();
@@ -999,93 +589,48 @@ void MainWindow::RefreshSyncDetailsDialog() {
   }
 
   sync_details_dialog_->UpdateFromSnapshot(context_->document_sync_service->Snapshot());
-  sync_details_dialog_->UpdateConflictList(PendingConflicts(context_->document_repository));
 }
 
-void MainWindow::UseLocalForSelectedSyncConflict(const QString& conflict_id) {
-  if (context_ == nullptr || context_->document_repository == nullptr || conflict_id.trimmed().isEmpty()) {
+void MainWindow::ShowConflictWindow(const QString& conflict_id) {
+  if (context_ == nullptr || context_->document_repository == nullptr ||
+      conflict_id.trimmed().isEmpty()) {
     return;
   }
 
-  const auto result = gui::merge::ApplyConflictSideResolution(
-      *context_->document_repository, conflict_id, gui::merge::ConflictResolutionSide::kLocal);
-  if (result.status != gui::merge::MergeResolutionStatus::kApplied) {
-    statusBar()->showMessage(result.message, 5000);
-    return;
+  if (conflict_window_ != nullptr) {
+    conflict_window_->close();
   }
 
-  if (context_->document_sync_service != nullptr) {
-    context_->document_sync_service->RefreshStatus();
-  }
-  RefreshSyncDetailsDialog();
-  UpdateSyncStatus();
-  statusBar()->showMessage(result.message, 3000);
-}
-
-void MainWindow::UseRemoteForSelectedSyncConflict(const QString& conflict_id) {
-  if (context_ == nullptr || context_->document_repository == nullptr || conflict_id.trimmed().isEmpty()) {
-    return;
-  }
-
-  const auto result = gui::merge::ApplyConflictSideResolution(
-      *context_->document_repository, conflict_id, gui::merge::ConflictResolutionSide::kRemote);
-  if (result.status != gui::merge::MergeResolutionStatus::kApplied) {
-    statusBar()->showMessage(result.message, 5000);
-    return;
-  }
-
-  if (context_->document_sync_service != nullptr) {
-    context_->document_sync_service->RefreshStatus();
-  }
-  RefreshSyncDetailsDialog();
-  UpdateSyncStatus();
-  statusBar()->showMessage(result.message, 3000);
-}
-
-void MainWindow::OpenMergeEditorForSelectedSyncConflict(const QString& conflict_id) {
-  if (context_ == nullptr || context_->document_repository == nullptr || conflict_id.trimmed().isEmpty()) {
-    return;
-  }
-
-  auto* dialog = new gui::merge::ConflictMergeDialog(
-      context_->document_repository, conflict_id, gui::page_helpers::EffectiveAuthorId(*context_),
-      this);
+  auto* dialog =
+      new gui::merge::ConflictMergeDialog(context_->document_repository, conflict_id,
+                                          gui::page_helpers::EffectiveAuthorId(*context_), this);
   dialog->setAttribute(Qt::WA_DeleteOnClose, true);
+  dialog->setModal(false);
   connect(dialog, &gui::merge::ConflictMergeDialog::mergeApplied, this, [this]() {
     if (context_->document_sync_service != nullptr) {
       context_->document_sync_service->RefreshStatus();
     }
     RefreshSyncDetailsDialog();
     UpdateSyncStatus();
+    if (current_page_ != nullptr) {
+      current_page_->RefreshCurrentDocumentConflictState();
+    }
   });
+  connect(dialog, &QObject::destroyed, this, [this]() { conflict_window_.clear(); });
+  conflict_window_ = dialog;
   dialog->show();
   dialog->raise();
   dialog->activateWindow();
 }
 
-void MainWindow::DismissSelectedSyncConflict(const QString& conflict_id) {
-  if (context_ == nullptr || context_->document_repository == nullptr || conflict_id.trimmed().isEmpty()) {
+void MainWindow::ReopenConflictWindow() {
+  if (conflict_window_ != nullptr) {
+    conflict_window_->show();
+    conflict_window_->raise();
+    conflict_window_->activateWindow();
     return;
   }
 
-  const auto result = context_->document_repository->DismissConflict(conflict_id.toStdString());
-  if (result.error) {
-    statusBar()->showMessage(
-        QStringLiteral("Conflict dismiss failed: %1")
-            .arg(QString::fromStdString(result.error->message)),
-        4000);
-    return;
-  }
-
-  if (context_->document_sync_service != nullptr) {
-    context_->document_sync_service->RefreshStatus();
-  }
-  RefreshSyncDetailsDialog();
-  UpdateSyncStatus();
-  statusBar()->showMessage(QStringLiteral("Conflict dismissed."), 3000);
-}
-
-void MainWindow::UseLocalForNextSyncConflict() {
   if (context_ == nullptr || context_->document_repository == nullptr) {
     return;
   }
@@ -1095,46 +640,7 @@ void MainWindow::UseLocalForNextSyncConflict() {
     return;
   }
 
-  UseLocalForSelectedSyncConflict(QString::fromStdString(conflict->id));
-}
-
-void MainWindow::UseRemoteForNextSyncConflict() {
-  if (context_ == nullptr || context_->document_repository == nullptr) {
-    return;
-  }
-
-  const auto conflict = FirstPendingConflict(context_->document_repository);
-  if (!conflict.has_value()) {
-    return;
-  }
-
-  UseRemoteForSelectedSyncConflict(QString::fromStdString(conflict->id));
-}
-
-void MainWindow::OpenMergeEditorForNextSyncConflict() {
-  if (context_ == nullptr || context_->document_repository == nullptr) {
-    return;
-  }
-
-  const auto conflict = FirstPendingConflict(context_->document_repository);
-  if (!conflict.has_value()) {
-    return;
-  }
-
-  OpenMergeEditorForSelectedSyncConflict(QString::fromStdString(conflict->id));
-}
-
-void MainWindow::DismissNextSyncConflict() {
-  if (context_ == nullptr || context_->document_repository == nullptr) {
-    return;
-  }
-
-  const auto conflict = FirstPendingConflict(context_->document_repository);
-  if (!conflict.has_value()) {
-    return;
-  }
-
-  DismissSelectedSyncConflict(QString::fromStdString(conflict->id));
+  ShowConflictWindow(QString::fromStdString(conflict->id));
 }
 
 void MainWindow::UpdateDocumentStatus(const QString& message, bool is_error) {
@@ -1224,8 +730,7 @@ void MainWindow::UpdateCollaborationStatus(const QString& summary, const QString
       collaboration_hint_.clear();
     } else if (summary.contains(QStringLiteral("lock lost"), Qt::CaseInsensitive) ||
                summary.contains(QStringLiteral("session expired"), Qt::CaseInsensitive) ||
-               summary.contains(QStringLiteral("unavailable"), Qt::CaseInsensitive) ||
-               is_warning) {
+               summary.contains(QStringLiteral("unavailable"), Qt::CaseInsensitive) || is_warning) {
       if (collaboration_panel_ != nullptr) {
         collaboration_panel_->setProperty("collaborationState", QStringLiteral("attention"));
         collaboration_panel_->style()->unpolish(collaboration_panel_);

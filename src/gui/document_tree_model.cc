@@ -208,6 +208,14 @@ QVariant DocumentTreeModel::data(const QModelIndex& index, int role) const {
     case DocumentTreeModel::kIsWorkspaceRole:
       return item->isWorkspace();
 
+    case DocumentTreeModel::kIsLockedRole:
+      return item->isDocument() &&
+             locked_document_ids_.contains(QString::fromStdString(item->id()));
+
+    case DocumentTreeModel::kIsConflictedRole:
+      return item->isDocument() &&
+             conflicted_document_ids_.contains(QString::fromStdString(item->id()));
+
     case DocumentTreeModel::kWorkspaceIdRole:
       return QString::fromStdString(item->workspaceId());
 
@@ -625,6 +633,22 @@ void DocumentTreeModel::setWorkspaceDecoration(const QString& workspace_id,
 
 QString DocumentTreeModel::workspaceDecoration(const QString& workspace_id) const {
   return workspace_decorations_.value(workspace_id, QString{});
+}
+
+void DocumentTreeModel::setLockedDocumentIds(const QSet<QString>& document_ids) {
+  if (locked_document_ids_ == document_ids) {
+    return;
+  }
+  locked_document_ids_ = document_ids;
+  emit layoutChanged();
+}
+
+void DocumentTreeModel::setConflictedDocumentIds(const QSet<QString>& document_ids) {
+  if (conflicted_document_ids_ == document_ids) {
+    return;
+  }
+  conflicted_document_ids_ = document_ids;
+  emit layoutChanged();
 }
 
 }  // namespace cppwiki::gui

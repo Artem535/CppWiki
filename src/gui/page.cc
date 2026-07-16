@@ -12,6 +12,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QSet>
 #include <QSize>
 #include <QTimer>
 #include <QTreeView>
@@ -287,6 +288,10 @@ void Page::BuildUi() {
           [this](const QString&, const QString& message) {
             emit documentStatusChanged(QStringLiteral("Load error: %1").arg(message), true);
           });
+  connect(editor_bridge_, &bridge::QEditorBridge::documentLoaded, this,
+          [this](const QVariantMap& document) {
+            ApplyConflictStateForDocument(document.value(QStringLiteral("id")).toString());
+          });
 
   ApplyBridgeSessionContext();
   LoadEditor();
@@ -419,6 +424,7 @@ void Page::PopulatePageList() {
     workspace_tree_model_->setDocuments(summaries);
   }
   RestoreExpandedDocumentIds(expanded_ids);
+  RefreshConflictedDocumentIndicators();
 }
 
 void Page::RefreshPageListIfChanged() {
@@ -437,6 +443,7 @@ void Page::RefreshPageListIfChanged() {
   }
   RestoreExpandedDocumentIds(expanded_ids);
   ExpandWorkspace(current_workspace_id_);
+  RefreshConflictedDocumentIndicators();
 }
 
 void Page::OnTreePressed(const QModelIndex& index) {
@@ -654,6 +661,56 @@ void Page::OpenDocumentWithAccess(const QString& page_id) {
         ApplyDocumentAccessState(access_state);
         editor_bridge_->RequestOpenDocument(page_id);
       });
+}
+
+void Page::ApplyConflictStateForDocument(const QString& page_id) {
+  if (editor_bridge_ == nullptr || page_id.isEmpty()) {
+    return;
+  }
+
+  bool has_conflict = false;
+  if (context_.document_repository != nullptr) {
+    const auto listed = context_.document_repository->ListConflicts();
+    if (!listed.error) {
+      for (const auto& conflict : listed.conflicts) {
+        if (conflict.resolution_state == "pending" &&
+            QString::fromStdString(conflict.document_id) == page_id) {
+          has_conflict = true;
+          if (page_id == selected_page_id_) {
+            emit documentConflictDetected(page_id, QString::fromStdString(conflict.id));
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  if (page_id == selected_page_id_) {
+    editor_bridge_->SetCurrentDocumentConflicted(has_conflict);
+  }
+
+  RefreshConflictedDocumentIndicators();
+}
+
+void Page::RefreshConflictedDocumentIndicators() {
+  if (workspace_tree_model_ == nullptr || context_.document_repository == nullptr) {
+    return;
+  }
+
+  QSet<QString> conflicted_ids;
+  const auto listed = context_.document_repository->ListConflicts();
+  if (!listed.error) {
+    for (const auto& conflict : listed.conflicts) {
+      if (conflict.resolution_state == "pending") {
+        conflicted_ids.insert(QString::fromStdString(conflict.document_id));
+      }
+    }
+  }
+  workspace_tree_model_->setConflictedDocumentIds(conflicted_ids);
+}
+
+void Page::RefreshCurrentDocumentConflictState() {
+  ApplyConflictStateForDocument(selected_page_id_);
 }
 
 void Page::RefreshSelectedDocumentAccess() {

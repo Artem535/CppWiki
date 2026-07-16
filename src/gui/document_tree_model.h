@@ -3,6 +3,7 @@
 
 #include <QAbstractItemModel>
 #include <QMimeData>
+#include <QSet>
 #include <QStringList>
 #include <memory>
 #include <optional>
@@ -132,6 +133,11 @@ class DocumentTreeModel : public QAbstractItemModel {
   void setWorkspaceDecoration(const QString& workspace_id, const QString& decoration);
   [[nodiscard]] QString workspaceDecoration(const QString& workspace_id) const;
 
+  // Read-only-source indicators (ADR-013): "locked by another collaborator" and
+  // "has an unresolved sync conflict" are independent, visually distinct states.
+  void setLockedDocumentIds(const QSet<QString>& document_ids);
+  void setConflictedDocumentIds(const QSet<QString>& document_ids);
+
   // Icon roles
   static constexpr int kIsContainerRole = Qt::UserRole + 1;
   static constexpr int kIsLockedRole = Qt::UserRole + 2;
@@ -140,6 +146,7 @@ class DocumentTreeModel : public QAbstractItemModel {
   static constexpr int kAddChildActionRole = Qt::UserRole + 5;
   static constexpr int kIsWorkspaceRole = Qt::UserRole + 6;
   static constexpr int kWorkspaceIdRole = Qt::UserRole + 7;
+  static constexpr int kIsConflictedRole = Qt::UserRole + 8;
   static constexpr auto kDocumentIdMimeType = "application/x-cppwiki-document-id";
 
  signals:
@@ -157,6 +164,8 @@ class DocumentTreeModel : public QAbstractItemModel {
   std::unique_ptr<DocumentTreeItem> root_item_;
   QStringList workspace_ids_;
   QHash<QString, QString> workspace_decorations_;
+  QSet<QString> locked_document_ids_;
+  QSet<QString> conflicted_document_ids_;
 };
 
 }  // namespace cppwiki::gui
