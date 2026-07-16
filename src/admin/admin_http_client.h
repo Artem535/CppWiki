@@ -5,7 +5,7 @@
 
 namespace cppwiki::admin {
 
-// Minimal libcurl-based HTTP client for cppwiki-admin talking to
+// Minimal cpr-based HTTP client for cppwiki-admin talking to
 // cppwiki_server's admin_handler/workspace_handler, following the same
 // request shape as src/backend/BackendClient (Bearer auth header, JSON
 // body/response), just without any Qt dependency.

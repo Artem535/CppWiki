@@ -39,7 +39,20 @@ find_package(reflectcpp CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
 if (CPPWIKI_BUILD_ADMIN_CLI)
-    find_package(CURL REQUIRED)
+    # cpr wraps libcurl with a modern, requests-like C++ API (cpr::Get/Post,
+    # cpr::Header, cpr::Timeout) and no manual curl_easy_*/curl_slist_*
+    # calls. CPR_USE_SYSTEM_CURL keeps it linking against the system libcurl
+    # (matching this repo's existing `find_package(CURL REQUIRED)` usage)
+    # rather than vendoring its own copy.
+    set(CPR_USE_SYSTEM_CURL ON CACHE BOOL "Use system libcurl for cpr" FORCE)
+    set(CPR_BUILD_TESTS OFF CACHE BOOL "Disable cpr tests" FORCE)
+    FetchContent_Declare(
+            cpr
+            GIT_REPOSITORY https://github.com/libcpr/cpr.git
+            GIT_TAG 1.11.2
+            GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(cpr)
 
     set(FTXUI_BUILD_DOCS OFF CACHE BOOL "Disable ftxui docs" FORCE)
     set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "Disable ftxui examples" FORCE)
