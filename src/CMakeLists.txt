@@ -161,6 +161,44 @@ install(TARGETS cppwiki_app
 )
 endif ()
 
+if (CPPWIKI_BUILD_ADMIN_CLI)
+    add_executable(cppwiki_admin_cli
+            admin/admin_client.cc
+            admin/admin_client.h
+            admin/admin_http_client.cc
+            admin/admin_http_client.h
+            admin/admin_response_parsing.cc
+            admin/admin_response_parsing.h
+            admin/admin_token_store.cc
+            admin/admin_token_store.h
+            admin/system_keychain_backend.cc
+            admin/system_keychain_backend.h
+            admin/main.cc
+    )
+
+    target_include_directories(cppwiki_admin_cli
+            PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
+    target_link_libraries(cppwiki_admin_cli
+            PRIVATE
+            CURL::libcurl
+            reflectcpp::reflectcpp
+            ftxui::component
+            ftxui::dom
+            ftxui::screen
+            keychain
+    )
+
+    set_target_properties(cppwiki_admin_cli
+            PROPERTIES
+            OUTPUT_NAME cppwiki-admin
+    )
+
+    cppwiki_apply_common_options(cppwiki_admin_cli)
+endif ()
+
 if (CPPWIKI_BUILD_SERVER)
     find_package(absl CONFIG REQUIRED)
     string(TOUPPER "${CMAKE_BUILD_TYPE}" CPPWIKI_BUILD_TYPE_UPPER)
