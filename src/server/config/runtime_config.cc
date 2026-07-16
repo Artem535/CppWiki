@@ -35,12 +35,20 @@ struct SyncConfigFile final {
   std::optional<std::map<std::string, std::vector<std::string>>> group_channels;
 };
 
+struct AiConfigFile final {
+  std::optional<bool> enabled;
+  std::optional<std::string> base_url;
+  std::optional<std::string> api_key;
+  std::optional<std::string> model;
+};
+
 struct RuntimeConfigFile final {
   std::optional<std::string> bind_host;
   std::optional<std::uint16_t> port;
   std::optional<std::string> log_level;
   std::optional<AuthConfigFile> auth;
   std::optional<SyncConfigFile> sync;
+  std::optional<AiConfigFile> ai;
 };
 
 auto Normalize(std::string_view value) -> std::string {
@@ -158,6 +166,19 @@ void ApplyEnvironmentOverrides(RuntimeConfig& cfg) {
   if (auto value = ReadEnv("CPPWIKI_SYNC_DATABASE_NAME")) {
     cfg.sync_database_name = std::move(value);
   }
+
+  if (auto value = ReadBoolEnv("CPPWIKI_AI_ENABLED")) {
+    cfg.ai_enabled = *value;
+  }
+  if (auto value = ReadEnv("CPPWIKI_AI_BASE_URL")) {
+    cfg.ai_base_url = std::move(value);
+  }
+  if (auto value = ReadEnv("CPPWIKI_AI_API_KEY")) {
+    cfg.ai_api_key = std::move(value);
+  }
+  if (auto value = ReadEnv("CPPWIKI_AI_MODEL")) {
+    cfg.ai_model = std::move(value);
+  }
 }
 
 }  // namespace detail
@@ -177,6 +198,10 @@ auto RuntimeConfig::FromDefaults() -> RuntimeConfig {
       .sync_admin_url = std::nullopt,
       .sync_role_channels = {},
       .sync_group_channels = {},
+      .ai_enabled = false,
+      .ai_base_url = std::nullopt,
+      .ai_api_key = std::nullopt,
+      .ai_model = std::nullopt,
       .swagger = false,
   };
 }
@@ -222,6 +247,12 @@ auto RuntimeConfig::FromCli(int argc, char* argv[]) -> RuntimeConfig {
       cfg.sync_role_channels = file_config.sync->role_channels.value_or(decltype(cfg.sync_role_channels){});
       cfg.sync_group_channels = file_config.sync->group_channels.value_or(decltype(cfg.sync_group_channels){});
     }
+    if (file_config.ai) {
+      cfg.ai_enabled = file_config.ai->enabled.value_or(false);
+      cfg.ai_base_url = file_config.ai->base_url;
+      cfg.ai_api_key = file_config.ai->api_key;
+      cfg.ai_model = file_config.ai->model;
+    }
   }
 
   if (cli_bind_host) {
@@ -265,6 +296,12 @@ auto RuntimeConfig::ToStaticConfigYaml() const -> std::string {
           .admin_url = sync_admin_url,
           .role_channels = sync_role_channels,
           .group_channels = sync_group_channels,
+      },
+      ServerAiConfig{
+          .enabled = ai_enabled,
+          .base_url = ai_base_url,
+          .api_key = ai_api_key,
+          .model = ai_model,
       },
       swagger);
 }

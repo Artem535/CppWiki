@@ -44,6 +44,10 @@ const documents: DocumentSummary[] = [
   },
 ];
 
+const mockAiChunkListeners = new Set<(requestId: string, chunk: string) => void>();
+const mockAiCompletedListeners = new Set<(requestId: string) => void>();
+const mockAiFailedListeners = new Set<(requestId: string, error: string) => void>();
+
 export function createMockEditorBridge(): EditorBridge {
   return {
     async getBridgeInfo(): Promise<BridgeResult<BridgeInfo>> {
@@ -133,6 +137,39 @@ export function createMockEditorBridge(): EditorBridge {
 
     onDocumentSelectionCleared() {
       return () => undefined;
+    },
+
+    async startAiRequest(prompt, contextText) {
+      const requestId = `mock-ai-${Math.random().toString(36).slice(2)}`;
+      const mockReply = `[mock ${prompt}] ${contextText}`.trim();
+      window.setTimeout(() => {
+        for (const char of mockReply) {
+          mockAiChunkListeners.forEach((listener) => listener(requestId, char));
+        }
+        mockAiCompletedListeners.forEach((listener) => listener(requestId));
+      }, 10);
+      return requestId;
+    },
+
+    onAiChunkReceived(callback) {
+      mockAiChunkListeners.add(callback);
+      return () => {
+        mockAiChunkListeners.delete(callback);
+      };
+    },
+
+    onAiRequestCompleted(callback) {
+      mockAiCompletedListeners.add(callback);
+      return () => {
+        mockAiCompletedListeners.delete(callback);
+      };
+    },
+
+    onAiRequestFailed(callback) {
+      mockAiFailedListeners.add(callback);
+      return () => {
+        mockAiFailedListeners.delete(callback);
+      };
     },
   };
 }

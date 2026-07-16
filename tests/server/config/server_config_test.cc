@@ -78,6 +78,48 @@ auto TestRuntimeConfigOverrides() -> void {
   Require(cfg.LogLevel() == "debug", "log level override should be applied");
 }
 
+auto TestRuntimeConfigAiSectionFromYaml() -> void {
+  const auto config_path =
+      std::filesystem::temp_directory_path() / "cppwiki_runtime_config_ai_test.yaml";
+  {
+    std::ofstream output(config_path);
+    Require(output.good(), "temporary yaml config file should be writable");
+    output << R"(bind_host: "0.0.0.0"
+port: 9092
+log_level: info
+ai:
+  enabled: true
+  base_url: "https://example.test/v1/chat/completions"
+  api_key: "test-key"
+  model: "test-model"
+)";
+  }
+
+  std::string config_arg = config_path.string();
+  char app_name[] = "cppwiki-server";
+  char config_flag[] = "--config";
+  char* argv[] = {app_name, config_flag, config_arg.data()};
+
+  const auto cfg = cppwiki::server::config::RuntimeConfig::FromCli(3, argv);
+  Require(cfg.ai_enabled, "yaml ai.enabled should be applied");
+  Require(cfg.ai_base_url == std::optional<std::string>{"https://example.test/v1/chat/completions"},
+          "yaml ai.base_url should be applied");
+  Require(cfg.ai_api_key == std::optional<std::string>{"test-key"},
+          "yaml ai.api_key should be applied");
+  Require(cfg.ai_model == std::optional<std::string>{"test-model"},
+          "yaml ai.model should be applied");
+
+  const auto yaml = cfg.ToStaticConfigYaml();
+  Require(yaml.find("ai-config:") != std::string::npos,
+          "static config must contain ai-config component");
+  Require(yaml.find("handler-ai-chat:") != std::string::npos,
+          "static config must contain the ai chat handler");
+  Require(yaml.find("path: /api/v1/ai/chat") != std::string::npos,
+          "static config must contain the ai chat handler path");
+
+  std::filesystem::remove(config_path);
+}
+
 auto TestStaticConfigGeneration() -> void {
   cppwiki::server::config::RuntimeConfig cfg =
       cppwiki::server::config::RuntimeConfig::FromDefaults();
@@ -126,6 +168,7 @@ auto main() -> int {
   TestDefaultRuntimeConfig();
   TestRuntimeConfigFromYaml();
   TestRuntimeConfigOverrides();
+  TestRuntimeConfigAiSectionFromYaml();
   TestStaticConfigGeneration();
 
   spdlog::info("cppwiki_server_config_tests passed");

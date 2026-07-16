@@ -882,6 +882,21 @@ auto TestDeleteDocumentSucceedsWhenCurrentDocumentEditable() -> void {
   RequireSuccessEnvelope(response);
 }
 
+auto TestStartAiRequestReturnsUniqueRequestIds() -> void {
+  cppwiki::bridge::QEditorBridge bridge;
+
+  const auto first_id = bridge.startAiRequest(QStringLiteral("Make this punchier"),
+                                              QStringLiteral("Some paragraph text."),
+                                              QStringLiteral("rewrite"));
+  const auto second_id = bridge.startAiRequest(QStringLiteral("Continue writing"),
+                                               QStringLiteral("Some paragraph text."),
+                                               QStringLiteral("autocomplete"));
+
+  Require(!first_id.isEmpty(), "startAiRequest must return a non-empty request id");
+  Require(!second_id.isEmpty(), "startAiRequest must return a non-empty request id");
+  Require(first_id != second_id, "each startAiRequest call must return a distinct request id");
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -914,6 +929,7 @@ auto main() -> int {
   TestValidSnapshot();
   TestInvalidJsonSnapshot();
   TestInvalidRootSnapshot();
+  TestStartAiRequestReturnsUniqueRequestIds();
 
   spdlog::info("cppwiki_bridge_tests passed");
   return EXIT_SUCCESS;

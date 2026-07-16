@@ -5,6 +5,8 @@
 #include <userver/server/handlers/auth/auth_checker_factory.hpp>
 #include <userver/server/handlers/auth/handler_auth_config.hpp>
 
+#include "server/components/ai_config_component.h"
+#include "server/handlers/ai_handler.h"
 #include "server/handlers/health_handler.h"
 #include "server/handlers/admin_handler.h"
 #include "server/handlers/lock_handler.h"
@@ -58,6 +60,8 @@ auto RegisterCppWikiComponents(userver::components::ComponentList& component_lis
   component_list.Append<handlers::SyncConfigHandler>();
   component_list.Append<handlers::WorkspaceHandler>();
   component_list.Append<handlers::ProtectedPageHandler>();
+  component_list.Append<AiConfigComponent>();
+  component_list.Append<handlers::AiHandler>();
 
   static const auto kAuthCheckerRegistration =
       (userver::server::handlers::auth::RegisterAuthCheckerFactory<AuthCheckerFactory>(), true);

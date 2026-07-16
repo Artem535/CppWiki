@@ -2,6 +2,8 @@ add_executable(cppwiki_bridge_tests
   bridge/editor_bridge_test.cc
   ${CMAKE_SOURCE_DIR}/src/bridge/editor_bridge.cc
   ${CMAKE_SOURCE_DIR}/src/bridge/editor_bridge.h
+  ${CMAKE_SOURCE_DIR}/src/auth/ai_api_key_store.cc
+  ${CMAKE_SOURCE_DIR}/src/auth/ai_api_key_store.h
   ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
   ${CMAKE_SOURCE_DIR}/src/document/document.h
   ${CMAKE_SOURCE_DIR}/src/document/document_validator.cc
@@ -20,6 +22,8 @@ target_include_directories(cppwiki_bridge_tests
 target_link_libraries(cppwiki_bridge_tests
   PRIVATE
     Qt6::Core
+    Qt6::Network
+    qt6keychain
     spdlog::spdlog
     reflectcpp::reflectcpp
 )

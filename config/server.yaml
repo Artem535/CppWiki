@@ -19,6 +19,16 @@ sync:
    group_channels:
       team.engineering: ["workspace:engineering"]
 
+# BlockNote AI MVP (ADR-010/ADR-011/ADR-012): server-mediated AI backend.
+# Disabled by default; the desktop client falls back to the local-key path
+# (Settings > AI) when this is disabled. Never commit a real api_key here —
+# set it via the CPPWIKI_AI_API_KEY environment variable instead.
+ai:
+   enabled: false
+   base_url: https://api.openai.com/v1/chat/completions
+   api_key: ""
+   model: gpt-4o-mini
+
 # telemetry:
 #   enabled: false
 #   service_name: cppwiki-server

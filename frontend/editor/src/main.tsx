@@ -1,12 +1,15 @@
 import "@blocknote/core/fonts/inter.css";
 import "@blocknote/mantine/style.css";
+import "@blocknote/xl-ai/style.css";
 import "./styles.css";
 
 import { BlockNoteView } from "@blocknote/mantine";
-import { useCreateBlockNote } from "@blocknote/react";
-import { useEffect, useRef, useState } from "react";
+import { FormattingToolbar, FormattingToolbarController, SuggestionMenuController, useCreateBlockNote } from "@blocknote/react";
+import { AIMenuController, AIToolbarButton, createAIExtension, getAISlashMenuItems } from "@blocknote/xl-ai";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createEditorBridge } from "./bridge";
+import { BridgeChatTransport } from "./bridge/aiChatTransport";
 import {
   bridgeApiVersion,
   type EditorBridge,
@@ -24,12 +27,33 @@ function EditorApp() {
   const [isEditable, setIsEditable] = useState(true);
   const [, setIsLoadingDocument] = useState(false);
   const [hasLoadedDocumentOnce, setHasLoadedDocumentOnce] = useState(false);
+  const [aiFeaturesEnabled, setAiFeaturesEnabled] = useState(false);
+  const [aiAutocompleteEnabled, setAiAutocompleteEnabled] = useState(false);
   const editorTheme: "dark" = "dark";
   const snapshot_timer = useRef<number | null>(null);
   const replacing_document = useRef(false);
   const selected_page_id = useRef<string | null>(null);
+  // The bridge is created asynchronously (see effect below); this ref lets
+  // the AI transports (constructed once, up front) reach the live bridge
+  // instance once it exists, without recreating the editor.
+  const bridge_ref = useRef<EditorBridge | null>(null);
 
-  const editor = useCreateBlockNote({}, []);
+  // ADR-012: forwards every AI request (both the formatting-toolbar rewrite
+  // and the slash-command autocomplete — MVP scope, ADR-010) through
+  // EditorBridge, never fetching directly from this JS context. `mode` is a
+  // best-effort label used only for the C++ side's system-prompt prefix; the
+  // AIExtension itself decides which UI action triggered a given request.
+  const aiTransport = useMemo(
+    () => new BridgeChatTransport(() => bridge_ref.current, "rewrite"),
+    [],
+  );
+
+  const editor = useCreateBlockNote(
+    {
+      extensions: [createAIExtension({ transport: aiTransport })],
+    },
+    [],
+  );
   const showOverlay = !selectedPageId;
   const shouldMountEditor = hasLoadedDocumentOnce;
 
@@ -84,6 +108,7 @@ function EditorApp() {
       }
 
       setBridge(created_bridge);
+      bridge_ref.current = created_bridge;
 
       const bridge_info = await created_bridge.getBridgeInfo();
       if (
@@ -94,6 +119,9 @@ function EditorApp() {
         console.error("Unsupported editor bridge contract", bridge_info);
         return;
       }
+
+      setAiFeaturesEnabled(bridge_info.result.aiFeaturesEnabled ?? false);
+      setAiAutocompleteEnabled(bridge_info.result.aiAutocompleteEnabled ?? false);
 
       unsubscribers.push(
         created_bridge.onDocumentOpenRequested((pageId) => {
@@ -192,7 +220,31 @@ function EditorApp() {
               editable={isEditable}
               onChange={handleEditorChange}
               theme={editorTheme}
-            />
+              formattingToolbar={!aiFeaturesEnabled}
+            >
+              {aiFeaturesEnabled ? (
+                <>
+                  <AIMenuController />
+                  <FormattingToolbarController
+                    formattingToolbar={() => (
+                      <FormattingToolbar>
+                        <AIToolbarButton />
+                      </FormattingToolbar>
+                    )}
+                  />
+                  {aiAutocompleteEnabled ? (
+                    <SuggestionMenuController
+                      triggerCharacter="/"
+                      getItems={async (query) =>
+                        getAISlashMenuItems(editor).filter((item) =>
+                          item.title.toLowerCase().includes(query.toLowerCase()),
+                        )
+                      }
+                    />
+                  ) : null}
+                </>
+              ) : null}
+            </BlockNoteView>
           </div>
         ) : null}
         {showOverlay ? (

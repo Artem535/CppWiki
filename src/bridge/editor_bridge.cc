@@ -7,10 +7,16 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QMetaObject>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QProcessEnvironment>
+#include <QUrl>
 #include <QVariant>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <queue>
 #include <set>
 #include <string_view>
@@ -18,6 +24,7 @@
 #include <variant>
 #include <vector>
 
+#include "auth/ai_api_key_store.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
 #include "core/uuid.h"
@@ -48,10 +55,12 @@ auto ErrorResponse(const QString& code, const QString& message) -> QVariantMap {
   };
 }
 
-auto BridgeInfo() -> QVariantMap {
+auto BridgeInfo(bool ai_features_enabled, bool ai_autocomplete_enabled) -> QVariantMap {
   return QVariantMap{
       {QStringLiteral("apiVersion"), constants::kBridgeApiVersion},
       {QStringLiteral("namespace"), ToQString(constants::kDocumentsBridgeNamespace)},
+      {QStringLiteral("aiFeaturesEnabled"), ai_features_enabled},
+      {QStringLiteral("aiAutocompleteEnabled"), ai_autocomplete_enabled},
       {QStringLiteral("methods"),
        QVariantList{
            ToQString(constants::kBridgeMethodGetBridgeInfo),
@@ -453,7 +462,7 @@ void QEditorBridge::ClearCurrentDocumentSelection() {
 }
 
 QVariantMap QEditorBridge::getBridgeInfo() {
-  return SuccessResponse(BridgeInfo());
+  return SuccessResponse(BridgeInfo(ai_features_enabled_, ai_autocomplete_enabled_));
 }
 
 QVariantMap QEditorBridge::getInitialDocument() {
@@ -891,6 +900,174 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
   }
 
   return SuccessResponse(QVariant{});
+}
+
+void QEditorBridge::SetAiTransportConfig(bool backend_enabled, QString backend_base_url,
+                                         QString backend_access_token) {
+  ai_backend_enabled_ = backend_enabled;
+  ai_backend_base_url_ = std::move(backend_base_url);
+  ai_backend_access_token_ = std::move(backend_access_token);
+}
+
+void QEditorBridge::SetAiApiKeyStore(auth::AiApiKeyStore* key_store) {
+  ai_api_key_store_ = key_store;
+}
+
+void QEditorBridge::SetAiFeatureFlags(bool features_enabled, bool autocomplete_enabled) {
+  ai_features_enabled_ = features_enabled;
+  ai_autocomplete_enabled_ = autocomplete_enabled;
+}
+
+QString QEditorBridge::startAiRequest(const QString& prompt, const QString& context_text,
+                                      const QString& mode) {
+  const auto request_id = QString::fromStdString(GenerateUuidString());
+
+  if (ai_backend_enabled_ && !ai_backend_base_url_.isEmpty()) {
+    // Server-mediated (default): forward to cppwiki_server, which holds the
+    // provider key (ADR-012).
+    StartServerMediatedAiRequest(request_id, prompt, context_text, mode);
+  } else if (ai_api_key_store_ != nullptr) {
+    // Local-key fallback (ADR-012 addendum, serverless installs): read the
+    // key from the OS keychain and call the provider directly from C++.
+    StartLocalKeyAiRequest(request_id, prompt, context_text, mode);
+  } else {
+    // Deferred emit so callers can subscribe to the returned request id
+    // before the failure signal fires.
+    QMetaObject::invokeMethod(
+        this,
+        [this, request_id]() {
+          emit aiRequestFailed(request_id,
+                               QStringLiteral("No AI backend configured and no local API key "
+                                              "is set. Configure one in Settings > AI."));
+        },
+        Qt::QueuedConnection);
+  }
+
+  return request_id;
+}
+
+void QEditorBridge::StartServerMediatedAiRequest(const QString& request_id, const QString& prompt,
+                                                 const QString& context_text,
+                                                 const QString& mode) {
+  QJsonObject body;
+  body.insert(QStringLiteral("prompt"), prompt);
+  body.insert(QStringLiteral("context"), context_text);
+  body.insert(QStringLiteral("mode"), mode);
+
+  const QUrl url(ai_backend_base_url_ + QStringLiteral("/api/v1/ai/chat"));
+  const auto auth_header =
+      ai_backend_access_token_.isEmpty()
+          ? QString()
+          : QStringLiteral("Bearer ") + ai_backend_access_token_;
+  CallProviderAndRelay(request_id, url, QJsonDocument(body).toJson(QJsonDocument::Compact),
+                      auth_header);
+}
+
+void QEditorBridge::StartLocalKeyAiRequest(const QString& request_id, const QString& prompt,
+                                           const QString& context_text, const QString& mode) {
+  // The keychain read is asynchronous; wire a one-shot connection so we call
+  // the provider once the key (or its absence) is known.
+  auto* key_store = ai_api_key_store_;
+  auto loaded_connection = std::make_shared<QMetaObject::Connection>();
+  auto missing_connection = std::make_shared<QMetaObject::Connection>();
+
+  *loaded_connection = connect(
+      key_store, &auth::AiApiKeyStore::apiKeyLoaded, this,
+      [this, request_id, prompt, context_text, mode, loaded_connection,
+       missing_connection](const QString& api_key) {
+        QObject::disconnect(*loaded_connection);
+        QObject::disconnect(*missing_connection);
+
+        QJsonObject body;
+        QJsonArray messages;
+        QJsonObject message;
+        message.insert(QStringLiteral("role"), QStringLiteral("user"));
+        message.insert(QStringLiteral("content"),
+                       mode + QStringLiteral(": ") + context_text + QStringLiteral("\n\n") +
+                           prompt);
+        messages.append(message);
+        body.insert(QStringLiteral("messages"), messages);
+
+        const QUrl url(QStringLiteral("https://api.openai.com/v1/chat/completions"));
+        CallProviderAndRelay(request_id, url,
+                            QJsonDocument(body).toJson(QJsonDocument::Compact),
+                            QStringLiteral("Bearer ") + api_key);
+      });
+
+  *missing_connection = connect(
+      key_store, &auth::AiApiKeyStore::apiKeyMissing, this,
+      [this, request_id, loaded_connection, missing_connection]() {
+        QObject::disconnect(*loaded_connection);
+        QObject::disconnect(*missing_connection);
+        emit aiRequestFailed(request_id,
+                             QStringLiteral("No local AI provider API key is configured."));
+      });
+
+  key_store->Load();
+}
+
+void QEditorBridge::CallProviderAndRelay(const QString& request_id, const QUrl& url,
+                                        const QByteArray& body,
+                                        const QString& auth_header_value) {
+  if (network_manager_ == nullptr) {
+    network_manager_ = new QNetworkAccessManager(this);
+  }
+
+  QNetworkRequest request(url);
+  request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+  if (!auth_header_value.isEmpty()) {
+    request.setRawHeader("Authorization", auth_header_value.toUtf8());
+  }
+
+  auto* reply = network_manager_->post(request, body);
+  connect(reply, &QNetworkReply::finished, this, [this, request_id, reply]() {
+    reply->deleteLater();
+
+    if (reply->error() != QNetworkReply::NoError) {
+      emit aiRequestFailed(request_id, reply->errorString());
+      return;
+    }
+
+    const auto raw = reply->readAll();
+    QJsonParseError parse_error{};
+    const auto document = QJsonDocument::fromJson(raw, &parse_error);
+    if (parse_error.error != QJsonParseError::NoError || !document.isObject()) {
+      emit aiRequestFailed(request_id, QStringLiteral("AI provider returned an invalid response."));
+      return;
+    }
+
+    const auto object = document.object();
+    QString text;
+    if (object.contains(QStringLiteral("result")) && object.value(QStringLiteral("result")).isObject()) {
+      // cppwiki_server envelope: { ok, result: { text } }.
+      text = object.value(QStringLiteral("result")).toObject().value(QStringLiteral("text")).toString();
+    } else if (object.contains(QStringLiteral("choices"))) {
+      // Raw OpenAI-compatible chat completion response (local-key path).
+      const auto choices = object.value(QStringLiteral("choices")).toArray();
+      if (!choices.isEmpty()) {
+        text = choices.first().toObject().value(QStringLiteral("message")).toObject()
+                   .value(QStringLiteral("content")).toString();
+      }
+    }
+
+    if (text.isEmpty()) {
+      emit aiRequestFailed(request_id, QStringLiteral("AI provider returned an empty response."));
+      return;
+    }
+
+    EmitChunkedCompletion(request_id, text);
+  });
+}
+
+void QEditorBridge::EmitChunkedCompletion(const QString& request_id, const QString& full_text) {
+  // Relays the (already-complete) response as a sequence of bridge signals,
+  // since chunk-by-chunk delivery is required by the bridge signal contract
+  // (ADR-012) even when the upstream call itself was not a native stream.
+  constexpr int kChunkSize = 24;
+  for (int offset = 0; offset < full_text.size(); offset += kChunkSize) {
+    emit aiChunkReceived(request_id, full_text.mid(offset, kChunkSize));
+  }
+  emit aiRequestCompleted(request_id);
 }
 
 }  // namespace cppwiki::bridge
