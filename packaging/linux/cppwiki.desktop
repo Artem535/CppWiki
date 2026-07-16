@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=CppWiki
+Comment=Desktop-first offline-first wiki platform
+Exec=cppwiki
+Icon=cppwiki
+Categories=Office;Utility;
+Terminal=false

@@ -154,6 +154,11 @@ set_target_properties(cppwiki_app
 )
 
 qt_finalize_executable(cppwiki_app)
+
+install(TARGETS cppwiki_app
+        RUNTIME DESTINATION bin
+        BUNDLE DESTINATION .
+)
 endif ()
 
 if (CPPWIKI_BUILD_SERVER)
