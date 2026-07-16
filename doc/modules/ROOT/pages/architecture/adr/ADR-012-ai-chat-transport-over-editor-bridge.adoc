@@ -61,3 +61,58 @@ for everything else, is mediated by `EditorBridge`.
 * Streaming responses must be relayed as a sequence of bridge signals (chunk-by-chunk)
   rather than a native browser `ReadableStream`, which is more plumbing on both the C++ and
   JS sides than the default integration.
+
+---
+
+== Addendum (2026-07-16) — Serverless Builds: Local-Key Fallback
+
+=== Context
+
+CppWiki is offline-first, and `cppwiki_server` is not mandatory: a user can run the desktop
+app against local storage only, with no backend configured. The original decision above
+assumed the AI provider API key lives server-side and every AI request is proxied through
+`cppwiki_server`. That leaves no path to AI features at all for a serverless install.
+
+=== Decision
+
+`EditorBridge`'s custom `ChatTransport` gets two backends behind the same interface:
+
+* *Server-mediated* (default, unchanged): if a backend is configured, the request is
+  forwarded to `cppwiki_server`, which holds the API key and calls the AI provider.
+* *Local-key fallback*: if no backend is configured, the transport instead reads a
+  user-supplied API key from local secure storage (`qt-keychain`, the same mechanism
+  `AuthTokenStore` already uses — see the admin CLI's planned reuse of it in
+  `Admin_Surface_Backlog.adoc`) and calls the AI provider directly from C++.
+
+In both cases, the call still originates from C++ inside `EditorBridge`, not from JS.
+`QWebEngineView` gains no new network egress path either way — the fallback only changes
+*where* the key and the outbound HTTP call live (local keychain + direct provider call vs.
+server-held key + proxied call), not *who* makes the call. This keeps the transport a single
+interface with two implementations selected by whether a backend is configured, rather than
+a special case inside the editor/JS layer.
+
+The settings UI's AI section (ADR-013-adjacent settings work, `SegmentedControl` AI page)
+must expose the local API key field only when no backend is configured, and must state
+plainly that in this mode requests go directly from the user's machine to the AI provider,
+not through `cppwiki_server`.
+
+=== Consequences
+
+==== Positive
+
+* Serverless/offline-first users keep access to AI features instead of losing them
+  outright — this was a real gap in the original decision.
+* No exception to the "editor gets no raw network access" rule: both backends are reached
+  from the same C++-side transport, never from JS.
+
+==== Negative
+
+* Two code paths (server-mediated, local-key) to implement, secure, and test instead of
+  one; the local-key path needs its own error handling for provider-side rate limits/costs
+  that `cppwiki_server` would otherwise absorb or manage centrally.
+* Local-key users bear their own AI provider costs and rate limits directly, and are
+  trusting their own machine's keychain rather than server-side secret management — this
+  must be communicated clearly in the settings UI, not left implicit.
+* The two backends must be kept behavior-compatible (same `ChatTransport` contract) as
+  BlockNote's AI extension evolves, doubling the maintenance surface flagged as a risk in
+  the original decision above.
