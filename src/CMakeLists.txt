@@ -183,7 +183,7 @@ if (CPPWIKI_BUILD_ADMIN_CLI)
 
     target_link_libraries(cppwiki_admin_cli
             PRIVATE
-            CURL::libcurl
+            cpr::cpr
             reflectcpp::reflectcpp
             ftxui::component
             ftxui::dom

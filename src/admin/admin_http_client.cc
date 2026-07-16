@@ -1,8 +1,9 @@
 #include "admin/admin_http_client.h"
 
-#include <curl/curl.h>
-
+#include <cstdint>
 #include <utility>
+
+#include <cpr/cpr.h>
 
 #include "admin/admin_response_parsing.h"
 
@@ -10,10 +11,27 @@ namespace cppwiki::admin {
 
 namespace {
 
-auto WriteCallback(char* contents, size_t size, size_t nmemb, void* user_data) -> size_t {
-  auto* body = static_cast<std::string*>(user_data);
-  body->append(contents, size * nmemb);
-  return size * nmemb;
+auto BuildHeaders(const std::string& access_token) -> cpr::Header {
+  cpr::Header headers{{"Content-Type", "application/json"}};
+  if (!access_token.empty()) {
+    headers["Authorization"] = "Bearer " + access_token;
+  }
+  return headers;
+}
+
+auto ToResponse(const cpr::Response& cpr_response) -> AdminHttpClient::Response {
+  AdminHttpClient::Response response;
+
+  if (cpr_response.error) {
+    response.network_ok = false;
+    response.network_error = cpr_response.error.message;
+    return response;
+  }
+
+  response.network_ok = true;
+  response.status_code = static_cast<long>(cpr_response.status_code);
+  response.body = cpr_response.text;
+  return response;
 }
 
 }  // namespace
@@ -42,52 +60,20 @@ auto AdminHttpClient::Post(const std::string& path, const std::string& json_body
 
 auto AdminHttpClient::Perform(const std::string& path, const std::string* json_body) const
     -> Response {
-  Response response;
-
-  CURL* curl = curl_easy_init();
-  if (curl == nullptr) {
-    response.network_error = "Failed to initialize HTTP client (curl_easy_init failed).";
-    return response;
-  }
-
   const auto url = BuildApiUrl(base_url_, path);
-  std::string response_body;
+  const auto headers = BuildHeaders(access_token_);
+  const auto timeout = cpr::Timeout{static_cast<int32_t>(timeout_ms_)};
+  const auto connect_timeout = cpr::ConnectTimeout{static_cast<int32_t>(timeout_ms_)};
 
-  curl_slist* headers = nullptr;
-  headers = curl_slist_append(headers, "Content-Type: application/json");
-  if (!access_token_.empty()) {
-    const auto auth_header = "Authorization: Bearer " + access_token_;
-    headers = curl_slist_append(headers, auth_header.c_str());
-  }
-
-  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms_);
-  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, timeout_ms_);
-  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-
+  cpr::Response cpr_response;
   if (json_body != nullptr) {
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_body->c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(json_body->size()));
-  }
-
-  const CURLcode result = curl_easy_perform(curl);
-  if (result != CURLE_OK) {
-    response.network_ok = false;
-    response.network_error = curl_easy_strerror(result);
+    cpr_response = cpr::Post(
+        cpr::Url{url}, headers, timeout, connect_timeout, cpr::Body{*json_body});
   } else {
-    response.network_ok = true;
-    long status_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-    response.status_code = status_code;
-    response.body = std::move(response_body);
+    cpr_response = cpr::Get(cpr::Url{url}, headers, timeout, connect_timeout);
   }
 
-  curl_slist_free_all(headers);
-  curl_easy_cleanup(curl);
-  return response;
+  return ToResponse(cpr_response);
 }
 
 }  // namespace cppwiki::admin
