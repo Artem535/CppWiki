@@ -3,9 +3,17 @@ import "@blocknote/mantine/style.css";
 import "@blocknote/xl-ai/style.css";
 import "./styles.css";
 
+import { filterSuggestionItems } from "@blocknote/core";
 import { en as coreEnDictionary } from "@blocknote/core/locales";
 import { BlockNoteView } from "@blocknote/mantine";
-import { FormattingToolbar, FormattingToolbarController, SuggestionMenuController, useCreateBlockNote } from "@blocknote/react";
+import {
+  FormattingToolbar,
+  FormattingToolbarController,
+  getDefaultReactSlashMenuItems,
+  getFormattingToolbarItems,
+  SuggestionMenuController,
+  useCreateBlockNote,
+} from "@blocknote/react";
 import { AIMenuController, AIToolbarButton, createAIExtension, getAISlashMenuItems } from "@blocknote/xl-ai";
 import { en as aiEnDictionary } from "@blocknote/xl-ai/locales";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -232,10 +240,14 @@ function EditorApp() {
               {aiFeaturesEnabled ? (
                 <>
                   <AIMenuController />
+                  {/* AI is added alongside BlockNote's standard formatting toolbar items
+                      (bold/italic/link/color/etc, from getFormattingToolbarItems()), not
+                      instead of them — passing FormattingToolbar only <AIToolbarButton />
+                      would drop every standard item. */}
                   <FormattingToolbarController
                     formattingToolbar={() => (
                       <FormattingToolbar>
-                        <AIToolbarButton />
+                        {[...getFormattingToolbarItems(), <AIToolbarButton key="aiButton" />]}
                       </FormattingToolbar>
                     )}
                   />
@@ -243,8 +255,9 @@ function EditorApp() {
                     <SuggestionMenuController
                       triggerCharacter="/"
                       getItems={async (query) =>
-                        getAISlashMenuItems(editor).filter((item) =>
-                          item.title.toLowerCase().includes(query.toLowerCase()),
+                        filterSuggestionItems(
+                          [...getDefaultReactSlashMenuItems(editor), ...getAISlashMenuItems(editor)],
+                          query,
                         )
                       }
                     />
