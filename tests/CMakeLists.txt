@@ -397,6 +397,22 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
 endif()
 
 if(CPPWIKI_BUILD_SERVER)
+  # Mirrors the equivalent computation in src/CMakeLists.txt: needed to link
+  # cppwiki_server_ai_chat_service_tests, which (via ai_chat_service.cc)
+  # pulls in userver's HTTP client and its re2/abseil dependencies. Variables
+  # set in src/CMakeLists.txt's scope are not visible here since tests/ is a
+  # sibling add_subdirectory(), not a child of src/.
+  find_package(absl CONFIG REQUIRED)
+  string(TOUPPER "${CMAKE_BUILD_TYPE}" CPPWIKI_BUILD_TYPE_UPPER)
+  get_target_property(
+      CPPWIKI_ABSL_RAW_HASH_SET_ARCHIVE
+      absl::raw_hash_set
+      "IMPORTED_LOCATION_${CPPWIKI_BUILD_TYPE_UPPER}"
+  )
+  if (NOT CPPWIKI_ABSL_RAW_HASH_SET_ARCHIVE)
+    get_target_property(CPPWIKI_ABSL_RAW_HASH_SET_ARCHIVE absl::raw_hash_set IMPORTED_LOCATION)
+  endif ()
+
   add_executable(cppwiki_server_config_tests
     server/config/server_config_test.cc
     ${CMAKE_SOURCE_DIR}/src/server/config/runtime_config.cc
@@ -481,6 +497,42 @@ if(CPPWIKI_BUILD_SERVER)
   add_test(
     NAME cppwiki_server_lock_stub_tests
     COMMAND cppwiki_server_lock_stub_tests
+  )
+
+  add_executable(cppwiki_server_ai_chat_service_tests
+    server/service/ai_chat_service_test.cc
+    ${CMAKE_SOURCE_DIR}/src/server/service/ai_chat_service.cc
+    ${CMAKE_SOURCE_DIR}/src/server/service/ai_chat_service.h
+    ${CMAKE_SOURCE_DIR}/src/server/dto/ai_response.h
+  )
+
+  target_include_directories(cppwiki_server_ai_chat_service_tests
+    PRIVATE
+      ${CMAKE_SOURCE_DIR}/src
+  )
+
+  target_link_libraries(cppwiki_server_ai_chat_service_tests
+    PRIVATE
+      spdlog::spdlog
+      userver::core
+      absl::any
+      absl::base
+      absl::bits
+      -Wl,--whole-archive
+      ${CPPWIKI_ABSL_RAW_HASH_SET_ARCHIVE}
+      -Wl,--no-whole-archive
+      re2::re2
+      absl::check
+      absl::log
+      absl::log_initialize
+      absl::raw_hash_set
+  )
+
+  cppwiki_apply_common_options(cppwiki_server_ai_chat_service_tests)
+
+  add_test(
+    NAME cppwiki_server_ai_chat_service_tests
+    COMMAND cppwiki_server_ai_chat_service_tests
   )
 
   add_executable(cppwiki_server_auth_checker_tests

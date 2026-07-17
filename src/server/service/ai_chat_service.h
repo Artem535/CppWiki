@@ -5,10 +5,22 @@
 #include <string>
 
 #include <userver/clients/http/client.hpp>
+#include <userver/formats/json/value.hpp>
 
 #include "server/dto/ai_response.h"
 
 namespace cppwiki::server::service {
+
+// Extracts the assistant's reply text from an OpenAI-compatible
+// `/chat/completions` response body (`choices[0].message.content`). Handles
+// both the common plain-string shape and the content-parts-array shape used
+// by some OpenAI-compatible backends (in particular vision-capable models,
+// which often reply with `content: [{"type": "text", "text": "..."}]` even
+// for text-only completions). Throws `std::runtime_error` if `choices` is
+// missing/empty, or if `content` is present but not a recognized shape.
+// Exposed here (rather than kept file-local) so it can be unit-tested
+// without a live provider.
+auto ExtractCompletionText(const userver::formats::json::Value& response) -> std::string;
 
 struct AiProviderConfig final {
   bool enabled = false;
