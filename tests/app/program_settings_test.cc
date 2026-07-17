@@ -145,7 +145,7 @@ auto TestSettingsRoundTrip() -> void {
       cppwiki::ToQString(cppwiki::constants::kOrganizationName), app_data_directory,
       database_directory, editor_dist_directory, backend_base_url, true, auth_authorization_url,
       auth_token_url, auth_client_id, auth_redirect_uri, true, false, QString(), true, 15, true,
-      true);
+      true, true);
   program_settings.SaveToSettings(settings);
   settings.sync();
 
@@ -176,6 +176,8 @@ auto TestSettingsRoundTrip() -> void {
           "saved AI features enabled flag should round-trip through QSettings");
   Require(reloaded.AiAutocompleteEnabled(),
           "saved AI autocomplete enabled flag should round-trip through QSettings");
+  Require(reloaded.AiInlineSuggestionsEnabled(),
+          "saved AI inline suggestions enabled flag should round-trip through QSettings");
 }
 
 }  // namespace

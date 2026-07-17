@@ -99,3 +99,15 @@ button {
     min-height: 100vh;
   }
 }
+
+/* Inline ghost-text suggestions (issue #59): dimmed, non-interactive text
+   rendered at the cursor via a ProseMirror widget decoration. Matches the
+   editor's dark theme via --app-text-muted rather than a hardcoded color. */
+.cppwiki-ghost-text {
+  color: var(--app-text-muted);
+  opacity: 0.75;
+  font-style: italic;
+  pointer-events: none;
+  user-select: none;
+  white-space: pre-wrap;
+}

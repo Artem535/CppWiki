@@ -57,6 +57,10 @@ export function createMockEditorBridge(): EditorBridge {
         result: {
           apiVersion: bridgeApiVersion,
           namespace: "wiki.documents",
+          // Mock bridge (no Qt/QWebChannel): enable inline suggestions by
+          // default so the feature is exercisable in `npm run dev` without a
+          // full desktop build.
+          aiInlineSuggestionsEnabled: true,
           methods: [
             "getBridgeInfo",
             "getInitialDocument",
