@@ -42,13 +42,17 @@ class Application final {
 };
 
 // Returns the process-wide oclero::qlementine::QlementineStyle instance created by
-// Application, bypassing QApplication::style(). This is needed because once a non-empty
-// application-wide stylesheet is applied (see ApplyApplicationStylesheet()), Qt wraps
-// QApplication::style() in an internal QStyleSheetStyle proxy; qobject_cast<QlementineStyle*>
-// against that proxy fails, breaking any qlementine widget (e.g.
-// oclero::qlementine::SegmentedControl) that reads theme colors/fonts by downcasting its own
-// style() directly. Widgets affected by this should call widget->setStyle(GetQlementineStyle())
-// explicitly to keep getting the real QlementineStyle regardless of the app-wide stylesheet.
+// Application. Useful for code that wants the real style object directly (e.g. a dialog
+// that isn't parented under MainWindow and so never risks having its style() wrapped).
+//
+// Note this is NOT a general fix for hand-painted qlementine widgets (Switch,
+// SegmentedControl, ...) losing their theme colors: once any ancestor up to a widget's
+// top-level window has a non-empty styleSheet(), Qt's QStyleSheetStyle wraps that widget's
+// style() regardless of any setStyle() call made on it afterwards — setStyle() itself gets
+// intercepted by the same mechanism. The real fix is to never give the top-level window
+// (MainWindow) a stylesheet in the first place; see
+// MainWindow::ApplyStylesheetToSafeDescendants()'s comment for how cppwiki.qss is applied
+// instead.
 [[nodiscard]] auto GetQlementineStyle() -> oclero::qlementine::QlementineStyle*;
 
 }  // namespace cppwiki

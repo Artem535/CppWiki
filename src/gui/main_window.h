@@ -50,19 +50,31 @@ class MainWindow final : public QMainWindow {
   void SetContext(AppContext* context);
   bool eventFilter(QObject* watched, QEvent* event) override;
 
-  // Re-pins hand-painted qlementine widgets (e.g. editModeSwitch) to the real QlementineStyle.
-  // Must be called after Application has set the process-wide style (see GetQlementineStyle()
-  // in application.h) — MainWindow is a plain Application member, so it's fully constructed,
-  // including BuildUi(), before that happens; pinning from inside BuildUi() itself would only
-  // ever see a null style.
-  void PinHandPaintedWidgetsToQlementineStyle();
-
  signals:
   void settingsChanged();
 
  private:
   void BuildUi();
   void CreateInitialPage();
+
+  // Applies the app-wide cppwiki.qss to every widget below MainWindow that needs CSS-driven
+  // styling AND is not an ancestor of edit_mode_switch_ (an oclero::qlementine::Switch).
+  //
+  // Switch paints itself by qobject_cast<QlementineStyle*>(this->style()) and falls back to
+  // plain colors when that fails. Qt's QStyleSheetStyle wraps a widget's style() — even one
+  // explicitly assigned via setStyle() — the moment ANY ancestor up to the top-level window
+  // has a non-empty styleSheet(); there is no public API to exempt one descendant from that.
+  // A prior fix (PR #36) tried pinning edit_mode_switch_'s style() after the fact; it didn't
+  // stick because setStyle() itself gets intercepted and re-wrapped by the same mechanism as
+  // long as MainWindow (the top-level ancestor) carries a stylesheet.
+  //
+  // So MainWindow itself is never given a stylesheet. Instead, each widget that needs
+  // cppwiki.qss rules is styled individually, as long as it isn't on the path from
+  // edit_mode_switch_ up to MainWindow. collaboration_panel_ and header_row ARE on that path
+  // (collaboration_panel_ -> edit_mode_widget -> edit_mode_switch_), so collaboration_panel_
+  // paints its own background/border in code (see CollaborationPanelFrame) instead of via
+  // QSS, and header_row simply relies on QWidget's default (transparent) painting.
+  void ApplyStylesheetToSafeDescendants();
   void ShowSettingsDialog();
   void UpdateBackendStatus();
   void UpdateSyncStatus();
