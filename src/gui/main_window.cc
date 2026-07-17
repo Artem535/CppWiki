@@ -452,6 +452,13 @@ void MainWindow::BuildUi() {
       MakeStatusWidget(QStringLiteral("Sync: disabled"), this);
   std::tie(sync_conflicts_widget_, sync_conflicts_badge_, sync_conflicts_label_) =
       MakeStatusWidget(QStringLiteral("Conflicts: 0"), this);
+  // MakeStatusWidget() doesn't set an objectName, so these had no cppwiki.qss rule at all and
+  // fell back to the default (black, light-palette) QLabel text color against the dark status
+  // bar. Name them so the rule added below actually applies.
+  document_status_label_->setObjectName(QStringLiteral("statusLineLabel"));
+  backend_status_label_->setObjectName(QStringLiteral("statusLineLabel"));
+  sync_status_label_->setObjectName(QStringLiteral("statusLineLabel"));
+  sync_conflicts_label_->setObjectName(QStringLiteral("statusLineLabel"));
   sync_status_widget_->setCursor(Qt::PointingHandCursor);
   sync_status_widget_->setToolTip(QStringLiteral("Open sync details"));
   sync_status_widget_->installEventFilter(this);
