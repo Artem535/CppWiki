@@ -61,6 +61,12 @@ Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   g_qlementine_style = qlementine_style;
   QApplication::setStyle(qlementine_style);
   ApplyApplicationStylesheet(&main_window_);
+  // main_window_ is a plain Application member, so it (and everything BuildUi() constructs,
+  // e.g. the edit-mode Switch) is fully built before this constructor body runs — earlier than
+  // g_qlementine_style above is set. Any hand-painted qlementine widget that needs to pin
+  // itself to the real style (see GetQlementineStyle()'s comment) has to do it after this
+  // point, not from inside BuildUi().
+  main_window_.PinHandPaintedWidgetsToQlementineStyle();
   auth_session_manager_ = std::make_unique<auth::AuthSessionManager>(&qt_application_);
   backend_client_ = std::make_unique<backend::BackendClient>(&qt_application_);
   document_sync_service_ = std::make_unique<sync::DocumentSyncService>(&qt_application_);

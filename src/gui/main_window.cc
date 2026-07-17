@@ -234,6 +234,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
 MainWindow::~MainWindow() = default;
 
+void MainWindow::PinHandPaintedWidgetsToQlementineStyle() {
+  auto* qlementine_style = cppwiki::GetQlementineStyle();
+  if (qlementine_style == nullptr || edit_mode_switch_ == nullptr) {
+    return;
+  }
+  // See application.h's GetQlementineStyle() comment: MainWindow carries a non-empty
+  // stylesheet, so descendants' style() resolves to Qt's QStyleSheetStyle proxy, breaking
+  // this hand-painted widget's qobject_cast<QlementineStyle*>(style()).
+  edit_mode_switch_->setStyle(qlementine_style);
+}
+
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
   if ((watched == sync_status_widget_ || (sync_status_widget_ != nullptr && watched != nullptr &&
                                           watched->parent() == sync_status_widget_)) &&
@@ -416,12 +427,6 @@ void MainWindow::BuildUi() {
   edit_mode_switch_ = new oclero::qlementine::Switch(edit_mode_widget);
   edit_mode_switch_->setObjectName(QStringLiteral("editModeSwitch"));
   edit_mode_switch_->setEnabled(false);
-  // See application.h's GetQlementineStyle() comment: MainWindow carries a non-empty
-  // stylesheet, so descendants' style() resolves to Qt's QStyleSheetStyle proxy, breaking
-  // this hand-painted widget's qobject_cast<QlementineStyle*>(style()). Pin the real style.
-  if (auto* qlementine_style = cppwiki::GetQlementineStyle()) {
-    edit_mode_switch_->setStyle(qlementine_style);
-  }
   connect(edit_mode_switch_, &oclero::qlementine::Switch::toggled, this, [this](bool checked) {
     if (current_page_ != nullptr) {
       current_page_->SetEditModeEnabled(checked);

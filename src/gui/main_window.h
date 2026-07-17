@@ -50,6 +50,13 @@ class MainWindow final : public QMainWindow {
   void SetContext(AppContext* context);
   bool eventFilter(QObject* watched, QEvent* event) override;
 
+  // Re-pins hand-painted qlementine widgets (e.g. editModeSwitch) to the real QlementineStyle.
+  // Must be called after Application has set the process-wide style (see GetQlementineStyle()
+  // in application.h) — MainWindow is a plain Application member, so it's fully constructed,
+  // including BuildUi(), before that happens; pinning from inside BuildUi() itself would only
+  // ever see a null style.
+  void PinHandPaintedWidgetsToQlementineStyle();
+
  signals:
   void settingsChanged();
 
