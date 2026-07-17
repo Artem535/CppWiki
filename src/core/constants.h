@@ -71,6 +71,8 @@ inline constexpr std::string_view kSettingsApplicationFontPointSizeKey =
     "appearance/applicationFontPointSize";
 inline constexpr std::string_view kSettingsAiFeaturesEnabledKey = "ai/featuresEnabled";
 inline constexpr std::string_view kSettingsAiAutocompleteEnabledKey = "ai/autocompleteEnabled";
+inline constexpr std::string_view kSettingsAccentColorKey = "appearance/accentColor";
+inline constexpr std::string_view kDefaultAccentColorKey = "blue";
 
 inline constexpr std::string_view kDocumentsCollectionName = "documents";
 inline constexpr std::string_view kLocalDocumentsCollectionName = "local_documents";

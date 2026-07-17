@@ -247,6 +247,7 @@ void Page::BuildUi() {
 
   content_widget_ = new QWidget(this);
   content_widget_->setObjectName(QStringLiteral("pageContentHost"));
+  content_widget_->setAttribute(Qt::WA_StyledBackground, true);
   auto* content_layout = new QVBoxLayout(content_widget_);
   content_layout->setContentsMargins(0, 0, 0, 0);
   content_layout->setSpacing(0);

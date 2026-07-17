@@ -3,6 +3,8 @@ qt_add_executable(cppwiki_app
         MANUAL_FINALIZATION
         WIN32
         MACOSX_BUNDLE
+        app/accent_color.cc
+        app/accent_color.h
         app/app_context.h
         app/application.cc
         app/application.h

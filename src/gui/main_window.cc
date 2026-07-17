@@ -237,7 +237,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
 MainWindow::~MainWindow() = default;
 
-void MainWindow::ApplyStylesheetToSafeDescendants() {
+void MainWindow::ApplyStylesheetToSafeDescendants(AccentColor accent_color) {
   // See main_window.h's comment on this method for the full story. In short: Qt's
   // QStyleSheetStyle wraps a widget's style() (even a style you explicitly assigned with
   // setStyle()) as soon as ANY ancestor up to the top-level window has a non-empty
@@ -247,6 +247,7 @@ void MainWindow::ApplyStylesheetToSafeDescendants() {
   // descendant), the stylesheet is applied individually to each widget below that is NOT
   // an ancestor of edit_mode_switch_. collaboration_panel_ IS such an ancestor and paints
   // its own background/border in code instead (see CollaborationPanelFrame).
+  current_accent_color_ = accent_color;
   for (auto* target : {static_cast<QWidget*>(workspace_rail_),
                        static_cast<QWidget*>(presence_strip_widget_),
                        static_cast<QWidget*>(edit_mode_label_),
@@ -256,7 +257,7 @@ void MainWindow::ApplyStylesheetToSafeDescendants() {
                        sync_conflicts_widget_, current_sidebar_widget_,
                        current_content_widget_}) {
     if (target != nullptr) {
-      ApplyApplicationStylesheet(target);
+      ApplyApplicationStylesheet(target, accent_color);
     }
   }
 }
@@ -367,7 +368,7 @@ void MainWindow::CreateInitialPage() {
   // shell_widget_, not ancestors of edit_mode_switch_, so they're safe to style directly (see
   // ApplyStylesheetToSafeDescendants()'s comment). Re-applied here since Page (and therefore
   // these two widgets) is recreated each time CreateInitialPage() runs.
-  ApplyStylesheetToSafeDescendants();
+  ApplyStylesheetToSafeDescendants(current_accent_color_);
   setWindowTitle(QStringLiteral("CppWiki - %1").arg(current_page_->Title()));
   UpdateDocumentStatus(QStringLiteral("Document: ready"), false);
   UpdateCollaborationStatus(QStringLiteral("Collab: idle"),
@@ -379,20 +380,16 @@ void MainWindow::ShowSettingsDialog() {
     return;
   }
 
-  // Deliberately not parented to `this` (MainWindow). Historically MainWindow carried its own
-  // style sheet, and Qt cascades an ancestor's style sheet down to *all* descendants —
-  // including dialogs that pop up as their own top-level window solely because a QWidget
-  // parent was supplied for ownership/centering — wrapping this dialog's (and its children's,
-  // e.g. SegmentedControl's) QStyle in an internal QStyleSheetStyle proxy and breaking
-  // qobject_cast<QlementineStyle*>(style()) inside AbstractItemListWidget/SegmentedControl
-  // (confirmed empirically: even giving the dialog its own explicit *empty* style sheet did not
-  // prevent the wrap, it only neutralized inherited rules). MainWindow no longer carries a
-  // stylesheet at all (see MainWindow::ApplyStylesheetToSafeDescendants()'s comment), but this
-  // dialog is kept detached regardless — it's simpler than re-verifying the wrap can't happen
-  // some other way, and avoids re-litigating this every time cppwiki.qss changes. Centering is
-  // done manually below to preserve the "opens over the main window" UX without the QWidget
-  // parent/child link.
-  gui::SettingsDialog dialog(context_->settings, nullptr);
+  // Parented to `this` (MainWindow) so window managers see the standard transient-for
+  // relationship a modal settings dialog should have — on tiling WMs (e.g. Hyprland) this is
+  // what makes the dialog float over the tiled layout instead of being tiled in as its own
+  // window (regressed when this was briefly unparented; see the fix for the report that this
+  // dialog stopped floating). This is safe from the QStyleSheetStyle wrap that motivated the
+  // original unparenting: MainWindow itself never carries a stylesheet at all (see
+  // MainWindow::ApplyStylesheetToSafeDescendants()'s comment) — only specific safe-descendant
+  // widgets do, and this dialog isn't one of them — so parenting it here doesn't put it in a
+  // styled ancestor chain.
+  gui::SettingsDialog dialog(context_->settings, this);
   dialog.setModal(true);
   if (!frameGeometry().isEmpty()) {
     const auto center = frameGeometry().center();
@@ -425,6 +422,14 @@ class CollaborationPanelFrame final : public QFrame {
  public:
   using QFrame::QFrame;
 
+  // ADR-016: the "viewing" state's tint is the user's chosen accent color, not a fixed color
+  // like the other three semantic states (editing/read-only/attention stay fixed regardless
+  // of accent). Set by MainWindow::ApplyAccentColor().
+  void SetAccentColor(AccentColor accent_color) {
+    accent_color_ = accent_color;
+    update();
+  }
+
  protected:
   void paintEvent(QPaintEvent* /*event*/) override {
     QPainter painter(this);
@@ -437,8 +442,9 @@ class CollaborationPanelFrame final : public QFrame {
       background = QColor(28, 201, 156, 20);
       border = QColor(28, 201, 156, 82);
     } else if (state == QStringLiteral("viewing")) {
-      background = QColor(65, 152, 255, 15);
-      border = QColor(65, 152, 255, 46);
+      const auto accent = AccentColorBaseColor(accent_color_);
+      background = QColor(accent.red(), accent.green(), accent.blue(), 15);
+      border = QColor(accent.red(), accent.green(), accent.blue(), 46);
     } else if (state == QStringLiteral("read-only")) {
       background = QColor(255, 193, 87, 20);
       border = QColor(255, 193, 87, 71);
@@ -454,9 +460,19 @@ class CollaborationPanelFrame final : public QFrame {
     painter.setPen(QPen(border, 1));
     painter.drawPath(path);
   }
+
+ private:
+  AccentColor accent_color_ = AccentColor::kBlue;
 };
 
 }  // namespace
+
+void MainWindow::ApplyAccentColor(AccentColor accent_color) {
+  ApplyStylesheetToSafeDescendants(accent_color);
+  if (auto* panel = static_cast<CollaborationPanelFrame*>(collaboration_panel_)) {
+    panel->SetAccentColor(accent_color);
+  }
+}
 
 void MainWindow::BuildUi() {
   setWindowTitle(QStringLiteral("CppWiki"));
@@ -600,7 +616,7 @@ void MainWindow::BuildUi() {
   // ApplyStylesheetToSafeDescendants()'s comment. current_sidebar_widget_/
   // current_content_widget_ don't exist yet at this point (CreateInitialPage() creates them
   // later, in SetContext()), so this call re-runs there too.
-  ApplyStylesheetToSafeDescendants();
+  ApplyStylesheetToSafeDescendants(current_accent_color_);
 }
 
 void MainWindow::HandleModeSelected(gui::WorkspaceRailWidget::Mode mode) {

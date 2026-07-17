@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QPointer>
 
+#include "app/accent_color.h"
 #include "gui/workspace_rail_widget.h"
 
 class QGridLayout;
@@ -50,6 +51,13 @@ class MainWindow final : public QMainWindow {
   void SetContext(AppContext* context);
   bool eventFilter(QObject* watched, QEvent* event) override;
 
+  // ADR-016: re-styles the safe-descendant widgets with the new accent color (see
+  // ApplyStylesheetToSafeDescendants() below) and repaints collaboration_panel_'s
+  // "viewing"-state tint, which can't go through QSS since collaboration_panel_ is an
+  // ancestor of edit_mode_switch_ and never gets a stylesheet at all. Called by
+  // Application::ApplyAppearanceFromSettings() whenever the user's chosen accent changes.
+  void ApplyAccentColor(AccentColor accent_color);
+
  signals:
   void settingsChanged();
 
@@ -74,7 +82,7 @@ class MainWindow final : public QMainWindow {
   // (collaboration_panel_ -> edit_mode_widget -> edit_mode_switch_), so collaboration_panel_
   // paints its own background/border in code (see CollaborationPanelFrame) instead of via
   // QSS, and header_row simply relies on QWidget's default (transparent) painting.
-  void ApplyStylesheetToSafeDescendants();
+  void ApplyStylesheetToSafeDescendants(AccentColor accent_color);
   void ShowSettingsDialog();
   void UpdateBackendStatus();
   void UpdateSyncStatus();
@@ -132,6 +140,7 @@ class MainWindow final : public QMainWindow {
   QLabel* sync_conflicts_label_ = nullptr;
   QPointer<SyncDetailsDialog> sync_details_dialog_;
   QPointer<gui::merge::ConflictMergeDialog> conflict_window_;
+  AccentColor current_accent_color_ = AccentColor::kBlue;
 };
 
 }  // namespace cppwiki
