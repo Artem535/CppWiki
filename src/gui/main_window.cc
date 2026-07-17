@@ -9,6 +9,8 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenuBar>
+#include <QPainter>
+#include <QPainterPath>
 #include <QPointer>
 #include <QPushButton>
 #include <QSettings>
@@ -26,6 +28,7 @@
 
 #include "app/app_context.h"
 #include "app/application.h"
+#include "app/application_stylesheet.h"
 #include "app/program_settings.h"
 #include "auth/auth_session_manager.h"
 #include "backend/backend_client.h"
@@ -234,15 +237,28 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
 MainWindow::~MainWindow() = default;
 
-void MainWindow::PinHandPaintedWidgetsToQlementineStyle() {
-  auto* qlementine_style = cppwiki::GetQlementineStyle();
-  if (qlementine_style == nullptr || edit_mode_switch_ == nullptr) {
-    return;
+void MainWindow::ApplyStylesheetToSafeDescendants() {
+  // See main_window.h's comment on this method for the full story. In short: Qt's
+  // QStyleSheetStyle wraps a widget's style() (even a style you explicitly assigned with
+  // setStyle()) as soon as ANY ancestor up to the top-level window has a non-empty
+  // styleSheet(); there is no public way to opt a single descendant out of that once an
+  // ancestor is styled. So instead of styling MainWindow itself (which would poison
+  // edit_mode_switch_'s style() and break its qlementine theme colors, since it's a
+  // descendant), the stylesheet is applied individually to each widget below that is NOT
+  // an ancestor of edit_mode_switch_. collaboration_panel_ IS such an ancestor and paints
+  // its own background/border in code instead (see CollaborationPanelFrame).
+  for (auto* target : {static_cast<QWidget*>(workspace_rail_),
+                       static_cast<QWidget*>(presence_strip_widget_),
+                       static_cast<QWidget*>(edit_mode_label_),
+                       static_cast<QWidget*>(save_state_label_),
+                       static_cast<QWidget*>(backend_refresh_button_),
+                       document_status_widget_, backend_status_widget_, sync_status_widget_,
+                       sync_conflicts_widget_, current_sidebar_widget_,
+                       current_content_widget_}) {
+    if (target != nullptr) {
+      ApplyApplicationStylesheet(target);
+    }
   }
-  // See application.h's GetQlementineStyle() comment: MainWindow carries a non-empty
-  // stylesheet, so descendants' style() resolves to Qt's QStyleSheetStyle proxy, breaking
-  // this hand-painted widget's qobject_cast<QlementineStyle*>(style()).
-  edit_mode_switch_->setStyle(qlementine_style);
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
@@ -347,6 +363,11 @@ void MainWindow::CreateInitialPage() {
     shell_layout_->addWidget(current_sidebar_widget_, 0, 0, 2, 1);
     shell_layout_->addWidget(current_content_widget_, 1, 1);
   }
+  // current_sidebar_widget_/current_content_widget_ are siblings of header_row under
+  // shell_widget_, not ancestors of edit_mode_switch_, so they're safe to style directly (see
+  // ApplyStylesheetToSafeDescendants()'s comment). Re-applied here since Page (and therefore
+  // these two widgets) is recreated each time CreateInitialPage() runs.
+  ApplyStylesheetToSafeDescendants();
   setWindowTitle(QStringLiteral("CppWiki - %1").arg(current_page_->Title()));
   UpdateDocumentStatus(QStringLiteral("Document: ready"), false);
   UpdateCollaborationStatus(QStringLiteral("Collab: idle"),
@@ -358,17 +379,19 @@ void MainWindow::ShowSettingsDialog() {
     return;
   }
 
-  // Deliberately not parented to `this` (MainWindow). Qt cascades an ancestor's style sheet
-  // down to *all* descendants for style-sheet-cascade purposes, including dialogs that pop up as
-  // their own top-level window solely because a QWidget parent was supplied for
-  // ownership/centering — see ApplyApplicationStylesheet() for why MainWindow has its own style
-  // sheet. If this dialog were parented to MainWindow, Qt would wrap its (and its children's,
-  // e.g. the SegmentedControl's) QStyle in an internal QStyleSheetStyle proxy purely from that
-  // inherited style sheet, which breaks qobject_cast<QlementineStyle*>(style()) inside
-  // AbstractItemListWidget/SegmentedControl the same way an app-wide qApp->setStyleSheet() does
-  // (confirmed empirically: even giving the dialog its own explicit *empty* style sheet does not
-  // prevent the wrap, it only neutralizes inherited rules). Centering is done manually below to
-  // preserve the "opens over the main window" UX without the QWidget parent/child link.
+  // Deliberately not parented to `this` (MainWindow). Historically MainWindow carried its own
+  // style sheet, and Qt cascades an ancestor's style sheet down to *all* descendants —
+  // including dialogs that pop up as their own top-level window solely because a QWidget
+  // parent was supplied for ownership/centering — wrapping this dialog's (and its children's,
+  // e.g. SegmentedControl's) QStyle in an internal QStyleSheetStyle proxy and breaking
+  // qobject_cast<QlementineStyle*>(style()) inside AbstractItemListWidget/SegmentedControl
+  // (confirmed empirically: even giving the dialog its own explicit *empty* style sheet did not
+  // prevent the wrap, it only neutralized inherited rules). MainWindow no longer carries a
+  // stylesheet at all (see MainWindow::ApplyStylesheetToSafeDescendants()'s comment), but this
+  // dialog is kept detached regardless — it's simpler than re-verifying the wrap can't happen
+  // some other way, and avoids re-litigating this every time cppwiki.qss changes. Centering is
+  // done manually below to preserve the "opens over the main window" UX without the QWidget
+  // parent/child link.
   gui::SettingsDialog dialog(context_->settings, nullptr);
   dialog.setModal(true);
   if (!frameGeometry().isEmpty()) {
@@ -390,6 +413,51 @@ void MainWindow::ShowSettingsDialog() {
   emit settingsChanged();
 }
 
+namespace {
+
+// Paints the background/border cppwiki.qss used to draw for QFrame#collaborationPanel,
+// keyed off the same "collaborationState" dynamic property, but in code instead of QSS.
+//
+// collaboration_panel_ is a direct ancestor of edit_mode_switch_ (an
+// oclero::qlementine::Switch, edit_mode_widget's sibling child), so it can never carry a
+// stylesheet — see MainWindow::ApplyStylesheetToSafeDescendants()'s comment for why.
+class CollaborationPanelFrame final : public QFrame {
+ public:
+  using QFrame::QFrame;
+
+ protected:
+  void paintEvent(QPaintEvent* /*event*/) override {
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    QColor background{255, 255, 255, 8};
+    QColor border{255, 255, 255, 31};
+    const auto state = property("collaborationState").toString();
+    if (state == QStringLiteral("editing")) {
+      background = QColor(28, 201, 156, 20);
+      border = QColor(28, 201, 156, 82);
+    } else if (state == QStringLiteral("viewing")) {
+      background = QColor(65, 152, 255, 15);
+      border = QColor(65, 152, 255, 46);
+    } else if (state == QStringLiteral("read-only")) {
+      background = QColor(255, 193, 87, 20);
+      border = QColor(255, 193, 87, 71);
+    } else if (state == QStringLiteral("attention")) {
+      background = QColor(255, 107, 107, 20);
+      border = QColor(255, 107, 107, 71);
+    }
+    // "idle" and "local-only" both use the default background/border set above.
+
+    QPainterPath path;
+    path.addRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 14, 14);
+    painter.fillPath(path, background);
+    painter.setPen(QPen(border, 1));
+    painter.drawPath(path);
+  }
+};
+
+}  // namespace
+
 void MainWindow::BuildUi() {
   setWindowTitle(QStringLiteral("CppWiki"));
   resize(constants::kInitialWindowWidth, constants::kInitialWindowHeight);
@@ -404,13 +472,17 @@ void MainWindow::BuildUi() {
   shell_layout_->setRowStretch(0, 0);
   shell_layout_->setRowStretch(1, 1);
 
+  // header_row and collaboration_panel_ are both ancestors of edit_mode_switch_, so neither
+  // may get cppwiki.qss applied (see ApplyStylesheetToSafeDescendants()'s comment). header_row
+  // relies on QWidget's default (transparent) painting for the qss's old "background-color:
+  // transparent" rule; collaboration_panel_ paints its own background/border in code (see
+  // CollaborationPanelFrame above).
   auto* header_row = new QWidget(shell_widget_);
-  header_row->setObjectName(QStringLiteral("shellHeaderRow"));
   auto* header_layout = new QHBoxLayout(header_row);
   header_layout->setContentsMargins(12, 12, 12, 8);
   header_layout->setSpacing(12);
 
-  collaboration_panel_ = new QFrame(header_row);
+  collaboration_panel_ = new CollaborationPanelFrame(header_row);
   collaboration_panel_->setObjectName(QStringLiteral("collaborationPanel"));
   collaboration_panel_->setProperty("collaborationState", QStringLiteral("idle"));
   auto* collaboration_layout = new QHBoxLayout(collaboration_panel_);
@@ -523,6 +595,12 @@ void MainWindow::BuildUi() {
   statusBar()->addPermanentWidget(backend_status_widget_);
   statusBar()->addPermanentWidget(sync_status_widget_);
   menuBar()->hide();
+
+  // Note: MainWindow itself intentionally never gets setStyleSheet() called on it — see
+  // ApplyStylesheetToSafeDescendants()'s comment. current_sidebar_widget_/
+  // current_content_widget_ don't exist yet at this point (CreateInitialPage() creates them
+  // later, in SetContext()), so this call re-runs there too.
+  ApplyStylesheetToSafeDescendants();
 }
 
 void MainWindow::HandleModeSelected(gui::WorkspaceRailWidget::Mode mode) {
@@ -782,8 +860,7 @@ void MainWindow::UpdateCollaborationStatus(const QString& summary, const QString
     if (summary.contains(QStringLiteral("editing"), Qt::CaseInsensitive)) {
       if (collaboration_panel_ != nullptr) {
         collaboration_panel_->setProperty("collaborationState", QStringLiteral("editing"));
-        collaboration_panel_->style()->unpolish(collaboration_panel_);
-        collaboration_panel_->style()->polish(collaboration_panel_);
+        collaboration_panel_->update();
       }
       presence_strip_widget_->SetCollaborationState(QStringLiteral("editing"));
       fallback_editor_user_id_ = QStringLiteral("You");
@@ -793,8 +870,7 @@ void MainWindow::UpdateCollaborationStatus(const QString& summary, const QString
     } else if (summary.contains(QStringLiteral("read-only"), Qt::CaseInsensitive)) {
       if (collaboration_panel_ != nullptr) {
         collaboration_panel_->setProperty("collaborationState", QStringLiteral("read-only"));
-        collaboration_panel_->style()->unpolish(collaboration_panel_);
-        collaboration_panel_->style()->polish(collaboration_panel_);
+        collaboration_panel_->update();
       }
       presence_strip_widget_->SetCollaborationState(QStringLiteral("read-only"));
       auto owner = details.trimmed();
@@ -808,8 +884,7 @@ void MainWindow::UpdateCollaborationStatus(const QString& summary, const QString
     } else if (summary.contains(QStringLiteral("local only"), Qt::CaseInsensitive)) {
       if (collaboration_panel_ != nullptr) {
         collaboration_panel_->setProperty("collaborationState", QStringLiteral("local-only"));
-        collaboration_panel_->style()->unpolish(collaboration_panel_);
-        collaboration_panel_->style()->polish(collaboration_panel_);
+        collaboration_panel_->update();
       }
       presence_strip_widget_->SetCollaborationState(QStringLiteral("local-only"));
       fallback_editor_user_id_.clear();
@@ -821,8 +896,7 @@ void MainWindow::UpdateCollaborationStatus(const QString& summary, const QString
                summary.contains(QStringLiteral("unavailable"), Qt::CaseInsensitive) || is_warning) {
       if (collaboration_panel_ != nullptr) {
         collaboration_panel_->setProperty("collaborationState", QStringLiteral("attention"));
-        collaboration_panel_->style()->unpolish(collaboration_panel_);
-        collaboration_panel_->style()->polish(collaboration_panel_);
+        collaboration_panel_->update();
       }
       presence_strip_widget_->SetCollaborationState(QStringLiteral("attention"));
       fallback_editor_user_id_.clear();
@@ -832,8 +906,7 @@ void MainWindow::UpdateCollaborationStatus(const QString& summary, const QString
     } else {
       if (collaboration_panel_ != nullptr) {
         collaboration_panel_->setProperty("collaborationState", QStringLiteral("viewing"));
-        collaboration_panel_->style()->unpolish(collaboration_panel_);
-        collaboration_panel_->style()->polish(collaboration_panel_);
+        collaboration_panel_->update();
       }
       presence_strip_widget_->SetCollaborationState(QStringLiteral("viewing"));
       fallback_editor_user_id_.clear();
