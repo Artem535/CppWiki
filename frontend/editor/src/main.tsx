@@ -3,9 +3,11 @@ import "@blocknote/mantine/style.css";
 import "@blocknote/xl-ai/style.css";
 import "./styles.css";
 
+import { en as coreEnDictionary } from "@blocknote/core/locales";
 import { BlockNoteView } from "@blocknote/mantine";
 import { FormattingToolbar, FormattingToolbarController, SuggestionMenuController, useCreateBlockNote } from "@blocknote/react";
 import { AIMenuController, AIToolbarButton, createAIExtension, getAISlashMenuItems } from "@blocknote/xl-ai";
+import { en as aiEnDictionary } from "@blocknote/xl-ai/locales";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createEditorBridge } from "./bridge";
@@ -50,6 +52,11 @@ function EditorApp() {
 
   const editor = useCreateBlockNote(
     {
+      // createAIExtension()'s UI (AIMenuController, AIToolbarButton, slash-menu items)
+      // reads its strings from editor.dictionary.ai; useCreateBlockNote()'s default
+      // dictionary doesn't include it, so every AI-menu render threw
+      // "AI dictionary not found" — merge the xl-ai package's own locale in.
+      dictionary: { ...coreEnDictionary, ai: aiEnDictionary },
       extensions: [createAIExtension({ transport: aiTransport })],
     },
     [],
