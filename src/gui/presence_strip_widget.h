@@ -9,6 +9,11 @@ class QHBoxLayout;
 
 namespace cppwiki::gui {
 
+// ADR-016 "presence indicator: overlapping avatar cluster". Renders the editor topbar's
+// collaborator presence as a compact, overlapping (Figma/Notion-style) avatar cluster instead of
+// the previously-shipped "EDITOR"/"VIEWERS" text-labeled dot pairs: whoever currently holds the
+// edit lock gets a green ring, viewers get a neutral/grey ring — role is conveyed by ring color,
+// not by a text label grouping.
 class PresenceStripWidget final : public QFrame {
   Q_OBJECT
 
@@ -21,16 +26,19 @@ class PresenceStripWidget final : public QFrame {
   void SetViewers(const QStringList& names);
 
  private:
-  QWidget* CreateAvatar(const QString& object_name, const QString& text);
-  void UpdateViewerAvatars();
+  // Maximum number of avatars actually rendered in the cluster (editor + viewers); any
+  // additional viewers collapse into a trailing "+N" overflow avatar, keeping the cluster
+  // compact regardless of how many collaborators are present.
+  static constexpr int kMaxVisibleAvatars = 4;
+
+  QWidget* CreateAvatar(const QString& text, const QString& role, const QString& tooltip);
+  void Rebuild();
   [[nodiscard]] static QString MakeAvatarText(const QString& name);
 
   QHBoxLayout* root_layout_ = nullptr;
-  QHBoxLayout* viewer_avatars_layout_ = nullptr;
-  QLabel* editor_caption_label_ = nullptr;
-  QLabel* viewers_caption_label_ = nullptr;
-  QWidget* editor_avatar_ = nullptr;
-  QLabel* editor_avatar_label_ = nullptr;
+  QString editor_name_;
+  bool editor_is_self_ = false;
+  bool editor_active_ = false;
   QStringList viewers_;
 };
 

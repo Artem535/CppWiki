@@ -6,9 +6,11 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QSettings>
+#include <optional>
 
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "app/accent_color.h"
 #include "app/application_stylesheet.h"
 #include "auth/auth_session_manager.h"
 #include "backend/backend_client.h"
@@ -28,6 +30,10 @@ oclero::qlementine::QlementineStyle* g_qlementine_style = nullptr;
 // value we set is tracked here to avoid reapplying it (and re-churning the style's caches) when
 // nothing actually changed.
 QString g_applied_theme_path;
+
+// Tracks the last-applied ADR-016 accent color so ApplyAppearanceFromSettings() only reapplies
+// the (main_window-scoped, not app-wide) stylesheet when the accent actually changed.
+std::optional<AccentColor> g_applied_accent_color;
 
 auto ResolveThemePath() -> QString {
   const auto theme_path = constants::kQlementineDarkThemePath;
@@ -60,7 +66,11 @@ Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   auto* qlementine_style = new oclero::qlementine::QlementineStyle(&qt_application_);
   g_qlementine_style = qlementine_style;
   QApplication::setStyle(qlementine_style);
-  ApplyApplicationStylesheet(&main_window_);
+  // Settings aren't loaded yet at this point (ReloadContext() below does that), so the initial
+  // apply uses the default accent (kBlue); ApplyAppearanceFromSettings() reapplies with the
+  // user's actual choice once settings_ is populated.
+  ApplyApplicationStylesheet(&main_window_, AccentColor::kBlue);
+  g_applied_accent_color = AccentColor::kBlue;
   // main_window_ is a plain Application member, so it (and everything BuildUi() constructs,
   // e.g. the edit-mode Switch) is fully built before this constructor body runs — earlier than
   // g_qlementine_style above is set. Any hand-painted qlementine widget that needs to pin
@@ -159,6 +169,17 @@ void Application::ApplyAppearanceFromSettings(const ProgramSettings& settings) {
       qlementine_style->setThemeJsonPath(theme_path);
       g_applied_theme_path = theme_path;
     }
+  }
+
+  // Unlike the static app/cppwiki.qss content, the ADR-016 accent tint depends on
+  // ProgramSettings, so (unlike the app-wide-stylesheet note above) it does need to be
+  // reapplied when it changes. This still only touches main_window_'s own stylesheet (not
+  // qApp->setStyleSheet()), so it doesn't re-wrap QApplication::style() in a fresh
+  // QStyleSheetStyle proxy.
+  const auto accent_color = AccentColorFromKey(settings.AccentColorKey());
+  if (!g_applied_accent_color.has_value() || *g_applied_accent_color != accent_color) {
+    ApplyApplicationStylesheet(&main_window_, accent_color);
+    g_applied_accent_color = accent_color;
   }
 }
 

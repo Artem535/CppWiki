@@ -16,7 +16,7 @@ class ProgramSettings final {
                   QString auth_redirect_uri, bool auth_enabled, bool demo_collaboration_enabled,
                   QString demo_collaboration_user_id, bool sync_enabled,
                   int application_font_point_size, bool ai_features_enabled,
-                  bool ai_autocomplete_enabled);
+                  bool ai_autocomplete_enabled, QString accent_color_key);
 
   [[nodiscard]] static auto FromDefaults() -> ProgramSettings;
   [[nodiscard]] static auto FromSettings(const QSettings& settings) -> ProgramSettings;
@@ -41,6 +41,9 @@ class ProgramSettings final {
   [[nodiscard]] auto ApplicationFontPointSize() const -> int;
   [[nodiscard]] auto AiFeaturesEnabled() const -> bool;
   [[nodiscard]] auto AiAutocompleteEnabled() const -> bool;
+  // Persistence key for the ADR-016 accent-color preset ("blue"/"violet"/"orange"/"green"); use
+  // AccentColorFromKey() (see app/accent_color.h) to resolve it to an AccentColor.
+  [[nodiscard]] auto AccentColorKey() const -> const QString&;
 
  private:
   QString application_name_;
@@ -62,6 +65,7 @@ class ProgramSettings final {
   int application_font_point_size_;
   bool ai_features_enabled_;
   bool ai_autocomplete_enabled_;
+  QString accent_color_key_;
 };
 
 }  // namespace cppwiki

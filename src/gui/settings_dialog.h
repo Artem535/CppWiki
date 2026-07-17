@@ -4,6 +4,7 @@
 #include <QDialog>
 #include <memory>
 
+#include "app/accent_color.h"
 #include "app/program_settings.h"
 
 class QFormLayout;
@@ -11,6 +12,7 @@ class QCheckBox;
 class QLabel;
 class QSpinBox;
 class QStackedWidget;
+class QButtonGroup;
 
 namespace oclero::qlementine {
 class LineEdit;
@@ -37,6 +39,10 @@ class SettingsDialog final : public QDialog {
   oclero::qlementine::SegmentedControl* section_control_ = nullptr;
   QStackedWidget* section_stack_ = nullptr;
   QSpinBox* font_size_spinbox_ = nullptr;
+  // ADR-016 accent-color swatch row (General page): one exclusively-checkable round swatch
+  // button per AccentColor preset, keyed by ToAccentColorKey() in the button group's ID.
+  QButtonGroup* accent_color_group_ = nullptr;
+  QString selected_accent_color_key_;
   QCheckBox* backend_enabled_checkbox_ = nullptr;
   oclero::qlementine::LineEdit* backend_base_url_edit_ = nullptr;
   QCheckBox* auth_enabled_checkbox_ = nullptr;
