@@ -79,6 +79,7 @@ struct AiConfigComponentConfig final {
   rfl::Rename<"base_url", std::string> base_url{"https://api.openai.com/v1/chat/completions"};
   rfl::Rename<"api_key", std::string> api_key;
   std::string model;
+  rfl::Rename<"timeout_seconds", std::uint32_t> timeout_seconds{30};
 };
 
 struct HttpClientMiddlewarePipelineConfig final {
@@ -216,6 +217,9 @@ auto MakeAiConfig(const ServerAiConfig& ai_config) -> AiConfigComponentConfig {
   }
   result.api_key = ai_config.api_key.value_or("");
   result.model = ai_config.model.value_or("");
+  if (ai_config.timeout_seconds) {
+    result.timeout_seconds = *ai_config.timeout_seconds;
+  }
   return result;
 }
 

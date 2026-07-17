@@ -29,6 +29,7 @@ struct RuntimeConfig final {
   std::optional<std::string> ai_base_url;
   std::optional<std::string> ai_api_key;
   std::optional<std::string> ai_model;
+  std::optional<std::uint32_t> ai_timeout_seconds;
   bool swagger{false};
 
   [[nodiscard]] static auto FromDefaults() -> RuntimeConfig;

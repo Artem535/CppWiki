@@ -1,6 +1,7 @@
 #ifndef CPPWIKI_SRC_SERVER_SERVICE_AI_CHAT_SERVICE_H_
 #define CPPWIKI_SRC_SERVER_SERVICE_AI_CHAT_SERVICE_H_
 
+#include <cstdint>
 #include <string>
 
 #include <userver/clients/http/client.hpp>
@@ -14,6 +15,10 @@ struct AiProviderConfig final {
   std::string base_url;
   std::string api_key;
   std::string model;
+  // Some OpenAI-compatible backends (e.g. self-hosted vision/reasoning models like MiMo-VL)
+  // take much longer per completion than a hosted API like OpenAI's; make this configurable
+  // instead of a fixed 30s so a slow model doesn't look like a network failure.
+  std::uint32_t timeout_seconds = 30;
 };
 
 // Server-mediated AI backend (ADR-012): holds the AI provider's API key here,

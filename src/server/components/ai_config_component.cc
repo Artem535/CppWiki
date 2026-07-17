@@ -19,6 +19,7 @@ AiConfigComponent::AiConfigComponent(const userver::components::ComponentConfig&
               "https://api.openai.com/v1/chat/completions"),
           .api_key = config["api_key"].As<std::string>(""),
           .model = config["model"].As<std::string>(""),
+          .timeout_seconds = config["timeout_seconds"].As<std::uint32_t>(30),
       }) {}
 
 auto AiConfigComponent::MakeService() const -> service::AiChatService {
@@ -43,6 +44,13 @@ properties:
     model:
         type: string
         description: AI provider model identifier.
+    timeout_seconds:
+        type: integer
+        description: >-
+            HTTP timeout for the outbound provider request, in seconds. Self-hosted models
+            (e.g. vision/reasoning models like MiMo-VL) can take much longer per completion
+            than a hosted API — raise this instead of hitting spurious "AI provider request
+            failed: Timeout happened" errors. Defaults to 30.
 )");
 }
 
