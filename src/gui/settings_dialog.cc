@@ -116,6 +116,36 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   font_size_spinbox_->setValue(current_settings_.ApplicationFontPointSize());
   general_form_layout->addRow(QStringLiteral("Font size"), font_size_spinbox_);
 
+  auto* app_data_directory_edit =
+      MakeReadOnlyPathLineEdit(current_settings_.AppDataDirectory(), general_page);
+  auto* open_app_data_folder_action =
+      new QAction(QIcon::fromTheme(QStringLiteral("folder-open")),
+                  QStringLiteral("Open application data folder"), this);
+  auto* open_app_data_folder_button = new oclero::qlementine::ActionButton(general_page);
+  open_app_data_folder_button->setAction(open_app_data_folder_action);
+  open_app_data_folder_button->setMinimumWidth(160);
+  connect(open_app_data_folder_action, &QAction::triggered, this, [app_data_directory_edit]() {
+    const auto path = app_data_directory_edit->text().trimmed();
+    if (!path.isEmpty()) {
+      QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    }
+  });
+  auto* app_data_folder_row = new QWidget(general_page);
+  auto* app_data_folder_layout = new QHBoxLayout(app_data_folder_row);
+  app_data_folder_layout->setContentsMargins(0, 0, 0, 0);
+  app_data_folder_layout->setSpacing(8);
+  app_data_folder_layout->addWidget(app_data_directory_edit, 1);
+  app_data_folder_layout->addWidget(open_app_data_folder_button, 0);
+  general_form_layout->addRow(QStringLiteral("Application data folder"), app_data_folder_row);
+
+  auto* general_page_hint = new QLabel(
+      QStringLiteral("This is where CppWiki keeps its local configuration and cached editor "
+                     "assets on this machine. Document storage location is configured "
+                     "separately under Backend & Sync."),
+      general_page);
+  general_page_hint->setWordWrap(true);
+  general_form_layout->addRow(QString{}, general_page_hint);
+
   // Backend & Sync.
   QFormLayout* backend_form_layout = nullptr;
   auto* backend_page = MakeSectionPage(section_stack_, &backend_form_layout);
