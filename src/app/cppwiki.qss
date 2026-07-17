@@ -11,10 +11,32 @@
    styled widget to plain default Qt looks (bigger default fonts, filled default button
    chrome, no panel background tints) despite the file loading successfully. */
 
-QFrame#shellWidgetCell {
+/* ADR-016 "unified navigation chrome": the workspace rail and the document tree panel
+   (QWidget#pagePanel — page_panel_ in page.cc, despite the name it's the sidebar/tree
+   container, NOT the editor content pane) get the same flush background treatment — no
+   border or radius on either — so the rail and the document tree read as one continuous
+   navigation zone, not two separate rounded "cards" sitting next to each other. Distinct from
+   the editor content pane's tone (QWidget#pageContentHost, styled via palette(base) below).
+   These two rules were previously mismatched — this file referenced a "QFrame#shellWidgetCell"
+   selector that no widget in the codebase was ever actually named, so it never matched
+   anything, while QWidget#pagePanel's rule was accidentally styling the tree panel with the
+   *content* pane's intended tone (palette(base)) instead. */
+QWidget#pagePanel {
   background-color: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+}
+
+QWidget#workspaceRailWidget {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* QTreeView paints its own opaque viewport background from the palette (Base), which is
+   darker than and unrelated to pagePanel's tint above and covers nearly the entire sidebar
+   (everything below the title row) — so without this rule, "pagePanel"'s background is only
+   ever visible in a thin margin around the tree, not as the panel's overall tone. Making the
+   tree transparent lets pagePanel's own tint show through instead. */
+QTreeView#workspaceTreeView {
+  background-color: transparent;
+  border: none;
 }
 
 QLabel#globalSidebarTitle {
@@ -22,19 +44,6 @@ QLabel#globalSidebarTitle {
   font-size: 15px;
   font-weight: 700;
   padding: 2px 2px 8px 2px;
-}
-
-QFrame#shellWidgetCell {
-  min-height: 44px;
-}
-
-/* ADR-016 "unified navigation chrome": the workspace rail gets the same background treatment as
-   shellWidgetCell (the document tree panel's frame) so the rail and the document tree read as
-   one continuous navigation zone, distinct from QWidget#pagePanel's editor-content tone. */
-QWidget#workspaceRailWidget {
-  background-color: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
 }
 
 /* collaborationPanel has no rules here: it's an ancestor of editModeSwitch, so it never gets
@@ -95,10 +104,9 @@ QLabel#statusLineLabel {
   font-size: 11px;
 }
 
-QWidget#pagePanel {
+QWidget#pageContentHost {
   background-color: palette(base);
 }
-
 
 QFrame#sidebarFooter {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
