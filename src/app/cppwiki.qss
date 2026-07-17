@@ -115,6 +115,11 @@ QLabel#saveStateLabel {
   padding-left: 6px;
 }
 
+QLabel#statusLineLabel {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+}
+
 QWidget#pagePanel {
   background-color: palette(base);
 }

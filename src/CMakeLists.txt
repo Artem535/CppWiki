@@ -116,6 +116,15 @@ qt_add_resources(cppwiki_app cppwiki_qml_resources
         gui/qml/ConflictMergeEditor.qml
 )
 
+qt_add_resources(cppwiki_app cppwiki_icon_resources
+        PREFIX "/cppwiki/icons"
+        BASE gui/assets/icons
+        FILES
+        gui/assets/icons/rail-documents.svg
+        gui/assets/icons/rail-ai-chat.svg
+        gui/assets/icons/rail-code.svg
+)
+
 if (CPPWIKI_ENABLE_CBLITE_STORAGE)
     target_compile_definitions(cppwiki_app
             PRIVATE

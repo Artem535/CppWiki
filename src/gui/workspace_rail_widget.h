@@ -5,10 +5,7 @@
 
 class QAction;
 class QActionGroup;
-
-namespace oclero::qlementine {
-class ActionButton;
-}
+class QToolButton;
 
 namespace cppwiki::gui {
 
@@ -41,9 +38,9 @@ class WorkspaceRailWidget final : public QWidget {
   QAction* documents_action_ = nullptr;
   QAction* ai_chat_action_ = nullptr;
   QAction* code_action_ = nullptr;
-  oclero::qlementine::ActionButton* documents_button_ = nullptr;
-  oclero::qlementine::ActionButton* ai_chat_button_ = nullptr;
-  oclero::qlementine::ActionButton* code_button_ = nullptr;
+  QToolButton* documents_button_ = nullptr;
+  QToolButton* ai_chat_button_ = nullptr;
+  QToolButton* code_button_ = nullptr;
   Mode current_mode_ = Mode::kDocuments;
 };
 
