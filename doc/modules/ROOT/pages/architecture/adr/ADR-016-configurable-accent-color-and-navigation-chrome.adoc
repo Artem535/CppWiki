@@ -81,6 +81,24 @@ does implementation work begin against the real `cppwiki.qss`/`WorkspaceRailWidg
 widget styling is comparatively slow (rebuild + relaunch + `grim` screenshot per
 iteration) next to iterating on a static web page.
 
+The mockup was reviewed live with the user and approved, including one refinement found
+during review (not part of the original decision above): the editor topbar's tinted
+background applies to the whole topbar row (label + switch on the left, presence
+indicator on the right), not a small pill hugging just the label and switch — matching
+how the real, currently-shipped topbar already looks, just recolored with the accent tint
+instead of its hardcoded blue.
+
+=== Presence indicator: overlapping avatar cluster
+
+While reviewing the mockup, the user asked whether the editor topbar's presence display
+could be improved beyond a recolor. The current/shipped treatment — separate
+"EDITOR"/"VIEWERS" text-labeled dot pairs — was replaced in the approved mockup with a
+compact, overlapping avatar cluster (Figma/Notion-style), where each collaborator's role
+is shown via a colored ring around their avatar (green ring = currently editing, neutral
+ring = viewing) instead of a text label grouping. Approved by the user against a live
+side-by-side comparison in the mockup. This is a small addition to this ADR's original
+scope, tracked for implementation alongside the rail/tree unification (issue #48).
+
 ---
 
 == Consequences
