@@ -19,11 +19,13 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <oclero/qlementine/style/QlementineStyle.hpp>
 #include <oclero/qlementine/widgets/StatusBadgeWidget.hpp>
 #include <oclero/qlementine/widgets/Switch.hpp>
 #include <optional>
 
 #include "app/app_context.h"
+#include "app/application.h"
 #include "app/program_settings.h"
 #include "auth/auth_session_manager.h"
 #include "backend/backend_client.h"
@@ -414,6 +416,12 @@ void MainWindow::BuildUi() {
   edit_mode_switch_ = new oclero::qlementine::Switch(edit_mode_widget);
   edit_mode_switch_->setObjectName(QStringLiteral("editModeSwitch"));
   edit_mode_switch_->setEnabled(false);
+  // See application.h's GetQlementineStyle() comment: MainWindow carries a non-empty
+  // stylesheet, so descendants' style() resolves to Qt's QStyleSheetStyle proxy, breaking
+  // this hand-painted widget's qobject_cast<QlementineStyle*>(style()). Pin the real style.
+  if (auto* qlementine_style = cppwiki::GetQlementineStyle()) {
+    edit_mode_switch_->setStyle(qlementine_style);
+  }
   connect(edit_mode_switch_, &oclero::qlementine::Switch::toggled, this, [this](bool checked) {
     if (current_page_ != nullptr) {
       current_page_->SetEditModeEnabled(checked);

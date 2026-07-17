@@ -4,17 +4,26 @@
 #include <QActionGroup>
 #include <QIcon>
 #include <QSize>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
-#include <oclero/qlementine/widgets/ActionButton.hpp>
 
 namespace cppwiki::gui {
 
 namespace {
 
-auto MakeRailButton(QAction* action, QWidget* parent) -> oclero::qlementine::ActionButton* {
-  auto* button = new oclero::qlementine::ActionButton(parent);
-  button->setAction(action);
+// A plain, checkable, auto-raised QToolButton (same convention as MainWindow's
+// statusLineButton) rather than oclero::qlementine::ActionButton: ActionButton is a filled
+// call-to-action button by design (see its use for "Open folder" in SettingsDialog), always
+// painted with a solid accent background regardless of checked state — wrong look for a flat
+// nav rail. QToolButton delegates entirely to QStyle's normal drawControl()/drawPrimitive(),
+// so it picks up checked/hover highlighting from the real QlementineStyle without needing the
+// setStyle() pin that hand-painted qlementine widgets require.
+auto MakeRailButton(QAction* action, QWidget* parent) -> QToolButton* {
+  auto* button = new QToolButton(parent);
+  button->setDefaultAction(action);
+  button->setCheckable(true);
+  button->setAutoRaise(true);
   button->setFixedSize(40, 40);
   button->setIconSize(QSize(20, 20));
   return button;
@@ -34,20 +43,23 @@ WorkspaceRailWidget::WorkspaceRailWidget(QWidget* parent) : QWidget(parent) {
   action_group_ = new QActionGroup(this);
   action_group_->setExclusive(true);
 
-  documents_action_ =
-      new QAction(QIcon::fromTheme(QStringLiteral("folder")), QStringLiteral("Documents"), this);
+  // Bundled monochrome icons (not QIcon::fromTheme()) so the rail matches the app's dark
+  // theme instead of showing whatever multi-color icon set happens to be installed on the
+  // system.
+  documents_action_ = new QAction(QIcon(QStringLiteral(":/cppwiki/icons/rail-documents.svg")),
+                                  QStringLiteral("Documents"), this);
   documents_action_->setCheckable(true);
   documents_action_->setChecked(true);
   documents_action_->setToolTip(QStringLiteral("Documents"));
   action_group_->addAction(documents_action_);
 
-  ai_chat_action_ = new QAction(QIcon::fromTheme(QStringLiteral("mail-message-new")),
+  ai_chat_action_ = new QAction(QIcon(QStringLiteral(":/cppwiki/icons/rail-ai-chat.svg")),
                                 QStringLiteral("AI Chat"), this);
   ai_chat_action_->setCheckable(true);
   ai_chat_action_->setToolTip(QStringLiteral("AI Chat"));
   action_group_->addAction(ai_chat_action_);
 
-  code_action_ = new QAction(QIcon::fromTheme(QStringLiteral("utilities-terminal")),
+  code_action_ = new QAction(QIcon(QStringLiteral(":/cppwiki/icons/rail-code.svg")),
                              QStringLiteral("Code"), this);
   code_action_->setCheckable(true);
   code_action_->setToolTip(QStringLiteral("Code"));
