@@ -29,6 +29,7 @@ struct ServerAiConfig final {
   std::optional<std::string> base_url;
   std::optional<std::string> api_key;
   std::optional<std::string> model;
+  std::optional<std::uint32_t> timeout_seconds;
 };
 
 [[nodiscard]] auto MakeStaticConfigYaml(const std::string& host, std::uint16_t port,

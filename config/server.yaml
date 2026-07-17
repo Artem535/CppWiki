@@ -28,6 +28,10 @@ ai:
    base_url: https://api.openai.com/v1/chat/completions
    api_key: ""
    model: gpt-4o-mini
+   # HTTP timeout (seconds) for the outbound provider request. Self-hosted models can take
+   # much longer per completion than a hosted API — raise this for slow backends instead of
+   # hitting spurious "Timeout happened" / 502 errors. Default: 30.
+   timeout_seconds: 30
 
 # telemetry:
 #   enabled: false

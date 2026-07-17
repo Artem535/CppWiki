@@ -40,6 +40,7 @@ struct AiConfigFile final {
   std::optional<std::string> base_url;
   std::optional<std::string> api_key;
   std::optional<std::string> model;
+  std::optional<std::uint32_t> timeout_seconds;
 };
 
 struct RuntimeConfigFile final {
@@ -179,6 +180,9 @@ void ApplyEnvironmentOverrides(RuntimeConfig& cfg) {
   if (auto value = ReadEnv("CPPWIKI_AI_MODEL")) {
     cfg.ai_model = std::move(value);
   }
+  if (auto value = ReadEnv("CPPWIKI_AI_TIMEOUT_SECONDS")) {
+    cfg.ai_timeout_seconds = static_cast<std::uint32_t>(std::strtoul(value->c_str(), nullptr, 10));
+  }
 }
 
 }  // namespace detail
@@ -202,6 +206,7 @@ auto RuntimeConfig::FromDefaults() -> RuntimeConfig {
       .ai_base_url = std::nullopt,
       .ai_api_key = std::nullopt,
       .ai_model = std::nullopt,
+      .ai_timeout_seconds = std::nullopt,
       .swagger = false,
   };
 }
@@ -252,6 +257,7 @@ auto RuntimeConfig::FromCli(int argc, char* argv[]) -> RuntimeConfig {
       cfg.ai_base_url = file_config.ai->base_url;
       cfg.ai_api_key = file_config.ai->api_key;
       cfg.ai_model = file_config.ai->model;
+      cfg.ai_timeout_seconds = file_config.ai->timeout_seconds;
     }
   }
 
@@ -302,6 +308,7 @@ auto RuntimeConfig::ToStaticConfigYaml() const -> std::string {
           .base_url = ai_base_url,
           .api_key = ai_api_key,
           .model = ai_model,
+          .timeout_seconds = ai_timeout_seconds,
       },
       swagger);
 }

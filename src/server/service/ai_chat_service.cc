@@ -65,7 +65,7 @@ auto AiChatService::Complete(const dto::AiChatRequestDto& request) const -> dto:
                       .headers({{"Content-Type", "application/json"},
                                 {"Authorization", "Bearer " + config_.api_key}})
                       .data(body)
-                      .timeout(std::chrono::seconds(30))
+                      .timeout(std::chrono::seconds(config_.timeout_seconds))
                       .SetDestinationMetricName("ai-provider")
                       .perform();
 
