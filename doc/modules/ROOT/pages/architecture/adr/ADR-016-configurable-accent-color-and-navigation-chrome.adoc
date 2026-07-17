@@ -1,0 +1,107 @@
+= ADR-016 — Configurable Accent Color and Unified Navigation Chrome
+
+== Status
+
+Accepted
+
+== Date
+
+2026-07-17
+
+---
+
+== Context
+
+The workspace rail (ADR-014) and its supporting chrome shipped with several visual
+inconsistencies, found by direct user testing against the real running app (not
+`QT_QPA_PLATFORM=offscreen`, which has previously produced false-positive "looks fixed"
+results in this repo):
+
+* The rail's active-mode icon used a hardcoded blue (`QlementineStyle`'s `primaryColor`),
+  which the user finds unattractive and wants replaced with a user-chosen accent color.
+* The rail widget has no background rule of its own in `cppwiki.qss`, while the document
+  tree panel sits inside a `QFrame#shellWidgetCell` with a subtle background overlay —
+  the two ended up visually disconnected (rail reads as one tone, "graphite"; the tree
+  panel reads as another, lighter "dark grey") even though both are navigation chrome,
+  not content.
+* `collaborationPanel`'s `viewing` state uses a hardcoded blue
+  (`rgba(65, 152, 255, ...)`), unrelated to the rail's blue but visually competing with
+  whatever accent color the user picks.
+
+Separately, the user asked for an app-wide visual design pass before any further
+polish work lands, with sign-off happening against a cheap static mockup rather than a
+live Qt/C++ build — round-tripping a real desktop build for every color/spacing tweak is
+slow compared to iterating on a static HTML page.
+
+---
+
+== Decision
+
+=== Configurable accent color
+
+Add an "Accent color" setting to `SettingsDialog`'s General page (alongside the
+Font size and Application data folder controls added in issue #27), presented as a row of
+custom round swatch widgets (not a full color picker) with four presets:
+
+* Blue (`primaryColor`'s current value — kept as the default, so existing users see no
+  change unless they opt in)
+* Violet
+* Orange
+* Green
+
+The chosen accent color is applied, as a near-transparent tint (matching the existing
+`rgba(..., 0.06–0.24)` alpha range already used elsewhere in `cppwiki.qss`, e.g.
+`collaborationPanel`'s state colors), to exactly two places:
+
+* The workspace rail's active-mode icon/button highlight (replacing the hardcoded
+  `primaryColor` reference).
+* `collaborationPanel[collaborationState="viewing"]`'s background/border (replacing its
+  hardcoded blue).
+
+The other three `collaborationPanel` states — `editing` (green), `read-only` (orange),
+`attention` (red) — are semantic status colors, not brand accent, and are explicitly
+*not* tied to the accent-color setting; they keep their current fixed colors regardless
+of which accent preset is active.
+
+=== Unified navigation chrome
+
+The workspace rail gets the same background treatment as `QFrame#shellWidgetCell` (the
+document tree panel's frame), so the rail and the document tree read as one continuous
+navigation zone. The editor content area (`QWidget#pagePanel`, styled via
+`palette(base)`) is deliberately left as a visually distinct "content" tone — the target
+grouping is *(rail == tree panel) != editor content*, not all three panels matching.
+
+=== Design sign-off via static mockup
+
+Before any of the above is implemented in Qt/C++, produce a static HTML mockup (a
+throwaway prototype, not a build of the real app) showing the redesigned rail, panel
+tones, and accent-color swatches, for the user to approve or reject. Only after approval
+does implementation work begin against the real `cppwiki.qss`/`WorkspaceRailWidget`/
+`SettingsDialog` code. This mirrors this session's own experience: iterating on real Qt
+widget styling is comparatively slow (rebuild + relaunch + `grim` screenshot per
+iteration) next to iterating on a static web page.
+
+---
+
+== Consequences
+
+=== Positive
+
+* One user-facing knob (accent color) instead of a hardcoded blue baked into multiple
+  unrelated places (rail, collaboration panel) — future new UI that wants an "active/
+  accent" treatment has an established, themeable color to reach for instead of another
+  hardcoded value.
+* Splitting semantic status colors (editing/read-only/attention) from brand accent color
+  keeps their meaning intact — a user picking, say, orange as their accent won't suddenly
+  make "read-only" documents look identical to "this is my chosen theme" chrome.
+* A static mockup sign-off step catches "doesn't look right" feedback before spending
+  build/rebuild cycles, and gives an explicit, checkable approval gate before code lands.
+
+=== Negative
+
+* A "4 presets, not a full color picker" design constrains user choice; if a future
+  request wants arbitrary colors, this ADR's swatch-row UI will need revisiting (likely
+  fine given the explicit preference for presets recorded here, but worth flagging).
+* Two review/approval round-trips (mockup, then real build) are slower end-to-end than a
+  single direct-to-Qt iteration loop would be for a small change, though faster overall
+  than iterating purely against live Qt/C++ builds for a change of this scope.

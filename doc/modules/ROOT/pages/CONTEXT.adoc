@@ -90,6 +90,25 @@ instead of `fetch`-ing a URL directly from browser JS. This is what keeps `QWebE
 free of direct network access even for AI features — see ADR-012.
 _Avoid_: "AI proxy" (the relay is bridge-based, not a network proxy).
 
+*Accent color*:
+A user-chosen theme color (one of four presets: blue/violet/orange/green, blue default)
+applied as a near-transparent tint to the workspace rail's active-mode highlight and the
+collaboration panel's `viewing` state. Distinct from the collaboration panel's other
+three semantic status colors (editing/read-only/attention), which never change with the
+accent preset. Configured via round swatch widgets on the Settings dialog's General
+page. See ADR-016.
+_Avoid_: "theme color" (this app doesn't have a light/dark theme choice — "accent color"
+specifically means this one configurable highlight color).
+
+*Document kind*:
+The discriminator on a `Document` selecting which content schema/renderer applies: the
+default wiki page (BlockNote JSON), a Jupyter notebook (nbformat JSON, view/edit only,
+no execution), or an Excalidraw canvas (Excalidraw scene JSON, fully editable). All
+kinds share the same sync/lock/conflict machinery (ADR-010/ADR-013); only the content
+shape and renderer differ. See ADR-017.
+_Avoid_: "document type" when referring to code (the field/discriminator is "kind" in
+the design decision — keep terminology consistent once implemented).
+
 *cppwiki-admin*:
 The administrative tooling surface, delivered separately from the main `cppwiki` desktop
 app (never as a mode inside it). Ships as a CLI first (C++, `ftxui`), with a web panel as

@@ -29,6 +29,8 @@
 *** xref:architecture/adr/ADR-013-conflict-state-extends-editability-gate.adoc[ADR-013]
 *** xref:architecture/adr/ADR-014-workspace-rail-navigation-and-full-mode-tabs.adoc[ADR-014]
 *** xref:architecture/adr/ADR-015-code-agent-trust-boundary-and-tool-execution.adoc[ADR-015]
+*** xref:architecture/adr/ADR-016-configurable-accent-color-and-navigation-chrome.adoc[ADR-016]
+*** xref:architecture/adr/ADR-017-new-content-types-notebook-canvas-mermaid-code.adoc[ADR-017]
 ** Spikes
 *** xref:architecture/spikes/Couchbase_Lite_C_Integration.adoc[Couchbase Lite C integration]
 *** xref:architecture/spikes/Couchbase_Sync_Gateway_OIDC_Example.adoc[Couchbase Sync Gateway OIDC example]

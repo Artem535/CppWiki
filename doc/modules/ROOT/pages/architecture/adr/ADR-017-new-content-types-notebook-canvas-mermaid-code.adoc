@@ -1,0 +1,120 @@
+= ADR-017 — New Content Types: Notebook and Canvas Pages, Mermaid and Code Blocks
+
+== Status
+
+Accepted
+
+== Date
+
+2026-07-17
+
+---
+
+== Context
+
+The user asked for four new kinds of content CppWiki should be able to show, with two
+different granularities:
+
+* Two of them — Jupyter notebooks, Excalidraw drawings — are asked for "as a separate
+  type", i.e. a whole document kind distinct from a normal wiki page.
+* Two of them — Mermaid diagrams, syntax-highlighted code — are smaller, inline needs:
+  content that appears *inside* an otherwise-normal wiki page, not a reason for a whole
+  new document kind on their own.
+
+CppWiki's existing document model (`Document`, `BlockNoteSnapshot`, `DocumentValidator`,
+the sync/lock/conflict machinery from ADR-010/ADR-013) is built around one document
+shape: a BlockNote JSON snapshot. Extending it to hold genuinely different content
+(nbformat JSON, Excalidraw scene JSON) needs a decision on whether that reuses the
+existing sync/lock/conflict envelope or requires a parallel one.
+
+---
+
+== Decision
+
+=== Two new block types inside existing wiki pages
+
+* **Code block**: replace BlockNote core's built-in `codeBlock` (present today, but
+  without real syntax highlighting — confirmed by the user testing it) with the official
+  `@blocknote/code-block` package, which adds a language selector and real highlighting.
+  This is a drop-in upgrade of an existing block type, not a new one.
+* **Mermaid block**: a new BlockNote block type rendering Mermaid diagram source as an
+  SVG diagram. Exact implementation (custom block spec vs. any existing community
+  package) is left to whoever picks up the implementing issue to evaluate at that time —
+  no community package was pre-vetted as part of this ADR.
+
+=== Two new document kinds
+
+Both Jupyter notebooks and Excalidraw canvases become a new `Document` *kind*
+(a discriminator alongside the existing implicit "BlockNote wiki page" kind), reusing
+the *entire* existing sync/lock/conflict machinery — locking a notebook or canvas for
+editing, detecting conflicts, and resolving them all work exactly as they do for wiki
+pages today. Only the content schema stored in the snapshot differs by kind (nbformat
+JSON for notebooks, Excalidraw scene JSON for canvases) plus how that content renders.
+
+Both kinds render inside the existing `QWebEngineView`/`frontend/editor` bundle (the
+same Vite/React app and `EditorBridge`/`QWebChannel` bridge already used for BlockNote
+pages), switching which top-level component mounts based on the open document's kind —
+not a second, separate frontend bundle or a native-Qt renderer. Rich per-cell/per-element
+output (HTML tables, embedded images, arbitrary SVG) is far cheaper to render correctly
+in a web view than to reimplement as native Qt widgets.
+
+**Jupyter notebook pages** (v1 scope):
+
+* View and edit cell *source* (markdown and code text) and already-saved cell *output*
+  (`text/plain`, `text/html` — sanitized, `image/png` as an inline `data:` URI, error
+  tracebacks).
+* No kernel connectivity, no code execution, ever, in this ADR's scope — matches this
+  product's "wiki" positioning (documenting already-run notebooks), not a Jupyter
+  replacement. Comparable to how Confluence's notebook viewer works today (view-only);
+  this ADR's stretch goal, if reached, is editing cell source/output display, still with
+  no execution.
+* Rendering is a small purpose-built React component reading the standard nbformat v4
+  cell/output shape directly — no third-party notebook-rendering library dependency was
+  deemed necessary for this scope (the format is plain, well-documented JSON), though
+  this can be revisited if the custom component grows unwieldy.
+
+**Excalidraw canvas pages** (v1 scope):
+
+* Full editing from the start (drawing is the entire point of this content type, unlike
+  the notebook's deliberately-restricted view-first scope) via the official
+  `@excalidraw/excalidraw` npm package — an embeddable, maintained React component, not a
+  reason to build canvas/drawing logic from scratch.
+
+=== Document creation UX
+
+The document tree's "New document" context-menu action becomes a submenu offering a
+type choice — "Wiki page" / "Jupyter notebook" / "Excalidraw canvas" today, with room to
+add further kinds later — rather than a separate dialog step or one action per kind
+cluttering the top-level menu.
+
+---
+
+== Consequences
+
+=== Positive
+
+* Reusing the existing sync/lock/conflict machinery for the two new document kinds means
+  no new collaboration model needs to be designed, reviewed, or tested from scratch —
+  only the content schema and renderer differ.
+* Keeping Mermaid/code as blocks (not document kinds) matches their actual usage pattern
+  — they're pieces of a wiki page, not a reason to leave the wiki-page editing experience
+  — and avoids a proliferation of document kinds for things that don't need it.
+* Deferring notebook editing (and ruling out execution entirely) keeps the v1 scope
+  bounded and avoids the large, separate problem of kernel/environment/security
+  management that real notebook execution would require.
+* One shared frontend bundle keeps a single `EditorBridge`/build pipeline instead of
+  duplicating Vite/React/QWebEngineView wiring per content type.
+
+=== Negative
+
+* `Document`/`BlockNoteSnapshot`/`DocumentValidator` and the document tree's icon/type
+  handling all need a real "kind" concept introduced where today they implicitly assume
+  "BlockNote wiki page" — this touches shared, currently single-purpose code, not just
+  additive new files.
+* A custom nbformat renderer (rather than an existing library) means CppWiki owns
+  correctness for however much of the nbformat output-type surface it chooses to support
+  — a library would have covered more edge cases for free, at the cost of a dependency
+  and less control over rendering to match the app's own theme.
+* Two large embedded third-party UI surfaces (`@excalidraw/excalidraw`,
+  `@blocknote/code-block`'s highlighter) add bundle size and upgrade-maintenance surface
+  to `frontend/editor`.
