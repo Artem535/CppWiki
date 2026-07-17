@@ -1,5 +1,14 @@
 export const snapshotDebounceMs = 500;
 
+// Inline ghost-text suggestions (issue #59). Debounce is chosen from the
+// issue's suggested 300-600ms range: long enough to avoid firing on every
+// keystroke, short enough that a pause reads as "waiting for a suggestion"
+// rather than a stall. contextChars caps how much preceding text is sent per
+// request (local context only, not the whole document) to keep prompts small
+// given the self-hosted provider's higher per-request latency.
+export const inlineSuggestionDebounceMs = 450;
+export const inlineSuggestionContextChars = 800;
+
 export const mockPageId = "mock-page";
 export const mockHeadingBlockId = "mock-heading";
 export const mockBodyBlockId = "mock-body";

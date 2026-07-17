@@ -51,7 +51,8 @@ ProgramSettings::ProgramSettings(
     QString backend_base_url, bool backend_enabled, QString auth_authorization_url,
     QString auth_token_url, QString auth_client_id, QString auth_redirect_uri, bool auth_enabled,
     bool demo_collaboration_enabled, QString demo_collaboration_user_id, bool sync_enabled,
-    int application_font_point_size, bool ai_features_enabled, bool ai_autocomplete_enabled)
+    int application_font_point_size, bool ai_features_enabled, bool ai_autocomplete_enabled,
+    bool ai_inline_suggestions_enabled)
     : application_name_(std::move(application_name)),
       application_version_(std::move(application_version)),
       organization_name_(std::move(organization_name)),
@@ -70,7 +71,8 @@ ProgramSettings::ProgramSettings(
       sync_enabled_(sync_enabled),
       application_font_point_size_(application_font_point_size),
       ai_features_enabled_(ai_features_enabled),
-      ai_autocomplete_enabled_(ai_autocomplete_enabled) {}
+      ai_autocomplete_enabled_(ai_autocomplete_enabled),
+      ai_inline_suggestions_enabled_(ai_inline_suggestions_enabled) {}
 
 auto ProgramSettings::FromDefaults() -> ProgramSettings {
   const QSettings settings;
@@ -130,6 +132,8 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
       settings.value(ToQString(constants::kSettingsAiFeaturesEnabledKey), false).toBool();
   const auto ai_autocomplete_enabled =
       settings.value(ToQString(constants::kSettingsAiAutocompleteEnabledKey), false).toBool();
+  const auto ai_inline_suggestions_enabled =
+      settings.value(ToQString(constants::kSettingsAiInlineSuggestionsEnabledKey), false).toBool();
 
   return ProgramSettings(
       ToQString(constants::kApplicationName), ToQString(constants::kApplicationVersion),
@@ -137,7 +141,7 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
       editor_dist_directory, backend_base_url, backend_enabled, auth_authorization_url,
       auth_token_url, auth_client_id, auth_redirect_uri, auth_enabled, demo_collaboration_enabled,
       demo_collaboration_user_id, sync_enabled, application_font_point_size, ai_features_enabled,
-      ai_autocomplete_enabled);
+      ai_autocomplete_enabled, ai_inline_suggestions_enabled);
 }
 
 void ProgramSettings::SaveToSettings(QSettings& settings) const {
@@ -162,6 +166,8 @@ void ProgramSettings::SaveToSettings(QSettings& settings) const {
   settings.setValue(ToQString(constants::kSettingsAiFeaturesEnabledKey), ai_features_enabled_);
   settings.setValue(ToQString(constants::kSettingsAiAutocompleteEnabledKey),
                     ai_autocomplete_enabled_);
+  settings.setValue(ToQString(constants::kSettingsAiInlineSuggestionsEnabledKey),
+                    ai_inline_suggestions_enabled_);
 }
 
 auto ProgramSettings::ApplicationName() const -> const QString& {
@@ -238,6 +244,10 @@ auto ProgramSettings::AiFeaturesEnabled() const -> bool {
 
 auto ProgramSettings::AiAutocompleteEnabled() const -> bool {
   return ai_autocomplete_enabled_;
+}
+
+auto ProgramSettings::AiInlineSuggestionsEnabled() const -> bool {
+  return ai_inline_suggestions_enabled_;
 }
 
 }  // namespace cppwiki

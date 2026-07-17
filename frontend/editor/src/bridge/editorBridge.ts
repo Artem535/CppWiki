@@ -41,6 +41,9 @@ export type BridgeInfo = {
   methods: string[];
   aiFeaturesEnabled?: boolean;
   aiAutocompleteEnabled?: boolean;
+  // Separate opt-in for inline ghost-text suggestions (issue #59); independent
+  // of aiFeaturesEnabled/aiAutocompleteEnabled.
+  aiInlineSuggestionsEnabled?: boolean;
 };
 
 export interface EditorBridge {
@@ -60,8 +63,13 @@ export interface EditorBridge {
 
   // AI transport (ADR-012): every AI request is forwarded through the bridge
   // to C++, never fetched directly from this JS context. `mode` matches the
-  // MVP scope (ADR-010): "rewrite" or "autocomplete".
-  startAiRequest(prompt: string, contextText: string, mode: "rewrite" | "autocomplete"): Promise<string>;
+  // MVP scope (ADR-010): "rewrite" or "autocomplete", plus "inline" for
+  // continuous ghost-text completions (issue #59).
+  startAiRequest(
+    prompt: string,
+    contextText: string,
+    mode: "rewrite" | "autocomplete" | "inline",
+  ): Promise<string>;
   onAiChunkReceived(callback: (requestId: string, chunk: string) => void): () => void;
   onAiRequestCompleted(callback: (requestId: string) => void): () => void;
   onAiRequestFailed(callback: (requestId: string, error: string) => void): () => void;

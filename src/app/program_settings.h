@@ -16,7 +16,7 @@ class ProgramSettings final {
                   QString auth_redirect_uri, bool auth_enabled, bool demo_collaboration_enabled,
                   QString demo_collaboration_user_id, bool sync_enabled,
                   int application_font_point_size, bool ai_features_enabled,
-                  bool ai_autocomplete_enabled);
+                  bool ai_autocomplete_enabled, bool ai_inline_suggestions_enabled);
 
   [[nodiscard]] static auto FromDefaults() -> ProgramSettings;
   [[nodiscard]] static auto FromSettings(const QSettings& settings) -> ProgramSettings;
@@ -41,6 +41,9 @@ class ProgramSettings final {
   [[nodiscard]] auto ApplicationFontPointSize() const -> int;
   [[nodiscard]] auto AiFeaturesEnabled() const -> bool;
   [[nodiscard]] auto AiAutocompleteEnabled() const -> bool;
+  // Separate opt-in for inline ghost-text suggestions (issue #59); independent
+  // of AiFeaturesEnabled()/AiAutocompleteEnabled().
+  [[nodiscard]] auto AiInlineSuggestionsEnabled() const -> bool;
 
  private:
   QString application_name_;
@@ -62,6 +65,7 @@ class ProgramSettings final {
   int application_font_point_size_;
   bool ai_features_enabled_;
   bool ai_autocomplete_enabled_;
+  bool ai_inline_suggestions_enabled_;
 };
 
 }  // namespace cppwiki

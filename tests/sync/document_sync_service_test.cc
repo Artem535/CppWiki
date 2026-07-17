@@ -192,7 +192,7 @@ auto MakeSettings(const QString& app_data_directory = MakeUniqueAppDataDirectory
       QStringLiteral("http://127.0.0.1:9000/application/o/authorize/"),
       QStringLiteral("http://127.0.0.1:9000/application/o/token/"),
       QStringLiteral("cppwiki-desktop"), QStringLiteral("http://127.0.0.1:38080/auth/callback"),
-      true, false, {}, true, 12, false, false);
+      true, false, {}, true, 12, false, false, false);
 }
 
 auto MakeBaseBootstrap() -> cppwiki::sync::SyncBootstrap {

@@ -12,9 +12,19 @@ namespace {
 
 auto BuildRequestBody(const AiProviderConfig& config, const dto::AiChatRequestDto& request)
     -> std::string {
-  const auto system_prefix = request.mode.value_or("rewrite") == "autocomplete"
-                                 ? "Continue writing the following document naturally."
-                                 : "Rewrite/improve the following selection as instructed.";
+  const auto mode = request.mode.value_or("rewrite");
+  // "inline" (issue #59): continuous ghost-text completions fired on every
+  // typing pause, so the prompt is kept deliberately short and steers the
+  // model toward a brief, single continuation rather than a full rewrite or
+  // an open-ended "keep writing" response — this keeps latency and output
+  // size down for the self-hosted provider.
+  const auto system_prefix =
+      mode == "inline"
+          ? "Continue the user's text with a short, natural completion (a few words to one "
+            "sentence). Output only the continuation text, with no explanation, no quotes, "
+            "and no repetition of the given text."
+      : mode == "autocomplete" ? "Continue writing the following document naturally."
+                               : "Rewrite/improve the following selection as instructed.";
 
   userver::formats::json::ValueBuilder builder;
   builder["model"] = config.model.empty() ? "gpt-4o-mini" : config.model;
