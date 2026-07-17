@@ -83,15 +83,15 @@ auto MakeSectionPage(QWidget* parent, QFormLayout** out_form_layout) -> QWidget*
 SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
     : QDialog(parent), current_settings_(settings) {
   // Callers should avoid passing a QWidget parent whose subtree has its own style sheet applied
-  // (e.g. MainWindow — see ApplyApplicationStylesheet()): Qt cascades a style sheet down the
-  // QObject parent/child tree to every descendant, including dialogs that only pop up as their
-  // own top-level window because a parent was supplied for ownership/centering. That would wrap
-  // this dialog's (and SegmentedControl's) QStyle in an internal QStyleSheetStyle proxy, which
-  // breaks qobject_cast<QlementineStyle*>(style()) inside AbstractItemListWidget/SegmentedControl
-  // the same way an app-wide qApp->setStyleSheet() would — confirmed empirically that even giving
-  // this dialog its own explicit *empty* style sheet does not prevent that wrap, it only
-  // neutralizes the inherited rules. See MainWindow::ShowSettingsDialog() for how this is
-  // constructed (parent == nullptr, centered manually) to avoid it.
+  // directly (via setStyleSheet()): Qt cascades a style sheet down the QObject parent/child tree
+  // to every descendant, including dialogs that only pop up as their own top-level window
+  // because a parent was supplied for ownership/centering. That would wrap this dialog's (and
+  // SegmentedControl's) QStyle in an internal QStyleSheetStyle proxy, which breaks
+  // qobject_cast<QlementineStyle*>(style()) inside AbstractItemListWidget/SegmentedControl the
+  // same way an app-wide qApp->setStyleSheet() would. MainWindow itself never gets
+  // setStyleSheet() called on it (see MainWindow::ApplyStylesheetToSafeDescendants()'s comment),
+  // so parenting this dialog to MainWindow (see ShowSettingsDialog()) is safe and gives window
+  // managers the transient-for hint tiling WMs need to float it instead of tiling it in.
   setWindowTitle(QStringLiteral("Settings"));
   setModal(true);
   resize(680, 460);
@@ -166,6 +166,36 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   }
   accent_color_layout->addStretch(1);
   general_form_layout->addRow(QStringLiteral("Accent color"), accent_color_row);
+
+  auto* app_data_directory_edit =
+      MakeReadOnlyPathLineEdit(current_settings_.AppDataDirectory(), general_page);
+  auto* open_app_data_folder_action =
+      new QAction(QIcon::fromTheme(QStringLiteral("folder-open")),
+                  QStringLiteral("Open application data folder"), this);
+  auto* open_app_data_folder_button = new oclero::qlementine::ActionButton(general_page);
+  open_app_data_folder_button->setAction(open_app_data_folder_action);
+  open_app_data_folder_button->setMinimumWidth(160);
+  connect(open_app_data_folder_action, &QAction::triggered, this, [app_data_directory_edit]() {
+    const auto path = app_data_directory_edit->text().trimmed();
+    if (!path.isEmpty()) {
+      QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    }
+  });
+  auto* app_data_folder_row = new QWidget(general_page);
+  auto* app_data_folder_layout = new QHBoxLayout(app_data_folder_row);
+  app_data_folder_layout->setContentsMargins(0, 0, 0, 0);
+  app_data_folder_layout->setSpacing(8);
+  app_data_folder_layout->addWidget(app_data_directory_edit, 1);
+  app_data_folder_layout->addWidget(open_app_data_folder_button, 0);
+  general_form_layout->addRow(QStringLiteral("Application data folder"), app_data_folder_row);
+
+  auto* general_page_hint = new QLabel(
+      QStringLiteral("This is where CppWiki keeps its local configuration and cached editor "
+                     "assets on this machine. Document storage location is configured "
+                     "separately under Backend & Sync."),
+      general_page);
+  general_page_hint->setWordWrap(true);
+  general_form_layout->addRow(QString{}, general_page_hint);
 
   // Backend & Sync.
   QFormLayout* backend_form_layout = nullptr;

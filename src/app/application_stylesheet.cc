@@ -50,19 +50,19 @@ auto ResolveApplicationStylesheetPath() -> QString {
 
 auto BuildAccentColorStylesheet(AccentColor accent_color) -> QString {
   const auto base_color = AccentColorBaseColor(accent_color);
+  // Only the rail's active-mode highlight is expressed as QSS here. The other ADR-016 accent
+  // application — collaborationPanel[collaborationState="viewing"]'s tint — can't be QSS: since
+  // PR #54, collaboration_panel_ is an ancestor of edit_mode_switch_ and so never receives any
+  // stylesheet at all (see MainWindow::ApplyStylesheetToSafeDescendants()'s comment). That tint
+  // is instead painted directly by CollaborationPanelFrame (main_window.cc), which reads the
+  // accent color via MainWindow::ApplyAccentColor().
   return QStringLiteral(
              "QWidget#workspaceRailWidget QToolButton:checked {\n"
              "  background-color: %1;\n"
              "  border: 1px solid %2;\n"
              "  border-radius: 8px;\n"
-             "}\n"
-             "\n"
-             "QFrame#collaborationPanel[collaborationState=\"viewing\"] {\n"
-             "  background-color: %3;\n"
-             "  border: 1px solid %4;\n"
              "}\n")
-      .arg(ToRgbaString(base_color, 0.16), ToRgbaString(base_color, 0.4),
-           ToRgbaString(base_color, 0.06), ToRgbaString(base_color, 0.18));
+      .arg(ToRgbaString(base_color, 0.16), ToRgbaString(base_color, 0.4));
 }
 
 void ApplyApplicationStylesheet(QWidget* target, AccentColor accent_color) {

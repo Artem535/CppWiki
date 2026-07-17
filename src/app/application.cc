@@ -21,9 +21,13 @@ namespace cppwiki {
 
 namespace {
 
-// Non-owning; owned by QApplication (parented to it). Kept outside the class so it can be
-// recovered even after QApplication::style() gets wrapped by a QStyleSheetStyle proxy once a
-// non-empty app-wide stylesheet is applied (see ApplyApplicationStylesheet()).
+// Non-owning; owned by QApplication (parented to it). Kept outside the class as a stable
+// accessor for code that needs the real QlementineStyle instance (e.g. sizing hints computed
+// before a widget is fully parented). See MainWindow::ApplyStylesheetToSafeDescendants()'s
+// comment for why main_window_ is never given its own stylesheet: doing so would wrap the
+// style() of any qlementine widget nested under it in a QStyleSheetStyle proxy, breaking that
+// widget's own qobject_cast<QlementineStyle*>(style()) — a wrap that a subsequent explicit
+// setStyle() call cannot undo, since it too gets intercepted while any ancestor is styled.
 oclero::qlementine::QlementineStyle* g_qlementine_style = nullptr;
 
 // QlementineStyle does not expose a getter for the currently applied theme path, so the last
@@ -66,17 +70,15 @@ Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   auto* qlementine_style = new oclero::qlementine::QlementineStyle(&qt_application_);
   g_qlementine_style = qlementine_style;
   QApplication::setStyle(qlementine_style);
-  // Settings aren't loaded yet at this point (ReloadContext() below does that), so the initial
-  // apply uses the default accent (kBlue); ApplyAppearanceFromSettings() reapplies with the
-  // user's actual choice once settings_ is populated.
-  ApplyApplicationStylesheet(&main_window_, AccentColor::kBlue);
-  g_applied_accent_color = AccentColor::kBlue;
-  // main_window_ is a plain Application member, so it (and everything BuildUi() constructs,
-  // e.g. the edit-mode Switch) is fully built before this constructor body runs — earlier than
-  // g_qlementine_style above is set. Any hand-painted qlementine widget that needs to pin
-  // itself to the real style (see GetQlementineStyle()'s comment) has to do it after this
-  // point, not from inside BuildUi().
-  main_window_.PinHandPaintedWidgetsToQlementineStyle();
+  // main_window_ (the top-level window) is deliberately never given a stylesheet — see
+  // MainWindow::ApplyStylesheetToSafeDescendants()'s comment for why: Qt's QStyleSheetStyle
+  // would wrap every descendant's style(), including hand-painted qlementine widgets like
+  // edit_mode_switch_, breaking their internal qobject_cast<QlementineStyle*>(style()). Instead
+  // MainWindow applies cppwiki.qss (and the ADR-016 accent tint, via MainWindow::
+  // ApplyAccentColor()) piecemeal, to specific descendants that aren't on the path up to such
+  // widgets. Settings aren't loaded yet at this point — ReloadContext() below populates
+  // settings_ and calls ApplyAppearanceFromSettings(), which applies the user's actual accent
+  // choice (or the kBlue default for a fresh install) via that path.
   auth_session_manager_ = std::make_unique<auth::AuthSessionManager>(&qt_application_);
   backend_client_ = std::make_unique<backend::BackendClient>(&qt_application_);
   document_sync_service_ = std::make_unique<sync::DocumentSyncService>(&qt_application_);
@@ -151,11 +153,9 @@ void Application::ApplyAppearanceFromSettings(const ProgramSettings& settings) {
   // unconditionally on every settings save (even when nothing about appearance changed)
   // repeatedly churns those caches for no reason and has been a source of teardown crashes.
   //
-  // Note: the application-wide stylesheet (ApplyApplicationStylesheet()) is intentionally NOT
-  // reapplied here — it is static content unrelated to ProgramSettings and is applied once, in
-  // the constructor. Calling qApp->setStyleSheet() repeatedly wraps QApplication::style() in a
-  // fresh QStyleSheetStyle proxy each time, which both breaks qobject_cast<QlementineStyle*>
-  // (see GetQlementineStyle()) and adds unnecessary style-object churn during shutdown.
+  // Note: cppwiki.qss (ApplyApplicationStylesheet(), called piecemeal from MainWindow — see
+  // MainWindow::ApplyStylesheetToSafeDescendants()) is intentionally NOT reapplied here: it's
+  // static content unrelated to ProgramSettings, applied once when MainWindow builds its UI.
   auto font = QApplication::font();
   if (settings.ApplicationFontPointSize() > 0 &&
       font.pointSize() != settings.ApplicationFontPointSize()) {
@@ -173,12 +173,13 @@ void Application::ApplyAppearanceFromSettings(const ProgramSettings& settings) {
 
   // Unlike the static app/cppwiki.qss content, the ADR-016 accent tint depends on
   // ProgramSettings, so (unlike the app-wide-stylesheet note above) it does need to be
-  // reapplied when it changes. This still only touches main_window_'s own stylesheet (not
-  // qApp->setStyleSheet()), so it doesn't re-wrap QApplication::style() in a fresh
-  // QStyleSheetStyle proxy.
+  // reapplied when it changes. MainWindow::ApplyAccentColor() only re-styles the specific safe
+  // descendants (see ApplyStylesheetToSafeDescendants()) and repaints collaboration_panel_'s
+  // "viewing" tint in code — main_window_ itself is never given a stylesheet, so this can't
+  // re-wrap QApplication::style() in a fresh QStyleSheetStyle proxy.
   const auto accent_color = AccentColorFromKey(settings.AccentColorKey());
   if (!g_applied_accent_color.has_value() || *g_applied_accent_color != accent_color) {
-    ApplyApplicationStylesheet(&main_window_, accent_color);
+    main_window_.ApplyAccentColor(accent_color);
     g_applied_accent_color = accent_color;
   }
 }

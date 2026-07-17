@@ -1,6 +1,10 @@
-QWidget#shellHeaderRow {
-  background-color: transparent;
-}
+// shellHeaderRow and collaborationPanel are both ancestors of editModeSwitch
+// (oclero::qlementine::Switch) in MainWindow, so cppwiki.qss is never applied to them or any
+// of their ancestors — see MainWindow::ApplyStylesheetToSafeDescendants()'s comment. Rules for
+// them would simply never match anything: shellHeaderRow relies on QWidget's default
+// (transparent) painting, and collaborationPanel paints its own background/border in code
+// (see CollaborationPanelFrame in main_window.cc), keyed off the same "collaborationState"
+// property these rules used to use.
 
 QFrame#shellWidgetCell {
   background-color: rgba(255, 255, 255, 0.03);
@@ -28,36 +32,10 @@ QWidget#workspaceRailWidget {
   border-radius: 12px;
 }
 
-QFrame#collaborationPanel {
-  background-color: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-}
-
-QFrame#collaborationPanel[collaborationState="editing"] {
-  background-color: rgba(28, 201, 156, 0.08);
-  border: 1px solid rgba(28, 201, 156, 0.32);
-}
-
-/* collaborationPanel[collaborationState="viewing"]'s background/border is intentionally not
-   defined here: it's the ADR-016 accent-color tint, appended at runtime by
-   BuildAccentColorStylesheet() (see app/application_stylesheet.cc) so it can vary with the
-   user's chosen accent color instead of being a hardcoded blue. */
-
-QFrame#collaborationPanel[collaborationState="read-only"] {
-  background-color: rgba(255, 193, 87, 0.08);
-  border: 1px solid rgba(255, 193, 87, 0.28);
-}
-
-QFrame#collaborationPanel[collaborationState="attention"] {
-  background-color: rgba(255, 107, 107, 0.08);
-  border: 1px solid rgba(255, 107, 107, 0.28);
-}
-
-QFrame#collaborationPanel[collaborationState="local-only"] {
-  background-color: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-}
+/* collaborationPanel has no rules here: it's an ancestor of editModeSwitch, so it never gets
+   this stylesheet applied at all (see MainWindow::ApplyStylesheetToSafeDescendants()'s
+   comment) — it paints its own background/border, including the ADR-016 accent tint for the
+   "viewing" state, in code (see CollaborationPanelFrame in main_window.cc). */
 
 QFrame#presenceStripWidget {
   background-color: transparent;

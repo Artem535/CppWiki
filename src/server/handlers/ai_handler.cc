@@ -40,6 +40,8 @@ auto AiHandler::HandleRequestJsonThrow(const userver::server::http::HttpRequest&
                                       dto::ErrorDto{"invalid_request", "prompt is required"});
   }
 
+  spdlog::info("AI chat request received: mode={}", parsed->mode.value_or("rewrite"));
+
   try {
     const auto result = ai_chat_service_.Complete(*parsed);
     return dto::MakeSuccessEnvelopeJson(dto::kApiVersion, result);
