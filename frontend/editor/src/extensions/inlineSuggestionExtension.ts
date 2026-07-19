@@ -27,6 +27,13 @@ export interface InlineSuggestionExtensionOptions {
   // matching the pattern used for the bridge/AI-transport getters elsewhere
   // in this app (see main.tsx's `bridge_ref`).
   isEnabled: () => boolean;
+  // True while main.tsx is programmatically replacing the document's blocks
+  // (opening a different page, applying a conflict resolution — see
+  // `replacing_document` in main.tsx). Those transactions are not user
+  // typing, so they must not schedule an inline-completion request; this
+  // mirrors the same guard `handleEditorChange` already uses for snapshot
+  // autosave.
+  isReplacingDocument: () => boolean;
   fetchCompletion: (contextText: string, signal: AbortSignal) => Promise<string>;
   debounceMs: number;
   contextChars: number;
@@ -170,7 +177,7 @@ export function createInlineSuggestionExtension(options: InlineSuggestionExtensi
     },
 
     onTransaction({ transaction, editor }) {
-      if (!options.isEnabled()) {
+      if (!options.isEnabled() || options.isReplacingDocument()) {
         scheduler.cancel();
         return;
       }

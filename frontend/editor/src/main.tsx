@@ -81,6 +81,7 @@ function EditorApp() {
   const inlineSuggestionExtension = useMemo(() => {
     const tiptapExtension = createInlineSuggestionExtension({
       isEnabled: () => ai_inline_suggestions_enabled_ref.current,
+      isReplacingDocument: () => replacing_document.current,
       fetchCompletion: (contextText, signal) => {
         const bridge = bridge_ref.current;
         if (!bridge) {
