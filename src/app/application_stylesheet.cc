@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QIODevice>
+#include <QStyle>
 #include <QWidget>
 
 #include "core/constants.h"
@@ -65,6 +66,28 @@ auto BuildAccentColorStylesheet(AccentColor accent_color) -> QString {
       .arg(ToRgbaString(base_color, 0.16), ToRgbaString(base_color, 0.4));
 }
 
+namespace {
+
+// QStyleSheetStyle caches a widget's computed style rules the first time it's polished; when
+// setStyleSheet() is called more than once on a widget before that widget has ever been shown
+// (e.g. MainWindow::BuildUi() applies a stylesheet with the still-default accent color, which
+// Application::ReloadContext() then immediately overwrites with the real one loaded from
+// ProgramSettings, all before Application::Run() calls show()), the widget can end up painted
+// with a stale intermediate stylesheet instead of the final one — reproduced as the workspace
+// rail's accent tint staying on the default color after a restart even though the correct
+// accent was demonstrably the last stylesheet applied. Forcing an explicit unpolish()/polish()
+// (and a repaint) after every setStyleSheet() call sidesteps that cache regardless of how many
+// times the stylesheet changed before the first show().
+void ForceStyleRefresh(QWidget* target) {
+  if (auto* style = target->style()) {
+    style->unpolish(target);
+    style->polish(target);
+  }
+  target->update();
+}
+
+}  // namespace
+
 void ApplyApplicationStylesheet(QWidget* target, AccentColor accent_color) {
   if (target == nullptr) {
     return;
@@ -73,17 +96,20 @@ void ApplyApplicationStylesheet(QWidget* target, AccentColor accent_color) {
   const auto path = ResolveApplicationStylesheetPath();
   if (path.isEmpty()) {
     target->setStyleSheet(BuildAccentColorStylesheet(accent_color));
+    ForceStyleRefresh(target);
     return;
   }
 
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
     target->setStyleSheet(BuildAccentColorStylesheet(accent_color));
+    ForceStyleRefresh(target);
     return;
   }
 
   target->setStyleSheet(QString::fromUtf8(file.readAll()) + QStringLiteral("\n") +
                         BuildAccentColorStylesheet(accent_color));
+  ForceStyleRefresh(target);
 }
 
 }  // namespace cppwiki
