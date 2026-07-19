@@ -612,11 +612,16 @@ void MainWindow::BuildUi() {
   statusBar()->addPermanentWidget(sync_status_widget_);
   menuBar()->hide();
 
-  // Note: MainWindow itself intentionally never gets setStyleSheet() called on it — see
-  // ApplyStylesheetToSafeDescendants()'s comment. current_sidebar_widget_/
-  // current_content_widget_ don't exist yet at this point (CreateInitialPage() creates them
-  // later, in SetContext()), so this call re-runs there too.
-  ApplyStylesheetToSafeDescendants(current_accent_color_);
+  // Deliberately NOT calling ApplyStylesheetToSafeDescendants() here: at this point
+  // current_accent_color_ is still its AccentColor::kBlue default (the real accent, loaded
+  // from ProgramSettings, isn't known yet — Application::ReloadContext() applies it right
+  // after MainWindow is constructed, before Application::Run() ever shows the window). Styling
+  // with the wrong color here first and then immediately overwriting it before the window is
+  // ever shown previously caused the workspace rail's accent tint to stick on the wrong
+  // (first-applied) color after every restart — see ApplyApplicationStylesheet()'s
+  // ForceStyleRefresh() comment for the underlying QStyleSheetStyle caching behavior. Leaving
+  // these widgets unstyled for the brief window before ReloadContext() runs is fine: the window
+  // isn't shown yet either way.
 }
 
 void MainWindow::HandleModeSelected(gui::WorkspaceRailWidget::Mode mode) {
