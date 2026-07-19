@@ -116,3 +116,133 @@ not through `cppwiki_server`.
 * The two backends must be kept behavior-compatible (same `ChatTransport` contract) as
   BlockNote's AI extension evolves, doubling the maintenance surface flagged as a risk in
   the original decision above.
+
+---
+
+== Addendum (2026-07-19) — Inline Ghost-Text Suggestions and Structured Tool-Call Output
+
+=== Context
+
+Two more AI-transport-relevant features landed after the original decision and its
+local-key addendum above, both surfaced through direct use of the running app rather than
+being anticipated up front.
+
+*Inline ghost-text suggestions* (issue #59): users wanted a continuous, Copilot/Obsidian-style
+inline completion — text predicted and shown as dimmed "ghost text" right at the cursor while
+typing, accepted with Tab — rather than the existing manually-triggered toolbar/slash-menu AI
+actions. This is a fundamentally different interaction pattern (fired automatically and
+repeatedly on typing pauses, not once per explicit user action).
+
+*Structured tool-call output* (issue #65): `@blocknote/xl-ai`'s `AIExtension` (used by the
+rewrite toolbar button and the AI slash-menu items) turned out not to render plain-text
+responses at all. Its own `defaultAIRequestSender` (`node_modules/@blocknote/xl-ai`) puts a
+tool name and JSON Schema in the request body
+(`toolDefinitions.applyDocumentOperations`, built from the current document), and its
+`setupToolCallStreaming` only applies document changes from *tool-call* message parts
+(`tool-input-start`/`-delta`/`-available` `UIMessageChunk`s) — it silently ignores plain
+`text-delta` parts. `BridgeChatTransport` was only ever emitting `text-delta` chunks (matching
+this ADR's original "plain text streaming, no tool-calling" MVP scope), so responses arrived
+successfully end to end (visible in `cppwiki_server`'s logs) but never surfaced in the editor.
+
+=== Decision
+
+==== Inline suggestions bypass `@blocknote/xl-ai` entirely
+
+Rather than force the continuous, automatic inline-completion pattern through
+`AIExtension`/`AIMenuController` (designed around discrete, user-triggered invocations), inline
+suggestions are a separate Tiptap extension
+(`frontend/editor/src/extensions/inlineSuggestionExtension.ts`, wired into
+`useCreateBlockNote()` alongside `createAIExtension()`), backed by its own debounce/cancellation
+state machine (`inlineSuggestionScheduler.ts`, unit-tested independent of ProseMirror) and its
+own bridge call (`frontend/editor/src/bridge/inlineCompletion.ts`, `startAiRequest(prompt,
+"", "inline")`).
+
+It still goes through the same `EditorBridge`/`QWebChannel` trust boundary as every other AI
+request (this ADR's core decision is unchanged), but consumes the response as a single
+concatenated string, not a `ReadableStream<UIMessageChunk>` — there is no `ai` SDK `Chat`
+session involved for this feature, since there is no BlockNote AI menu UI to drive.
+
+Key behavior, since none of this is discoverable from the code alone without reading issue #59:
+
+* *Debounce*: 450ms after the last relevant transaction (`inlineSuggestionDebounceMs`,
+  `frontend/editor/src/constants.ts`) before a completion request fires — chosen from the
+  issue's suggested 300-600ms range: long enough to avoid firing on every keystroke, short
+  enough that a pause reads as "waiting for a suggestion" rather than a stall.
+* *Context*: up to 800 characters of plain text immediately preceding the cursor
+  (`inlineSuggestionContextChars`) — local context only, not the whole document, to keep
+  prompts small given the self-hosted provider's higher per-request latency.
+* *Trigger condition*: only when the selection is collapsed (an empty cursor, not a text
+  range) and the document actually changed or the selection moved; scheduling is skipped
+  (and any pending request cancelled) while `editor.replaceBlocks()` is programmatically
+  swapping the whole document (opening a different page, applying a conflict resolution —
+  see `isReplacingDocument` in `inlineSuggestionExtension.ts`), not just on local typing.
+* *Cancellation*: any further doc-changing transaction (continued typing) cancels a pending
+  debounce timer or in-flight request and dismisses an already-showing suggestion. Cancellation
+  is client-side only — once `startAiRequest` has handed the request to C++, the outbound HTTP
+  call to the provider is not aborted server-side; a cancelled request's eventual result is
+  simply ignored.
+* *Display*: rendered as a ProseMirror widget decoration (`.cppwiki-ghost-text`, dimmed,
+  `aria-hidden`) positioned at the cursor, not inserted into the document.
+* *Accept*: Tab inserts the suggestion text at the cursor and clears the decoration. The
+  keyboard shortcut's `priority` is set higher than Tiptap/BlockNote's implicit default so it
+  gets first refusal on Tab, but returns `false` (falls through to BlockNote's own Tab
+  handling, e.g. list indent) whenever there is no suggestion currently showing.
+* *Opt-in*: gated by its own setting, `ai/inlineSuggestionsEnabled`
+  (`ProgramSettings::AiInlineSuggestionsEnabled()`), deliberately independent of the existing
+  `ai/featuresEnabled` (rewrite/slash-menu) toggle — a user can want continuous inline
+  predictions without the toolbar/slash-menu AI actions, or vice versa.
+* *Prompting*: the server selects a short, single-continuation system prompt for
+  `mode: "inline"` requests (`constants::kAiSystemPromptInline`,
+  `src/core/constants.h`) — deliberately different from the rewrite/autocomplete prompts, to
+  keep latency and output size down given how often this fires.
+
+==== Rewrite/autocomplete switch to structured tool-call output
+
+`BridgeChatTransport` (`frontend/editor/src/bridge/aiChatTransport.ts`) now reads the tool
+name and JSON Schema xl-ai puts in `options.body.toolDefinitions.applyDocumentOperations` and
+forwards both through the bridge alongside the existing prompt/context/mode
+(`EditorBridge.startAiRequest`'s new optional `toolName`/`toolSchemaJson` parameters). The
+plain-text path (`text-delta` chunks) is kept as a fallback for callers that don't supply a
+tool schema (i.e. the inline-suggestions path above, and any future non-xl-ai caller).
+
+On the C++ side, `QEditorBridge::CallProviderAndRelay` threads the schema through to whichever
+backend handled the request (server-mediated or local-key) and, when the provider replies with
+a structured tool call instead of prose, relays it via a dedicated `aiToolCallReceived(request_id,
+tool_name, arguments_json)` signal rather than chunked text. `cppwiki_server`'s
+`AiChatService::BuildRequestBody` builds an OpenAI-compatible `tools`/`tool_choice` request
+(forcing the specific function call) when the incoming `AiChatRequestDto` carries a tool
+name/schema, and extracts `choices[0].message.tool_calls[0].function.arguments` instead of
+`choices[0].message.content` for the response.
+
+Back on the JS side, `BridgeChatTransport` re-emits the parsed arguments as a
+`tool-input-start`/`tool-input-delta`/`tool-input-available` `UIMessageChunk` sequence (rather
+than `text-delta`), which is what BlockNote's `setupToolCallStreaming` actually watches for —
+closing the gap that caused responses to arrive successfully but never surface in the editor.
+
+=== Consequences
+
+==== Positive
+
+* Inline suggestions get a UX (continuous, low-friction, Tab-to-accept) that would have been
+  awkward to force through `AIExtension`'s discrete-invocation menu model, without
+  compromising that model for the toolbar/slash-menu features that do fit it well.
+* Both new features keep the ADR-012 trust boundary intact: `QWebEngineView` still never gets
+  direct network access, regardless of which of the three request "modes" (rewrite,
+  autocomplete, inline) or which chunk shape (text vs. tool-call) is in play.
+* The rewrite/autocomplete fix makes `AIMenuController`'s built-in diff/preview UI actually
+  work, instead of requiring a hand-rolled replacement UI that would have diverged from
+  `@blocknote/xl-ai`'s own (and future) UX for that feature.
+
+==== Negative
+
+* The bridge and transport interfaces have grown a third "mode" and a parallel tool-call
+  signal/chunk path alongside the original plain-text one — two response shapes
+  (`aiChunkReceived`/`text-delta` vs. `aiToolCallReceived`/`tool-input-*`) to keep in sync as
+  `@blocknote/xl-ai` or the `ai` SDK's `UIMessageChunk` contract evolves.
+* Inline suggestions add a request every ~450ms of typing pause, not just on explicit user
+  action — meaningfully higher AI provider request volume/cost than the original
+  manually-triggered scope this ADR was written for.
+* The tool-calling path assumes an OpenAI-compatible `tools`/`tool_choice` API shape; a
+  self-hosted or alternative provider that doesn't support function-calling in that exact
+  shape would need either a translation layer or would only work in plain-text mode (rewrite/
+  autocomplete would then silently fail to surface responses again, same as before this fix).
