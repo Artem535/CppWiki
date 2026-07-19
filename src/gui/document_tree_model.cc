@@ -21,6 +21,7 @@ DocumentTreeItem::DocumentTreeItem(const storage::DocumentSummary& summary,
       id_(summary.id),
       title_(summary.title),
       workspace_id_(summary.workspace_id),
+      document_kind_(summary.kind),
       sort_order_(summary.sort_order),
       parent_(parent) {}
 
@@ -191,10 +192,19 @@ QVariant DocumentTreeModel::data(const QModelIndex& index, int role) const {
                                 QIcon::fromTheme(QStringLiteral("folder-network"),
                                                  QIcon::fromTheme(QStringLiteral("folder"))));
       }
+      // Documents get a bundled monochrome icon distinguishing their DocumentKind
+      // (wiki page / Jupyter notebook / Excalidraw canvas) rather than a generic
+      // container/file-type icon, even when they have children.
+      if (item->isDocument()) {
+        return QIcon(DocumentKindIconResourcePath(item->documentKind()));
+      }
       if (item->isContainer()) {
         return QIcon::fromTheme("folder");
       }
       return QIcon::fromTheme("text-x-generic");
+
+    case DocumentTreeModel::kDocumentKindIconPathRole:
+      return item->isDocument() ? DocumentKindIconResourcePath(item->documentKind()) : QVariant();
 
     case DocumentTreeModel::kIsContainerRole:
       return item->isContainer();
@@ -641,6 +651,18 @@ void DocumentTreeModel::setLockedDocumentIds(const QSet<QString>& document_ids) 
   }
   locked_document_ids_ = document_ids;
   emit layoutChanged();
+}
+
+QString DocumentTreeModel::DocumentKindIconResourcePath(document::DocumentKind kind) {
+  switch (kind) {
+    case document::DocumentKind::kJupyterNotebook:
+      return QStringLiteral(":/cppwiki/icons/document-jupyter-notebook.svg");
+    case document::DocumentKind::kExcalidrawCanvas:
+      return QStringLiteral(":/cppwiki/icons/document-excalidraw-canvas.svg");
+    case document::DocumentKind::kWikiPage:
+      return QStringLiteral(":/cppwiki/icons/document-wiki-page.svg");
+  }
+  return QStringLiteral(":/cppwiki/icons/document-wiki-page.svg");
 }
 
 void DocumentTreeModel::setConflictedDocumentIds(const QSet<QString>& document_ids) {

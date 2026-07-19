@@ -42,6 +42,9 @@ class DocumentTreeItem {
   [[nodiscard]] int sortOrder() const {
     return sort_order_;
   }
+  [[nodiscard]] document::DocumentKind documentKind() const {
+    return document_kind_;
+  }
   [[nodiscard]] Kind kind() const {
     return kind_;
   }
@@ -87,6 +90,7 @@ class DocumentTreeItem {
   std::string id_;
   std::string title_;
   std::string workspace_id_;
+  document::DocumentKind document_kind_ = document::DocumentKind::kWikiPage;
   int sort_order_ = 0;
   DocumentTreeItem* parent_ = nullptr;
   std::vector<std::unique_ptr<DocumentTreeItem>> children_;
@@ -147,7 +151,16 @@ class DocumentTreeModel : public QAbstractItemModel {
   static constexpr int kIsWorkspaceRole = Qt::UserRole + 6;
   static constexpr int kWorkspaceIdRole = Qt::UserRole + 7;
   static constexpr int kIsConflictedRole = Qt::UserRole + 8;
+  // Bundled monochrome SVG resource path (":/cppwiki/icons/...") for the row's
+  // document::DocumentKind. Only meaningful for document rows; see
+  // DocumentKindIconResourcePath() for the kind -> path mapping.
+  static constexpr int kDocumentKindIconPathRole = Qt::UserRole + 9;
   static constexpr auto kDocumentIdMimeType = "application/x-cppwiki-document-id";
+
+  // Returns the bundled monochrome SVG resource path for a given DocumentKind,
+  // following the same ":/cppwiki/icons/..." convention as the workspace rail
+  // icons (see workspace_rail_widget.cc).
+  [[nodiscard]] static QString DocumentKindIconResourcePath(document::DocumentKind kind);
 
  signals:
   void addChildRequested(const QModelIndex& parent_document_index);

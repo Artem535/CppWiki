@@ -1,6 +1,7 @@
 #include "gui/document_context_menu.h"
 
 #include <QIcon>
+#include <QMenu>
 #include <QPushButton>
 #include <QSize>
 #include <QStyle>
@@ -41,8 +42,7 @@ DocumentContextMenu::DocumentContextMenu(const Options& options, QWidget* parent
   layout->setContentsMargins(6, 6, 6, 6);
   layout->setSpacing(2);
 
-  AddButton(Action::kAddChildPage, QStringLiteral("Add child page"),
-            style()->standardIcon(QStyle::SP_FileDialogNewFolder), true);
+  AddNewDocumentSubmenuButton();
   AddButton(Action::kRenameTitle, QStringLiteral("Rename title"),
             QIcon::fromTheme(QStringLiteral("document-edit")), true);
   AddButton(Action::kMoveUp, QStringLiteral("Move up"),
@@ -83,6 +83,48 @@ void DocumentContextMenu::AddButton(Action action, const QString& text, const QI
     close();
     emit actionRequested(action);
   });
+}
+
+void DocumentContextMenu::AddNewDocumentSubmenuButton() {
+  auto* button = new QPushButton(QStringLiteral("New document"), this);
+  button->setIcon(style()->standardIcon(QStyle::SP_FileDialogNewFolder));
+  button->setIconSize(QSize(16, 16));
+  button->setCursor(Qt::PointingHandCursor);
+  button->setFocusPolicy(Qt::NoFocus);
+  button->setFlat(true);
+
+  if (auto* layout = qobject_cast<QVBoxLayout*>(this->layout())) {
+    layout->addWidget(button);
+  }
+
+  connect(button, &QPushButton::clicked, this,
+          [this, button]() { ShowNewDocumentSubmenu(button); });
+}
+
+void DocumentContextMenu::ShowNewDocumentSubmenu(QPushButton* anchor) {
+  auto* submenu = new QMenu(this);
+  submenu->setAttribute(Qt::WA_DeleteOnClose);
+
+  // "Wiki page" is first/default and, when chosen, must produce byte-identical
+  // behavior to the old single hardcoded "Add child page" action.
+  auto* wiki_page_action = submenu->addAction(QStringLiteral("Wiki page"));
+  auto* jupyter_notebook_action = submenu->addAction(QStringLiteral("Jupyter notebook"));
+  auto* excalidraw_canvas_action = submenu->addAction(QStringLiteral("Excalidraw canvas"));
+
+  connect(wiki_page_action, &QAction::triggered, this, [this]() {
+    close();
+    emit newDocumentRequested(document::DocumentKind::kWikiPage);
+  });
+  connect(jupyter_notebook_action, &QAction::triggered, this, [this]() {
+    close();
+    emit newDocumentRequested(document::DocumentKind::kJupyterNotebook);
+  });
+  connect(excalidraw_canvas_action, &QAction::triggered, this, [this]() {
+    close();
+    emit newDocumentRequested(document::DocumentKind::kExcalidrawCanvas);
+  });
+
+  submenu->popup(anchor->mapToGlobal(QPoint(anchor->width(), 0)));
 }
 
 }  // namespace cppwiki::gui

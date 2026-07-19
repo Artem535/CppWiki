@@ -491,17 +491,18 @@ void Page::OnTreePressed(const QModelIndex& index) {
   OpenDocumentWithAccess(selected_page_id_);
 }
 
-void Page::CreateNewDocument(const QString& workspace_id) {
+void Page::CreateNewDocument(const QString& workspace_id, document::DocumentKind kind) {
   if (editor_bridge_ == nullptr) {
     return;
   }
 
   ActivateWorkspace(workspace_id);
-  const auto response = editor_bridge_->createDocumentInWorkspace(workspace_id);
+  const auto response = editor_bridge_->createDocumentInWorkspace(
+      workspace_id, QString::fromStdString(document::ToDocumentKindKey(kind)));
   HandleCreatedDocument(response, workspace_id);
 }
 
-void Page::CreateChildDocument(const QModelIndex& parent_index) {
+void Page::CreateChildDocument(const QModelIndex& parent_index, document::DocumentKind kind) {
   if (editor_bridge_ == nullptr) {
     return;
   }
@@ -512,7 +513,7 @@ void Page::CreateChildDocument(const QModelIndex& parent_index) {
   }
 
   if (workspace_tree_model_ != nullptr && workspace_tree_model_->isWorkspace(parent_index)) {
-    CreateNewDocument(*workspace_id);
+    CreateNewDocument(*workspace_id, kind);
     return;
   }
 
@@ -524,7 +525,8 @@ void Page::CreateChildDocument(const QModelIndex& parent_index) {
   }
 
   const auto response = editor_bridge_->createChildDocumentInWorkspace(
-      *workspace_id, QString::fromStdString(*parent_id));
+      *workspace_id, QString::fromStdString(*parent_id),
+      QString::fromStdString(document::ToDocumentKindKey(kind)));
   HandleCreatedDocument(response, *workspace_id);
 }
 
@@ -1129,12 +1131,8 @@ void Page::ShowContextMenu(const QPoint& position) {
 
     auto* menu = new gui::DocumentContextMenu({.can_move_up = false, .can_move_down = false},
                                               workspace_tree_view_);
-    connect(menu, &gui::DocumentContextMenu::actionRequested, this,
-            [this, index](gui::DocumentContextMenu::Action action) {
-              if (action == gui::DocumentContextMenu::Action::kAddChildPage) {
-                CreateChildDocument(index);
-              }
-            });
+    connect(menu, &gui::DocumentContextMenu::newDocumentRequested, this,
+            [this, index](document::DocumentKind kind) { CreateChildDocument(index, kind); });
     menu->ShowAt(workspace_tree_view_->mapToGlobal(position));
     return;
   }
@@ -1182,13 +1180,15 @@ void Page::ShowContextMenu(const QPoint& position) {
 
   auto* menu = new gui::DocumentContextMenu(
       {.can_move_up = can_move_up, .can_move_down = can_move_down}, workspace_tree_view_);
+  connect(menu, &gui::DocumentContextMenu::newDocumentRequested, this,
+          [this, index](document::DocumentKind kind) {
+            spdlog::info("Context menu: new document (kind={})",
+                        document::ToDocumentKindKey(kind));
+            CreateChildDocument(index, kind);
+          });
   connect(menu, &gui::DocumentContextMenu::actionRequested, this,
           [this, index](gui::DocumentContextMenu::Action action) {
             switch (action) {
-              case gui::DocumentContextMenu::Action::kAddChildPage:
-                spdlog::info("Context menu: add child page");
-                CreateChildDocument(index);
-                break;
               case gui::DocumentContextMenu::Action::kRenameTitle:
                 spdlog::info("Context menu: rename title");
                 RenameDocument(index);

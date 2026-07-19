@@ -28,6 +28,7 @@
 #include "core/constants.h"
 #include "core/qt_string.h"
 #include "core/uuid.h"
+#include "document/document.h"
 #include "document/document_validator.h"
 #include "storage/local_document_repository.h"
 
@@ -202,6 +203,7 @@ auto EffectiveAuthorId(const QString& author_id) -> std::string {
 auto MetadataToVariant(const document::PageMetadata& metadata) -> QVariantMap {
   return QVariantMap{
       {QStringLiteral("id"), QString::fromStdString(metadata.id)},
+      {QStringLiteral("kind"), QString::fromStdString(document::ToDocumentKindKey(metadata.kind))},
       {QStringLiteral("title"), QString::fromStdString(metadata.title)},
       {QStringLiteral("parentId"), OptionalStringToVariant(metadata.parent_id)},
       {QStringLiteral("sortOrder"), metadata.sort_order},
@@ -226,6 +228,7 @@ auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& doc
 
     result.append(QVariantMap{
         {QStringLiteral("id"), QString::fromStdString(document.id)},
+        {QStringLiteral("kind"), QString::fromStdString(document::ToDocumentKindKey(document.kind))},
         {QStringLiteral("title"), QString::fromStdString(document.title)},
         {QStringLiteral("parentId"), OptionalStringToVariant(document.parent_id)},
         {QStringLiteral("sortOrder"), document.sort_order},
@@ -291,7 +294,8 @@ auto MakeWelcomeRecord(const QString& workspace_id, const QString& author_id)
 
 auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
                            std::int32_t sort_order = 0,
-                           QString workspace_id = QStringLiteral("default"), QString author_id = {})
+                           QString workspace_id = QStringLiteral("default"), QString author_id = {},
+                           document::DocumentKind kind = document::DocumentKind::kWikiPage)
     -> storage::DocumentRecord {
   const auto id = GenerateUuidString();
   const auto title = std::string(constants::kNewDocumentTitle);
@@ -304,6 +308,7 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
           document::PageMetadata{
               .id = id,
               .schema_version = document::SchemaVersion::kV1,
+              .kind = kind,
               .title = title,
               .workspace_id = workspace_id.toStdString(),
               .parent_id = std::move(parent_id),
@@ -551,14 +556,16 @@ QVariantMap QEditorBridge::listDocuments() {
   return listDocumentsInWorkspace(current_workspace_id_);
 }
 
-QVariantMap QEditorBridge::createDocumentInWorkspace(const QString& workspace_id) {
+QVariantMap QEditorBridge::createDocumentInWorkspace(const QString& workspace_id,
+                                                     const QString& kind) {
   if (!repository_) {
     return ErrorResponse(QStringLiteral("repository_unavailable"),
                          QStringLiteral("Document repository is not configured."));
   }
 
   auto record = MakeNewDocumentRecord(std::nullopt, 0, NormalizeWorkspaceId(workspace_id),
-                                      current_author_id_);
+                                      current_author_id_,
+                                      document::DocumentKindFromKey(kind.toStdString()));
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
     return ErrorResponse(QStringLiteral("create_failed"),
@@ -569,11 +576,14 @@ QVariantMap QEditorBridge::createDocumentInWorkspace(const QString& workspace_id
 }
 
 QVariantMap QEditorBridge::createDocument() {
-  return createDocumentInWorkspace(current_workspace_id_);
+  return createDocumentInWorkspace(current_workspace_id_,
+                                   QString::fromStdString(document::ToDocumentKindKey(
+                                       document::DocumentKind::kWikiPage)));
 }
 
 QVariantMap QEditorBridge::createChildDocumentInWorkspace(const QString& workspace_id,
-                                                          const QString& parent_id) {
+                                                          const QString& parent_id,
+                                                          const QString& kind) {
   if (!repository_) {
     return ErrorResponse(QStringLiteral("repository_unavailable"),
                          QStringLiteral("Document repository is not configured."));
@@ -598,7 +608,8 @@ QVariantMap QEditorBridge::createChildDocumentInWorkspace(const QString& workspa
   }
 
   auto record = MakeNewDocumentRecord(parent_id.toStdString(), sort_order, normalized_workspace_id,
-                                      current_author_id_);
+                                      current_author_id_,
+                                      document::DocumentKindFromKey(kind.toStdString()));
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
     return ErrorResponse(QStringLiteral("create_failed"),
@@ -608,8 +619,8 @@ QVariantMap QEditorBridge::createChildDocumentInWorkspace(const QString& workspa
   return SuccessResponse(MetadataToVariant(record.metadata));
 }
 
-QVariantMap QEditorBridge::createChildDocument(const QString& parent_id) {
-  return createChildDocumentInWorkspace(current_workspace_id_, parent_id);
+QVariantMap QEditorBridge::createChildDocument(const QString& parent_id, const QString& kind) {
+  return createChildDocumentInWorkspace(current_workspace_id_, parent_id, kind);
 }
 
 std::optional<QVariantMap> QEditorBridge::RejectIfCurrentDocumentLocked(

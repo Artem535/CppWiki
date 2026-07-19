@@ -62,15 +62,21 @@ class QEditorBridge final : public QObject {
   void RequestOpenDocument(const QString& page_id);
   void ClearCurrentDocumentSelection();
   [[nodiscard]] QVariantMap listDocumentsInWorkspace(const QString& workspace_id);
-  [[nodiscard]] QVariantMap createDocumentInWorkspace(const QString& workspace_id);
-  [[nodiscard]] QVariantMap createChildDocumentInWorkspace(const QString& workspace_id,
-                                                           const QString& parent_id);
+  // `kind` is the DocumentKind key (see document::ToDocumentKindKey/DocumentKindFromKey),
+  // e.g. "wikiPage" (default), "jupyterNotebook", "excalidrawCanvas". Unrecognized/empty
+  // values fall back to "wikiPage".
+  [[nodiscard]] QVariantMap createDocumentInWorkspace(const QString& workspace_id,
+                                                      const QString& kind = QStringLiteral("wikiPage"));
+  [[nodiscard]] QVariantMap createChildDocumentInWorkspace(
+      const QString& workspace_id, const QString& parent_id,
+      const QString& kind = QStringLiteral("wikiPage"));
 
   Q_INVOKABLE QVariantMap getBridgeInfo();
   Q_INVOKABLE QVariantMap getInitialDocument();
   Q_INVOKABLE QVariantMap listDocuments();
   Q_INVOKABLE QVariantMap createDocument();
-  Q_INVOKABLE QVariantMap createChildDocument(const QString& parent_id);
+  Q_INVOKABLE QVariantMap createChildDocument(const QString& parent_id,
+                                              const QString& kind = QStringLiteral("wikiPage"));
   Q_INVOKABLE QVariantMap renameDocument(const QString& page_id, const QString& title);
   QVariantMap updateDocumentPlacement(const QString& page_id, const QString& parent_id,
                                       bool has_parent_id, int sort_order);
