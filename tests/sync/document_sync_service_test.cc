@@ -747,6 +747,57 @@ auto TestWorkspaceWithLocalDocumentsIsMaterializedWithoutRootRecord() -> void {
           "workspace with local documents should not be treated as not downloaded");
 }
 
+// ADR-017 "reuse unchanged": DocumentSyncService must treat a non-kWikiPage document exactly
+// like a wiki page — it should only ever look at DocumentSummary (workspace_id, etc.), never at
+// content or kind. This mirrors TestWorkspaceWithLocalDocumentsIsMaterializedWithoutRootRecord
+// above, but with a Jupyter-notebook-kind document, to prove there's no kind-specific branching
+// anywhere in the sync/hydration path.
+auto TestNonWikiPageKindDocumentHydratesIdenticallyToWikiPage() -> void {
+  cppwiki::sync::DocumentSyncService service;
+  service.ApplySettings(MakeSettings());
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  repository->listed_documents = {
+      cppwiki::storage::DocumentSummary{
+          .id = "notebook-1",
+          .kind = cppwiki::document::DocumentKind::kJupyterNotebook,
+          .title = "Analysis notebook",
+          .workspace_id = "engineering",
+          .parent_id = std::nullopt,
+          .sort_order = 0,
+          .created_at = "2026-07-01T12:00:00Z",
+          .updated_at = "2026-07-01T12:00:00Z",
+          .created_by = "alice",
+          .updated_by = "alice",
+          .content_version = 1,
+      },
+  };
+  service.SetRepository(repository);
+  service.SetAccessToken(QStringLiteral("test-token"));
+
+  auto bootstrap = MakeBaseBootstrap();
+  bootstrap.channels = {QStringLiteral("user:subject-1"), QStringLiteral("workspace:engineering")};
+  service.SetBackendBootstrap(bootstrap);
+
+  repository->sync_status = {
+      .state = cppwiki::storage::SyncLifecycleState::kRunning,
+      .status_text = "Sync idle",
+      .initial_pull_active = false,
+      .initial_pull_completed = false,
+  };
+  service.RefreshStatus();
+
+  const auto snapshot = service.Snapshot();
+  Require(snapshot.workspace_hydration.value(QStringLiteral("engineering")) ==
+              cppwiki::sync::WorkspaceHydrationState::kMaterialized,
+          "a workspace containing only a non-wiki-page-kind document should still materialize, "
+          "identically to a wiki page (sync must not branch on kind)");
+  Require(snapshot.hydrated_workspace_ids.contains(QStringLiteral("engineering")),
+          "non-wiki-page-kind document's workspace should be added to hydrated workspace ids");
+  Require(!service.ShouldExpectRemoteDocuments(QStringLiteral("engineering")),
+          "workspace materialized via a non-wiki-page-kind document should not be treated as "
+          "not downloaded");
+}
+
 #ifdef CPPWIKI_ENABLE_CBLITE_STORAGE
 auto TestReadyStateIncludesPrincipalAndChannels() -> void {
   cppwiki::sync::DocumentSyncService service;
@@ -790,6 +841,7 @@ auto main(int argc, char* argv[]) -> int {
   TestReconnectExpandsWorkspaceScopeAndRehydratesNewWorkspace();
   TestOfflineReconnectDoesNotRevertHydratedWorkspacesToPending();
   TestWorkspaceWithLocalDocumentsIsMaterializedWithoutRootRecord();
+  TestNonWikiPageKindDocumentHydratesIdenticallyToWikiPage();
 #ifdef CPPWIKI_ENABLE_CBLITE_STORAGE
   TestReadyStateIncludesPrincipalAndChannels();
 #endif

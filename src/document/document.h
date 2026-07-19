@@ -10,6 +10,16 @@ namespace cppwiki::document {
 
 enum class SchemaVersion : std::int32_t { kV1 = 1 };
 
+// The content-schema/renderer discriminator for a Document (ADR-017). All kinds share the
+// same sync/lock/conflict machinery (ADR-010/ADR-013) unchanged; only the content shape
+// stored in the snapshot and how it's rendered differ per kind. kWikiPage is the default so
+// existing documents (which predate this field) round-trip as wiki pages unchanged.
+enum class DocumentKind : std::uint8_t {
+  kWikiPage,
+  kJupyterNotebook,
+  kExcalidrawCanvas,
+};
+
 enum class BlockType : std::uint8_t {
   kParagraph,
   kHeading,
@@ -44,6 +54,7 @@ struct Block {
 struct PageMetadata {
   std::string id;
   SchemaVersion schema_version{SchemaVersion::kV1};
+  DocumentKind kind{DocumentKind::kWikiPage};
   std::string title;
   std::string workspace_id;
   std::optional<std::string> parent_id;
@@ -59,6 +70,33 @@ struct Document {
   PageMetadata metadata;
   std::vector<Block> blocks;
 };
+
+// Persistence key for a given kind (stored as a string, not a raw integer, so on-disk records
+// stay stable across enum reordering — same convention as AccentColor's ToAccentColorKey).
+[[nodiscard]] inline auto ToDocumentKindKey(DocumentKind kind) -> std::string {
+  switch (kind) {
+    case DocumentKind::kJupyterNotebook:
+      return "jupyterNotebook";
+    case DocumentKind::kExcalidrawCanvas:
+      return "excalidrawCanvas";
+    case DocumentKind::kWikiPage:
+      return "wikiPage";
+  }
+  return "wikiPage";
+}
+
+// Inverse of ToDocumentKindKey(); unknown, empty, or missing keys (e.g. records written before
+// this field existed) fall back to DocumentKind::kWikiPage, so existing documents round-trip
+// as wiki pages unchanged.
+[[nodiscard]] inline auto DocumentKindFromKey(const std::string& key) -> DocumentKind {
+  if (key == "jupyterNotebook") {
+    return DocumentKind::kJupyterNotebook;
+  }
+  if (key == "excalidrawCanvas") {
+    return DocumentKind::kExcalidrawCanvas;
+  }
+  return DocumentKind::kWikiPage;
+}
 
 }  // namespace cppwiki::document
 

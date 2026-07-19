@@ -430,6 +430,53 @@ auto TestListNestingCycle() -> void {
   RequireError(result, "Duplicate block id", "TestListNestingCycle");
 }
 
+// ADR-017: non-kWikiPage kinds skip BlockNote block validation entirely — arbitrary JSON
+// (nbformat, Excalidraw scene JSON) that would never pass as BlockNote content must still be
+// accepted, since schema validation for those kinds is out of scope for this validator (#52/#53
+// own it). Only "is this well-formed JSON at all" is checked.
+auto TestJupyterNotebookKindAcceptsNonBlockNoteJson() -> void {
+  const auto json = QByteArray(R"({
+    "nbformat": 4,
+    "nbformat_minor": 5,
+    "cells": [
+      { "cell_type": "markdown", "source": ["# Hello"], "metadata": {} }
+    ],
+    "metadata": {}
+  })");
+
+  const auto result = cppwiki::document::DocumentValidator::ParseAndValidateSnapshot(
+      json, cppwiki::document::DocumentKind::kJupyterNotebook);
+  Require(!result.error.has_value(), "TestJupyterNotebookKindAcceptsNonBlockNoteJson: no error");
+  Require(!result.document.has_value(),
+          "TestJupyterNotebookKindAcceptsNonBlockNoteJson: no Document produced (BlockNote-only "
+          "type)");
+  Require(result.raw_snapshot_json.find("nbformat") != std::string::npos,
+          "TestJupyterNotebookKindAcceptsNonBlockNoteJson: raw JSON preserved");
+}
+
+auto TestExcalidrawCanvasKindAcceptsNonBlockNoteJson() -> void {
+  const auto json = QByteArray(R"({
+    "type": "excalidraw",
+    "version": 2,
+    "elements": [],
+    "appState": {}
+  })");
+
+  const auto result = cppwiki::document::DocumentValidator::ParseAndValidateSnapshot(
+      json, cppwiki::document::DocumentKind::kExcalidrawCanvas);
+  Require(!result.error.has_value(), "TestExcalidrawCanvasKindAcceptsNonBlockNoteJson: no error");
+  Require(!result.document.has_value(),
+          "TestExcalidrawCanvasKindAcceptsNonBlockNoteJson: no Document produced");
+}
+
+auto TestNonWikiPageKindStillRejectsInvalidJson() -> void {
+  const auto json = QByteArray(R"(not json at all { )");
+
+  const auto result = cppwiki::document::DocumentValidator::ParseAndValidateSnapshot(
+      json, cppwiki::document::DocumentKind::kJupyterNotebook);
+  RequireError(result, "not valid JSON", "TestNonWikiPageKindStillRejectsInvalidJson");
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -448,6 +495,9 @@ auto main() -> int {
   TestUnsupportedBlockType();
   TestInvalidHeadingLevel();
   TestListNestingCycle();
+  TestJupyterNotebookKindAcceptsNonBlockNoteJson();
+  TestExcalidrawCanvasKindAcceptsNonBlockNoteJson();
+  TestNonWikiPageKindStillRejectsInvalidJson();
 
   spdlog::info("cppwiki_document_validator_tests passed");
   return EXIT_SUCCESS;

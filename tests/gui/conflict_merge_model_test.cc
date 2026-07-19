@@ -170,6 +170,24 @@ auto TestBuildMergedDocumentUsesChosenSideOrderForMixedResolution() -> void {
           "local-selected block should remain after the moved remote-selected block");
 }
 
+// ADR-017 "reuse unchanged": ConflictMergeModel must treat conflict content opaquely, with zero
+// kind-specific branching, even for a kind (Jupyter notebook here) whose content has no
+// BlockNote "blocks" array at all. It should load successfully (the JSON is well-formed) and
+// simply produce zero rows, not crash or misbehave.
+auto TestLoadConflictAcceptsNonBlockNoteJsonWithoutCrashing() -> void {
+  ConflictMergeModel model;
+  const auto loaded = model.LoadConflict(
+      MakeConflict(
+          R"({"nbformat":4,"nbformat_minor":5,"cells":[{"cell_type":"markdown","source":["Local"]}],"metadata":{}})",
+          R"({"nbformat":4,"nbformat_minor":5,"cells":[{"cell_type":"markdown","source":["Remote"]}],"metadata":{}})"),
+      std::nullopt);
+
+  Require(loaded, "conflict model should load well-formed non-BlockNote JSON without error");
+  Require(model.rowCount() == 0,
+          "non-BlockNote JSON has no \"blocks\" array, so the model should produce zero rows, "
+          "not crash or fabricate content");
+}
+
 }  // namespace
 
 auto main(int argc, char** argv) -> int {
@@ -180,5 +198,6 @@ auto main(int argc, char** argv) -> int {
   TestBuildMergedDocumentUsesRemoteOrderWhenAllRowsResolveRemote();
   TestBuildMergedDocumentUsesRemoteTitleWhenAllRowsResolveRemote();
   TestBuildMergedDocumentUsesChosenSideOrderForMixedResolution();
+  TestLoadConflictAcceptsNonBlockNoteJsonWithoutCrashing();
   return EXIT_SUCCESS;
 }

@@ -136,6 +136,10 @@ auto RestoreFromBackup(const std::filesystem::path& target_path) -> bool {
 struct FileDocumentRecordDto {
   std::string id;
   std::int32_t schema_version{};
+  // Optional (not a plain std::string) so records written before DocumentKind existed still
+  // parse: a missing/absent field reads as std::nullopt, and FromDto() below maps that (and
+  // any unrecognized key) to DocumentKind::kWikiPage via DocumentKindFromKey().
+  std::optional<std::string> kind;
   std::string title;
   std::string workspace_id;
   std::optional<std::string> parent_id;
@@ -165,6 +169,7 @@ auto ToDto(const DocumentRecord& document) -> FileDocumentRecordDto {
   return FileDocumentRecordDto{
       .id = document.metadata.id,
       .schema_version = static_cast<std::int32_t>(document.metadata.schema_version),
+      .kind = document::ToDocumentKindKey(document.metadata.kind),
       .title = document.metadata.title,
       .workspace_id = document.metadata.workspace_id,
       .parent_id = document.metadata.parent_id,
@@ -184,6 +189,7 @@ auto FromDto(FileDocumentRecordDto dto) -> DocumentRecord {
           document::PageMetadata{
               .id = std::move(dto.id),
               .schema_version = document::SchemaVersion::kV1,
+              .kind = document::DocumentKindFromKey(dto.kind.value_or(std::string{})),
               .title = std::move(dto.title),
               .workspace_id = std::move(dto.workspace_id),
               .parent_id = std::move(dto.parent_id),

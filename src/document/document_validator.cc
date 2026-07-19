@@ -1,5 +1,6 @@
 #include "document/document_validator.h"
 
+#include <QJsonDocument>
 #include <rfl/json/read.hpp>
 #include <spdlog/spdlog.h>
 
@@ -299,9 +300,28 @@ auto ToString(ValidationErrorCode code) -> std::string {
   return "unknown_validation_error";
 }
 
-auto DocumentValidator::ParseAndValidateSnapshot(const QByteArray& snapshot_json) -> Result {
+auto DocumentValidator::ParseAndValidateSnapshot(const QByteArray& snapshot_json,
+                                                 DocumentKind kind) -> Result {
   const auto json_view = ToJsonView(snapshot_json);
   const auto raw_snapshot_json = std::string(json_view);
+
+  if (kind != DocumentKind::kWikiPage) {
+    // nbformat/Excalidraw schema validation is out of scope here (#52/#53 own that) — just
+    // confirm the payload is well-formed JSON, so callers get a real ValidationError instead of
+    // silently persisting garbage. document/snapshot are left unset since neither
+    // Document/BlockNoteDocumentSnapshot applies to these kinds.
+    const auto parse_error = QJsonDocument::fromJson(snapshot_json).isNull() &&
+                             !snapshot_json.trimmed().isEmpty();
+    if (parse_error) {
+      return MakeError(ValidationErrorCode::kInvalidJson, "Snapshot payload is not valid JSON.");
+    }
+    return Result{
+        .document = std::nullopt,
+        .snapshot = std::nullopt,
+        .raw_snapshot_json = raw_snapshot_json,
+        .error = std::nullopt,
+    };
+  }
 
   auto document_result = rfl::json::read<BlockNoteDocumentSnapshot>(json_view);
   if (document_result) {

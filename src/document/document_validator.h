@@ -40,7 +40,13 @@ class DocumentValidator {
     std::optional<ValidationError> error;
   };
 
-  [[nodiscard]] static Result ParseAndValidateSnapshot(const QByteArray& snapshot_json);
+  // For DocumentKind::kWikiPage (the default), validates the snapshot as BlockNote JSON exactly
+  // as before. For the other kinds (nbformat/Excalidraw), full schema validation is out of
+  // scope here (see #52/#53) — this only checks the payload is well-formed JSON, so callers get
+  // a real ValidationError instead of silently accepting garbage, without this validator having
+  // to know the nbformat/Excalidraw schemas.
+  [[nodiscard]] static Result ParseAndValidateSnapshot(
+      const QByteArray& snapshot_json, DocumentKind kind = DocumentKind::kWikiPage);
 };
 
 }  // namespace cppwiki::document

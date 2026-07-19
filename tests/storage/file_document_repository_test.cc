@@ -117,10 +117,46 @@ auto TestFileRepositoryPersistsDocumentsAndConflicts() -> void {
   std::filesystem::remove_all(storage_directory);
 }
 
+// ADR-017: DocumentKind must round-trip through the file repository for every kind, not just
+// the (default) wiki page — the on-disk DTO only started carrying this field with this change,
+// so this also guards against regressing the kWikiPage-fallback behavior for older records.
+auto TestFileRepositoryRoundTripsDocumentKind() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-kind-test";
+  std::filesystem::remove_all(storage_directory);
+
+  cppwiki::storage::FileDocumentRepository repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+
+  const auto kinds = std::vector<cppwiki::document::DocumentKind>{
+      cppwiki::document::DocumentKind::kWikiPage,
+      cppwiki::document::DocumentKind::kJupyterNotebook,
+      cppwiki::document::DocumentKind::kExcalidrawCanvas,
+  };
+
+  for (const auto kind : kinds) {
+    auto document = MakeDocument();
+    document.metadata.id = "kind-page-" + cppwiki::document::ToDocumentKindKey(kind);
+    document.metadata.kind = kind;
+
+    const auto save_result = repository.SaveDocument(document);
+    Require(!save_result.error, "file repository should save a document of any kind");
+
+    const auto load_result = repository.LoadDocument(document.metadata.id);
+    Require(load_result.document.has_value(),
+            "file repository should load a document of any kind");
+    Require(load_result.document->metadata.kind == kind,
+            "file repository should round-trip the saved DocumentKind exactly");
+  }
+
+  std::filesystem::remove_all(storage_directory);
+}
+
 }  // namespace
 
 auto main() -> int {
   TestFileRepositoryPersistsDocumentsAndConflicts();
+  TestFileRepositoryRoundTripsDocumentKind();
   spdlog::info("cppwiki_file_document_repository_tests passed");
   return EXIT_SUCCESS;
 }

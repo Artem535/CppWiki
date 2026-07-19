@@ -23,6 +23,7 @@ struct DocumentRecord {
 
 struct DocumentSummary {
   std::string id;
+  document::DocumentKind kind{document::DocumentKind::kWikiPage};
   std::string title;
   std::string workspace_id;
   std::optional<std::string> parent_id;
@@ -38,6 +39,7 @@ struct DocumentSummary {
     const document::PageMetadata& metadata) -> DocumentSummary {
   return DocumentSummary{
       .id = metadata.id,
+      .kind = metadata.kind,
       .title = metadata.title,
       .workspace_id = metadata.workspace_id,
       .parent_id = metadata.parent_id,

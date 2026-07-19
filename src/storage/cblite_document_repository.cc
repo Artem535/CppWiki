@@ -323,6 +323,7 @@ class CbliteDocumentRepository::Impl {
       doc.set("created_by", Slice(document.metadata.created_by));
       doc.set("updated_by", Slice(document.metadata.updated_by));
       doc.set("content_version", document.metadata.content_version);
+      doc.set("kind", Slice(document::ToDocumentKindKey(document.metadata.kind)));
       doc.set("raw_snapshot", Slice(document.raw_snapshot_json));
 
       coll.saveDocument(doc);
@@ -415,6 +416,7 @@ class CbliteDocumentRepository::Impl {
       if (record.metadata.content_version < 1) {
         record.metadata.content_version = 1;
       }
+      record.metadata.kind = document::DocumentKindFromKey(std::string(props["kind"].asString()));
       record.raw_snapshot_json = std::string(props["raw_snapshot"].asString());
 
       try {
