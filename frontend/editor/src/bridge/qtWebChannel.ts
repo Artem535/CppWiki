@@ -46,6 +46,12 @@ type QtEditorBridgeObject = {
     connect(callback: (requestId: string, chunk: string) => void): void;
     disconnect(callback: (requestId: string, chunk: string) => void): void;
   };
+  aiToolCallReceived: {
+    connect(callback: (requestId: string, toolName: string, argumentsJson: string) => void): void;
+    disconnect(
+      callback: (requestId: string, toolName: string, argumentsJson: string) => void,
+    ): void;
+  };
   aiRequestCompleted: {
     connect(callback: (requestId: string) => void): void;
     disconnect(callback: (requestId: string) => void): void;
@@ -58,6 +64,8 @@ type QtEditorBridgeObject = {
     prompt: string,
     contextText: string,
     mode: string,
+    toolName: string,
+    toolSchemaJson: string,
     callback: (requestId: string) => void,
   ): void;
   getBridgeInfo(callback: (response: BridgeResult<BridgeInfo>) => void): void;
@@ -162,9 +170,16 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
       };
     },
 
-    startAiRequest(prompt, contextText, mode) {
+    startAiRequest(prompt, contextText, mode, toolName, toolSchemaJson) {
       return new Promise((resolve) => {
-        qtObject.startAiRequest(prompt, contextText, mode, resolve);
+        qtObject.startAiRequest(
+          prompt,
+          contextText,
+          mode,
+          toolName ?? "",
+          toolSchemaJson ?? "",
+          resolve,
+        );
       });
     },
 
@@ -172,6 +187,13 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
       qtObject.aiChunkReceived.connect(callback);
       return () => {
         qtObject.aiChunkReceived.disconnect(callback);
+      };
+    },
+
+    onAiToolCallReceived(callback) {
+      qtObject.aiToolCallReceived.connect(callback);
+      return () => {
+        qtObject.aiToolCallReceived.disconnect(callback);
       };
     },
 

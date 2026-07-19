@@ -897,6 +897,24 @@ auto TestStartAiRequestReturnsUniqueRequestIds() -> void {
   Require(first_id != second_id, "each startAiRequest call must return a distinct request id");
 }
 
+// Issue #65: startAiRequest() accepts an optional tool name + JSON Schema so
+// xl-ai's structured tool-call requests can be forwarded through the bridge.
+// This does not exercise the network call (no backend/key store is
+// configured in this test, matching TestStartAiRequestReturnsUniqueRequestIds
+// above), just that the overload accepting tool arguments compiles, is
+// invokable, and still returns a valid, distinct request id.
+auto TestStartAiRequestWithToolSchemaReturnsRequestId() -> void {
+  cppwiki::bridge::QEditorBridge bridge;
+
+  const auto request_id = bridge.startAiRequest(
+      QStringLiteral("Add a heading"), QStringLiteral("Some paragraph text."),
+      QStringLiteral("rewrite"), QStringLiteral("applyDocumentOperations"),
+      QStringLiteral(R"({"type":"array","items":{"type":"object"}})"));
+
+  Require(!request_id.isEmpty(),
+         "startAiRequest with a tool schema must still return a non-empty request id");
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -930,6 +948,7 @@ auto main() -> int {
   TestInvalidJsonSnapshot();
   TestInvalidRootSnapshot();
   TestStartAiRequestReturnsUniqueRequestIds();
+  TestStartAiRequestWithToolSchemaReturnsRequestId();
 
   spdlog::info("cppwiki_bridge_tests passed");
   return EXIT_SUCCESS;

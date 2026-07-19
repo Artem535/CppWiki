@@ -58,6 +58,33 @@ auto BuildRequestBody(const AiProviderConfig& config, const dto::AiChatRequestDt
   messages.PushBack(user_message.ExtractValue());
 
   builder["messages"] = messages.ExtractValue();
+
+  const auto& tool_name = request.tool_name.get();
+  const auto& tool_schema_json = request.tool_schema_json.get();
+  if (tool_name && tool_schema_json && !tool_name->empty() && !tool_schema_json->empty()) {
+    // Structured tool-calling request instead of a plain completion (issue
+    // #65): the caller (desktop bridge, forwarding xl-ai's tool schema) wants
+    // a response matching this JSON Schema, not prose.
+    userver::formats::json::ValueBuilder function_def;
+    function_def["name"] = *tool_name;
+    function_def["parameters"] = userver::formats::json::FromString(*tool_schema_json);
+
+    userver::formats::json::ValueBuilder tool_def;
+    tool_def["type"] = "function";
+    tool_def["function"] = function_def.ExtractValue();
+
+    userver::formats::json::ValueBuilder tools(userver::formats::common::Type::kArray);
+    tools.PushBack(tool_def.ExtractValue());
+    builder["tools"] = tools.ExtractValue();
+
+    userver::formats::json::ValueBuilder tool_choice_function;
+    tool_choice_function["name"] = *tool_name;
+    userver::formats::json::ValueBuilder tool_choice;
+    tool_choice["type"] = "function";
+    tool_choice["function"] = tool_choice_function.ExtractValue();
+    builder["tool_choice"] = tool_choice.ExtractValue();
+  }
+
   return userver::formats::json::ToString(builder.ExtractValue());
 }
 
@@ -94,6 +121,24 @@ auto ExtractCompletionText(const userver::formats::json::Value& response) -> std
   }
 
   throw std::runtime_error("AI provider response message content was not a string or array");
+}
+
+auto ExtractToolCallArguments(const userver::formats::json::Value& response) -> std::string {
+  const auto choices = response["choices"];
+  if (choices.IsMissing() || !choices.IsArray() || choices.GetSize() == 0) {
+    throw std::runtime_error("AI provider response did not contain any choices");
+  }
+
+  const auto tool_calls = choices[0]["message"]["tool_calls"];
+  if (tool_calls.IsMissing() || !tool_calls.IsArray() || tool_calls.GetSize() == 0) {
+    throw std::runtime_error("AI provider response did not contain any tool calls");
+  }
+
+  const auto arguments = tool_calls[0]["function"]["arguments"];
+  if (!arguments.IsString()) {
+    throw std::runtime_error("AI provider tool call arguments were not a string");
+  }
+  return arguments.As<std::string>();
 }
 
 AiChatService::AiChatService(userver::clients::http::Client& http_client, AiProviderConfig config)
@@ -140,7 +185,20 @@ auto AiChatService::Complete(const dto::AiChatRequestDto& request) const -> dto:
   }
 
   const auto parsed = userver::formats::json::FromString(response->body());
+  const auto& tool_name = request.tool_name.get();
+  const auto& tool_schema_json = request.tool_schema_json.get();
+  const bool wants_tool_call =
+      tool_name && tool_schema_json && !tool_name->empty() && !tool_schema_json->empty();
+
   try {
+    if (wants_tool_call) {
+      auto arguments_json = ExtractToolCallArguments(parsed);
+      spdlog::info("AI chat request completed: tool_arguments_length={}", arguments_json.size());
+      dto::AiChatResultDto result;
+      result.tool_arguments_json = std::move(arguments_json);
+      return result;
+    }
+
     auto text = ExtractCompletionText(parsed);
     spdlog::info("AI chat request completed: text_length={}", text.size());
     return dto::AiChatResultDto{.text = std::move(text)};

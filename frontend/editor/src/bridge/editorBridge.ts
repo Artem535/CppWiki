@@ -64,13 +64,25 @@ export interface EditorBridge {
   // AI transport (ADR-012): every AI request is forwarded through the bridge
   // to C++, never fetched directly from this JS context. `mode` matches the
   // MVP scope (ADR-010): "rewrite" or "autocomplete", plus "inline" for
-  // continuous ghost-text completions (issue #59).
+  // continuous ghost-text completions (issue #59). `toolName`/`toolSchemaJson`
+  // are optional and are set when the caller (xl-ai's AIExtension) wants a
+  // structured tool-call response matching a JSON Schema rather than plain
+  // text (see ADR-012 issue #65 addendum: xl-ai only applies document changes
+  // from tool-call message parts, never from plain text).
   startAiRequest(
     prompt: string,
     contextText: string,
     mode: "rewrite" | "autocomplete" | "inline",
+    toolName?: string,
+    toolSchemaJson?: string,
   ): Promise<string>;
   onAiChunkReceived(callback: (requestId: string, chunk: string) => void): () => void;
+  // Fired instead of onAiChunkReceived when the request was made with a tool
+  // schema and the provider replied with a structured tool call.
+  // `argumentsJson` is the tool call's arguments, JSON-stringified.
+  onAiToolCallReceived(
+    callback: (requestId: string, toolName: string, argumentsJson: string) => void,
+  ): () => void;
   onAiRequestCompleted(callback: (requestId: string) => void): () => void;
   onAiRequestFailed(callback: (requestId: string, error: string) => void): () => void;
 }

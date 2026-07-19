@@ -924,17 +924,19 @@ void QEditorBridge::SetAiFeatureFlags(bool features_enabled, bool autocomplete_e
 }
 
 QString QEditorBridge::startAiRequest(const QString& prompt, const QString& context_text,
-                                      const QString& mode) {
+                                      const QString& mode, const QString& tool_name,
+                                      const QString& tool_schema_json) {
   const auto request_id = QString::fromStdString(GenerateUuidString());
 
   if (ai_backend_enabled_ && !ai_backend_base_url_.isEmpty()) {
     // Server-mediated (default): forward to cppwiki_server, which holds the
     // provider key (ADR-012).
-    StartServerMediatedAiRequest(request_id, prompt, context_text, mode);
+    StartServerMediatedAiRequest(request_id, prompt, context_text, mode, tool_name,
+                                 tool_schema_json);
   } else if (ai_api_key_store_ != nullptr) {
     // Local-key fallback (ADR-012 addendum, serverless installs): read the
     // key from the OS keychain and call the provider directly from C++.
-    StartLocalKeyAiRequest(request_id, prompt, context_text, mode);
+    StartLocalKeyAiRequest(request_id, prompt, context_text, mode, tool_name, tool_schema_json);
   } else {
     // Deferred emit so callers can subscribe to the returned request id
     // before the failure signal fires.
@@ -953,11 +955,16 @@ QString QEditorBridge::startAiRequest(const QString& prompt, const QString& cont
 
 void QEditorBridge::StartServerMediatedAiRequest(const QString& request_id, const QString& prompt,
                                                  const QString& context_text,
-                                                 const QString& mode) {
+                                                 const QString& mode, const QString& tool_name,
+                                                 const QString& tool_schema_json) {
   QJsonObject body;
   body.insert(QStringLiteral("prompt"), prompt);
   body.insert(QStringLiteral("context"), context_text);
   body.insert(QStringLiteral("mode"), mode);
+  if (!tool_name.isEmpty() && !tool_schema_json.isEmpty()) {
+    body.insert(QStringLiteral("toolName"), tool_name);
+    body.insert(QStringLiteral("toolSchemaJson"), tool_schema_json);
+  }
 
   const QUrl url(ai_backend_base_url_ + QStringLiteral("/api/v1/ai/chat"));
   const auto auth_header =
@@ -965,11 +972,13 @@ void QEditorBridge::StartServerMediatedAiRequest(const QString& request_id, cons
           ? QString()
           : QStringLiteral("Bearer ") + ai_backend_access_token_;
   CallProviderAndRelay(request_id, url, QJsonDocument(body).toJson(QJsonDocument::Compact),
-                      auth_header);
+                      auth_header, tool_name);
 }
 
 void QEditorBridge::StartLocalKeyAiRequest(const QString& request_id, const QString& prompt,
-                                           const QString& context_text, const QString& mode) {
+                                           const QString& context_text, const QString& mode,
+                                           const QString& tool_name,
+                                           const QString& tool_schema_json) {
   // The keychain read is asynchronous; wire a one-shot connection so we call
   // the provider once the key (or its absence) is known.
   auto* key_store = ai_api_key_store_;
@@ -978,8 +987,8 @@ void QEditorBridge::StartLocalKeyAiRequest(const QString& request_id, const QStr
 
   *loaded_connection = connect(
       key_store, &auth::AiApiKeyStore::apiKeyLoaded, this,
-      [this, request_id, prompt, context_text, mode, loaded_connection,
-       missing_connection](const QString& api_key) {
+      [this, request_id, prompt, context_text, mode, tool_name, tool_schema_json,
+       loaded_connection, missing_connection](const QString& api_key) {
         QObject::disconnect(*loaded_connection);
         QObject::disconnect(*missing_connection);
 
@@ -993,10 +1002,39 @@ void QEditorBridge::StartLocalKeyAiRequest(const QString& request_id, const QStr
         messages.append(message);
         body.insert(QStringLiteral("messages"), messages);
 
+        if (!tool_name.isEmpty() && !tool_schema_json.isEmpty()) {
+          // Build an OpenAI-compatible tool-calling request instead of a
+          // plain completion: the provider must reply with structured
+          // arguments matching `tool_schema_json` rather than prose (see
+          // issue #65 — xl-ai ignores plain text responses entirely).
+          QJsonParseError schema_parse_error{};
+          const auto schema_document =
+              QJsonDocument::fromJson(tool_schema_json.toUtf8(), &schema_parse_error);
+
+          QJsonObject function_def;
+          function_def.insert(QStringLiteral("name"), tool_name);
+          function_def.insert(QStringLiteral("parameters"),
+                              schema_parse_error.error == QJsonParseError::NoError
+                                  ? schema_document.object()
+                                  : QJsonObject{});
+
+          QJsonObject tool_def;
+          tool_def.insert(QStringLiteral("type"), QStringLiteral("function"));
+          tool_def.insert(QStringLiteral("function"), function_def);
+          body.insert(QStringLiteral("tools"), QJsonArray{tool_def});
+
+          QJsonObject tool_choice_function;
+          tool_choice_function.insert(QStringLiteral("name"), tool_name);
+          QJsonObject tool_choice;
+          tool_choice.insert(QStringLiteral("type"), QStringLiteral("function"));
+          tool_choice.insert(QStringLiteral("function"), tool_choice_function);
+          body.insert(QStringLiteral("tool_choice"), tool_choice);
+        }
+
         const QUrl url(QStringLiteral("https://api.openai.com/v1/chat/completions"));
         CallProviderAndRelay(request_id, url,
                             QJsonDocument(body).toJson(QJsonDocument::Compact),
-                            QStringLiteral("Bearer ") + api_key);
+                            QStringLiteral("Bearer ") + api_key, tool_name);
       });
 
   *missing_connection = connect(
@@ -1013,7 +1051,8 @@ void QEditorBridge::StartLocalKeyAiRequest(const QString& request_id, const QStr
 
 void QEditorBridge::CallProviderAndRelay(const QString& request_id, const QUrl& url,
                                         const QByteArray& body,
-                                        const QString& auth_header_value) {
+                                        const QString& auth_header_value,
+                                        const QString& tool_name) {
   if (network_manager_ == nullptr) {
     network_manager_ = new QNetworkAccessManager(this);
   }
@@ -1025,7 +1064,7 @@ void QEditorBridge::CallProviderAndRelay(const QString& request_id, const QUrl& 
   }
 
   auto* reply = network_manager_->post(request, body);
-  connect(reply, &QNetworkReply::finished, this, [this, request_id, reply]() {
+  connect(reply, &QNetworkReply::finished, this, [this, request_id, reply, tool_name]() {
     reply->deleteLater();
 
     if (reply->error() != QNetworkReply::NoError) {
@@ -1042,6 +1081,50 @@ void QEditorBridge::CallProviderAndRelay(const QString& request_id, const QUrl& 
     }
 
     const auto object = document.object();
+
+    if (!tool_name.isEmpty()) {
+      // Structured tool-call path: extract the tool call's arguments (a
+      // JSON string) instead of prose text.
+      QString arguments_json;
+      if (object.contains(QStringLiteral("result")) &&
+          object.value(QStringLiteral("result")).isObject()) {
+        // cppwiki_server envelope: { ok, result: { toolArgumentsJson } }.
+        arguments_json = object.value(QStringLiteral("result"))
+                             .toObject()
+                             .value(QStringLiteral("toolArgumentsJson"))
+                             .toString();
+      } else if (object.contains(QStringLiteral("choices"))) {
+        // Raw OpenAI-compatible tool-calling response (local-key path).
+        const auto choices = object.value(QStringLiteral("choices")).toArray();
+        if (!choices.isEmpty()) {
+          const auto tool_calls = choices.first()
+                                       .toObject()
+                                       .value(QStringLiteral("message"))
+                                       .toObject()
+                                       .value(QStringLiteral("tool_calls"))
+                                       .toArray();
+          if (!tool_calls.isEmpty()) {
+            arguments_json = tool_calls.first()
+                                  .toObject()
+                                  .value(QStringLiteral("function"))
+                                  .toObject()
+                                  .value(QStringLiteral("arguments"))
+                                  .toString();
+          }
+        }
+      }
+
+      if (arguments_json.isEmpty()) {
+        emit aiRequestFailed(request_id,
+                             QStringLiteral("AI provider returned an empty tool call."));
+        return;
+      }
+
+      emit aiToolCallReceived(request_id, tool_name, arguments_json);
+      emit aiRequestCompleted(request_id);
+      return;
+    }
+
     QString text;
     if (object.contains(QStringLiteral("result")) && object.value(QStringLiteral("result")).isObject()) {
       // cppwiki_server envelope: { ok, result: { text } }.

@@ -84,14 +84,26 @@ class QEditorBridge final : public QObject {
   // asynchronously and its result streams back via the ai* signals below.
   // `mode` is "rewrite" or "autocomplete". This never performs a fetch from
   // JS: the request always originates from this C++ method (ADR-012).
+  //
+  // `tool_name`/`tool_schema_json` are optional (empty when not used). When
+  // both are non-empty, xl-ai wants a structured tool-call response matching
+  // the given JSON Schema (see issue #65): the provider is called in
+  // tool-calling/JSON mode and the parsed arguments are relayed via
+  // aiToolCallReceived() instead of aiChunkReceived()/plain text.
   Q_INVOKABLE QString startAiRequest(const QString& prompt, const QString& context_text,
-                                     const QString& mode);
+                                     const QString& mode, const QString& tool_name = {},
+                                     const QString& tool_schema_json = {});
 
  signals:
   // AI streaming relay (ADR-012): chunks of the AI provider's response,
   // relayed one at a time because a bridge signal cannot expose a native
   // ReadableStream to JS.
   void aiChunkReceived(const QString& request_id, const QString& chunk);
+  // Emitted instead of aiChunkReceived when startAiRequest() was called with
+  // a tool schema and the provider replied with a structured tool call.
+  // `arguments_json` is the tool call's arguments, JSON-stringified.
+  void aiToolCallReceived(const QString& request_id, const QString& tool_name,
+                          const QString& arguments_json);
   void aiRequestCompleted(const QString& request_id);
   void aiRequestFailed(const QString& request_id, const QString& error);
   void documentOpenRequested(const QString& pageId);
@@ -119,11 +131,14 @@ class QEditorBridge final : public QObject {
       const QString& page_id) const;
 
   void StartServerMediatedAiRequest(const QString& request_id, const QString& prompt,
-                                    const QString& context_text, const QString& mode);
+                                    const QString& context_text, const QString& mode,
+                                    const QString& tool_name, const QString& tool_schema_json);
   void StartLocalKeyAiRequest(const QString& request_id, const QString& prompt,
-                              const QString& context_text, const QString& mode);
+                              const QString& context_text, const QString& mode,
+                              const QString& tool_name, const QString& tool_schema_json);
   void CallProviderAndRelay(const QString& request_id, const QUrl& url,
-                           const QByteArray& body, const QString& auth_header_value);
+                           const QByteArray& body, const QString& auth_header_value,
+                           const QString& tool_name);
   void EmitChunkedCompletion(const QString& request_id, const QString& full_text);
 
   bool pending_document_editable_ = true;
