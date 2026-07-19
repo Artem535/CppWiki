@@ -22,6 +22,15 @@ namespace cppwiki::server::service {
 // without a live provider.
 auto ExtractCompletionText(const userver::formats::json::Value& response) -> std::string;
 
+// Extracts a structured tool call's arguments (a JSON string) from an
+// OpenAI-compatible `/chat/completions` response body
+// (`choices[0].message.tool_calls[0].function.arguments`). Used instead of
+// ExtractCompletionText() when the request carried a tool schema (see issue
+// #65: xl-ai only applies document changes from tool-call responses, never
+// from plain text). Throws `std::runtime_error` if `choices`/`tool_calls` is
+// missing/empty or `arguments` is not a string.
+auto ExtractToolCallArguments(const userver::formats::json::Value& response) -> std::string;
+
 struct AiProviderConfig final {
   bool enabled = false;
   std::string base_url;

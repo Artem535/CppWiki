@@ -1,6 +1,22 @@
 import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
 import type { EditorBridge } from "./editorBridge";
 
+// `@blocknote/xl-ai`'s `defaultAIRequestSender` puts the tool schema it wants
+// the LLM to respond with in `options.body.toolDefinitions.applyDocumentOperations`
+// (see `defaultAIRequestSender.ts` in that package). This mirrors that shape
+// just enough to read it back out here, without taking a dependency on the
+// package's internal types.
+type ToolDefinition = {
+  name: string;
+  inputSchema: unknown;
+};
+
+type RequestBodyWithToolDefinitions = {
+  toolDefinitions?: {
+    applyDocumentOperations?: ToolDefinition;
+  };
+};
+
 /**
  * Custom `ChatTransport` for `@blocknote/xl-ai`'s `AIExtension`, replacing the
  * package's default `DefaultChatTransport` (ADR-012). The default transport
@@ -34,6 +50,7 @@ export class BridgeChatTransport implements ChatTransport<UIMessage> {
    */
   async sendMessages(options: {
     messages: UIMessage[];
+    body?: object;
   }): Promise<ReadableStream<UIMessageChunk>> {
     const bridge = this.getBridge();
     if (!bridge) {
@@ -49,7 +66,93 @@ export class BridgeChatTransport implements ChatTransport<UIMessage> {
       .filter((text) => text.length > 0)
       .join("\n\n");
 
-    const requestId = await bridge.startAiRequest(prompt, contextText, this.mode);
+    const toolDefinition = (options.body as RequestBodyWithToolDefinitions | undefined)
+      ?.toolDefinitions?.applyDocumentOperations;
+    const toolName = toolDefinition?.name;
+    const toolSchemaJson = toolDefinition ? JSON.stringify(toolDefinition.inputSchema) : undefined;
+
+    const requestId = await bridge.startAiRequest(prompt, contextText, this.mode, toolName, toolSchemaJson);
+
+    // Structured tool-call path (see ADR-012 / issue #65): xl-ai's
+    // `setupToolCallStreaming` only applies document changes from
+    // `tool-input-*` UIMessageChunks, so when a tool schema was requested we
+    // must re-emit the bridge's parsed reply as a tool call rather than as
+    // `text-delta` chunks.
+    if (toolName) {
+      return new ReadableStream<UIMessageChunk>({
+        start(controller) {
+          const toolCallId = `${requestId}-tool`;
+
+          const unsubscribeToolCall = bridge.onAiToolCallReceived(
+            (toolCallRequestId, receivedToolName, argumentsJson) => {
+              if (toolCallRequestId !== requestId) {
+                return;
+              }
+
+              let input: unknown;
+              try {
+                input = JSON.parse(argumentsJson);
+              } catch {
+                controller.enqueue({
+                  type: "error",
+                  errorText: "AI provider returned tool-call arguments that were not valid JSON.",
+                });
+                cleanup();
+                controller.close();
+                return;
+              }
+
+              controller.enqueue({ type: "start" });
+              controller.enqueue({ type: "start-step" });
+              controller.enqueue({
+                type: "tool-input-start",
+                toolCallId,
+                toolName: receivedToolName,
+              });
+              controller.enqueue({
+                type: "tool-input-delta",
+                toolCallId,
+                inputTextDelta: argumentsJson,
+              });
+              controller.enqueue({
+                type: "tool-input-available",
+                toolCallId,
+                toolName: receivedToolName,
+                input,
+              });
+              controller.enqueue({ type: "finish-step" });
+              controller.enqueue({ type: "finish" });
+            },
+          );
+
+          const unsubscribeCompleted = bridge.onAiRequestCompleted((completedRequestId) => {
+            if (completedRequestId !== requestId) {
+              return;
+            }
+            cleanup();
+            controller.close();
+          });
+
+          const unsubscribeFailed = bridge.onAiRequestFailed((failedRequestId, error) => {
+            if (failedRequestId !== requestId) {
+              return;
+            }
+            controller.enqueue({ type: "error", errorText: error });
+            cleanup();
+            controller.close();
+          });
+
+          function cleanup() {
+            unsubscribeToolCall();
+            unsubscribeCompleted();
+            unsubscribeFailed();
+          }
+        },
+      });
+    }
+
+    // Plain-text fallback path: unchanged from before this fix, used by any
+    // caller that does not request a structured tool-call response.
     const textPartId = `${requestId}-text`;
 
     return new ReadableStream<UIMessageChunk>({

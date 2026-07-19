@@ -45,6 +45,9 @@ const documents: DocumentSummary[] = [
 ];
 
 const mockAiChunkListeners = new Set<(requestId: string, chunk: string) => void>();
+const mockAiToolCallListeners = new Set<
+  (requestId: string, toolName: string, argumentsJson: string) => void
+>();
 const mockAiCompletedListeners = new Set<(requestId: string) => void>();
 const mockAiFailedListeners = new Set<(requestId: string, error: string) => void>();
 
@@ -139,10 +142,21 @@ export function createMockEditorBridge(): EditorBridge {
       return () => undefined;
     },
 
-    async startAiRequest(prompt, contextText) {
+    async startAiRequest(prompt, contextText, _mode, toolName, toolSchemaJson) {
       const requestId = `mock-ai-${Math.random().toString(36).slice(2)}`;
-      const mockReply = `[mock ${prompt}] ${contextText}`.trim();
       window.setTimeout(() => {
+        if (toolName && toolSchemaJson) {
+          // Mock tool-call reply: an empty operations array is a valid,
+          // schema-conforming structured response for most xl-ai tool
+          // schemas, and is enough to exercise the tool-call relay path.
+          mockAiToolCallListeners.forEach((listener) =>
+            listener(requestId, toolName, JSON.stringify({ operations: [] })),
+          );
+          mockAiCompletedListeners.forEach((listener) => listener(requestId));
+          return;
+        }
+
+        const mockReply = `[mock ${prompt}] ${contextText}`.trim();
         for (const char of mockReply) {
           mockAiChunkListeners.forEach((listener) => listener(requestId, char));
         }
@@ -155,6 +169,13 @@ export function createMockEditorBridge(): EditorBridge {
       mockAiChunkListeners.add(callback);
       return () => {
         mockAiChunkListeners.delete(callback);
+      };
+    },
+
+    onAiToolCallReceived(callback) {
+      mockAiToolCallListeners.add(callback);
+      return () => {
+        mockAiToolCallListeners.delete(callback);
       };
     },
 

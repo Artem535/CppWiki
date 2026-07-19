@@ -79,6 +79,58 @@ auto TestExtractCompletionTextThrowsWhenContentPartsHaveNoText() -> void {
   Require(threw, "content-parts array with no text parts must throw, not return empty text");
 }
 
+// Structured tool-call response path (issue #65): the server must be able to
+// pull a tool call's JSON-stringified arguments out of an OpenAI-compatible
+// tool-calling response, since xl-ai only applies document changes from
+// tool-call parts and ignores plain text entirely.
+auto TestExtractToolCallArgumentsFromToolCallResponse() -> void {
+  const auto response = userver::formats::json::FromString(R"({
+    "choices": [
+      {"message": {"role": "assistant", "content": null, "tool_calls": [
+        {"id": "call_1", "type": "function", "function": {
+          "name": "applyDocumentOperations",
+          "arguments": "{\"operations\":[{\"type\":\"insert\"}]}"
+        }}
+      ]}}
+    ]
+  })");
+
+  const auto arguments = cppwiki::server::service::ExtractToolCallArguments(response);
+
+  Require(arguments == R"({"operations":[{"type":"insert"}]})",
+         "tool call arguments string must be extracted verbatim");
+}
+
+auto TestExtractToolCallArgumentsThrowsWhenToolCallsMissing() -> void {
+  const auto response = userver::formats::json::FromString(R"({
+    "choices": [
+      {"message": {"role": "assistant", "content": "no tool call here"}}
+    ]
+  })");
+
+  bool threw = false;
+  try {
+    cppwiki::server::service::ExtractToolCallArguments(response);
+  } catch (const std::exception&) {
+    threw = true;
+  }
+
+  Require(threw, "missing tool_calls must throw, not silently return empty arguments");
+}
+
+auto TestExtractToolCallArgumentsThrowsWhenChoicesEmpty() -> void {
+  const auto response = userver::formats::json::FromString(R"({"choices": []})");
+
+  bool threw = false;
+  try {
+    cppwiki::server::service::ExtractToolCallArguments(response);
+  } catch (const std::exception&) {
+    threw = true;
+  }
+
+  Require(threw, "empty choices array must throw");
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -86,6 +138,9 @@ auto main() -> int {
   TestExtractCompletionTextFromContentPartsArray();
   TestExtractCompletionTextThrowsWhenChoicesMissing();
   TestExtractCompletionTextThrowsWhenContentPartsHaveNoText();
+  TestExtractToolCallArgumentsFromToolCallResponse();
+  TestExtractToolCallArgumentsThrowsWhenToolCallsMissing();
+  TestExtractToolCallArgumentsThrowsWhenChoicesEmpty();
 
   spdlog::info("cppwiki_server_ai_chat_service_tests passed");
   return EXIT_SUCCESS;
