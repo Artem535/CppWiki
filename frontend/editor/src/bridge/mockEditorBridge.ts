@@ -41,6 +41,7 @@ const documents: DocumentSummary[] = [
     sortOrder: 0,
     createdAt: mockPageCreatedAt,
     updatedAt: mockPageUpdatedAt,
+    kind: "wikiPage",
   },
 ];
 
@@ -99,6 +100,7 @@ export function createMockEditorBridge(): EditorBridge {
           editable: true,
           lockOwner: null,
           accessMessage: "Document: local-only editing",
+          kind: "wikiPage",
         },
       };
     },
@@ -118,6 +120,7 @@ export function createMockEditorBridge(): EditorBridge {
           editable: true,
           lockOwner: null,
           accessMessage: "Document: local-only editing",
+          kind: "wikiPage",
         },
       };
     },

@@ -261,6 +261,9 @@ auto TestCreateDocumentLoadsEmptyAndSaves() -> void {
               .toList()
               .isEmpty(),
           "new document should load with no initial blocks");
+  Require(loaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("kind")).toString() ==
+              QStringLiteral("wikiPage"),
+          "newly created document should default to kind 'wikiPage' in the bridge payload");
 
   const auto saved = bridge.updateSnapshot(QStringLiteral(R"([
     {
