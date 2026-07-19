@@ -8,6 +8,8 @@
 
 #include <userver/formats/json.hpp>
 
+#include "core/constants.h"
+
 namespace cppwiki::server::service {
 
 namespace {
@@ -28,21 +30,15 @@ auto TruncatedPreview(const std::string& text, std::size_t max_length) -> std::s
 auto BuildRequestBody(const AiProviderConfig& config, const dto::AiChatRequestDto& request)
     -> std::string {
   const auto mode = request.mode.value_or("rewrite");
-  // "inline" (issue #59): continuous ghost-text completions fired on every
-  // typing pause, so the prompt is kept deliberately short and steers the
-  // model toward a brief, single continuation rather than a full rewrite or
-  // an open-ended "keep writing" response — this keeps latency and output
-  // size down for the self-hosted provider.
+  // System prompts live in core/constants.h (kAiSystemPrompt*) so they can be edited
+  // without digging through request-building logic.
   const auto system_prefix =
-      mode == "inline"
-          ? "Continue the user's text with a short, natural completion (a few words to one "
-            "sentence). Output only the continuation text, with no explanation, no quotes, "
-            "and no repetition of the given text."
-      : mode == "autocomplete" ? "Continue writing the following document naturally."
-                               : "Rewrite/improve the following selection as instructed.";
+      mode == "inline"       ? constants::kAiSystemPromptInline
+      : mode == "autocomplete" ? constants::kAiSystemPromptAutocomplete
+                               : constants::kAiSystemPromptRewrite;
 
   userver::formats::json::ValueBuilder builder;
-  builder["model"] = config.model.empty() ? "gpt-4o-mini" : config.model;
+  builder["model"] = config.model.empty() ? std::string(constants::kAiDefaultModel) : config.model;
 
   userver::formats::json::ValueBuilder messages(userver::formats::common::Type::kArray);
 

@@ -92,6 +92,31 @@ inline constexpr std::string_view kDefaultAuthRedirectUri = "http://127.0.0.1:38
 inline constexpr std::string_view kDefaultAuthScopes =
     "openid profile email groups roles offline_access";
 inline constexpr std::string_view kAuthTokenStoreEntryKey = "desktop-auth-session";
+
+// AI provider request settings (ADR-010/ADR-012). Kept as plain constants (not
+// config/server.yaml) since these describe *how the model is instructed to behave*
+// rather than deployment-specific config (endpoint/key/timeout, which do live in
+// config/server.yaml) — edit these directly to change the AI features' behavior.
+inline constexpr std::string_view kAiDefaultModel = "gpt-4o-mini";
+
+// System prompt for the "rewrite"/"improve selection" AI toolbar action (default mode
+// when AiChatRequestDto::mode is unset).
+inline constexpr std::string_view kAiSystemPromptRewrite =
+    "Rewrite/improve the following selection as instructed.";
+
+// System prompt for the "autocomplete"/"continue writing" AI slash-menu action.
+inline constexpr std::string_view kAiSystemPromptAutocomplete =
+    "Continue writing the following document naturally.";
+
+// System prompt for "inline" mode: continuous ghost-text completions fired on every
+// typing pause (issue #59). Kept deliberately short and steered toward a brief,
+// single continuation rather than a full rewrite or an open-ended "keep writing"
+// response — this keeps latency and output size down for the self-hosted provider.
+inline constexpr std::string_view kAiSystemPromptInline =
+    "Continue the user's text with a short, natural completion (a few words to one "
+    "sentence). Output only the continuation text, with no explanation, no quotes, "
+    "and no repetition of the given text.";
+
 }  // namespace cppwiki::constants
 
 #endif  // CPPWIKI_SRC_CORE_CONSTANTS_H_
