@@ -292,6 +292,18 @@ auto MakeWelcomeRecord(const QString& workspace_id, const QString& author_id)
   };
 }
 
+// Minimal, valid nbformat v4 document with no cells — the seed content for a newly created
+// kJupyterNotebook document. Deliberately not a full nbformat schema (validation of that shape
+// is out of scope per #52); just enough for NotebookView.tsx to render an empty notebook.
+auto MakeEmptyNotebookSnapshotJson() -> QByteArray {
+  QJsonObject notebook;
+  notebook.insert(QStringLiteral("cells"), QJsonArray{});
+  notebook.insert(QStringLiteral("metadata"), QJsonObject{});
+  notebook.insert(QStringLiteral("nbformat"), 4);
+  notebook.insert(QStringLiteral("nbformat_minor"), 5);
+  return QJsonDocument(notebook).toJson(QJsonDocument::Compact);
+}
+
 auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
                            std::int32_t sort_order = 0,
                            QString workspace_id = QStringLiteral("default"), QString author_id = {},
@@ -301,7 +313,9 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
   const auto title = std::string(constants::kNewDocumentTitle);
   const auto now = CurrentUtcTimestamp();
 
-  const auto raw_snapshot_json = MakeDocumentSnapshotJson(id, title, QJsonArray{});
+  const auto raw_snapshot_json = kind == document::DocumentKind::kJupyterNotebook
+                                     ? MakeEmptyNotebookSnapshotJson()
+                                     : MakeDocumentSnapshotJson(id, title, QJsonArray{});
 
   return storage::DocumentRecord{
       .metadata =
@@ -461,6 +475,7 @@ void QEditorBridge::RequestOpenDocument(const QString& page_id) {
 
 void QEditorBridge::ClearCurrentDocumentSelection() {
   current_page_id_.clear();
+  current_page_kind_ = document::DocumentKind::kWikiPage;
   current_document_editable_ = true;
   current_document_has_conflict_ = false;
   current_lock_owner_.clear();
@@ -782,18 +797,34 @@ QVariantMap QEditorBridge::loadDocument(const QString& page_id) {
                          QStringLiteral("Document belongs to another workspace."));
   }
 
-  auto blocks = BlocksFromRawSnapshotJson(result.document->raw_snapshot_json);
-  if (std::holds_alternative<QString>(blocks)) {
-    return ErrorResponse(QStringLiteral("invalid_stored_snapshot"), std::get<QString>(blocks));
+  const auto kind = result.document->metadata.kind;
+
+  QVariantList blocks_variant;
+  QString raw_content;
+  if (kind == document::DocumentKind::kWikiPage) {
+    auto blocks = BlocksFromRawSnapshotJson(result.document->raw_snapshot_json);
+    if (std::holds_alternative<QString>(blocks)) {
+      return ErrorResponse(QStringLiteral("invalid_stored_snapshot"), std::get<QString>(blocks));
+    }
+    blocks_variant = std::get<QVariantList>(std::move(blocks));
+  } else {
+    // Non-wikiPage kinds (nbformat/Excalidraw, #52/#53) don't fit the BlockNote block-array
+    // shape; hand the raw stored JSON to the frontend as-is via `rawContent` instead, and leave
+    // `blocks` empty for LoadedDocument.blocks' array type.
+    raw_content = QString::fromStdString(result.document->raw_snapshot_json);
   }
 
   current_page_id_ = page_id;
+  current_page_kind_ = kind;
   current_document_editable_ = pending_document_editable_;
   current_document_has_conflict_ = false;
   current_lock_owner_ = pending_lock_owner_;
   current_access_message_ = pending_access_message_;
   auto response = MetadataToVariant(result.document->metadata);
-  response.insert(QStringLiteral("blocks"), std::get<QVariantList>(std::move(blocks)));
+  response.insert(QStringLiteral("blocks"), blocks_variant);
+  if (kind != document::DocumentKind::kWikiPage) {
+    response.insert(QStringLiteral("rawContent"), raw_content);
+  }
   response.insert(QStringLiteral("editable"), current_document_editable_);
   response.insert(QStringLiteral("lockOwner"), current_lock_owner_);
   response.insert(QStringLiteral("accessMessage"), current_access_message_);
@@ -841,6 +872,71 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
   emit saveStatusChanged(current_page_id_, true, QStringLiteral("Saving..."));
 
   const auto snapshot_bytes = snapshot_json.toUtf8();
+
+  // Non-wikiPage kinds (nbformat/Excalidraw, #52/#53): the payload is arbitrary well-formed JSON,
+  // not a BlockNote block array, so it's persisted verbatim instead of going through the
+  // block-extraction/rewrap path below (which assumes a `blocks` array and would corrupt or
+  // reject it). Full schema validation for these kinds is out of scope (see DocumentValidator).
+  if (current_page_kind_ != document::DocumentKind::kWikiPage) {
+    const auto validation = document::DocumentValidator::ParseAndValidateSnapshot(
+        snapshot_bytes, current_page_kind_);
+    if (validation.error) {
+      spdlog::warn("editor snapshot rejected: {}: {}", document::ToString(validation.error->code),
+                   validation.error->message);
+      emit saveStatusChanged(current_page_id_, false,
+                             QString::fromStdString(validation.error->message));
+      return ErrorResponse(ToQString(document::ToString(validation.error->code)),
+                           QString::fromStdString(validation.error->message));
+    }
+
+    if (repository_) {
+      storage::DocumentRecord record;
+      if (auto current = repository_->LoadDocument(current_page_id_.toStdString());
+          current.document) {
+        record.metadata = current.document->metadata;
+      }
+      record.metadata.id = current_page_id_.toStdString();
+      record.metadata.schema_version = document::SchemaVersion::kV1;
+      record.metadata.kind = current_page_kind_;
+      if (record.metadata.workspace_id.empty()) {
+        record.metadata.workspace_id = "default";
+      }
+      if (record.metadata.created_by.empty()) {
+        record.metadata.created_by = EffectiveAuthorId(current_author_id_);
+      }
+      if (record.metadata.updated_by.empty()) {
+        record.metadata.updated_by = record.metadata.created_by;
+      }
+      if (record.metadata.content_version < 1) {
+        record.metadata.content_version = 1;
+      }
+      if (record.metadata.title.empty()) {
+        record.metadata.title = std::string(constants::kNewDocumentTitle);
+      }
+      if (record.metadata.created_at.empty()) {
+        record.metadata.created_at = CurrentUtcTimestamp();
+      }
+      ApplyDocumentMutationAudit(record.metadata, current_author_id_);
+      record.raw_snapshot_json = validation.raw_snapshot_json;
+
+      auto save_result = repository_->SaveDocument(record);
+      if (save_result.error) {
+        spdlog::error("Failed to save document: {}", save_result.error->message);
+        emit saveStatusChanged(current_page_id_, false,
+                               QString::fromStdString(save_result.error->message));
+        return ErrorResponse(QStringLiteral("save_failed"),
+                             QString::fromStdString(save_result.error->message));
+      }
+
+      spdlog::info("Document saved successfully: id={}", record.metadata.id);
+      emit saveStatusChanged(current_page_id_, true, QStringLiteral("Saved"));
+    } else {
+      spdlog::warn("No repository set, skipping save");
+    }
+
+    return SuccessResponse(QVariant{});
+  }
+
   const auto validation = document::DocumentValidator::ParseAndValidateSnapshot(snapshot_bytes);
   if (validation.error) {
     spdlog::warn("editor snapshot rejected: {}: {}", document::ToString(validation.error->code),
