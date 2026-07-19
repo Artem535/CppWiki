@@ -2,12 +2,11 @@
 
 #include <algorithm>
 
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLayoutItem>
-#include <QGridLayout>
 #include <QStyle>
-#include <QVBoxLayout>
 #include <QWidget>
 
 namespace cppwiki::gui {
@@ -19,43 +18,12 @@ PresenceStripWidget::PresenceStripWidget(QWidget* parent) : QFrame(parent) {
 
   root_layout_ = new QHBoxLayout(this);
   root_layout_->setContentsMargins(0, 0, 0, 0);
-  root_layout_->setSpacing(12);
+  // Negative spacing produces the ~8px avatar overlap called for by ADR-016's "compact
+  // overlapping avatar cluster" (avatar width is 28px, so -8 leaves 20px of visible offset per
+  // avatar).
+  root_layout_->setSpacing(-8);
 
-  auto* editor_section = new QWidget(this);
-  auto* editor_layout = new QHBoxLayout(editor_section);
-  editor_layout->setContentsMargins(0, 0, 0, 0);
-  editor_layout->setSpacing(6);
-
-  editor_caption_label_ = new QLabel(QStringLiteral("Editor"), editor_section);
-  editor_caption_label_->setObjectName(QStringLiteral("presenceCaptionLabel"));
-  editor_layout->addWidget(editor_caption_label_, 0, Qt::AlignVCenter);
-
-  editor_avatar_ = CreateAvatar(QStringLiteral("presenceEditorAvatar"), QStringLiteral("-"));
-  editor_avatar_label_ = editor_avatar_->findChild<QLabel*>(QStringLiteral("avatarLabel"));
-  editor_layout->addWidget(editor_avatar_, 0, Qt::AlignVCenter);
-  editor_section->setToolTip(QStringLiteral("No active editor"));
-
-  auto* viewers_section = new QWidget(this);
-  auto* viewers_layout = new QHBoxLayout(viewers_section);
-  viewers_layout->setContentsMargins(0, 0, 0, 0);
-  viewers_layout->setSpacing(6);
-
-  viewers_caption_label_ = new QLabel(QStringLiteral("Viewers"), viewers_section);
-  viewers_caption_label_->setObjectName(QStringLiteral("presenceCaptionLabel"));
-  viewers_layout->addWidget(viewers_caption_label_, 0, Qt::AlignVCenter);
-
-  auto* viewers_avatars = new QWidget(viewers_section);
-  viewer_avatars_layout_ = new QHBoxLayout(viewers_avatars);
-  viewer_avatars_layout_->setContentsMargins(0, 0, 0, 0);
-  viewer_avatars_layout_->setSpacing(-8);
-  viewers_layout->addWidget(viewers_avatars, 0, Qt::AlignVCenter);
-  viewers_section->setToolTip(QStringLiteral("No viewers"));
-
-  root_layout_->addWidget(editor_section, 0, Qt::AlignVCenter);
-  root_layout_->addWidget(viewers_section, 0, Qt::AlignVCenter);
-
-  ClearEditor();
-  SetViewers({});
+  Rebuild();
 }
 
 void PresenceStripWidget::SetCollaborationState(const QString& state) {
@@ -67,38 +35,31 @@ void PresenceStripWidget::SetCollaborationState(const QString& state) {
 
 void PresenceStripWidget::SetEditor(const QString& name, bool is_self) {
   const auto trimmed = name.trimmed();
-  const auto display_name =
-      trimmed.isEmpty() ? QStringLiteral("No active editor")
-                        : (is_self ? QStringLiteral("You") : trimmed);
-  if (editor_avatar_label_ != nullptr) {
-    editor_avatar_label_->setText(MakeAvatarText(display_name));
-  }
-  editor_avatar_->setToolTip(display_name);
-  editor_avatar_->setProperty("presenceActive", !trimmed.isEmpty());
-  editor_avatar_->setProperty("presenceSelf", is_self);
-  style()->unpolish(editor_avatar_);
-  style()->polish(editor_avatar_);
+  editor_name_ = trimmed;
+  editor_is_self_ = is_self;
+  editor_active_ = !trimmed.isEmpty();
+  Rebuild();
 }
 
 void PresenceStripWidget::ClearEditor() {
-  SetEditor({}, false);
-  editor_avatar_->setProperty("presenceActive", false);
-  editor_avatar_->setProperty("presenceSelf", false);
-  style()->unpolish(editor_avatar_);
-  style()->polish(editor_avatar_);
+  editor_name_.clear();
+  editor_is_self_ = false;
+  editor_active_ = false;
+  Rebuild();
 }
 
 void PresenceStripWidget::SetViewers(const QStringList& names) {
   viewers_ = names;
-  UpdateViewerAvatars();
+  Rebuild();
 }
 
-QWidget* PresenceStripWidget::CreateAvatar(const QString& object_name, const QString& text) {
+QWidget* PresenceStripWidget::CreateAvatar(const QString& text, const QString& role,
+                                           const QString& tooltip) {
   auto* avatar = new QWidget(this);
-  avatar->setObjectName(object_name);
-  avatar->setProperty("presenceActive", false);
-  avatar->setProperty("presenceSelf", false);
+  avatar->setObjectName(QStringLiteral("presenceAvatar"));
+  avatar->setProperty("presenceRole", role);
   avatar->setFixedSize(28, 28);
+  avatar->setToolTip(tooltip);
 
   auto* layout = new QGridLayout(avatar);
   layout->setContentsMargins(0, 0, 0, 0);
@@ -109,20 +70,12 @@ QWidget* PresenceStripWidget::CreateAvatar(const QString& object_name, const QSt
   label->setAlignment(Qt::AlignCenter);
   layout->addWidget(label, 0, 0, Qt::AlignCenter);
 
-  if (object_name == QStringLiteral("presenceEditorAvatar")) {
-    auto* dot = new QWidget(avatar);
-    dot->setObjectName(QStringLiteral("presenceOnlineDot"));
-    dot->setFixedSize(8, 8);
-    dot->setAttribute(Qt::WA_TransparentForMouseEvents);
-    layout->addWidget(dot, 0, 0, Qt::AlignBottom | Qt::AlignRight);
-  }
-
   return avatar;
 }
 
-void PresenceStripWidget::UpdateViewerAvatars() {
-  while (viewer_avatars_layout_->count() > 0) {
-    auto* item = viewer_avatars_layout_->takeAt(0);
+void PresenceStripWidget::Rebuild() {
+  while (root_layout_->count() > 0) {
+    auto* item = root_layout_->takeAt(0);
     if (item == nullptr) {
       continue;
     }
@@ -132,29 +85,42 @@ void PresenceStripWidget::UpdateViewerAvatars() {
     delete item;
   }
 
-  if (viewers_.isEmpty()) {
-    auto* avatar = CreateAvatar(QStringLiteral("presenceViewerAvatar"), QStringLiteral("-"));
-    if (auto* label = avatar->findChild<QLabel*>(QStringLiteral("avatarLabel")); label != nullptr) {
-      label->setText(QStringLiteral("-"));
-    }
-    avatar->setToolTip(QStringLiteral("No viewers"));
-    viewer_avatars_layout_->addWidget(avatar, 0, Qt::AlignVCenter);
-    return;
+  int rendered_count = 0;
+
+  if (editor_active_) {
+    const auto display_name = editor_is_self_ ? QStringLiteral("You") : editor_name_;
+    const auto tooltip =
+        QStringLiteral("%1 (editing)").arg(editor_is_self_ ? QStringLiteral("You") : editor_name_);
+    auto* avatar = CreateAvatar(MakeAvatarText(display_name), QStringLiteral("editing"), tooltip);
+    root_layout_->addWidget(avatar, 0, Qt::AlignVCenter);
+    ++rendered_count;
   }
 
-  const auto visible_count = std::min<qsizetype>(viewers_.size(), 3);
-  for (qsizetype index = visible_count - 1; index >= 0; --index) {
-    auto* avatar = CreateAvatar(QStringLiteral("presenceViewerAvatar"),
-                                MakeAvatarText(viewers_.at(index)));
-    avatar->setProperty("presenceActive", true);
-    avatar->setToolTip(viewers_.at(index));
-    style()->unpolish(avatar);
-    style()->polish(avatar);
-    viewer_avatars_layout_->addWidget(avatar, 0, Qt::AlignVCenter);
-    if (index == 0) {
-      break;
-    }
+  const auto viewer_slots = std::max(0, kMaxVisibleAvatars - rendered_count);
+  const auto visible_viewer_count = std::min<qsizetype>(viewers_.size(), viewer_slots);
+  for (qsizetype index = 0; index < visible_viewer_count; ++index) {
+    const auto& viewer_name = viewers_.at(index);
+    auto* avatar = CreateAvatar(MakeAvatarText(viewer_name), QStringLiteral("viewing"),
+                                QStringLiteral("%1 (viewing)").arg(viewer_name));
+    root_layout_->addWidget(avatar, 0, Qt::AlignVCenter);
+    ++rendered_count;
   }
+
+  const auto overflow_count = viewers_.size() - visible_viewer_count;
+  if (overflow_count > 0) {
+    auto* avatar = CreateAvatar(QStringLiteral("+%1").arg(overflow_count),
+                                QStringLiteral("viewing"),
+                                QStringLiteral("%1 more viewer(s)").arg(overflow_count));
+    root_layout_->addWidget(avatar, 0, Qt::AlignVCenter);
+  }
+
+  if (rendered_count == 0 && overflow_count <= 0) {
+    auto* avatar =
+        CreateAvatar(QStringLiteral("-"), QStringLiteral("idle"), QStringLiteral("No one here"));
+    root_layout_->addWidget(avatar, 0, Qt::AlignVCenter);
+  }
+
+  root_layout_->addStretch(0);
 }
 
 QString PresenceStripWidget::MakeAvatarText(const QString& name) {

@@ -53,6 +53,9 @@ auto TestDefaultSettings() -> void {
   Require(!settings.AuthEnabled(), "auth should be disabled by default");
   Require(!settings.SyncEnabled(), "sync should be disabled by default");
   Require(settings.ApplicationFontPointSize() > 0, "font size should be positive");
+  Require(settings.AccentColorKey() ==
+              cppwiki::ToQString(cppwiki::constants::kDefaultAccentColorKey),
+          "accent color should default to blue (ADR-016)");
 }
 
 auto TestSettingsOverrides() -> void {
@@ -93,6 +96,8 @@ auto TestSettingsOverrides() -> void {
   settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsSyncEnabledKey), true);
   settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsApplicationFontPointSizeKey),
                     15);
+  settings.setValue(cppwiki::ToQString(cppwiki::constants::kSettingsAccentColorKey),
+                    QStringLiteral("violet"));
 
   const auto program_settings = cppwiki::ProgramSettings::FromSettings(settings);
 
@@ -117,6 +122,8 @@ auto TestSettingsOverrides() -> void {
   Require(program_settings.SyncEnabled(), "sync enabled flag should be read from QSettings");
   Require(program_settings.ApplicationFontPointSize() == 15,
           "font size should be read from QSettings");
+  Require(program_settings.AccentColorKey() == QStringLiteral("violet"),
+          "accent color should be read from QSettings");
 }
 
 auto TestSettingsRoundTrip() -> void {
@@ -145,7 +152,7 @@ auto TestSettingsRoundTrip() -> void {
       cppwiki::ToQString(cppwiki::constants::kOrganizationName), app_data_directory,
       database_directory, editor_dist_directory, backend_base_url, true, auth_authorization_url,
       auth_token_url, auth_client_id, auth_redirect_uri, true, false, QString(), true, 15, true,
-      true, true);
+      true, true, QStringLiteral("orange"));
   program_settings.SaveToSettings(settings);
   settings.sync();
 
@@ -178,6 +185,8 @@ auto TestSettingsRoundTrip() -> void {
           "saved AI autocomplete enabled flag should round-trip through QSettings");
   Require(reloaded.AiInlineSuggestionsEnabled(),
           "saved AI inline suggestions enabled flag should round-trip through QSettings");
+  Require(reloaded.AccentColorKey() == QStringLiteral("orange"),
+          "saved accent color should round-trip through QSettings");
 }
 
 }  // namespace

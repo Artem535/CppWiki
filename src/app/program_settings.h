@@ -16,7 +16,8 @@ class ProgramSettings final {
                   QString auth_redirect_uri, bool auth_enabled, bool demo_collaboration_enabled,
                   QString demo_collaboration_user_id, bool sync_enabled,
                   int application_font_point_size, bool ai_features_enabled,
-                  bool ai_autocomplete_enabled, bool ai_inline_suggestions_enabled);
+                  bool ai_autocomplete_enabled, bool ai_inline_suggestions_enabled,
+                  QString accent_color_key);
 
   [[nodiscard]] static auto FromDefaults() -> ProgramSettings;
   [[nodiscard]] static auto FromSettings(const QSettings& settings) -> ProgramSettings;
@@ -44,6 +45,9 @@ class ProgramSettings final {
   // Separate opt-in for inline ghost-text suggestions (issue #59); independent
   // of AiFeaturesEnabled()/AiAutocompleteEnabled().
   [[nodiscard]] auto AiInlineSuggestionsEnabled() const -> bool;
+  // Persistence key for the ADR-016 accent-color preset ("blue"/"violet"/"orange"/"green"); use
+  // AccentColorFromKey() (see app/accent_color.h) to resolve it to an AccentColor.
+  [[nodiscard]] auto AccentColorKey() const -> const QString&;
 
  private:
   QString application_name_;
@@ -66,6 +70,7 @@ class ProgramSettings final {
   bool ai_features_enabled_;
   bool ai_autocomplete_enabled_;
   bool ai_inline_suggestions_enabled_;
+  QString accent_color_key_;
 };
 
 }  // namespace cppwiki

@@ -1,6 +1,7 @@
 #include "gui/settings_dialog.h"
 
 #include <QAction>
+#include <QButtonGroup>
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
@@ -12,6 +13,7 @@
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -24,6 +26,7 @@
 #include "auth/ai_api_key_store.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "app/accent_color.h"
 #include "app/application.h"
 
 namespace cppwiki::gui {
@@ -37,6 +40,31 @@ auto MakeReadOnlyPathLineEdit(const QString& value, QWidget* parent)
   edit->setReadOnly(true);
   edit->setClearButtonEnabled(false);
   return edit;
+}
+
+// A round, checkable swatch button for one ADR-016 accent-color preset. Deliberately a plain
+// QToolButton with a hand-rolled stylesheet (not oclero::qlementine::ActionButton or a full
+// QColorDialog) — see ADR-016's "row of custom round swatch widgets" decision.
+auto MakeAccentSwatchButton(AccentColor accent_color, QWidget* parent) -> QToolButton* {
+  auto* button = new QToolButton(parent);
+  button->setCheckable(true);
+  button->setFixedSize(28, 28);
+  button->setCursor(Qt::PointingHandCursor);
+  button->setToolTip(ToAccentColorKey(accent_color));
+  button->setProperty("accentColorKey", ToAccentColorKey(accent_color));
+
+  const auto base_color = AccentColorBaseColor(accent_color);
+  button->setStyleSheet(QStringLiteral(
+                            "QToolButton {"
+                            "  background-color: %1;"
+                            "  border: 2px solid transparent;"
+                            "  border-radius: 14px;"
+                            "}"
+                            "QToolButton:checked {"
+                            "  border: 2px solid palette(text);"
+                            "}")
+                            .arg(base_color.name()));
+  return button;
 }
 
 auto MakeSectionPage(QWidget* parent, QFormLayout** out_form_layout) -> QWidget* {
@@ -55,15 +83,15 @@ auto MakeSectionPage(QWidget* parent, QFormLayout** out_form_layout) -> QWidget*
 SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
     : QDialog(parent), current_settings_(settings) {
   // Callers should avoid passing a QWidget parent whose subtree has its own style sheet applied
-  // (e.g. MainWindow — see ApplyApplicationStylesheet()): Qt cascades a style sheet down the
-  // QObject parent/child tree to every descendant, including dialogs that only pop up as their
-  // own top-level window because a parent was supplied for ownership/centering. That would wrap
-  // this dialog's (and SegmentedControl's) QStyle in an internal QStyleSheetStyle proxy, which
-  // breaks qobject_cast<QlementineStyle*>(style()) inside AbstractItemListWidget/SegmentedControl
-  // the same way an app-wide qApp->setStyleSheet() would — confirmed empirically that even giving
-  // this dialog its own explicit *empty* style sheet does not prevent that wrap, it only
-  // neutralizes the inherited rules. See MainWindow::ShowSettingsDialog() for how this is
-  // constructed (parent == nullptr, centered manually) to avoid it.
+  // directly (via setStyleSheet()): Qt cascades a style sheet down the QObject parent/child tree
+  // to every descendant, including dialogs that only pop up as their own top-level window
+  // because a parent was supplied for ownership/centering. That would wrap this dialog's (and
+  // SegmentedControl's) QStyle in an internal QStyleSheetStyle proxy, which breaks
+  // qobject_cast<QlementineStyle*>(style()) inside AbstractItemListWidget/SegmentedControl the
+  // same way an app-wide qApp->setStyleSheet() would. MainWindow itself never gets
+  // setStyleSheet() called on it (see MainWindow::ApplyStylesheetToSafeDescendants()'s comment),
+  // so parenting this dialog to MainWindow (see ShowSettingsDialog()) is safe and gives window
+  // managers the transient-for hint tiling WMs need to float it instead of tiling it in.
   setWindowTitle(QStringLiteral("Settings"));
   setModal(true);
   resize(680, 460);
@@ -115,6 +143,59 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   font_size_spinbox_->setSuffix(QStringLiteral(" pt"));
   font_size_spinbox_->setValue(current_settings_.ApplicationFontPointSize());
   general_form_layout->addRow(QStringLiteral("Font size"), font_size_spinbox_);
+
+  selected_accent_color_key_ = current_settings_.AccentColorKey();
+  auto* accent_color_row = new QWidget(general_page);
+  auto* accent_color_layout = new QHBoxLayout(accent_color_row);
+  accent_color_layout->setContentsMargins(0, 0, 0, 0);
+  accent_color_layout->setSpacing(10);
+  accent_color_group_ = new QButtonGroup(this);
+  accent_color_group_->setExclusive(true);
+  const auto current_accent = AccentColorFromKey(selected_accent_color_key_);
+  for (const auto accent_color :
+       {AccentColor::kBlue, AccentColor::kViolet, AccentColor::kOrange, AccentColor::kGreen}) {
+    auto* swatch_button = MakeAccentSwatchButton(accent_color, accent_color_row);
+    swatch_button->setChecked(accent_color == current_accent);
+    accent_color_group_->addButton(swatch_button);
+    accent_color_layout->addWidget(swatch_button, 0, Qt::AlignVCenter);
+    connect(swatch_button, &QToolButton::toggled, this, [this, accent_color](bool checked) {
+      if (checked) {
+        selected_accent_color_key_ = ToAccentColorKey(accent_color);
+      }
+    });
+  }
+  accent_color_layout->addStretch(1);
+  general_form_layout->addRow(QStringLiteral("Accent color"), accent_color_row);
+
+  auto* app_data_directory_edit =
+      MakeReadOnlyPathLineEdit(current_settings_.AppDataDirectory(), general_page);
+  auto* open_app_data_folder_action =
+      new QAction(QIcon::fromTheme(QStringLiteral("folder-open")),
+                  QStringLiteral("Open application data folder"), this);
+  auto* open_app_data_folder_button = new oclero::qlementine::ActionButton(general_page);
+  open_app_data_folder_button->setAction(open_app_data_folder_action);
+  open_app_data_folder_button->setMinimumWidth(160);
+  connect(open_app_data_folder_action, &QAction::triggered, this, [app_data_directory_edit]() {
+    const auto path = app_data_directory_edit->text().trimmed();
+    if (!path.isEmpty()) {
+      QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    }
+  });
+  auto* app_data_folder_row = new QWidget(general_page);
+  auto* app_data_folder_layout = new QHBoxLayout(app_data_folder_row);
+  app_data_folder_layout->setContentsMargins(0, 0, 0, 0);
+  app_data_folder_layout->setSpacing(8);
+  app_data_folder_layout->addWidget(app_data_directory_edit, 1);
+  app_data_folder_layout->addWidget(open_app_data_folder_button, 0);
+  general_form_layout->addRow(QStringLiteral("Application data folder"), app_data_folder_row);
+
+  auto* general_page_hint = new QLabel(
+      QStringLiteral("This is where CppWiki keeps its local configuration and cached editor "
+                     "assets on this machine. Document storage location is configured "
+                     "separately under Backend & Sync."),
+      general_page);
+  general_page_hint->setWordWrap(true);
+  general_form_layout->addRow(QString{}, general_page_hint);
 
   // Backend & Sync.
   QFormLayout* backend_form_layout = nullptr;
@@ -318,7 +399,7 @@ auto SettingsDialog::BuildProgramSettings() const -> ProgramSettings {
       demo_collaboration_enabled_checkbox_->isChecked(), demo_collaboration_user_id,
       sync_enabled_checkbox_->isChecked(), font_size_spinbox_->value(),
       ai_features_enabled_checkbox_->isChecked(), ai_autocomplete_enabled_checkbox_->isChecked(),
-      ai_inline_suggestions_enabled_checkbox_->isChecked());
+      ai_inline_suggestions_enabled_checkbox_->isChecked(), selected_accent_color_key_);
 }
 
 }  // namespace cppwiki::gui

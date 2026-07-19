@@ -52,7 +52,7 @@ ProgramSettings::ProgramSettings(
     QString auth_token_url, QString auth_client_id, QString auth_redirect_uri, bool auth_enabled,
     bool demo_collaboration_enabled, QString demo_collaboration_user_id, bool sync_enabled,
     int application_font_point_size, bool ai_features_enabled, bool ai_autocomplete_enabled,
-    bool ai_inline_suggestions_enabled)
+    bool ai_inline_suggestions_enabled, QString accent_color_key)
     : application_name_(std::move(application_name)),
       application_version_(std::move(application_version)),
       organization_name_(std::move(organization_name)),
@@ -72,7 +72,8 @@ ProgramSettings::ProgramSettings(
       application_font_point_size_(application_font_point_size),
       ai_features_enabled_(ai_features_enabled),
       ai_autocomplete_enabled_(ai_autocomplete_enabled),
-      ai_inline_suggestions_enabled_(ai_inline_suggestions_enabled) {}
+      ai_inline_suggestions_enabled_(ai_inline_suggestions_enabled),
+      accent_color_key_(std::move(accent_color_key)) {}
 
 auto ProgramSettings::FromDefaults() -> ProgramSettings {
   const QSettings settings;
@@ -135,13 +136,17 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
   const auto ai_inline_suggestions_enabled =
       settings.value(ToQString(constants::kSettingsAiInlineSuggestionsEnabledKey), false).toBool();
 
+  const auto accent_color_key =
+      SettingsValueOrDefault(settings, constants::kSettingsAccentColorKey,
+                             ToQString(constants::kDefaultAccentColorKey));
+
   return ProgramSettings(
       ToQString(constants::kApplicationName), ToQString(constants::kApplicationVersion),
       ToQString(constants::kOrganizationName), app_data_directory, database_directory,
       editor_dist_directory, backend_base_url, backend_enabled, auth_authorization_url,
       auth_token_url, auth_client_id, auth_redirect_uri, auth_enabled, demo_collaboration_enabled,
       demo_collaboration_user_id, sync_enabled, application_font_point_size, ai_features_enabled,
-      ai_autocomplete_enabled, ai_inline_suggestions_enabled);
+      ai_autocomplete_enabled, ai_inline_suggestions_enabled, accent_color_key);
 }
 
 void ProgramSettings::SaveToSettings(QSettings& settings) const {
@@ -168,6 +173,7 @@ void ProgramSettings::SaveToSettings(QSettings& settings) const {
                     ai_autocomplete_enabled_);
   settings.setValue(ToQString(constants::kSettingsAiInlineSuggestionsEnabledKey),
                     ai_inline_suggestions_enabled_);
+  settings.setValue(ToQString(constants::kSettingsAccentColorKey), accent_color_key_);
 }
 
 auto ProgramSettings::ApplicationName() const -> const QString& {
@@ -248,6 +254,10 @@ auto ProgramSettings::AiAutocompleteEnabled() const -> bool {
 
 auto ProgramSettings::AiInlineSuggestionsEnabled() const -> bool {
   return ai_inline_suggestions_enabled_;
+}
+
+auto ProgramSettings::AccentColorKey() const -> const QString& {
+  return accent_color_key_;
 }
 
 }  // namespace cppwiki

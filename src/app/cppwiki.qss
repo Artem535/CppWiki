@@ -1,11 +1,42 @@
-QWidget#shellHeaderRow {
-  background-color: transparent;
+/* shellHeaderRow and collaborationPanel are both ancestors of editModeSwitch
+   (oclero::qlementine::Switch) in MainWindow, so cppwiki.qss is never applied to them or any
+   of their ancestors — see MainWindow::ApplyStylesheetToSafeDescendants()'s comment. Rules for
+   them would simply never match anything: shellHeaderRow relies on QWidget's default
+   (transparent) painting, and collaborationPanel paints its own background/border in code
+   (see CollaborationPanelFrame in main_window.cc), keyed off the same "collaborationState"
+   property these rules used to use. Qt Style Sheets only support /* *\/ comments, not //
+   line comments — a // comment here previously broke parsing of this ENTIRE file (Qt's QSS
+   parser fails closed: one bad token anywhere and every rule in the sheet is dropped, with
+   only a "Could not parse stylesheet" warning on stderr as a clue), silently reverting every
+   styled widget to plain default Qt looks (bigger default fonts, filled default button
+   chrome, no panel background tints) despite the file loading successfully. */
+
+/* ADR-016 "unified navigation chrome": the workspace rail and the document tree panel
+   (QWidget#pagePanel — page_panel_ in page.cc, despite the name it's the sidebar/tree
+   container, NOT the editor content pane) get the same flush background treatment — no
+   border or radius on either — so the rail and the document tree read as one continuous
+   navigation zone, not two separate rounded "cards" sitting next to each other. Distinct from
+   the editor content pane's tone (QWidget#pageContentHost, styled via palette(base) below).
+   These two rules were previously mismatched — this file referenced a "QFrame#shellWidgetCell"
+   selector that no widget in the codebase was ever actually named, so it never matched
+   anything, while QWidget#pagePanel's rule was accidentally styling the tree panel with the
+   *content* pane's intended tone (palette(base)) instead. */
+QWidget#pagePanel {
+  background-color: rgba(255, 255, 255, 0.03);
 }
 
-QFrame#shellWidgetCell {
+QWidget#workspaceRailWidget {
   background-color: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+}
+
+/* QTreeView paints its own opaque viewport background from the palette (Base), which is
+   darker than and unrelated to pagePanel's tint above and covers nearly the entire sidebar
+   (everything below the title row) — so without this rule, "pagePanel"'s background is only
+   ever visible in a thin margin around the tree, not as the panel's overall tone. Making the
+   tree transparent lets pagePanel's own tint show through instead. */
+QTreeView#workspaceTreeView {
+  background-color: transparent;
+  border: none;
 }
 
 QLabel#globalSidebarTitle {
@@ -15,79 +46,32 @@ QLabel#globalSidebarTitle {
   padding: 2px 2px 8px 2px;
 }
 
-QFrame#shellWidgetCell {
-  min-height: 44px;
-}
-
-QFrame#collaborationPanel {
-  background-color: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-}
-
-QFrame#collaborationPanel[collaborationState="editing"] {
-  background-color: rgba(28, 201, 156, 0.08);
-  border: 1px solid rgba(28, 201, 156, 0.32);
-}
-
-QFrame#collaborationPanel[collaborationState="viewing"] {
-  background-color: rgba(65, 152, 255, 0.06);
-  border: 1px solid rgba(65, 152, 255, 0.18);
-}
-
-QFrame#collaborationPanel[collaborationState="read-only"] {
-  background-color: rgba(255, 193, 87, 0.08);
-  border: 1px solid rgba(255, 193, 87, 0.28);
-}
-
-QFrame#collaborationPanel[collaborationState="attention"] {
-  background-color: rgba(255, 107, 107, 0.08);
-  border: 1px solid rgba(255, 107, 107, 0.28);
-}
-
-QFrame#collaborationPanel[collaborationState="local-only"] {
-  background-color: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-}
+/* collaborationPanel has no rules here: it's an ancestor of editModeSwitch, so it never gets
+   this stylesheet applied at all (see MainWindow::ApplyStylesheetToSafeDescendants()'s
+   comment) — it paints its own background/border, including the ADR-016 accent tint for the
+   "viewing" state, in code (see CollaborationPanelFrame in main_window.cc). */
 
 QFrame#presenceStripWidget {
   background-color: transparent;
   border: none;
 }
 
-QLabel#presenceCaptionLabel {
-  color: rgba(255, 255, 255, 0.56);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-QWidget#presenceEditorAvatar,
-QWidget#presenceViewerAvatar {
-  background-color: rgba(255, 255, 255, 0.08);
+/* ADR-016 "presence indicator: overlapping avatar cluster": role is conveyed by ring color
+   (green = currently editing, neutral/grey = viewing) instead of a text label grouping. */
+QWidget#presenceAvatar {
+  background-color: rgba(255, 255, 255, 0.1);
   border: 2px solid rgba(40, 43, 52, 0.95);
   border-radius: 14px;
 }
 
-QWidget#presenceOnlineDot {
-  background-color: rgba(59, 225, 154, 0.98);
-  border: 2px solid rgba(40, 43, 52, 0.95);
-  border-radius: 4px;
-}
-
-QWidget#presenceEditorAvatar[presenceActive="true"] {
+QWidget#presenceAvatar[presenceRole="editing"] {
   background-color: rgba(28, 201, 156, 0.22);
-  border: 2px solid rgba(28, 201, 156, 0.65);
+  border: 2px solid rgba(28, 201, 156, 0.75);
 }
 
-QWidget#presenceEditorAvatar[presenceSelf="true"] {
-  background-color: rgba(65, 152, 255, 0.24);
-  border: 2px solid rgba(65, 152, 255, 0.72);
-}
-
-QWidget#presenceViewerAvatar[presenceActive="true"] {
-  background-color: rgba(255, 255, 255, 0.14);
-  border: 2px solid rgba(40, 43, 52, 0.95);
+QWidget#presenceAvatar[presenceRole="viewing"] {
+  background-color: rgba(255, 255, 255, 0.12);
+  border: 2px solid rgba(255, 255, 255, 0.35);
 }
 
 QLabel#avatarLabel {
@@ -120,10 +104,9 @@ QLabel#statusLineLabel {
   font-size: 11px;
 }
 
-QWidget#pagePanel {
+QWidget#pageContentHost {
   background-color: palette(base);
 }
-
 
 QFrame#sidebarFooter {
   border-top: 1px solid rgba(255, 255, 255, 0.08);

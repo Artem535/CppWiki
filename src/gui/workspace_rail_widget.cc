@@ -33,6 +33,9 @@ auto MakeRailButton(QAction* action, QWidget* parent) -> QToolButton* {
 
 WorkspaceRailWidget::WorkspaceRailWidget(QWidget* parent) : QWidget(parent) {
   setObjectName(QStringLiteral("workspaceRailWidget"));
+  // Required for a plain QWidget to actually paint its QSS background-color at all — see
+  // page_panel_'s and content_widget_'s matching setAttribute() calls in page.cc.
+  setAttribute(Qt::WA_StyledBackground, true);
   setFixedWidth(56);
 
   auto* layout = new QVBoxLayout(this);

@@ -1050,8 +1050,22 @@ void QEditorBridge::CallProviderAndRelay(const QString& request_id, const QUrl& 
       // Raw OpenAI-compatible chat completion response (local-key path).
       const auto choices = object.value(QStringLiteral("choices")).toArray();
       if (!choices.isEmpty()) {
-        text = choices.first().toObject().value(QStringLiteral("message")).toObject()
-                   .value(QStringLiteral("content")).toString();
+        const auto content = choices.first().toObject().value(QStringLiteral("message")).toObject()
+                                  .value(QStringLiteral("content"));
+        if (content.isString()) {
+          text = content.toString();
+        } else if (content.isArray()) {
+          // Some OpenAI-compatible backends (notably vision-capable models)
+          // reply with a content-parts array, e.g.
+          // [{"type": "text", "text": "..."}], even for text-only replies,
+          // instead of a plain string. Concatenate every part's "text" field.
+          for (const auto& part : content.toArray()) {
+            const auto part_text = part.toObject().value(QStringLiteral("text"));
+            if (part_text.isString()) {
+              text += part_text.toString();
+            }
+          }
+        }
       }
     }
 
