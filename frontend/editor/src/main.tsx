@@ -236,6 +236,12 @@ function EditorApp() {
               onChange={handleEditorChange}
               theme={editorTheme}
               formattingToolbar={!aiFeaturesEnabled}
+              // BlockNoteDefaultUI always mounts its own "/" SuggestionMenuController
+              // regardless of children; when AI features are on we render a second one
+              // below with merged default+AI items, and two controllers on the same
+              // trigger character silently break each other. Disable the built-in one
+              // whenever our own slash menu takes over.
+              slashMenu={!(aiFeaturesEnabled && aiAutocompleteEnabled)}
             >
               {aiFeaturesEnabled ? (
                 <>
