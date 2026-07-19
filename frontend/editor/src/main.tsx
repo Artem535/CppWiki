@@ -35,21 +35,18 @@ import {
   snapshotDebounceMs,
 } from "./constants";
 import { createInlineSuggestionExtension } from "./extensions/inlineSuggestionExtension";
+import { NotebookView } from "./notebook/NotebookView";
 
-// Placeholder mounted for document kinds that don't have a real renderer yet
-// (issue #58 is routing/plumbing only — real notebook/canvas rendering is
-// #52/#53's job).
-function UnsupportedKindPlaceholder({ kind }: { kind: DocumentKind }) {
-  const messages: Record<Exclude<DocumentKind, "wikiPage">, string> = {
-    jupyterNotebook: "Notebook rendering not yet implemented.",
+// Placeholder mounted for document kinds that don't have a real renderer yet. jupyterNotebook is
+// handled by NotebookView below (#52); excalidrawCanvas is still #53's job.
+function UnsupportedKindPlaceholder({ kind }: { kind: Exclude<DocumentKind, "wikiPage" | "jupyterNotebook"> }) {
+  const messages: Record<typeof kind, string> = {
     excalidrawCanvas: "Excalidraw canvas rendering not yet implemented.",
   };
-  const message =
-    kind === "wikiPage" ? null : messages[kind];
   return (
     <div className="empty-state" data-testid="unsupported-kind-placeholder">
       <h1>Unsupported document kind</h1>
-      <p>{message}</p>
+      <p>{messages[kind]}</p>
     </div>
   );
 }
@@ -65,6 +62,9 @@ function EditorApp() {
   // (existing documents / bridges that predate this field) renders the
   // BlockNote editor exactly as before.
   const [documentKind, setDocumentKind] = useState<DocumentKind>("wikiPage");
+  // Raw stored snapshot JSON for non-wikiPage kinds (see LoadedDocument.rawContent) — currently
+  // only consumed by NotebookView (#52) for "jupyterNotebook".
+  const [documentRawContent, setDocumentRawContent] = useState<string | undefined>(undefined);
   const [aiFeaturesEnabled, setAiFeaturesEnabled] = useState(false);
   const [aiAutocompleteEnabled, setAiAutocompleteEnabled] = useState(false);
   // Separate opt-in for inline ghost-text suggestions (issue #59); the
@@ -229,6 +229,7 @@ function EditorApp() {
         setSelectedPageId(document.id);
         setIsEditable(document.editable);
         setDocumentKind(document.kind ?? "wikiPage");
+        setDocumentRawContent(document.rawContent);
         window.setTimeout(() => {
           replacing_document.current = false;
           setIsLoadingDocument(false);
@@ -253,6 +254,7 @@ function EditorApp() {
           setSelectedPageId(null);
           setIsEditable(true);
           setDocumentKind("wikiPage");
+          setDocumentRawContent(undefined);
           setIsLoadingDocument(false);
         });
       unsubscribers.push(
@@ -295,18 +297,28 @@ function EditorApp() {
     }, snapshotDebounceMs);
   };
 
-  // Kind-based routing stub (ADR-017, issue #58): only kWikiPage mounts the
-  // real BlockNote editor today. jupyterNotebook/excalidrawCanvas mount a
-  // placeholder — real rendering for those kinds is #52/#53's job; this only
-  // proves the kind-based mount-switching plumbing works end to end.
+  // Kind-based routing (ADR-017, issue #58): kWikiPage mounts the real BlockNote editor,
+  // jupyterNotebook mounts NotebookView (#52), excalidrawCanvas still mounts the placeholder
+  // (#53's job).
   const isWikiPage = documentKind === "wikiPage";
+  const isJupyterNotebook = documentKind === "jupyterNotebook";
 
   return (
     <main className="app-shell">
       <section className="editor-pane" aria-label="Document editor">
-        {shouldMountEditor && !isWikiPage ? (
+        {shouldMountEditor && isJupyterNotebook ? (
           <div className="editor-surface" data-document-kind={documentKind}>
-            <UnsupportedKindPlaceholder kind={documentKind} />
+            <NotebookView
+              bridge={bridge}
+              pageId={selectedPageId ?? ""}
+              editable={isEditable}
+              rawContent={documentRawContent}
+            />
+          </div>
+        ) : null}
+        {shouldMountEditor && !isWikiPage && !isJupyterNotebook ? (
+          <div className="editor-surface" data-document-kind={documentKind}>
+            <UnsupportedKindPlaceholder kind={documentKind as "excalidrawCanvas"} />
           </div>
         ) : null}
         {shouldMountEditor && isWikiPage ? (

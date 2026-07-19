@@ -1,0 +1,200 @@
+// Jupyter notebook document kind renderer (issue #52, ADR-017): view/edit cell source and view
+// already-saved cell output. No kernel connectivity, no code execution — permanently out of
+// scope, not just a v1 cut, so this component must never grow a "Run cell" affordance.
+import DOMPurify from "dompurify";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import type { EditorBridge } from "../bridge/editorBridge";
+import { snapshotDebounceMs } from "../constants";
+import {
+  joinNbSource,
+  parseNotebookJson,
+  resolveOutputData,
+  splitToNbSource,
+  type NbCell,
+  type NbDataBundle,
+  type NbErrorOutput,
+  type NbNotebook,
+  type NbOutput,
+  type NbSource,
+} from "./nbformat";
+
+function OutputView({ output }: { output: NbOutput }) {
+  if (output.output_type === "stream") {
+    const streamText = (output as { text?: NbSource }).text;
+    return <pre className="notebook-output notebook-output--stream">{joinNbSource(streamText)}</pre>;
+  }
+
+  if (output.output_type === "execute_result" || output.output_type === "display_data") {
+    const data = (output as { data?: NbDataBundle }).data;
+    const resolved = resolveOutputData(data);
+    if (!resolved) {
+      return null;
+    }
+    if (resolved.mime === "image/png") {
+      return (
+        <img
+          className="notebook-output notebook-output--image"
+          src={`data:image/png;base64,${resolved.value}`}
+          alt="Cell output"
+        />
+      );
+    }
+    if (resolved.mime === "text/html") {
+      const sanitized = DOMPurify.sanitize(resolved.value);
+      return (
+        // eslint-disable-next-line react/no-danger -- sanitized via DOMPurify above.
+        <div
+          className="notebook-output notebook-output--html"
+          dangerouslySetInnerHTML={{ __html: sanitized }}
+        />
+      );
+    }
+    return <pre className="notebook-output notebook-output--text">{resolved.value}</pre>;
+  }
+
+  if (output.output_type === "error") {
+    const errorOutput = output as NbErrorOutput;
+    const traceback = (errorOutput.traceback ?? []).join("\n");
+    return (
+      <pre className="notebook-output notebook-output--error">
+        {traceback || `${errorOutput.ename ?? "Error"}: ${errorOutput.evalue ?? ""}`}
+      </pre>
+    );
+  }
+
+  return null;
+}
+
+function CellView({
+  cell,
+  index,
+  editable,
+  onSourceChange,
+}: {
+  cell: NbCell;
+  index: number;
+  editable: boolean;
+  onSourceChange: (index: number, source: string) => void;
+}) {
+  const sourceText = joinNbSource(cell.source);
+  const isCode = cell.cell_type === "code";
+
+  return (
+    <div className="notebook-cell" data-cell-type={cell.cell_type}>
+      <div className="notebook-cell-kind">{isCode ? "Code" : cell.cell_type}</div>
+      <textarea
+        className={`notebook-cell-source${isCode ? " notebook-cell-source--code" : ""}`}
+        value={sourceText}
+        readOnly={!editable}
+        spellCheck={!isCode}
+        onChange={(event) => onSourceChange(index, event.target.value)}
+        rows={Math.max(2, sourceText.split("\n").length)}
+      />
+      {isCode && cell.outputs && cell.outputs.length > 0 ? (
+        <div className="notebook-cell-outputs">
+          {cell.outputs.map((output, outputIndex) => (
+            // eslint-disable-next-line react/no-array-index-key -- outputs have no stable id.
+            <OutputView key={outputIndex} output={output} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function NotebookView({
+  bridge,
+  pageId,
+  editable,
+  rawContent,
+}: {
+  bridge: EditorBridge | null;
+  pageId: string;
+  editable: boolean;
+  rawContent: string | undefined;
+}) {
+  const [notebook, setNotebook] = useState<NbNotebook | null>(() => parseNotebookJson(rawContent ?? ""));
+  const [parseFailed, setParseFailed] = useState(false);
+  const snapshot_timer = useRef<number | null>(null);
+  const loaded_page_id = useRef<string | null>(null);
+
+  // Re-parse whenever a different document (or the same one reloaded) is handed to us — mirrors
+  // main.tsx's applyLoadedBlocks()/onDocumentLoaded reset for the BlockNote path.
+  useEffect(() => {
+    if (loaded_page_id.current === pageId) {
+      return;
+    }
+    loaded_page_id.current = pageId;
+    const parsed = parseNotebookJson(rawContent ?? "");
+    setNotebook(parsed);
+    setParseFailed(parsed === null);
+  }, [pageId, rawContent]);
+
+  useEffect(() => {
+    return () => {
+      if (snapshot_timer.current !== null) {
+        window.clearTimeout(snapshot_timer.current);
+      }
+    };
+  }, []);
+
+  const scheduleSave = (next: NbNotebook) => {
+    if (!bridge || !editable) {
+      return;
+    }
+    if (snapshot_timer.current !== null) {
+      window.clearTimeout(snapshot_timer.current);
+    }
+    snapshot_timer.current = window.setTimeout(() => {
+      snapshot_timer.current = null;
+      // Serializes the edited nbformat JSON as the document's snapshot, reusing the same
+      // updateSnapshot()/DocumentValidator/sync/lock/conflict pipeline the BlockNote path uses
+      // (see main.tsx's handleEditorChange) — no separate save pathway for notebooks.
+      void bridge.updateSnapshot(next);
+    }, snapshotDebounceMs);
+  };
+
+  const handleSourceChange = (index: number, sourceText: string) => {
+    if (!notebook) {
+      return;
+    }
+    const nextCells = notebook.cells.slice();
+    nextCells[index] = { ...nextCells[index], source: splitToNbSource(sourceText) };
+    const next = { ...notebook, cells: nextCells };
+    setNotebook(next);
+    scheduleSave(next);
+  };
+
+  const cells = useMemo(() => notebook?.cells ?? [], [notebook]);
+
+  if (parseFailed) {
+    return (
+      <div className="empty-state" data-testid="notebook-parse-error">
+        <h1>Could not read notebook</h1>
+        <p>The stored document is not valid nbformat JSON.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="notebook-view" data-testid="notebook-view">
+      {cells.length === 0 ? (
+        <div className="empty-state">
+          <p>This notebook has no cells yet.</p>
+        </div>
+      ) : (
+        cells.map((cell, index) => (
+          // eslint-disable-next-line react/no-array-index-key -- nbformat cells have no stable id.
+          <CellView
+            key={index}
+            cell={cell}
+            index={index}
+            editable={editable}
+            onSourceChange={handleSourceChange}
+          />
+        ))
+      )}
+    </div>
+  );
+}

@@ -111,3 +111,84 @@ button {
   user-select: none;
   white-space: pre-wrap;
 }
+
+/* Jupyter notebook document kind (issue #52): view/edit cell source, view saved output — no
+   execution affordance is ever rendered here (see NotebookView.tsx). */
+.notebook-view {
+  max-width: 920px;
+  min-height: 100vh;
+  margin: 0 auto;
+  background: var(--app-bg);
+  color: var(--app-text);
+  padding: 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.notebook-cell {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface);
+  overflow: hidden;
+}
+
+.notebook-cell-kind {
+  padding: 6px 12px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-text-muted);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.notebook-cell-source {
+  width: 100%;
+  box-sizing: border-box;
+  border: none;
+  resize: vertical;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.notebook-cell-source--code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+.notebook-cell-source:focus {
+  outline: none;
+  background: var(--app-surface-active);
+}
+
+.notebook-cell-outputs {
+  border-top: 1px solid var(--app-border);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notebook-output {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.notebook-output--image {
+  max-width: 100%;
+  height: auto;
+}
+
+.notebook-output--error {
+  color: #ff6b6b;
+}
+
+.notebook-output--html {
+  font-family: inherit;
+  white-space: normal;
+}

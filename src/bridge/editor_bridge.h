@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 
+#include "document/document.h"
 #include "sync/sync_state_provider.h"
 
 class QNetworkAccessManager;
@@ -157,6 +158,11 @@ class QEditorBridge final : public QObject {
   std::shared_ptr<storage::LocalDocumentRepository> repository_;
   const sync::SyncStateProvider* sync_state_provider_ = nullptr;
   QString current_page_id_;
+  // Kind of the currently open document (ADR-017), set from PageMetadata.kind in loadDocument().
+  // updateSnapshot() branches on this: kWikiPage keeps the existing BlockNote block-array
+  // validation/persistence path; other kinds (nbformat/Excalidraw, #52/#53) persist the raw
+  // snapshot JSON as-is after only a well-formedness check (see DocumentValidator).
+  document::DocumentKind current_page_kind_ = document::DocumentKind::kWikiPage;
   QString current_author_id_;
   QString current_workspace_id_{QStringLiteral("default")};
 
