@@ -22,6 +22,7 @@ import { createEditorBridge } from "./bridge";
 import { BridgeChatTransport } from "./bridge/aiChatTransport";
 import {
   bridgeApiVersion,
+  type DocumentKind,
   type EditorBridge,
   type InitialDocumentSnapshot,
 } from "./bridge/editorBridge";
@@ -35,12 +36,35 @@ import {
 } from "./constants";
 import { createInlineSuggestionExtension } from "./extensions/inlineSuggestionExtension";
 
+// Placeholder mounted for document kinds that don't have a real renderer yet
+// (issue #58 is routing/plumbing only — real notebook/canvas rendering is
+// #52/#53's job).
+function UnsupportedKindPlaceholder({ kind }: { kind: DocumentKind }) {
+  const messages: Record<Exclude<DocumentKind, "wikiPage">, string> = {
+    jupyterNotebook: "Notebook rendering not yet implemented.",
+    excalidrawCanvas: "Excalidraw canvas rendering not yet implemented.",
+  };
+  const message =
+    kind === "wikiPage" ? null : messages[kind];
+  return (
+    <div className="empty-state" data-testid="unsupported-kind-placeholder">
+      <h1>Unsupported document kind</h1>
+      <p>{message}</p>
+    </div>
+  );
+}
+
 function EditorApp() {
   const [bridge, setBridge] = useState<EditorBridge | null>(null);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [isEditable, setIsEditable] = useState(true);
   const [, setIsLoadingDocument] = useState(false);
   const [hasLoadedDocumentOnce, setHasLoadedDocumentOnce] = useState(false);
+  // The open document's kind (ADR-017), threaded through the bridge payload
+  // (see LoadedDocument.kind); defaults to "wikiPage" so the common case
+  // (existing documents / bridges that predate this field) renders the
+  // BlockNote editor exactly as before.
+  const [documentKind, setDocumentKind] = useState<DocumentKind>("wikiPage");
   const [aiFeaturesEnabled, setAiFeaturesEnabled] = useState(false);
   const [aiAutocompleteEnabled, setAiAutocompleteEnabled] = useState(false);
   // Separate opt-in for inline ghost-text suggestions (issue #59); the
@@ -204,6 +228,7 @@ function EditorApp() {
         selected_page_id.current = document.id;
         setSelectedPageId(document.id);
         setIsEditable(document.editable);
+        setDocumentKind(document.kind ?? "wikiPage");
         window.setTimeout(() => {
           replacing_document.current = false;
           setIsLoadingDocument(false);
@@ -227,6 +252,7 @@ function EditorApp() {
           selected_page_id.current = null;
           setSelectedPageId(null);
           setIsEditable(true);
+          setDocumentKind("wikiPage");
           setIsLoadingDocument(false);
         });
       unsubscribers.push(
@@ -269,10 +295,21 @@ function EditorApp() {
     }, snapshotDebounceMs);
   };
 
+  // Kind-based routing stub (ADR-017, issue #58): only kWikiPage mounts the
+  // real BlockNote editor today. jupyterNotebook/excalidrawCanvas mount a
+  // placeholder — real rendering for those kinds is #52/#53's job; this only
+  // proves the kind-based mount-switching plumbing works end to end.
+  const isWikiPage = documentKind === "wikiPage";
+
   return (
     <main className="app-shell">
       <section className="editor-pane" aria-label="Document editor">
-        {shouldMountEditor ? (
+        {shouldMountEditor && !isWikiPage ? (
+          <div className="editor-surface" data-document-kind={documentKind}>
+            <UnsupportedKindPlaceholder kind={documentKind} />
+          </div>
+        ) : null}
+        {shouldMountEditor && isWikiPage ? (
           <div
             className={`editor-surface${showOverlay ? " editor-surface--hidden" : ""}`}
           >

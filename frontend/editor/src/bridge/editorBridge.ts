@@ -13,6 +13,11 @@ export type BridgeResult<T> =
 export type DocumentSnapshot = Block[];
 export type InitialDocumentSnapshot = PartialBlock[];
 
+// Content-schema/renderer discriminator for a document (ADR-017), mirroring
+// cppwiki::document::DocumentKind on the C++ side. Persisted/transmitted as
+// the string key produced by ToDocumentKindKey(), not a raw enum value.
+export type DocumentKind = "wikiPage" | "jupyterNotebook" | "excalidrawCanvas";
+
 export type DocumentSummary = {
   id: string;
   title: string;
@@ -20,6 +25,7 @@ export type DocumentSummary = {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  kind?: DocumentKind;
 };
 
 export type LoadedDocument = {
@@ -33,6 +39,7 @@ export type LoadedDocument = {
   editable: boolean;
   lockOwner?: string | null;
   accessMessage?: string | null;
+  kind?: DocumentKind;
 };
 
 export type BridgeInfo = {
