@@ -36,15 +36,15 @@ export type LoadedDocument = {
   createdAt: string;
   updatedAt: string;
   blocks: InitialDocumentSnapshot;
-  // Raw stored snapshot JSON, verbatim (added alongside `blocks` for non-wikiPage kinds, #53).
-  // For kind === "wikiPage" this is BlockNote's own {id, schema_version, title, blocks} shape
-  // and `blocks` above should be used instead; for "excalidrawCanvas"/"jupyterNotebook" this is
-  // the only place the document's content is available, since it isn't a BlockNote block array.
-  snapshotJson?: string;
   editable: boolean;
   lockOwner?: string | null;
   accessMessage?: string | null;
   kind?: DocumentKind;
+  // Raw stored snapshot JSON (as a string) for kinds whose content doesn't fit the BlockNote
+  // block-array shape (`blocks` above) — currently "jupyterNotebook" (nbformat v4 JSON) and,
+  // eventually, "excalidrawCanvas" (#53). Unset/empty for "wikiPage", where `blocks` is
+  // authoritative. See EditorBridge.updateSnapshot()'s doc comment for the write-side mirror.
+  rawContent?: string;
 };
 
 export type BridgeInfo = {
@@ -64,10 +64,14 @@ export interface EditorBridge {
   listDocuments(): Promise<BridgeResult<DocumentSummary[]>>;
   loadDocument(pageId: string): Promise<BridgeResult<LoadedDocument>>;
   openDocument(pageId: string): Promise<BridgeResult<LoadedDocument>>;
-  // `DocumentSnapshot` (BlockNote's `Block[]`) is the shape for kind === "wikiPage", the common
-  // case; non-wiki-page kinds (#52/#53) pass their own JSON-serializable scene/notebook shape
-  // instead — the C++ side (QEditorBridge::updateSnapshot) only requires well-formed JSON for
-  // those kinds (see DocumentValidator::ParseAndValidateSnapshot) and persists it verbatim.
+  // `snapshot` is `DocumentSnapshot` (BlockNote's `Block[]`) for "wikiPage" documents. For other
+  // kinds (e.g. "jupyterNotebook"/"excalidrawCanvas", #52/#53) it's whatever JSON-serializable
+  // value that kind's component maintains as its document state (nbformat v4's notebook object,
+  // or the Excalidraw scene object) — the C++ side branches on the currently-open document's kind
+  // and, for non-wikiPage kinds, persists `JSON.stringify(snapshot)` verbatim (only checking it's
+  // well-formed JSON, see DocumentValidator::ParseAndValidateSnapshot) instead of parsing it as a
+  // BlockNote block array. Widened from `DocumentSnapshot` alone so callers outside the BlockNote
+  // path don't need an unsound cast.
   updateSnapshot(snapshot: DocumentSnapshot | unknown): Promise<BridgeResult<void>>;
   onDocumentOpenRequested(callback: (pageId: string) => void): () => void;
   onDocumentLoaded(callback: (document: LoadedDocument) => void): () => void;

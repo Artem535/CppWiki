@@ -11,7 +11,7 @@ type ExcalidrawCanvasViewProps = {
   // the user switches to a different canvas document (see the `key={documentId}` remount at the
   // call site in main.tsx, which also achieves this — kept here too as a defensive guard).
   documentId: string;
-  snapshotJson: string | undefined;
+  rawContent: string | undefined;
   isEditable: boolean;
   bridge: EditorBridge | null;
 };
@@ -26,7 +26,7 @@ type ExcalidrawCanvasViewProps = {
  */
 export function ExcalidrawCanvasView({
   documentId,
-  snapshotJson,
+  rawContent,
   isEditable,
   bridge,
 }: ExcalidrawCanvasViewProps) {
@@ -36,9 +36,9 @@ export function ExcalidrawCanvasView({
 
   // Excalidraw's `initialData` is only read once at mount, so this only needs to be recomputed
   // when the open document changes (main.tsx remounts this component via `key={documentId}` on
-  // document switch, but recompute defensively if snapshotJson changes without a remount too).
+  // document switch, but recompute defensively if rawContent changes without a remount too).
   const initialData = useMemo(() => {
-    const scene = parseExcalidrawSceneJson(snapshotJson);
+    const scene = parseExcalidrawSceneJson(rawContent);
     if (!scene) {
       return null;
     }
@@ -50,7 +50,7 @@ export function ExcalidrawCanvasView({
       },
       files: scene.files as never,
     };
-  }, [snapshotJson]);
+  }, [rawContent]);
 
   useEffect(() => {
     return () => {

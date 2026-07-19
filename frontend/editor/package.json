@@ -21,6 +21,7 @@
     "@tiptap/core": "^3.26.0",
     "@vitejs/plugin-react": "^5.1.1",
     "ai": "^5.0.45",
+    "dompurify": "^3.4.12",
     "prosemirror-state": "^1.4.4",
     "prosemirror-view": "^1.41.9",
     "react": "^19.2.1",
@@ -29,6 +30,7 @@
     "vite": "^7.2.7"
   },
   "devDependencies": {
+    "@types/dompurify": "^3.0.5",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "vitest": "^3.2.7"
