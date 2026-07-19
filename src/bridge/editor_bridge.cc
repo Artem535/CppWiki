@@ -799,6 +799,10 @@ QVariantMap QEditorBridge::loadDocument(const QString& page_id) {
 
   const auto kind = result.document->metadata.kind;
 
+  // "blocks" only means anything for kWikiPage (BlockNote's block array). The other kinds
+  // (nbformat/Excalidraw, #52/#53) don't have blocks at all — their renderer instead reads the
+  // raw stored snapshot JSON verbatim via "rawContent" below, so skip the block-array
+  // extraction (and its "does not contain a block array" error) entirely for them.
   QVariantList blocks_variant;
   QString raw_content;
   if (kind == document::DocumentKind::kWikiPage) {
@@ -872,72 +876,8 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
   emit saveStatusChanged(current_page_id_, true, QStringLiteral("Saving..."));
 
   const auto snapshot_bytes = snapshot_json.toUtf8();
-
-  // Non-wikiPage kinds (nbformat/Excalidraw, #52/#53): the payload is arbitrary well-formed JSON,
-  // not a BlockNote block array, so it's persisted verbatim instead of going through the
-  // block-extraction/rewrap path below (which assumes a `blocks` array and would corrupt or
-  // reject it). Full schema validation for these kinds is out of scope (see DocumentValidator).
-  if (current_page_kind_ != document::DocumentKind::kWikiPage) {
-    const auto validation = document::DocumentValidator::ParseAndValidateSnapshot(
-        snapshot_bytes, current_page_kind_);
-    if (validation.error) {
-      spdlog::warn("editor snapshot rejected: {}: {}", document::ToString(validation.error->code),
-                   validation.error->message);
-      emit saveStatusChanged(current_page_id_, false,
-                             QString::fromStdString(validation.error->message));
-      return ErrorResponse(ToQString(document::ToString(validation.error->code)),
-                           QString::fromStdString(validation.error->message));
-    }
-
-    if (repository_) {
-      storage::DocumentRecord record;
-      if (auto current = repository_->LoadDocument(current_page_id_.toStdString());
-          current.document) {
-        record.metadata = current.document->metadata;
-      }
-      record.metadata.id = current_page_id_.toStdString();
-      record.metadata.schema_version = document::SchemaVersion::kV1;
-      record.metadata.kind = current_page_kind_;
-      if (record.metadata.workspace_id.empty()) {
-        record.metadata.workspace_id = "default";
-      }
-      if (record.metadata.created_by.empty()) {
-        record.metadata.created_by = EffectiveAuthorId(current_author_id_);
-      }
-      if (record.metadata.updated_by.empty()) {
-        record.metadata.updated_by = record.metadata.created_by;
-      }
-      if (record.metadata.content_version < 1) {
-        record.metadata.content_version = 1;
-      }
-      if (record.metadata.title.empty()) {
-        record.metadata.title = std::string(constants::kNewDocumentTitle);
-      }
-      if (record.metadata.created_at.empty()) {
-        record.metadata.created_at = CurrentUtcTimestamp();
-      }
-      ApplyDocumentMutationAudit(record.metadata, current_author_id_);
-      record.raw_snapshot_json = validation.raw_snapshot_json;
-
-      auto save_result = repository_->SaveDocument(record);
-      if (save_result.error) {
-        spdlog::error("Failed to save document: {}", save_result.error->message);
-        emit saveStatusChanged(current_page_id_, false,
-                               QString::fromStdString(save_result.error->message));
-        return ErrorResponse(QStringLiteral("save_failed"),
-                             QString::fromStdString(save_result.error->message));
-      }
-
-      spdlog::info("Document saved successfully: id={}", record.metadata.id);
-      emit saveStatusChanged(current_page_id_, true, QStringLiteral("Saved"));
-    } else {
-      spdlog::warn("No repository set, skipping save");
-    }
-
-    return SuccessResponse(QVariant{});
-  }
-
-  const auto validation = document::DocumentValidator::ParseAndValidateSnapshot(snapshot_bytes);
+  const auto validation =
+      document::DocumentValidator::ParseAndValidateSnapshot(snapshot_bytes, current_page_kind_);
   if (validation.error) {
     spdlog::warn("editor snapshot rejected: {}: {}", document::ToString(validation.error->code),
                  validation.error->message);
@@ -947,16 +887,17 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
                          QString::fromStdString(validation.error->message));
   }
 
-  const auto block_count = validation.document->blocks.size();
-  spdlog::info("editor snapshot received: bytes={}, blocks={}", snapshot_bytes.size(), block_count);
+  const bool is_wiki_page = current_page_kind_ == document::DocumentKind::kWikiPage;
+  if (is_wiki_page) {
+    spdlog::info("editor snapshot received: bytes={}, blocks={}", snapshot_bytes.size(),
+                 validation.document->blocks.size());
+  } else {
+    spdlog::info("editor snapshot received: bytes={}, kind={}", snapshot_bytes.size(),
+                 document::ToDocumentKindKey(current_page_kind_));
+  }
 
   // Save to repository if available
   if (repository_) {
-    auto blocks = ExtractBlocks(snapshot_bytes);
-    if (std::holds_alternative<QString>(blocks)) {
-      return ErrorResponse(QStringLiteral("invalid_root"), std::get<QString>(blocks));
-    }
-
     storage::DocumentRecord record;
     if (auto current = repository_->LoadDocument(current_page_id_.toStdString());
         current.document) {
@@ -964,6 +905,7 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
     }
     record.metadata.id = current_page_id_.toStdString();
     record.metadata.schema_version = document::SchemaVersion::kV1;
+    record.metadata.kind = current_page_kind_;
     if (record.metadata.workspace_id.empty()) {
       record.metadata.workspace_id = "default";
     }
@@ -976,23 +918,44 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
     if (record.metadata.content_version < 1) {
       record.metadata.content_version = 1;
     }
-    const auto fallback_title = record.metadata.title.empty()
-                                    ? std::string_view(constants::kNewDocumentTitle)
-                                    : std::string_view(record.metadata.title);
-    record.metadata.title = ExtractTitle(*validation.document, fallback_title);
     if (record.metadata.created_at.empty()) {
       record.metadata.created_at = CurrentUtcTimestamp();
     }
-    ApplyDocumentMutationAudit(record.metadata, current_author_id_);
-    record.snapshot = *validation.snapshot;
-    record.snapshot.id = record.metadata.id;
-    record.snapshot.schema_version = static_cast<std::int32_t>(document::SchemaVersion::kV1);
-    record.snapshot.title = record.metadata.title;
 
-    const auto raw_snapshot_json = MakeDocumentSnapshotJson(
-        record.metadata.id, record.metadata.title, std::get<QJsonArray>(blocks));
-    record.raw_snapshot_json = std::string(raw_snapshot_json.constData(),
-                                           static_cast<std::size_t>(raw_snapshot_json.size()));
+    if (is_wiki_page) {
+      // BlockNote path (unchanged): the payload is a validated block array/document, so its
+      // title comes from the first-level-1-heading heuristic and the persisted snapshot is
+      // re-serialized as {id, schema_version, title, blocks}.
+      auto blocks = ExtractBlocks(snapshot_bytes);
+      if (std::holds_alternative<QString>(blocks)) {
+        return ErrorResponse(QStringLiteral("invalid_root"), std::get<QString>(blocks));
+      }
+
+      const auto fallback_title = record.metadata.title.empty()
+                                      ? std::string_view(constants::kNewDocumentTitle)
+                                      : std::string_view(record.metadata.title);
+      record.metadata.title = ExtractTitle(*validation.document, fallback_title);
+      ApplyDocumentMutationAudit(record.metadata, current_author_id_);
+      record.snapshot = *validation.snapshot;
+      record.snapshot.id = record.metadata.id;
+      record.snapshot.schema_version = static_cast<std::int32_t>(document::SchemaVersion::kV1);
+      record.snapshot.title = record.metadata.title;
+
+      const auto raw_snapshot_json = MakeDocumentSnapshotJson(
+          record.metadata.id, record.metadata.title, std::get<QJsonArray>(blocks));
+      record.raw_snapshot_json = std::string(raw_snapshot_json.constData(),
+                                             static_cast<std::size_t>(raw_snapshot_json.size()));
+    } else {
+      // Non-wiki-page kinds (nbformat/Excalidraw, #52/#53): DocumentValidator only confirmed
+      // the payload is well-formed JSON above — there's no BlockNote block array to extract a
+      // title from or re-derive raw_snapshot_json from, so persist the caller's JSON verbatim
+      // and keep whatever title is already on the document (set at creation time / rename).
+      if (record.metadata.title.empty()) {
+        record.metadata.title = constants::kNewDocumentTitle;
+      }
+      ApplyDocumentMutationAudit(record.metadata, current_author_id_);
+      record.raw_snapshot_json = validation.raw_snapshot_json;
+    }
 
     auto save_result = repository_->SaveDocument(record);
     if (save_result.error) {

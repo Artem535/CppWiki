@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariant>
+#include <cstdint>
 #include <memory>
 #include <optional>
 

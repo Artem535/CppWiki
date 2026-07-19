@@ -65,12 +65,13 @@ export interface EditorBridge {
   loadDocument(pageId: string): Promise<BridgeResult<LoadedDocument>>;
   openDocument(pageId: string): Promise<BridgeResult<LoadedDocument>>;
   // `snapshot` is `DocumentSnapshot` (BlockNote's `Block[]`) for "wikiPage" documents. For other
-  // kinds (e.g. "jupyterNotebook", #52) it's whatever JSON-serializable value that kind's
-  // component maintains as its document state (nbformat v4's notebook object, in the notebook
-  // case) — the C++ side branches on the currently-open document's kind and, for non-wikiPage
-  // kinds, persists `JSON.stringify(snapshot)` verbatim (only checking it's well-formed JSON)
-  // instead of parsing it as a BlockNote block array. Widened from `DocumentSnapshot` alone so
-  // callers outside the BlockNote path don't need an unsound cast.
+  // kinds (e.g. "jupyterNotebook"/"excalidrawCanvas", #52/#53) it's whatever JSON-serializable
+  // value that kind's component maintains as its document state (nbformat v4's notebook object,
+  // or the Excalidraw scene object) — the C++ side branches on the currently-open document's kind
+  // and, for non-wikiPage kinds, persists `JSON.stringify(snapshot)` verbatim (only checking it's
+  // well-formed JSON, see DocumentValidator::ParseAndValidateSnapshot) instead of parsing it as a
+  // BlockNote block array. Widened from `DocumentSnapshot` alone so callers outside the BlockNote
+  // path don't need an unsound cast.
   updateSnapshot(snapshot: DocumentSnapshot | unknown): Promise<BridgeResult<void>>;
   onDocumentOpenRequested(callback: (pageId: string) => void): () => void;
   onDocumentLoaded(callback: (document: LoadedDocument) => void): () => void;
