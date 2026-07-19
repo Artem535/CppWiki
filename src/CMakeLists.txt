@@ -125,6 +125,9 @@ qt_add_resources(cppwiki_app cppwiki_icon_resources
         gui/assets/icons/rail-documents.svg
         gui/assets/icons/rail-ai-chat.svg
         gui/assets/icons/rail-code.svg
+        gui/assets/icons/document-wiki-page.svg
+        gui/assets/icons/document-jupyter-notebook.svg
+        gui/assets/icons/document-excalidraw-canvas.svg
 )
 
 if (CPPWIKI_ENABLE_CBLITE_STORAGE)

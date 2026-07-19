@@ -315,6 +315,32 @@ add_test(
   COMMAND cppwiki_document_tree_model_tests
 )
 
+add_executable(cppwiki_document_context_menu_tests
+  gui/document_context_menu_test.cc
+  ${CMAKE_SOURCE_DIR}/src/gui/document_context_menu.cc
+  ${CMAKE_SOURCE_DIR}/src/gui/document_context_menu.h
+  ${CMAKE_SOURCE_DIR}/src/document/document.h
+)
+
+target_include_directories(cppwiki_document_context_menu_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_document_context_menu_tests
+  PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+)
+
+cppwiki_apply_common_options(cppwiki_document_context_menu_tests)
+
+add_test(
+  NAME cppwiki_document_context_menu_tests
+  COMMAND cppwiki_document_context_menu_tests
+)
+
 add_executable(cppwiki_conflict_merge_resolution_tests
   gui/conflict_merge_resolution_test.cc
   ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h

@@ -186,7 +186,7 @@ auto AreDocumentSummariesEqual(const std::vector<storage::DocumentSummary>& lhs,
   for (std::size_t index = 0; index < lhs.size(); ++index) {
     const auto& left = lhs[index];
     const auto& right = rhs[index];
-    if (left.id != right.id || left.title != right.title ||
+    if (left.id != right.id || left.kind != right.kind || left.title != right.title ||
         left.workspace_id != right.workspace_id || left.parent_id != right.parent_id ||
         left.sort_order != right.sort_order || left.created_at != right.created_at ||
         left.updated_at != right.updated_at || left.created_by != right.created_by ||
@@ -201,6 +201,8 @@ auto AreDocumentSummariesEqual(const std::vector<storage::DocumentSummary>& lhs,
 auto SummaryFromVariantMap(const QVariantMap& document) -> storage::DocumentSummary {
   storage::DocumentSummary summary;
   summary.id = StringFromFirstExistingKey(document, {QStringLiteral("id")}).toStdString();
+  summary.kind = document::DocumentKindFromKey(
+      StringFromFirstExistingKey(document, {QStringLiteral("kind")}).toStdString());
   summary.title = StringFromFirstExistingKey(document, {QStringLiteral("title")}).toStdString();
   summary.workspace_id = StringFromFirstExistingKey(
       document, {QStringLiteral("workspaceId"), QStringLiteral("workspace_id")}).toStdString();

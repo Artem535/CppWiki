@@ -9,6 +9,7 @@
 
 #include "app/app_context.h"
 #include "backend/backend_client.h"
+#include "document/document.h"
 #include "gui/i_page.h"
 
 class QWebChannel;
@@ -71,8 +72,10 @@ class Page final : public QWidget, public IPage {
   void InstallWebChannelScript();
   void PopulatePageList();
   void RebuildWorkspaceTree();
-  void CreateNewDocument(const QString& workspace_id);
-  void CreateChildDocument(const QModelIndex& parent_index);
+  void CreateNewDocument(const QString& workspace_id,
+                        document::DocumentKind kind = document::DocumentKind::kWikiPage);
+  void CreateChildDocument(const QModelIndex& parent_index,
+                          document::DocumentKind kind = document::DocumentKind::kWikiPage);
   void RenameDocument(const QModelIndex& index);
   void DeleteDocument(const QModelIndex& index);
   void OpenDocumentWithAccess(const QString& page_id);

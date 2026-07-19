@@ -6,7 +6,10 @@
 #include <QPoint>
 #include <QString>
 
+#include "document/document.h"
+
 class QWidget;
+class QPushButton;
 
 namespace cppwiki::gui {
 
@@ -15,7 +18,6 @@ class DocumentContextMenu final : public QFrame {
 
  public:
   enum class Action {
-    kAddChildPage,
     kRenameTitle,
     kMoveUp,
     kMoveDown,
@@ -35,8 +37,16 @@ class DocumentContextMenu final : public QFrame {
  signals:
   void actionRequested(cppwiki::gui::DocumentContextMenu::Action action);
 
+  // Emitted when a specific kind was chosen from the "New document" submenu
+  // (Wiki page / Jupyter notebook / Excalidraw canvas). `kind` defaults to
+  // DocumentKind::kWikiPage when "Wiki page" is chosen, matching today's
+  // single hardcoded "Add child page" behavior byte-for-byte.
+  void newDocumentRequested(document::DocumentKind kind);
+
  private:
   void AddButton(Action action, const QString& text, const QIcon& icon, bool enabled);
+  void AddNewDocumentSubmenuButton();
+  void ShowNewDocumentSubmenu(QPushButton* anchor);
 };
 
 }  // namespace cppwiki::gui
