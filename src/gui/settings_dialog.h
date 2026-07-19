@@ -56,6 +56,9 @@ class SettingsDialog final : public QDialog {
   oclero::qlementine::LineEdit* database_directory_edit_ = nullptr;
   QCheckBox* ai_features_enabled_checkbox_ = nullptr;
   QCheckBox* ai_autocomplete_enabled_checkbox_ = nullptr;
+  // Separate opt-in for inline ghost-text suggestions (issue #59); can be on
+  // independent of ai_features_enabled_checkbox_.
+  QCheckBox* ai_inline_suggestions_enabled_checkbox_ = nullptr;
   // Local-key fallback (ADR-012 addendum): only used/shown when no backend
   // is configured. The key itself is never held in ProgramSettings/QSettings
   // — it's read from and written to the OS keychain via ai_api_key_store_.

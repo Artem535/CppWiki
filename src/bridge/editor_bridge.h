@@ -52,10 +52,13 @@ class QEditorBridge final : public QObject {
   void SetAiTransportConfig(bool backend_enabled, QString backend_base_url,
                             QString backend_access_token);
   void SetAiApiKeyStore(auth::AiApiKeyStore* key_store);
-  // Mirrors ProgramSettings::AiFeaturesEnabled()/AiAutocompleteEnabled(); the
-  // JS side reads these from getBridgeInfo() to decide whether to render the
-  // AI toolbar button / slash-menu items at all.
-  void SetAiFeatureFlags(bool features_enabled, bool autocomplete_enabled);
+  // Mirrors ProgramSettings::AiFeaturesEnabled()/AiAutocompleteEnabled()/
+  // AiInlineSuggestionsEnabled(); the JS side reads these from getBridgeInfo()
+  // to decide whether to render the AI toolbar button / slash-menu items /
+  // ghost-text extension at all. `inline_suggestions_enabled` is a separate
+  // opt-in (issue #59), independent of `features_enabled`.
+  void SetAiFeatureFlags(bool features_enabled, bool autocomplete_enabled,
+                        bool inline_suggestions_enabled);
   void RequestOpenDocument(const QString& page_id);
   void ClearCurrentDocumentSelection();
   [[nodiscard]] QVariantMap listDocumentsInWorkspace(const QString& workspace_id);
@@ -143,6 +146,7 @@ class QEditorBridge final : public QObject {
   QNetworkAccessManager* network_manager_ = nullptr;
   bool ai_features_enabled_ = false;
   bool ai_autocomplete_enabled_ = false;
+  bool ai_inline_suggestions_enabled_ = false;
 };
 
 }  // namespace cppwiki::bridge

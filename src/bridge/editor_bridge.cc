@@ -55,12 +55,14 @@ auto ErrorResponse(const QString& code, const QString& message) -> QVariantMap {
   };
 }
 
-auto BridgeInfo(bool ai_features_enabled, bool ai_autocomplete_enabled) -> QVariantMap {
+auto BridgeInfo(bool ai_features_enabled, bool ai_autocomplete_enabled,
+               bool ai_inline_suggestions_enabled) -> QVariantMap {
   return QVariantMap{
       {QStringLiteral("apiVersion"), constants::kBridgeApiVersion},
       {QStringLiteral("namespace"), ToQString(constants::kDocumentsBridgeNamespace)},
       {QStringLiteral("aiFeaturesEnabled"), ai_features_enabled},
       {QStringLiteral("aiAutocompleteEnabled"), ai_autocomplete_enabled},
+      {QStringLiteral("aiInlineSuggestionsEnabled"), ai_inline_suggestions_enabled},
       {QStringLiteral("methods"),
        QVariantList{
            ToQString(constants::kBridgeMethodGetBridgeInfo),
@@ -462,7 +464,8 @@ void QEditorBridge::ClearCurrentDocumentSelection() {
 }
 
 QVariantMap QEditorBridge::getBridgeInfo() {
-  return SuccessResponse(BridgeInfo(ai_features_enabled_, ai_autocomplete_enabled_));
+  return SuccessResponse(
+      BridgeInfo(ai_features_enabled_, ai_autocomplete_enabled_, ai_inline_suggestions_enabled_));
 }
 
 QVariantMap QEditorBridge::getInitialDocument() {
@@ -913,9 +916,11 @@ void QEditorBridge::SetAiApiKeyStore(auth::AiApiKeyStore* key_store) {
   ai_api_key_store_ = key_store;
 }
 
-void QEditorBridge::SetAiFeatureFlags(bool features_enabled, bool autocomplete_enabled) {
+void QEditorBridge::SetAiFeatureFlags(bool features_enabled, bool autocomplete_enabled,
+                                      bool inline_suggestions_enabled) {
   ai_features_enabled_ = features_enabled;
   ai_autocomplete_enabled_ = autocomplete_enabled;
+  ai_inline_suggestions_enabled_ = inline_suggestions_enabled;
 }
 
 QString QEditorBridge::startAiRequest(const QString& prompt, const QString& context_text,

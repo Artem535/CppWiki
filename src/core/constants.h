@@ -71,6 +71,12 @@ inline constexpr std::string_view kSettingsApplicationFontPointSizeKey =
     "appearance/applicationFontPointSize";
 inline constexpr std::string_view kSettingsAiFeaturesEnabledKey = "ai/featuresEnabled";
 inline constexpr std::string_view kSettingsAiAutocompleteEnabledKey = "ai/autocompleteEnabled";
+// Separate opt-in for continuous inline ghost-text suggestions (issue #59):
+// deliberately independent of kSettingsAiFeaturesEnabledKey so users can keep
+// the toolbar/slash-menu AI features on while disabling inline suggestions
+// (or vice versa).
+inline constexpr std::string_view kSettingsAiInlineSuggestionsEnabledKey =
+    "ai/inlineSuggestionsEnabled";
 inline constexpr std::string_view kSettingsAccentColorKey = "appearance/accentColor";
 inline constexpr std::string_view kDefaultAccentColorKey = "blue";
 

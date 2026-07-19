@@ -315,6 +315,16 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   ai_autocomplete_enabled_checkbox_->setChecked(current_settings_.AiAutocompleteEnabled());
   ai_form_layout->addRow(QStringLiteral("Autocomplete"), ai_autocomplete_enabled_checkbox_);
 
+  // Separate opt-in (issue #59): distinct from ai_features_enabled_checkbox_
+  // above so users who want the toolbar/slash-menu AI features but find
+  // inline suggestions distracting can disable just this one.
+  ai_inline_suggestions_enabled_checkbox_ =
+      new QCheckBox(QStringLiteral("Enable inline text suggestions"), ai_page);
+  ai_inline_suggestions_enabled_checkbox_->setChecked(
+      current_settings_.AiInlineSuggestionsEnabled());
+  ai_form_layout->addRow(QStringLiteral("Inline suggestions"),
+                         ai_inline_suggestions_enabled_checkbox_);
+
   // Local-key fallback (ADR-012 addendum): only relevant when no backend is
   // configured for this profile. The key is read from / written to the OS
   // keychain, never QSettings.
@@ -389,7 +399,7 @@ auto SettingsDialog::BuildProgramSettings() const -> ProgramSettings {
       demo_collaboration_enabled_checkbox_->isChecked(), demo_collaboration_user_id,
       sync_enabled_checkbox_->isChecked(), font_size_spinbox_->value(),
       ai_features_enabled_checkbox_->isChecked(), ai_autocomplete_enabled_checkbox_->isChecked(),
-      selected_accent_color_key_);
+      ai_inline_suggestions_enabled_checkbox_->isChecked(), selected_accent_color_key_);
 }
 
 }  // namespace cppwiki::gui
