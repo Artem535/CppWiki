@@ -212,6 +212,7 @@ auto MetadataToVariant(const document::PageMetadata& metadata) -> QVariantMap {
       {QStringLiteral("contentVersion"), static_cast<qlonglong>(metadata.content_version)},
       {QStringLiteral("createdAt"), QString::fromStdString(metadata.created_at)},
       {QStringLiteral("updatedAt"), QString::fromStdString(metadata.updated_at)},
+      {QStringLiteral("kind"), QString::fromStdString(document::ToDocumentKindKey(metadata.kind))},
   };
 }
 
@@ -235,6 +236,7 @@ auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& doc
         {QStringLiteral("contentVersion"), static_cast<qlonglong>(document.content_version)},
         {QStringLiteral("createdAt"), QString::fromStdString(document.created_at)},
         {QStringLiteral("updatedAt"), QString::fromStdString(document.updated_at)},
+        {QStringLiteral("kind"), QString::fromStdString(document::ToDocumentKindKey(document.kind))},
     });
   }
   return result;
