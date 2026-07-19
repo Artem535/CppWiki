@@ -8,11 +8,12 @@
 
 namespace cppwiki::server::dto {
 
-// Request body for POST /api/v1/ai/chat. MVP scope only: rewrite/improve a
-// selected block, or autocomplete/"continue writing" (see ADR-010,
-// CONTEXT.adoc "BlockNote AI (MVP scope)"). `mode` is "rewrite" or
-// "autocomplete"; the handler does not branch on it beyond forwarding it as
-// prompt context to the provider.
+// Request body for POST /api/v1/ai/chat. MVP scope: rewrite/improve a
+// selected block, autocomplete/"continue writing" (see ADR-010, CONTEXT.adoc
+// "BlockNote AI (MVP scope)"), and "inline" — continuous ghost-text
+// completions (issue #59). `mode` is "rewrite", "autocomplete", or "inline";
+// the handler does not branch on it beyond selecting the system-prompt
+// prefix sent to the provider (see AiChatService::BuildRequestBody).
 // `tool_name`/`tool_schema_json` are optional and are set when the caller
 // (the desktop bridge, forwarding xl-ai's tool schema — see issue #65) wants
 // a structured tool-call response matching a JSON Schema instead of plain

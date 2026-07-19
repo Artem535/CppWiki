@@ -6,25 +6,30 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run"
   },
   "dependencies": {
     "@blocknote/core": "^0.41.1",
     "@blocknote/mantine": "^0.41.1",
     "@blocknote/react": "^0.41.1",
     "@blocknote/xl-ai": "^0.41.1",
-    "ai": "^5.0.45",
     "@mantine/core": "^8.3.9",
     "@mantine/hooks": "^8.3.9",
     "@mantine/utils": "^6.0.22",
+    "@tiptap/core": "^3.26.0",
     "@vitejs/plugin-react": "^5.1.1",
-    "vite": "^7.2.7",
-    "typescript": "^5.9.3",
+    "ai": "^5.0.45",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-view": "^1.41.9",
     "react": "^19.2.1",
-    "react-dom": "^19.2.1"
+    "react-dom": "^19.2.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.7"
   },
   "devDependencies": {
     "@types/react": "^19.2.7",
-    "@types/react-dom": "^19.2.3"
+    "@types/react-dom": "^19.2.3",
+    "vitest": "^3.2.7"
   }
 }

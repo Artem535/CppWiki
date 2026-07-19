@@ -89,7 +89,8 @@ void Page::BuildUi() {
   // vs. local-key fallback based on whether a backend is configured; the
   // settings toggles gate whether the JS side even shows AI UI at all.
   editor_bridge_->SetAiFeatureFlags(context_.settings.AiFeaturesEnabled(),
-                                    context_.settings.AiAutocompleteEnabled());
+                                    context_.settings.AiAutocompleteEnabled(),
+                                    context_.settings.AiInlineSuggestionsEnabled());
   editor_bridge_->SetAiTransportConfig(context_.settings.BackendEnabled(),
                                       context_.settings.BackendBaseUrl(), QString{});
   auto* ai_api_key_store =

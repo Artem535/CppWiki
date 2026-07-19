@@ -41,6 +41,9 @@ export type BridgeInfo = {
   methods: string[];
   aiFeaturesEnabled?: boolean;
   aiAutocompleteEnabled?: boolean;
+  // Separate opt-in for inline ghost-text suggestions (issue #59); independent
+  // of aiFeaturesEnabled/aiAutocompleteEnabled.
+  aiInlineSuggestionsEnabled?: boolean;
 };
 
 export interface EditorBridge {
@@ -60,7 +63,8 @@ export interface EditorBridge {
 
   // AI transport (ADR-012): every AI request is forwarded through the bridge
   // to C++, never fetched directly from this JS context. `mode` matches the
-  // MVP scope (ADR-010): "rewrite" or "autocomplete". `toolName`/`toolSchemaJson`
+  // MVP scope (ADR-010): "rewrite" or "autocomplete", plus "inline" for
+  // continuous ghost-text completions (issue #59). `toolName`/`toolSchemaJson`
   // are optional and are set when the caller (xl-ai's AIExtension) wants a
   // structured tool-call response matching a JSON Schema rather than plain
   // text (see ADR-012 issue #65 addendum: xl-ai only applies document changes
@@ -68,7 +72,7 @@ export interface EditorBridge {
   startAiRequest(
     prompt: string,
     contextText: string,
-    mode: "rewrite" | "autocomplete",
+    mode: "rewrite" | "autocomplete" | "inline",
     toolName?: string,
     toolSchemaJson?: string,
   ): Promise<string>;

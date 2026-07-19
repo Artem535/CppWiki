@@ -3,7 +3,7 @@ import "@blocknote/mantine/style.css";
 import "@blocknote/xl-ai/style.css";
 import "./styles.css";
 
-import { filterSuggestionItems } from "@blocknote/core";
+import { createBlockNoteExtension, filterSuggestionItems } from "@blocknote/core";
 import { en as coreEnDictionary } from "@blocknote/core/locales";
 import { BlockNoteView } from "@blocknote/mantine";
 import {
@@ -25,11 +25,15 @@ import {
   type EditorBridge,
   type InitialDocumentSnapshot,
 } from "./bridge/editorBridge";
+import { runInlineCompletion } from "./bridge/inlineCompletion";
 import {
   emptyStateMessage,
   emptyStateTitle,
+  inlineSuggestionContextChars,
+  inlineSuggestionDebounceMs,
   snapshotDebounceMs,
 } from "./constants";
+import { createInlineSuggestionExtension } from "./extensions/inlineSuggestionExtension";
 
 function EditorApp() {
   const [bridge, setBridge] = useState<EditorBridge | null>(null);
@@ -39,6 +43,16 @@ function EditorApp() {
   const [hasLoadedDocumentOnce, setHasLoadedDocumentOnce] = useState(false);
   const [aiFeaturesEnabled, setAiFeaturesEnabled] = useState(false);
   const [aiAutocompleteEnabled, setAiAutocompleteEnabled] = useState(false);
+  // Separate opt-in for inline ghost-text suggestions (issue #59); the
+  // extension instance below reads this via a ref (see
+  // ai_inline_suggestions_enabled_ref) since it's created once up front but
+  // this flag only becomes known asynchronously once the bridge responds to
+  // getBridgeInfo().
+  const [aiInlineSuggestionsEnabled, setAiInlineSuggestionsEnabled] = useState(false);
+  const ai_inline_suggestions_enabled_ref = useRef(false);
+  useEffect(() => {
+    ai_inline_suggestions_enabled_ref.current = aiInlineSuggestionsEnabled;
+  }, [aiInlineSuggestionsEnabled]);
   const editorTheme: "dark" = "dark";
   const snapshot_timer = useRef<number | null>(null);
   const replacing_document = useRef(false);
@@ -58,6 +72,37 @@ function EditorApp() {
     [],
   );
 
+  // Inline ghost-text suggestions (issue #59): a separate, new Tiptap
+  // extension (not part of createAIExtension()'s toolbar/slash-menu scope),
+  // gated by its own opt-in setting via the ref above. Created once, like
+  // aiTransport, since useCreateBlockNote()'s extensions are fixed at editor
+  // creation time; both the enabled flag and the bridge become known only
+  // after this point, so both are read through refs at call time.
+  const inlineSuggestionExtension = useMemo(() => {
+    const tiptapExtension = createInlineSuggestionExtension({
+      isEnabled: () => ai_inline_suggestions_enabled_ref.current,
+      isReplacingDocument: () => replacing_document.current,
+      fetchCompletion: (contextText, signal) => {
+        const bridge = bridge_ref.current;
+        if (!bridge) {
+          return Promise.reject(new Error("Editor bridge is not ready yet."));
+        }
+        return runInlineCompletion(bridge, contextText, signal);
+      },
+      debounceMs: inlineSuggestionDebounceMs,
+      contextChars: inlineSuggestionContextChars,
+    });
+    // useCreateBlockNote()'s `extensions` option expects BlockNoteExtension
+    // instances, not raw Tiptap extensions directly (unlike createAIExtension(),
+    // whose factory already returns one) — wrap ours via the documented
+    // createBlockNoteExtension() escape hatch, which just forwards the
+    // Tiptap extension's ProseMirror plugin/keyboard shortcuts through.
+    return createBlockNoteExtension({
+      key: "cppwikiInlineSuggestion",
+      tiptapExtensions: [tiptapExtension],
+    });
+  }, []);
+
   const editor = useCreateBlockNote(
     {
       // createAIExtension()'s UI (AIMenuController, AIToolbarButton, slash-menu items)
@@ -65,7 +110,7 @@ function EditorApp() {
       // dictionary doesn't include it, so every AI-menu render threw
       // "AI dictionary not found" — merge the xl-ai package's own locale in.
       dictionary: { ...coreEnDictionary, ai: aiEnDictionary },
-      extensions: [createAIExtension({ transport: aiTransport })],
+      extensions: [createAIExtension({ transport: aiTransport }), inlineSuggestionExtension],
     },
     [],
   );
@@ -137,6 +182,7 @@ function EditorApp() {
 
       setAiFeaturesEnabled(bridge_info.result.aiFeaturesEnabled ?? false);
       setAiAutocompleteEnabled(bridge_info.result.aiAutocompleteEnabled ?? false);
+      setAiInlineSuggestionsEnabled(bridge_info.result.aiInlineSuggestionsEnabled ?? false);
 
       unsubscribers.push(
         created_bridge.onDocumentOpenRequested((pageId) => {
