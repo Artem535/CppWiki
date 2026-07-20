@@ -42,11 +42,15 @@ function ensureInitialized(): void {
 }
 
 // mermaid.render() requires an id that's unique per call and valid as an SVG/HTML element id
-// (must start with a letter) — derive one from the block id instead of generating a random one,
-// so repeated renders of the same block reuse a stable, recognizable id.
+// (must start with a letter). A block id alone is not sufficient: reopening a document renders
+// the same block again, and Mermaid retains per-id state while it builds its temporary DOM. That
+// made a persisted diagram appear blank even though its source had been loaded correctly.
+let renderSequence = 0;
+
 function toRenderId(blockId: string): string {
   const sanitized = blockId.replace(/[^a-zA-Z0-9_-]/g, "-");
-  return `cppwiki-mermaid-${sanitized || "block"}`;
+  renderSequence += 1;
+  return `cppwiki-mermaid-${sanitized || "block"}-${renderSequence}`;
 }
 
 // DOMPurify's SVG profile alone strips <foreignObject> (used by mermaid's default HTML-based
@@ -78,9 +82,10 @@ export async function renderMermaidToSafeSvg(
   }
 
   ensureInitialized();
+  const renderId = toRenderId(blockId);
 
   try {
-    const { svg } = await mermaid.render(toRenderId(blockId), trimmed);
+    const { svg } = await mermaid.render(renderId, trimmed);
     return { ok: true, svg: sanitizeSvg(svg) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -91,6 +96,6 @@ export async function renderMermaidToSafeSvg(
     // when its diagram-drawing step throws (mermaid.core.mjs's render(), the `diag.renderer.draw`
     // catch branch). Clean it up defensively so a draw failure doesn't leave it behind across
     // repeated re-renders while a diagram is being edited.
-    document.getElementById(`d${toRenderId(blockId)}`)?.remove();
+    document.getElementById(`d${renderId}`)?.remove();
   }
 }

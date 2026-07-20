@@ -196,6 +196,48 @@ auto TestCbliteRepositorySaveLoad() -> void {
   std::filesystem::remove_all(test_directory.parent_path().parent_path());
 }
 
+// A Mermaid block is a custom BlockNote block with multi-line inline content.  Keep this
+// round-trip separate from the generic paragraph test above: a successful SaveDocument log is
+// not enough if the stored snapshot cannot later be handed back to the editor unchanged.
+auto TestCbliteRepositoryPreservesMermaidSnapshot() -> void {
+  const auto test_directory = std::filesystem::temp_directory_path() /
+                              "cppwiki-cblite-mermaid-test" / "database";
+  std::filesystem::remove_all(test_directory);
+
+  cppwiki::storage::CbliteDocumentRepository repository({
+      .database_directory = test_directory,
+      .database_name = "test_wiki_db",
+  });
+
+  constexpr auto kSnapshot = R"({"id":"mermaid-page","schema_version":1,"title":"Diagram","blocks":[{"id":"mermaid-block","type":"mermaid","props":{},"content":[{"type":"text","text":"graph TD\n  A[Start] --> B{Decision}\n  B -->|Yes| C[Done]","styles":{}}],"children":[]}]})";
+  cppwiki::storage::DocumentRecord document{
+      .metadata = {
+          .id = "mermaid-page",
+          .schema_version = cppwiki::document::SchemaVersion::kV1,
+          .title = "Diagram",
+          .workspace_id = "default",
+          .created_at = "2026-07-20T00:00:00.000Z",
+          .updated_at = "2026-07-20T00:00:00.000Z",
+          .created_by = "test",
+          .updated_by = "test",
+          .content_version = 1,
+      },
+      .raw_snapshot_json = kSnapshot,
+  };
+
+  Require(!repository.SaveDocument(document).error, "Mermaid snapshot should save");
+  const auto loaded = repository.LoadDocument("mermaid-page");
+  Require(loaded.document.has_value(), "Mermaid snapshot should load");
+  Require(loaded.document->raw_snapshot_json == kSnapshot,
+          "Mermaid snapshot bytes must survive the CBLite round-trip");
+  Require(loaded.document->snapshot.blocks.has_value() &&
+              loaded.document->snapshot.blocks->size() == 1 &&
+              loaded.document->snapshot.blocks->front().type == "mermaid",
+          "Mermaid block must remain available after loading");
+
+  std::filesystem::remove_all(test_directory.parent_path());
+}
+
 auto MakeDocument(std::string id, std::string title, std::int32_t sort_order)
     -> cppwiki::storage::DocumentRecord {
   return cppwiki::storage::DocumentRecord{
@@ -457,6 +499,7 @@ auto TestCbliteRepositoryOfflineEditReconnectPushPull() -> void {
 auto main() -> int {
   try {
     TestCbliteRepositorySaveLoad();
+    TestCbliteRepositoryPreservesMermaidSnapshot();
     TestCbliteRepositoryRefreshesStaleIndexAfterExternalWrite();
     TestCbliteRepositoryPromotesLocalDocumentsAfterSyncBootstrap();
     TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord();
