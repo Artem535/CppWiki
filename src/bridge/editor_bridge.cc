@@ -3,6 +3,10 @@
 #include <spdlog/spdlog.h>
 
 #include <QDateTime>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QIODevice>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -14,6 +18,7 @@
 #include <QProcessEnvironment>
 #include <QUrl>
 #include <QVariant>
+#include <QWidget>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -57,7 +62,7 @@ auto ErrorResponse(const QString& code, const QString& message) -> QVariantMap {
 }
 
 auto BridgeInfo(bool ai_features_enabled, bool ai_autocomplete_enabled,
-               bool ai_inline_suggestions_enabled) -> QVariantMap {
+                bool ai_inline_suggestions_enabled) -> QVariantMap {
   return QVariantMap{
       {QStringLiteral("apiVersion"), constants::kBridgeApiVersion},
       {QStringLiteral("namespace"), ToQString(constants::kDocumentsBridgeNamespace)},
@@ -75,6 +80,8 @@ auto BridgeInfo(bool ai_features_enabled, bool ai_autocomplete_enabled,
            ToQString(constants::kBridgeMethodLoadDocument),
            ToQString(constants::kBridgeMethodOpenDocument),
            ToQString(constants::kBridgeMethodUpdateSnapshot),
+           ToQString(constants::kBridgeMethodExportTextToFile),
+           ToQString(constants::kBridgeMethodImportTextFromFile),
        }},
   };
 }
@@ -228,7 +235,8 @@ auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& doc
 
     result.append(QVariantMap{
         {QStringLiteral("id"), QString::fromStdString(document.id)},
-        {QStringLiteral("kind"), QString::fromStdString(document::ToDocumentKindKey(document.kind))},
+        {QStringLiteral("kind"),
+         QString::fromStdString(document::ToDocumentKindKey(document.kind))},
         {QStringLiteral("title"), QString::fromStdString(document.title)},
         {QStringLiteral("parentId"), OptionalStringToVariant(document.parent_id)},
         {QStringLiteral("sortOrder"), document.sort_order},
@@ -599,9 +607,9 @@ QVariantMap QEditorBridge::createDocumentInWorkspace(const QString& workspace_id
                          QStringLiteral("Document repository is not configured."));
   }
 
-  auto record = MakeNewDocumentRecord(std::nullopt, 0, NormalizeWorkspaceId(workspace_id),
-                                      current_author_id_,
-                                      document::DocumentKindFromKey(kind.toStdString()));
+  auto record =
+      MakeNewDocumentRecord(std::nullopt, 0, NormalizeWorkspaceId(workspace_id), current_author_id_,
+                            document::DocumentKindFromKey(kind.toStdString()));
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
     return ErrorResponse(QStringLiteral("create_failed"),
@@ -612,9 +620,9 @@ QVariantMap QEditorBridge::createDocumentInWorkspace(const QString& workspace_id
 }
 
 QVariantMap QEditorBridge::createDocument() {
-  return createDocumentInWorkspace(current_workspace_id_,
-                                   QString::fromStdString(document::ToDocumentKindKey(
-                                       document::DocumentKind::kWikiPage)));
+  return createDocumentInWorkspace(
+      current_workspace_id_,
+      QString::fromStdString(document::ToDocumentKindKey(document::DocumentKind::kWikiPage)));
 }
 
 QVariantMap QEditorBridge::createChildDocumentInWorkspace(const QString& workspace_id,
@@ -643,9 +651,9 @@ QVariantMap QEditorBridge::createChildDocumentInWorkspace(const QString& workspa
                          QStringLiteral("Parent document belongs to another workspace."));
   }
 
-  auto record = MakeNewDocumentRecord(parent_id.toStdString(), sort_order, normalized_workspace_id,
-                                      current_author_id_,
-                                      document::DocumentKindFromKey(kind.toStdString()));
+  auto record =
+      MakeNewDocumentRecord(parent_id.toStdString(), sort_order, normalized_workspace_id,
+                            current_author_id_, document::DocumentKindFromKey(kind.toStdString()));
   const auto save_result = repository_->SaveDocument(record);
   if (save_result.error) {
     return ErrorResponse(QStringLiteral("create_failed"),
@@ -1005,6 +1013,63 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& page_id, const QString&
   return SuccessResponse(QVariant{});
 }
 
+QVariantMap QEditorBridge::exportTextToFile(const QString& suggested_file_name,
+                                            const QString& name_filter, const QString& content) {
+  auto* parent_widget = qobject_cast<QWidget*>(parent());
+  const auto path = QFileDialog::getSaveFileName(parent_widget, QStringLiteral("Export"),
+                                                 suggested_file_name, name_filter);
+  if (path.isEmpty()) {
+    return ErrorResponse(QStringLiteral("cancelled"), QStringLiteral("Export was cancelled."));
+  }
+
+  QFile file(path);
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    spdlog::warn("Failed to open file for export: {}: {}", path.toStdString(),
+                 file.errorString().toStdString());
+    return ErrorResponse(QStringLiteral("write_failed"), file.errorString());
+  }
+
+  const auto bytes = content.toUtf8();
+  if (file.write(bytes) != bytes.size()) {
+    spdlog::warn("Failed to write exported file: {}: {}", path.toStdString(),
+                 file.errorString().toStdString());
+    return ErrorResponse(QStringLiteral("write_failed"), file.errorString());
+  }
+  file.close();
+
+  spdlog::info("Exported document content to file: {}", path.toStdString());
+  return SuccessResponse(QVariantMap{
+      {QStringLiteral("path"), path},
+      {QStringLiteral("fileName"), QFileInfo(path).fileName()},
+  });
+}
+
+QVariantMap QEditorBridge::importTextFromFile(const QString& name_filter) {
+  auto* parent_widget = qobject_cast<QWidget*>(parent());
+  const auto path =
+      QFileDialog::getOpenFileName(parent_widget, QStringLiteral("Import"), QString{}, name_filter);
+  if (path.isEmpty()) {
+    return ErrorResponse(QStringLiteral("cancelled"), QStringLiteral("Import was cancelled."));
+  }
+
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly)) {
+    spdlog::warn("Failed to open file for import: {}: {}", path.toStdString(),
+                 file.errorString().toStdString());
+    return ErrorResponse(QStringLiteral("read_failed"), file.errorString());
+  }
+
+  const auto content = QString::fromUtf8(file.readAll());
+  file.close();
+
+  spdlog::info("Imported document content from file: {}", path.toStdString());
+  return SuccessResponse(QVariantMap{
+      {QStringLiteral("path"), path},
+      {QStringLiteral("fileName"), QFileInfo(path).fileName()},
+      {QStringLiteral("content"), content},
+  });
+}
+
 void QEditorBridge::SetAiTransportConfig(bool backend_enabled, QString backend_base_url,
                                          QString backend_access_token) {
   ai_backend_enabled_ = backend_enabled;
@@ -1054,8 +1119,8 @@ QString QEditorBridge::startAiRequest(const QString& prompt, const QString& cont
 }
 
 void QEditorBridge::StartServerMediatedAiRequest(const QString& request_id, const QString& prompt,
-                                                 const QString& context_text,
-                                                 const QString& mode, const QString& tool_name,
+                                                 const QString& context_text, const QString& mode,
+                                                 const QString& tool_name,
                                                  const QString& tool_schema_json) {
   QJsonObject body;
   body.insert(QStringLiteral("prompt"), prompt);
@@ -1067,12 +1132,11 @@ void QEditorBridge::StartServerMediatedAiRequest(const QString& request_id, cons
   }
 
   const QUrl url(ai_backend_base_url_ + QStringLiteral("/api/v1/ai/chat"));
-  const auto auth_header =
-      ai_backend_access_token_.isEmpty()
-          ? QString()
-          : QStringLiteral("Bearer ") + ai_backend_access_token_;
+  const auto auth_header = ai_backend_access_token_.isEmpty()
+                               ? QString()
+                               : QStringLiteral("Bearer ") + ai_backend_access_token_;
   CallProviderAndRelay(request_id, url, QJsonDocument(body).toJson(QJsonDocument::Compact),
-                      auth_header, tool_name);
+                       auth_header, tool_name);
 }
 
 void QEditorBridge::StartLocalKeyAiRequest(const QString& request_id, const QString& prompt,
@@ -1087,8 +1151,8 @@ void QEditorBridge::StartLocalKeyAiRequest(const QString& request_id, const QStr
 
   *loaded_connection = connect(
       key_store, &auth::AiApiKeyStore::apiKeyLoaded, this,
-      [this, request_id, prompt, context_text, mode, tool_name, tool_schema_json,
-       loaded_connection, missing_connection](const QString& api_key) {
+      [this, request_id, prompt, context_text, mode, tool_name, tool_schema_json, loaded_connection,
+       missing_connection](const QString& api_key) {
         QObject::disconnect(*loaded_connection);
         QObject::disconnect(*missing_connection);
 
@@ -1096,9 +1160,8 @@ void QEditorBridge::StartLocalKeyAiRequest(const QString& request_id, const QStr
         QJsonArray messages;
         QJsonObject message;
         message.insert(QStringLiteral("role"), QStringLiteral("user"));
-        message.insert(QStringLiteral("content"),
-                       mode + QStringLiteral(": ") + context_text + QStringLiteral("\n\n") +
-                           prompt);
+        message.insert(QStringLiteral("content"), mode + QStringLiteral(": ") + context_text +
+                                                      QStringLiteral("\n\n") + prompt);
         messages.append(message);
         body.insert(QStringLiteral("messages"), messages);
 
@@ -1132,27 +1195,25 @@ void QEditorBridge::StartLocalKeyAiRequest(const QString& request_id, const QStr
         }
 
         const QUrl url(QStringLiteral("https://api.openai.com/v1/chat/completions"));
-        CallProviderAndRelay(request_id, url,
-                            QJsonDocument(body).toJson(QJsonDocument::Compact),
-                            QStringLiteral("Bearer ") + api_key, tool_name);
+        CallProviderAndRelay(request_id, url, QJsonDocument(body).toJson(QJsonDocument::Compact),
+                             QStringLiteral("Bearer ") + api_key, tool_name);
       });
 
-  *missing_connection = connect(
-      key_store, &auth::AiApiKeyStore::apiKeyMissing, this,
-      [this, request_id, loaded_connection, missing_connection]() {
-        QObject::disconnect(*loaded_connection);
-        QObject::disconnect(*missing_connection);
-        emit aiRequestFailed(request_id,
-                             QStringLiteral("No local AI provider API key is configured."));
-      });
+  *missing_connection =
+      connect(key_store, &auth::AiApiKeyStore::apiKeyMissing, this,
+              [this, request_id, loaded_connection, missing_connection]() {
+                QObject::disconnect(*loaded_connection);
+                QObject::disconnect(*missing_connection);
+                emit aiRequestFailed(request_id,
+                                     QStringLiteral("No local AI provider API key is configured."));
+              });
 
   key_store->Load();
 }
 
 void QEditorBridge::CallProviderAndRelay(const QString& request_id, const QUrl& url,
-                                        const QByteArray& body,
-                                        const QString& auth_header_value,
-                                        const QString& tool_name) {
+                                         const QByteArray& body, const QString& auth_header_value,
+                                         const QString& tool_name) {
   if (network_manager_ == nullptr) {
     network_manager_ = new QNetworkAccessManager(this);
   }
@@ -1198,18 +1259,18 @@ void QEditorBridge::CallProviderAndRelay(const QString& request_id, const QUrl& 
         const auto choices = object.value(QStringLiteral("choices")).toArray();
         if (!choices.isEmpty()) {
           const auto tool_calls = choices.first()
-                                       .toObject()
-                                       .value(QStringLiteral("message"))
-                                       .toObject()
-                                       .value(QStringLiteral("tool_calls"))
-                                       .toArray();
+                                      .toObject()
+                                      .value(QStringLiteral("message"))
+                                      .toObject()
+                                      .value(QStringLiteral("tool_calls"))
+                                      .toArray();
           if (!tool_calls.isEmpty()) {
             arguments_json = tool_calls.first()
-                                  .toObject()
-                                  .value(QStringLiteral("function"))
-                                  .toObject()
-                                  .value(QStringLiteral("arguments"))
-                                  .toString();
+                                 .toObject()
+                                 .value(QStringLiteral("function"))
+                                 .toObject()
+                                 .value(QStringLiteral("arguments"))
+                                 .toString();
           }
         }
       }
@@ -1226,15 +1287,22 @@ void QEditorBridge::CallProviderAndRelay(const QString& request_id, const QUrl& 
     }
 
     QString text;
-    if (object.contains(QStringLiteral("result")) && object.value(QStringLiteral("result")).isObject()) {
+    if (object.contains(QStringLiteral("result")) &&
+        object.value(QStringLiteral("result")).isObject()) {
       // cppwiki_server envelope: { ok, result: { text } }.
-      text = object.value(QStringLiteral("result")).toObject().value(QStringLiteral("text")).toString();
+      text = object.value(QStringLiteral("result"))
+                 .toObject()
+                 .value(QStringLiteral("text"))
+                 .toString();
     } else if (object.contains(QStringLiteral("choices"))) {
       // Raw OpenAI-compatible chat completion response (local-key path).
       const auto choices = object.value(QStringLiteral("choices")).toArray();
       if (!choices.isEmpty()) {
-        const auto content = choices.first().toObject().value(QStringLiteral("message")).toObject()
-                                  .value(QStringLiteral("content"));
+        const auto content = choices.first()
+                                 .toObject()
+                                 .value(QStringLiteral("message"))
+                                 .toObject()
+                                 .value(QStringLiteral("content"));
         if (content.isString()) {
           text = content.toString();
         } else if (content.isArray()) {

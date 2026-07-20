@@ -72,6 +72,8 @@ export function createMockEditorBridge(): EditorBridge {
             "loadDocument",
             "openDocument",
             "updateSnapshot",
+            "exportTextToFile",
+            "importTextFromFile",
           ],
         },
       };
@@ -127,6 +129,27 @@ export function createMockEditorBridge(): EditorBridge {
 
     async updateSnapshot(_pageId, _snapshot): Promise<BridgeResult<void>> {
       return { apiVersion: bridgeApiVersion, ok: true, result: undefined };
+    },
+
+    // No native file dialog outside the Qt embedding (`npm run dev`) — mimic "user cancelled"
+    // rather than pretending a file was chosen, since there's nowhere for content to go.
+    async exportTextToFile(suggestedFileName, _nameFilter, _content) {
+      return {
+        apiVersion: bridgeApiVersion,
+        ok: false,
+        error: {
+          code: "cancelled",
+          message: `Export to disk is only available in the desktop app (would have saved "${suggestedFileName}").`,
+        },
+      };
+    },
+
+    async importTextFromFile(_nameFilter) {
+      return {
+        apiVersion: bridgeApiVersion,
+        ok: false,
+        error: { code: "cancelled", message: "Import from disk is only available in the desktop app." },
+      };
     },
 
     onDocumentOpenRequested() {

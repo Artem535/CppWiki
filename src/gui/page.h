@@ -70,12 +70,16 @@ class Page final : public QWidget, public IPage {
   void BuildUi();
   void LoadEditor();
   void InstallWebChannelScript();
+  // Rejects/cancels native browser file-picker and download requests the embedded editor bundle
+  // (Excalidraw) may trigger, which otherwise crash the app in this embedding (issue #82) — see
+  // the doc comment at the definition.
+  void InstallNativeFilePickerGuards();
   void PopulatePageList();
   void RebuildWorkspaceTree();
   void CreateNewDocument(const QString& workspace_id,
-                        document::DocumentKind kind = document::DocumentKind::kWikiPage);
+                         document::DocumentKind kind = document::DocumentKind::kWikiPage);
   void CreateChildDocument(const QModelIndex& parent_index,
-                          document::DocumentKind kind = document::DocumentKind::kWikiPage);
+                           document::DocumentKind kind = document::DocumentKind::kWikiPage);
   void RenameDocument(const QModelIndex& index);
   void DeleteDocument(const QModelIndex& index);
   void OpenDocumentWithAccess(const QString& page_id);

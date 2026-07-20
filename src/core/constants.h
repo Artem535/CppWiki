@@ -30,6 +30,14 @@ inline constexpr std::string_view kBridgeMethodRenameDocument = "RenameDocument"
 inline constexpr std::string_view kBridgeMethodLoadDocument = "LoadDocument";
 inline constexpr std::string_view kBridgeMethodOpenDocument = "OpenDocument";
 inline constexpr std::string_view kBridgeMethodUpdateSnapshot = "UpdateSnapshot";
+// File import/export (issue #82): native, QFileDialog-backed save/open, used for
+// exporting/importing a document kind's raw content (e.g. nbformat JSON, Excalidraw scene
+// JSON) as a standalone file. Kind-agnostic on purpose — the JS side owns interpreting/
+// producing the file content; this pair only moves bytes to/from disk through a native dialog
+// instead of exposing Excalidraw's/Chromium's own (unsupported in this embedding, see
+// page.cc's fileSystemAccessRequested handling) file pickers.
+inline constexpr std::string_view kBridgeMethodExportTextToFile = "ExportTextToFile";
+inline constexpr std::string_view kBridgeMethodImportTextFromFile = "ImportTextFromFile";
 
 inline constexpr std::string_view kDatabaseDirectoryName = "database";
 inline constexpr std::string_view kDefaultPageTitle = "Welcome to CppWiki";

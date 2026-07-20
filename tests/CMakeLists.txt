@@ -23,6 +23,7 @@ target_link_libraries(cppwiki_bridge_tests
   PRIVATE
     Qt6::Core
     Qt6::Network
+    Qt6::Widgets
     qt6keychain
     spdlog::spdlog
     reflectcpp::reflectcpp
