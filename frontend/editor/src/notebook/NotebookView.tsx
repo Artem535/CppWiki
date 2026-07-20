@@ -3,9 +3,11 @@
 // scope, not just a v1 cut, so this component must never grow a "Run cell" affordance.
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 
 import type { EditorBridge } from "../bridge/editorBridge";
 import { snapshotDebounceMs } from "../constants";
+import { renderMarkdownToHtml } from "./markdown";
 import {
   joinNbSource,
   parseNotebookJson,
@@ -81,6 +83,23 @@ function CellView({
 }) {
   const sourceText = joinNbSource(cell.source);
   const isCode = cell.cell_type === "code";
+  const isMarkdown = cell.cell_type === "markdown";
+
+  // Per-cell rendered/raw-source toggle for markdown cells (issue #89): local, not lifted into
+  // notebook state, since different cells can independently be rendered or being edited. Code
+  // cells never set this — they have no rendered mode at all, only raw source.
+  const [isRendered, setIsRendered] = useState(false);
+
+  const handleSourceKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isMarkdown && event.key === "Enter" && event.shiftKey) {
+      // Mirrors classic Jupyter's Shift+Enter: switch this markdown cell to its rendered display,
+      // without inserting a newline into the source.
+      event.preventDefault();
+      setIsRendered(true);
+    }
+  };
+
+  const showRendered = isMarkdown && isRendered;
 
   return (
     <div className="notebook-cell" data-cell-type={cell.cell_type}>
@@ -97,14 +116,33 @@ function CellView({
           </button>
         ) : null}
       </div>
-      <textarea
-        className={`notebook-cell-source${isCode ? " notebook-cell-source--code" : ""}`}
-        value={sourceText}
-        readOnly={!editable}
-        spellCheck={!isCode}
-        onChange={(event) => onSourceChange(index, event.target.value)}
-        rows={Math.max(2, sourceText.split("\n").length)}
-      />
+      {showRendered ? (
+        <div
+          className="notebook-cell-markdown-rendered"
+          data-testid={`notebook-cell-markdown-rendered-${index}`}
+          role="button"
+          tabIndex={0}
+          onClick={() => setIsRendered(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setIsRendered(false);
+            }
+          }}
+          // eslint-disable-next-line react/no-danger -- sanitized via DOMPurify below.
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdownToHtml(sourceText)) }}
+        />
+      ) : (
+        <textarea
+          className={`notebook-cell-source${isCode ? " notebook-cell-source--code" : ""}`}
+          value={sourceText}
+          readOnly={!editable}
+          spellCheck={!isCode}
+          onChange={(event) => onSourceChange(index, event.target.value)}
+          onKeyDown={handleSourceKeyDown}
+          rows={Math.max(2, sourceText.split("\n").length)}
+        />
+      )}
       {isCode && cell.outputs && cell.outputs.length > 0 ? (
         <div className="notebook-cell-outputs">
           {cell.outputs.map((output, outputIndex) => (

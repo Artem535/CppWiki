@@ -223,6 +223,41 @@ button {
   background: var(--app-surface-active);
 }
 
+.notebook-cell-markdown-rendered {
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 12px;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+  font-size: 14px;
+  line-height: 1.5;
+  cursor: text;
+}
+
+.notebook-cell-markdown-rendered:hover {
+  background: var(--app-surface-active);
+}
+
+.notebook-cell-markdown-rendered > :first-child {
+  margin-top: 0;
+}
+
+.notebook-cell-markdown-rendered > :last-child {
+  margin-bottom: 0;
+}
+
+.notebook-cell-markdown-rendered pre,
+.notebook-cell-markdown-rendered code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+.notebook-cell-markdown-rendered pre {
+  overflow-x: auto;
+  padding: 8px;
+  background: var(--app-surface);
+  border-radius: 4px;
+}
+
 .notebook-cell-outputs {
   border-top: 1px solid var(--app-border);
   padding: 12px;
