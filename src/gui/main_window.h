@@ -11,9 +11,10 @@
 class QGridLayout;
 class QFrame;
 class QDialog;
+class QAction;
 class QLabel;
-class QPushButton;
 class QStackedWidget;
+class QToolBar;
 class QToolButton;
 class QWidget;
 
@@ -127,12 +128,11 @@ class MainWindow final : public QMainWindow {
   QLabel* edit_mode_label_ = nullptr;
   QLabel* save_state_label_ = nullptr;
   oclero::qlementine::Switch* edit_mode_switch_ = nullptr;
-  // Native Import/Export controls (issue #96), living in the same collaboration_panel_ /
-  // edit_mode_widget "LOCAL EDITING" strip as edit_mode_switch_ rather than the hidden QMenuBar
-  // (see main_window.cc's BuildUi() comment for why menuBar()->hide() stays as-is). Both start
-  // hidden; UpdateFileActionsUi() shows/labels them per the currently open document's kind.
-  QPushButton* import_button_ = nullptr;
-  QPushButton* export_button_ = nullptr;
+  // Standard native document-tools toolbar. It is deliberately separate from the collaboration
+  // status strip: that strip reports state, whereas these are application actions.
+  QToolBar* document_tools_toolbar_ = nullptr;
+  QAction* import_action_ = nullptr;
+  QAction* export_action_ = nullptr;
   QString save_state_hint_;
   QString collaboration_hint_;
   QString auth_hint_;
