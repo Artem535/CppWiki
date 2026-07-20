@@ -252,3 +252,60 @@ button {
   font-family: inherit;
   white-space: normal;
 }
+
+/* Mermaid diagram block (ADR-017, issue #50): raw source (editable, ProseMirror-managed via
+   contentRef — see blocks/MermaidBlock.tsx) stacked above the rendered/sanitized SVG preview,
+   mirroring the notebook cell's source-above/output-below layout for a consistent editing
+   pattern across this app's rich-content blocks. */
+.mermaid-block {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface);
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+.mermaid-block-source {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+  padding: 12px;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  outline: none;
+}
+
+.mermaid-block-source:empty::before {
+  content: attr(data-placeholder);
+  color: var(--app-text-muted);
+}
+
+.mermaid-block-preview {
+  border-top: 1px solid var(--app-border);
+  padding: 16px;
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+
+.mermaid-block-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-block-placeholder {
+  margin: 0;
+  color: var(--app-text-muted);
+  font-size: 13px;
+}
+
+.mermaid-block-error {
+  margin: 0;
+  color: #ff6b6b;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

@@ -189,6 +189,31 @@ auto TestValidQuoteBlock() -> void {
           "quote text must be extracted");
 }
 
+// Mermaid diagram block (ADR-017, issue #50): a custom BlockNote block spec with plain inline
+// content holding the raw diagram source text — validated/extracted exactly like any other
+// inline-content block type (see TestValidBlockNoteInlineContentArray above), no special-cased
+// props or Mermaid-syntax awareness needed here.
+auto TestValidMermaidBlock() -> void {
+  const auto json = QByteArray(R"([
+    {
+      "id": "mermaid-1",
+      "type": "mermaid",
+      "content": [
+        { "type": "text", "text": "graph TD; A-->B;", "styles": {} }
+      ],
+      "children": []
+    }
+  ])");
+
+  const auto result = cppwiki::document::DocumentValidator::ParseAndValidateSnapshot(json);
+  RequireSuccess(result, "TestValidMermaidBlock");
+  Require(result.document->blocks.size() == 1, "mermaid payload must produce one block");
+  Require(result.document->blocks[0].type == cppwiki::document::BlockType::kMermaid,
+          "mermaid block type must be preserved");
+  Require(result.document->blocks[0].text_content == "graph TD; A-->B;",
+          "mermaid diagram source must be extracted as text_content");
+}
+
 auto TestValidDefaultBlockNoteBlockTypes() -> void {
   const auto json = QByteArray(R"([
     {
@@ -485,6 +510,7 @@ auto main() -> int {
   TestValidBlockNoteInlineContentArray();
   TestReflectCppSnapshotRoundTrip();
   TestValidQuoteBlock();
+  TestValidMermaidBlock();
   TestValidDefaultBlockNoteBlockTypes();
   TestInvalidJson();
   TestInvalidRoot();

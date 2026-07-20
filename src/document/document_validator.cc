@@ -69,6 +69,7 @@ auto MakeBlockError(ValidationErrorCode code, std::string message) -> BlockResul
       std::pair{std::string_view{"file"}, BlockType::kFile},
       std::pair{std::string_view{"divider"}, BlockType::kDivider},
       std::pair{std::string_view{"pageBreak"}, BlockType::kPageBreak},
+      std::pair{std::string_view{"mermaid"}, BlockType::kMermaid},
   };
 
   for (const auto& [block_type_name, block_type] : kBlockTypes) {
