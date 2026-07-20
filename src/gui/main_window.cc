@@ -530,12 +530,12 @@ void MainWindow::BuildUi() {
   save_state_label_->hide();
   edit_mode_layout->addWidget(save_state_label_, 0, Qt::AlignVCenter);
 
-  // Import/Export belong in the application's native tools toolbar, not in this collaboration
-  // status strip. The toolbar is created after the central widget below, once the document-mode
-  // shell is complete.
+  // Import/Export belong in the application's native tools toolbar (under a "File" menu, issue
+  // #102), not in this collaboration status strip. The toolbar is created after the central
+  // widget below, once the document-mode shell is complete.
 
   // (Actions are created here so their page callbacks are defined alongside the other Page UI
-  // wiring; MainWindow owns them and the toolbar presents them.)
+  // wiring; MainWindow owns them and the File menu presents them.)
   import_action_ = new QAction(QStringLiteral("Import"), this);
   import_action_->setObjectName(QStringLiteral("importDocumentAction"));
   import_action_->setVisible(false);
@@ -637,8 +637,18 @@ void MainWindow::BuildUi() {
   document_tools_toolbar_->setObjectName(QStringLiteral("documentToolsToolbar"));
   document_tools_toolbar_->setMovable(false);
   document_tools_toolbar_->setFloatable(false);
-  document_tools_toolbar_->addAction(import_action_);
-  document_tools_toolbar_->addAction(export_action_);
+  // File menu (issue #102): Import/Export are grouped under a "File" dropdown instead of two
+  // flat toolbar buttons.
+  file_menu_ = new QMenu(QStringLiteral("File"), this);
+  file_menu_->setObjectName(QStringLiteral("fileMenu"));
+  file_menu_->addAction(import_action_);
+  file_menu_->addAction(export_action_);
+  file_menu_button_ = new QToolButton(document_tools_toolbar_);
+  file_menu_button_->setObjectName(QStringLiteral("fileMenuButton"));
+  file_menu_button_->setText(QStringLiteral("File"));
+  file_menu_button_->setMenu(file_menu_);
+  file_menu_button_->setPopupMode(QToolButton::InstantPopup);
+  document_tools_toolbar_->addWidget(file_menu_button_);
   document_tools_toolbar_->hide();
   statusBar()->addPermanentWidget(backend_refresh_button_);
   statusBar()->addPermanentWidget(document_status_widget_);
