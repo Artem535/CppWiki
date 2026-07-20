@@ -73,6 +73,16 @@ auto AreDocumentSummariesEqual(const std::vector<storage::DocumentSummary>& lhs,
 // Converts a QVariantMap document representation (from the JS bridge) into a DocumentSummary.
 auto SummaryFromVariantMap(const QVariantMap& document) -> storage::DocumentSummary;
 
+// Native file dialog name filter for exporting/importing a document of the given kind (issue
+// #96) — matches the filters the removed in-page FileActionsToolbar (NotebookView.tsx) and
+// inline Excalidraw import/export buttons used. Empty for kWikiPage: wiki pages have no
+// import/export concept.
+auto FileDialogNameFilterForKind(document::DocumentKind kind) -> QString;
+
+// Suggested export file extension (without the leading dot) for the given kind. Empty for
+// kWikiPage.
+auto FileExtensionForKind(document::DocumentKind kind) -> QString;
+
 }  // namespace cppwiki::gui::page_helpers
 
 #endif  // CPPWIKI_SRC_GUI_PAGE_HELPERS_H_

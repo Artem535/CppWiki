@@ -5,12 +5,14 @@
 #include <QPointer>
 
 #include "app/accent_color.h"
+#include "document/document.h"
 #include "gui/workspace_rail_widget.h"
 
 class QGridLayout;
 class QFrame;
 class QDialog;
 class QLabel;
+class QPushButton;
 class QStackedWidget;
 class QToolButton;
 class QWidget;
@@ -90,6 +92,11 @@ class MainWindow final : public QMainWindow {
   void UpdateDocumentStatus(const QString& message, bool is_error);
   void UpdateCollaborationStatus(const QString& summary, const QString& details, bool is_warning);
   void UpdateEditModeUi(const QString& label, bool checked, bool enabled);
+  // Shows/hides and labels the native Import/Export controls (issue #96) per
+  // Page::documentKindStateChanged(): visible only while a Jupyter notebook or Excalidraw canvas
+  // document is open (never for wiki pages or no selection); Import is additionally hidden when
+  // the open document isn't currently editable (locked/conflicted/view mode).
+  void UpdateFileActionsUi(document::DocumentKind kind, bool has_document, bool editable);
   void UpdateAuthCollaborationHint();
   void RefreshCollaborationSecondaryText();
   void RefreshSyncDetailsDialog();
@@ -120,6 +127,12 @@ class MainWindow final : public QMainWindow {
   QLabel* edit_mode_label_ = nullptr;
   QLabel* save_state_label_ = nullptr;
   oclero::qlementine::Switch* edit_mode_switch_ = nullptr;
+  // Native Import/Export controls (issue #96), living in the same collaboration_panel_ /
+  // edit_mode_widget "LOCAL EDITING" strip as edit_mode_switch_ rather than the hidden QMenuBar
+  // (see main_window.cc's BuildUi() comment for why menuBar()->hide() stays as-is). Both start
+  // hidden; UpdateFileActionsUi() shows/labels them per the currently open document's kind.
+  QPushButton* import_button_ = nullptr;
+  QPushButton* export_button_ = nullptr;
   QString save_state_hint_;
   QString collaboration_hint_;
   QString auth_hint_;

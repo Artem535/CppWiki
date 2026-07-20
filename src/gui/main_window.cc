@@ -252,6 +252,8 @@ void MainWindow::ApplyStylesheetToSafeDescendants(AccentColor accent_color) {
                        static_cast<QWidget*>(presence_strip_widget_),
                        static_cast<QWidget*>(edit_mode_label_),
                        static_cast<QWidget*>(save_state_label_),
+                       static_cast<QWidget*>(import_button_),
+                       static_cast<QWidget*>(export_button_),
                        static_cast<QWidget*>(backend_refresh_button_),
                        document_status_widget_, backend_status_widget_, sync_status_widget_,
                        sync_conflicts_widget_, current_sidebar_widget_,
@@ -354,6 +356,7 @@ void MainWindow::CreateInitialPage() {
             UpdateCollaborationStatus(summary, details, is_warning);
           });
   connect(page, &Page::editModeStateChanged, this, &MainWindow::UpdateEditModeUi);
+  connect(page, &Page::documentKindStateChanged, this, &MainWindow::UpdateFileActionsUi);
   connect(page, &Page::documentConflictDetected, this,
           [this](const QString&, const QString& conflict_id) { ShowConflictWindow(conflict_id); });
   current_page_ = page;
@@ -525,6 +528,32 @@ void MainWindow::BuildUi() {
   save_state_label_->setObjectName(QStringLiteral("saveStateLabel"));
   save_state_label_->hide();
   edit_mode_layout->addWidget(save_state_label_, 0, Qt::AlignVCenter);
+
+  // Native Import/Export controls (issue #96): live in this same "LOCAL EDITING" strip rather
+  // than the hidden QMenuBar, next to the edit-mode switch they're contextually related to (both
+  // gate on the currently open document). Hidden by default; UpdateFileActionsUi() shows/labels
+  // them once Page reports a Jupyter notebook or Excalidraw canvas document is open.
+  import_button_ = new QPushButton(QStringLiteral("Import"), edit_mode_widget);
+  import_button_->setObjectName(QStringLiteral("fileActionButton"));
+  import_button_->setCursor(Qt::PointingHandCursor);
+  import_button_->hide();
+  connect(import_button_, &QPushButton::clicked, this, [this]() {
+    if (current_page_ != nullptr) {
+      current_page_->ImportCurrentDocumentFromFile();
+    }
+  });
+  edit_mode_layout->addWidget(import_button_, 0, Qt::AlignVCenter);
+
+  export_button_ = new QPushButton(QStringLiteral("Export"), edit_mode_widget);
+  export_button_->setObjectName(QStringLiteral("fileActionButton"));
+  export_button_->setCursor(Qt::PointingHandCursor);
+  export_button_->hide();
+  connect(export_button_, &QPushButton::clicked, this, [this]() {
+    if (current_page_ != nullptr) {
+      current_page_->ExportCurrentDocumentToFile();
+    }
+  });
+  edit_mode_layout->addWidget(export_button_, 0, Qt::AlignVCenter);
 
   backend_refresh_button_ = new QToolButton(this);
   backend_refresh_button_->setObjectName(QStringLiteral("statusLineButton"));
@@ -950,6 +979,27 @@ void MainWindow::UpdateEditModeUi(const QString& label, bool checked, bool enabl
     edit_mode_switch_->setEnabled(enabled);
     edit_mode_switch_->blockSignals(blocked);
   }
+}
+
+void MainWindow::UpdateFileActionsUi(document::DocumentKind kind, bool has_document,
+                                     bool editable) {
+  if (import_button_ == nullptr || export_button_ == nullptr) {
+    return;
+  }
+
+  // Wiki pages have no import/export concept, and neither does "no document selected" — hide
+  // both controls entirely rather than merely disabling them (issue #96).
+  const bool applicable = has_document && kind != document::DocumentKind::kWikiPage;
+  export_button_->setVisible(applicable);
+  // Import additionally requires the open document to currently be editable (unlocked, no
+  // conflict) — mirrors the removed in-page toolbar's `editable ? <button>Import</button> : null`.
+  import_button_->setVisible(applicable && editable);
+  if (!applicable) {
+    return;
+  }
+
+  import_button_->setText(ImportButtonLabel(kind));
+  export_button_->setText(ExportButtonLabel(kind));
 }
 
 void MainWindow::UpdateAuthCollaborationHint() {

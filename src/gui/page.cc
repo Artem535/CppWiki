@@ -1,5 +1,9 @@
 #include "gui/page.h"
 
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+
 #include <spdlog/spdlog.h>
 
 #include <QAbstractItemView>
@@ -312,11 +316,25 @@ void Page::BuildUi() {
   connect(editor_bridge_, &bridge::QEditorBridge::documentLoadFailed, this,
           [this](const QString&, const QString& message) {
             emit documentStatusChanged(QStringLiteral("Load error: %1").arg(message), true);
+            current_document_kind_ = document::DocumentKind::kWikiPage;
+            EmitDocumentKindState();
           });
   connect(editor_bridge_, &bridge::QEditorBridge::documentLoaded, this,
           [this](const QVariantMap& document) {
             ApplyConflictStateForDocument(document.value(QStringLiteral("id")).toString());
+            current_document_kind_ = document::DocumentKindFromKey(
+                document.value(QStringLiteral("kind")).toString().toStdString());
+            EmitDocumentKindState();
           });
+  // JS listens to this bridge signal to clear its own view; Page also needs it so the native
+  // Import/Export controls hide whenever the selection is cleared without a documentLoaded
+  // handoff (e.g. SetCurrentWorkspaceId()'s ClearCurrentDocumentSelection() on workspace switch,
+  // or DeleteDocument()'s explicit ClearCurrentDocumentSelection() when the last document in a
+  // workspace is deleted).
+  connect(editor_bridge_, &bridge::QEditorBridge::documentSelectionCleared, this, [this]() {
+    current_document_kind_ = document::DocumentKind::kWikiPage;
+    EmitDocumentKindState();
+  });
 
   ApplyBridgeSessionContext();
   LoadEditor();
@@ -725,6 +743,117 @@ void Page::OpenDocumentWithAccess(const QString& page_id) {
       });
 }
 
+void Page::ExportCurrentDocumentToFile() {
+  if (editor_bridge_ == nullptr || selected_page_id_.isEmpty() ||
+      current_document_kind_ == document::DocumentKind::kWikiPage ||
+      context_.document_repository == nullptr) {
+    return;
+  }
+
+  if (!current_document_editable_) {
+    ExportPersistedCurrentDocument();
+    return;
+  }
+
+  export_after_save_ = true;
+  emit editor_bridge_->exportCurrentDocumentRequested();
+}
+
+void Page::ExportPersistedCurrentDocument() {
+  if (editor_bridge_ == nullptr || selected_page_id_.isEmpty() ||
+      current_document_kind_ == document::DocumentKind::kWikiPage ||
+      context_.document_repository == nullptr) {
+    return;
+  }
+  // Reads the persisted raw snapshot JSON straight from the repository rather than through
+  // QEditorBridge::loadDocument() — loadDocument() has the side effect of resetting the bridge's
+  // conflict/lock-derived state as if the document were being freshly opened, which would be
+  // wrong to trigger merely to read content for export.
+  auto loaded = context_.document_repository->LoadDocument(selected_page_id_.toStdString());
+  if (!loaded.document) {
+    emit documentStatusChanged(QStringLiteral("Export failed: document content is unavailable."),
+                               true);
+    return;
+  }
+
+  const auto content = QString::fromStdString(loaded.document->raw_snapshot_json);
+  const auto suggested_name =
+      QStringLiteral("%1.%2").arg(selected_page_id_, FileExtensionForKind(current_document_kind_));
+  const auto response = editor_bridge_->exportTextToFile(
+      suggested_name, FileDialogNameFilterForKind(current_document_kind_), content);
+
+  if (!response.value(QStringLiteral("ok")).toBool()) {
+    const auto error = response.value(QStringLiteral("error")).toMap();
+    if (error.value(QStringLiteral("code")).toString() != QStringLiteral("cancelled")) {
+      emit documentStatusChanged(
+          QStringLiteral("Export failed: %1").arg(error.value(QStringLiteral("message")).toString()),
+          true);
+    }
+    return;
+  }
+
+  const auto result = response.value(QStringLiteral("result")).toMap();
+  emit documentStatusChanged(
+      QStringLiteral("Exported to %1").arg(result.value(QStringLiteral("fileName")).toString()),
+      false);
+}
+
+void Page::ImportCurrentDocumentFromFile() {
+  if (editor_bridge_ == nullptr || selected_page_id_.isEmpty() ||
+      current_document_kind_ == document::DocumentKind::kWikiPage ||
+      !current_document_editable_) {
+    return;
+  }
+
+  const auto response =
+      editor_bridge_->importTextFromFile(FileDialogNameFilterForKind(current_document_kind_));
+  if (!response.value(QStringLiteral("ok")).toBool()) {
+    const auto error = response.value(QStringLiteral("error")).toMap();
+    if (error.value(QStringLiteral("code")).toString() != QStringLiteral("cancelled")) {
+      emit documentStatusChanged(
+          QStringLiteral("Import failed: %1").arg(error.value(QStringLiteral("message")).toString()),
+          true);
+    }
+    return;
+  }
+
+  const auto result = response.value(QStringLiteral("result")).toMap();
+  const auto imported_content = result.value(QStringLiteral("content")).toString();
+  const auto parsed = QJsonDocument::fromJson(imported_content.toUtf8());
+  const auto imported_object = parsed.object();
+  const bool is_valid_notebook = current_document_kind_ != document::DocumentKind::kJupyterNotebook ||
+      (parsed.isObject() && imported_object.value(QStringLiteral("cells")).isArray() &&
+       imported_object.value(QStringLiteral("nbformat")).isDouble());
+  const bool is_valid_canvas = current_document_kind_ != document::DocumentKind::kExcalidrawCanvas ||
+      (parsed.isObject() && imported_object.value(QStringLiteral("elements")).isArray() &&
+       imported_object.value(QStringLiteral("appState")).isObject() &&
+       imported_object.value(QStringLiteral("files")).isObject());
+  if (!is_valid_notebook || !is_valid_canvas) {
+    emit documentStatusChanged(QStringLiteral("Import failed: file does not match this document type."),
+                               true);
+    return;
+  }
+  // Persists the imported file's raw text verbatim through the same updateSnapshot()
+  // pipeline every other edit uses (DocumentValidator's well-formed-JSON-only check for
+  // non-wikiPage kinds — see editor_bridge.cc) rather than re-validating the nbformat/Excalidraw
+  // shape here; that's the same level of validation the removed JS toolbar's underlying
+  // save path applied.
+  const auto save_response = editor_bridge_->updateSnapshot(selected_page_id_, imported_content);
+  if (!save_response.value(QStringLiteral("ok")).toBool()) {
+    const auto error = save_response.value(QStringLiteral("error")).toMap();
+    emit documentStatusChanged(
+        QStringLiteral("Import failed: %1").arg(error.value(QStringLiteral("message")).toString()),
+        true);
+    return;
+  }
+
+  emit documentStatusChanged(
+      QStringLiteral("Imported %1").arg(result.value(QStringLiteral("fileName")).toString()), false);
+  // Refresh only the editor view. Re-opening the backend view session here would release the
+  // active edit lock, so use the bridge's normal load-and-notify path directly.
+  editor_bridge_->openDocument(selected_page_id_);
+}
+
 void Page::ApplyConflictStateForDocument(const QString& page_id) {
   if (editor_bridge_ == nullptr || page_id.isEmpty()) {
     return;
@@ -931,11 +1060,13 @@ void Page::ApplyDocumentAccessState(const backend::DocumentAccessState& access_s
 void Page::UpdateEditModeControls() {
   if (selected_page_id_.isEmpty()) {
     emit editModeStateChanged(QStringLiteral("No document selected"), false, false);
+    EmitDocumentKindState();
     return;
   }
 
   if (current_document_local_only_) {
     emit editModeStateChanged(QStringLiteral("Local editing"), false, false);
+    EmitDocumentKindState();
     return;
   }
 
@@ -944,6 +1075,12 @@ void Page::UpdateEditModeControls() {
   } else {
     emit editModeStateChanged(QStringLiteral("View mode"), false, true);
   }
+  EmitDocumentKindState();
+}
+
+void Page::EmitDocumentKindState() {
+  emit documentKindStateChanged(current_document_kind_, !selected_page_id_.isEmpty(),
+                                current_document_editable_);
 }
 
 void Page::StartEditInactivityTimer() {
@@ -1266,6 +1403,11 @@ void Page::HandleDocumentSaved(const QString& page_id, bool success, const QStri
 
   if (!success || message != QStringLiteral("Saved")) {
     return;
+  }
+
+  if (export_after_save_) {
+    export_after_save_ = false;
+    ExportPersistedCurrentDocument();
   }
 
   PopulatePageList();

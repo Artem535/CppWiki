@@ -11,6 +11,7 @@
 #include <QStringView>
 
 #include "backend/backend_client.h"
+#include "document/document.h"
 #include "storage/local_document_repository.h"
 #include "sync/sync_service.h"
 
@@ -64,6 +65,12 @@ auto CompactAuthHint(const auth::AuthSessionManager* auth) -> QString;
 
 auto MakeStatusWidget(const QString& initial_text, QWidget* parent)
     -> std::tuple<QWidget*, oclero::qlementine::StatusBadgeWidget*, QLabel*>;
+
+// Label text for the native Import/Export controls (issue #96), naming the concrete file kind
+// ("Import .ipynb" / "Import .excalidraw") rather than a generic "Import" — the kWikiPage
+// fallback is never actually shown since MainWindow hides both buttons for that kind.
+auto ImportButtonLabel(document::DocumentKind kind) -> QString;
+auto ExportButtonLabel(document::DocumentKind kind) -> QString;
 
 }  // namespace cppwiki::gui::main_window_helpers
 

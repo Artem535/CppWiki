@@ -89,6 +89,14 @@ function EditorApp() {
   // Raw stored snapshot JSON for non-wikiPage kinds (see LoadedDocument.rawContent) — consumed by
   // NotebookView (#52, "jupyterNotebook") and ExcalidrawCanvasView (#53, "excalidrawCanvas").
   const [documentRawContent, setDocumentRawContent] = useState<string | undefined>(undefined);
+  // Bumped on every onDocumentLoaded event, including a reload of the *same* pageId (issue #96:
+  // the native Import control persists new content then re-triggers the normal
+  // documentOpenRequested -> openDocument -> documentLoaded reload path for the still-open
+  // document). Folded into NotebookView/ExcalidrawCanvasView's `key` below so a same-document
+  // reload still remounts them — neither reads rawContent updates after mount otherwise
+  // (NotebookView's own re-parse effect keys off a *pageId* change; Excalidraw's `initialData`
+  // is documented as "only read once at mount").
+  const [documentLoadNonce, setDocumentLoadNonce] = useState(0);
   const [aiFeaturesEnabled, setAiFeaturesEnabled] = useState(false);
   const [aiAutocompleteEnabled, setAiAutocompleteEnabled] = useState(false);
   // Separate opt-in for inline ghost-text suggestions (issue #59); the
@@ -274,6 +282,7 @@ function EditorApp() {
         setIsEditable(document.editable);
         setDocumentKind(document.kind ?? "wikiPage");
         setDocumentRawContent(document.rawContent);
+        setDocumentLoadNonce((nonce) => nonce + 1);
         window.setTimeout(() => {
           replacing_document.current = false;
           setIsLoadingDocument(false);
@@ -301,11 +310,15 @@ function EditorApp() {
           setDocumentRawContent(undefined);
           setIsLoadingDocument(false);
         });
+      const unsubscribeExport = created_bridge.onExportCurrentDocumentRequested(() => {
+        window.dispatchEvent(new Event("cppwiki-export-current-document"));
+      });
       unsubscribers.push(
         unsubscribeLoaded,
         unsubscribeAccessChanged,
         unsubscribeLoadFailed,
         unsubscribeSelectionCleared,
+        unsubscribeExport,
       );
 
       if (cancelled) {
@@ -367,6 +380,9 @@ function EditorApp() {
         {shouldMountEditor && isJupyterNotebook ? (
           <div className="editor-surface" data-document-kind={documentKind}>
             <NotebookView
+              // Remounts on document switch AND on a same-document reload (issue #96's native
+              // Import control) via documentLoadNonce — see its declaration above for why.
+              key={`${selectedPageId ?? "notebook"}-${documentLoadNonce}`}
               bridge={bridge}
               pageId={selectedPageId ?? ""}
               editable={isEditable}
@@ -377,9 +393,10 @@ function EditorApp() {
         {shouldMountEditor && isExcalidrawCanvas ? (
           <div className="editor-surface" data-document-kind={documentKind}>
             <ExcalidrawCanvasView
-              // Remount on document switch so Excalidraw's initialData (only read at mount)
-              // reflects the newly opened document instead of the previous one's scene.
-              key={selectedPageId ?? "excalidraw"}
+              // Remount on document switch, and on a same-document reload (issue #96's native
+              // Import control) via documentLoadNonce, so Excalidraw's initialData (only read at
+              // mount) reflects the newly opened/imported content instead of stale scene data.
+              key={`${selectedPageId ?? "excalidraw"}-${documentLoadNonce}`}
               documentId={selectedPageId ?? ""}
               rawContent={documentRawContent}
               isEditable={isEditable}
