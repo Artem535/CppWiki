@@ -51,8 +51,16 @@ button {
   height: 100%;
 }
 
+/* Making .app-shell/.editor-pane/.editor-surface a real, definite `height: 100%` (instead of
+   `min-height`, see above) fixed Excalidraw's zero-height container bug, but it also stopped
+   this box from growing to fit taller content (a notebook's cells + "add cell" toolbar, a long
+   wiki page) — with no scrollbar anywhere, that content just got pushed below the visible area
+   with no way to reach it. Scope the scrolling to this box specifically (not .editor-pane) so it
+   doesn't affect .excalidraw-canvas, which is absolutely positioned against .editor-pane and
+   sized to fill it exactly regardless of this element's overflow. */
 .editor-surface {
   height: 100%;
+  overflow-y: auto;
 }
 
 .editor-surface--hidden {
