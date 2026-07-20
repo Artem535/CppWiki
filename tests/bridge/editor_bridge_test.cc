@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QVariant>
@@ -460,6 +461,75 @@ auto TestCreateExcalidrawCanvasProducesLoadableSceneContent() -> void {
   Require(parsed.object().value(QStringLiteral("elements")).isArray(),
           "freshly-created canvas's rawContent must have an 'elements' array (Excalidraw scene "
           "shape)");
+}
+
+// Mirrors NotebookView.tsx's scheduleSave(): edit a cell, call updateSnapshot() with the whole
+// notebook object, then reload and check the edit persisted and the content is still valid JSON.
+auto TestUpdateSnapshotRoundTripsForJupyterNotebook() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created =
+      bridge.createDocumentInWorkspace(QStringLiteral("default"), QStringLiteral("jupyterNotebook"));
+  RequireSuccessEnvelope(created);
+  const auto page_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+  RequireSuccessEnvelope(bridge.loadDocument(page_id));
+
+  const auto edited = bridge.updateSnapshot(QStringLiteral(R"({
+    "cells": [
+      { "cell_type": "markdown", "source": ["Edited from test"], "metadata": {} }
+    ],
+    "metadata": {},
+    "nbformat": 4,
+    "nbformat_minor": 5
+  })"));
+  RequireSuccessEnvelope(edited);
+
+  const auto reloaded = bridge.loadDocument(page_id);
+  RequireSuccessEnvelope(reloaded);
+  const auto raw_content =
+      reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("rawContent")).toString();
+
+  const auto parsed = QJsonDocument::fromJson(raw_content.toUtf8());
+  Require(parsed.isObject(), "rawContent must still be valid JSON after an edit+save");
+  const auto cells = parsed.object().value(QStringLiteral("cells")).toArray();
+  Require(cells.size() == 1, "edited cell should persist through updateSnapshot -> loadDocument");
+}
+
+// Mirrors ExcalidrawCanvasView.tsx's debounced onChange: edit the scene, call updateSnapshot()
+// with the whole scene object, then reload and check the edit persisted.
+auto TestUpdateSnapshotRoundTripsForExcalidrawCanvas() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created = bridge.createDocumentInWorkspace(QStringLiteral("default"),
+                                                         QStringLiteral("excalidrawCanvas"));
+  RequireSuccessEnvelope(created);
+  const auto page_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+  RequireSuccessEnvelope(bridge.loadDocument(page_id));
+
+  const auto edited = bridge.updateSnapshot(QStringLiteral(R"({
+    "type": "excalidraw",
+    "version": 2,
+    "elements": [{ "id": "el1", "type": "rectangle" }],
+    "appState": { "viewBackgroundColor": "#ffffff" },
+    "files": {}
+  })"));
+  RequireSuccessEnvelope(edited);
+
+  const auto reloaded = bridge.loadDocument(page_id);
+  RequireSuccessEnvelope(reloaded);
+  const auto raw_content =
+      reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("rawContent")).toString();
+
+  const auto parsed = QJsonDocument::fromJson(raw_content.toUtf8());
+  Require(parsed.isObject(), "rawContent must still be valid JSON after an edit+save");
+  const auto elements = parsed.object().value(QStringLiteral("elements")).toArray();
+  Require(elements.size() == 1, "edited element should persist through updateSnapshot -> loadDocument");
 }
 
 auto TestOpenDocumentReturnsLoadedDocument() -> void {
@@ -1000,6 +1070,8 @@ auto main() -> int {
   TestConflictFlagClearsOnFreshLoad();
   TestCreateJupyterNotebookProducesLoadableNbformatContent();
   TestCreateExcalidrawCanvasProducesLoadableSceneContent();
+  TestUpdateSnapshotRoundTripsForJupyterNotebook();
+  TestUpdateSnapshotRoundTripsForExcalidrawCanvas();
   TestOpenDocumentReturnsLoadedDocument();
   TestWorkspaceListIsolation();
   TestEmptyRepositoryWithRemoteSyncExpectedSkipsWelcome();
