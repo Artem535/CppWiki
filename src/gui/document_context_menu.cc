@@ -2,9 +2,11 @@
 
 #include <QIcon>
 #include <QMenu>
+#include <QPointer>
 #include <QPushButton>
 #include <QSize>
 #include <QStyle>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace cppwiki::gui {
@@ -97,8 +99,20 @@ void DocumentContextMenu::AddNewDocumentSubmenuButton() {
     layout->addWidget(button);
   }
 
-  connect(button, &QPushButton::clicked, this,
-          [this, button]() { ShowNewDocumentSubmenu(button); });
+  // QPushButton::clicked fires on mouse release. Opening the submenu (itself
+  // a Qt::Popup-flavored QMenu) synchronously within that same release event
+  // is a well-known Qt gotcha: the still-in-flight release ends up closing
+  // the freshly-shown submenu immediately, before the user can click any of
+  // its actions. Deferring to the next event-loop iteration lets the click
+  // that opened this menu finish being processed first.
+  connect(button, &QPushButton::clicked, this, [this, button]() {
+    QPointer<QPushButton> anchor(button);
+    QTimer::singleShot(0, this, [this, anchor]() {
+      if (anchor) {
+        ShowNewDocumentSubmenu(anchor);
+      }
+    });
+  });
 }
 
 void DocumentContextMenu::ShowNewDocumentSubmenu(QPushButton* anchor) {

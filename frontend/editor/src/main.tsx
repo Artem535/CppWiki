@@ -121,8 +121,17 @@ function EditorApp() {
     // whose factory already returns one) — wrap ours via the documented
     // createBlockNoteExtension() escape hatch, which just forwards the
     // Tiptap extension's ProseMirror plugin/keyboard shortcuts through.
+    //
+    // The wrapper `key` must differ from the inner Tiptap extension's own
+    // `name` ("cppwikiInlineSuggestion", see inlineSuggestionExtension.ts):
+    // BlockNoteEditor resolves each BlockNoteExtension into a synthetic
+    // `Extension.create({ name: key, addExtensions: () => ext.tiptapExtensions })`,
+    // and Tiptap flattens `addExtensions` results into the same top-level
+    // list — using the same string for both left two entries named
+    // "cppwikiInlineSuggestion" in that list, which Tiptap logs as a
+    // "Duplicate extension names found" warning (issue #78).
     return createBlockNoteExtension({
-      key: "cppwikiInlineSuggestion",
+      key: "cppwikiInlineSuggestionBlockNoteWrapper",
       tiptapExtensions: [tiptapExtension],
     });
   }, []);
