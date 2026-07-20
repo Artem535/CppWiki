@@ -53,6 +53,8 @@ qt_add_executable(cppwiki_app
         gui/document_tree_model.h
         gui/document_tree_view.h
         gui/document_tree_view.cc
+        gui/import_destination_dialog.cc
+        gui/import_destination_dialog.h
         gui/i_page.h
         gui/main_window.cc
         gui/main_window.h

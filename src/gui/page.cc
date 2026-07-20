@@ -49,6 +49,7 @@
 #include "gui/document_tree_item_delegate.h"
 #include "gui/document_tree_model.h"
 #include "gui/document_tree_view.h"
+#include "gui/import_destination_dialog.h"
 #include "gui/page_helpers.h"
 #include "sync/sync_service.h"
 
@@ -798,15 +799,12 @@ void Page::ExportPersistedCurrentDocument() {
       false);
 }
 
-void Page::ImportCurrentDocumentFromFile() {
-  if (editor_bridge_ == nullptr || selected_page_id_.isEmpty() ||
-      current_document_kind_ == document::DocumentKind::kWikiPage ||
-      !current_document_editable_) {
+void Page::ImportDocumentAsNewFile() {
+  if (editor_bridge_ == nullptr || workspace_tree_model_ == nullptr) {
     return;
   }
 
-  const auto response =
-      editor_bridge_->importTextFromFile(FileDialogNameFilterForKind(current_document_kind_));
+  const auto response = editor_bridge_->importTextFromFile(ImportAnyKindNameFilter());
   if (!response.value(QStringLiteral("ok")).toBool()) {
     const auto error = response.value(QStringLiteral("error")).toMap();
     if (error.value(QStringLiteral("code")).toString() != QStringLiteral("cancelled")) {
@@ -818,40 +816,83 @@ void Page::ImportCurrentDocumentFromFile() {
   }
 
   const auto result = response.value(QStringLiteral("result")).toMap();
+  const auto file_name = result.value(QStringLiteral("fileName")).toString();
   const auto imported_content = result.value(QStringLiteral("content")).toString();
-  const auto parsed = QJsonDocument::fromJson(imported_content.toUtf8());
-  const auto imported_object = parsed.object();
-  const bool is_valid_notebook = current_document_kind_ != document::DocumentKind::kJupyterNotebook ||
-      (parsed.isObject() && imported_object.value(QStringLiteral("cells")).isArray() &&
-       imported_object.value(QStringLiteral("nbformat")).isDouble());
-  const bool is_valid_canvas = current_document_kind_ != document::DocumentKind::kExcalidrawCanvas ||
-      (parsed.isObject() && imported_object.value(QStringLiteral("elements")).isArray() &&
-       imported_object.value(QStringLiteral("appState")).isObject() &&
-       imported_object.value(QStringLiteral("files")).isObject());
-  if (!is_valid_notebook || !is_valid_canvas) {
-    emit documentStatusChanged(QStringLiteral("Import failed: file does not match this document type."),
-                               true);
+
+  const auto detected_kind = DetectImportableDocumentKind(file_name, imported_content);
+  if (!detected_kind.has_value()) {
+    emit documentStatusChanged(
+        QStringLiteral("Import failed: could not determine the document type for %1.")
+            .arg(file_name),
+        true);
     return;
   }
-  // Persists the imported file's raw text verbatim through the same updateSnapshot()
-  // pipeline every other edit uses (DocumentValidator's well-formed-JSON-only check for
-  // non-wikiPage kinds — see editor_bridge.cc) rather than re-validating the nbformat/Excalidraw
-  // shape here; that's the same level of validation the removed JS toolbar's underlying
-  // save path applied.
-  const auto save_response = editor_bridge_->updateSnapshot(selected_page_id_, imported_content);
-  if (!save_response.value(QStringLiteral("ok")).toBool()) {
-    const auto error = save_response.value(QStringLiteral("error")).toMap();
+
+  gui::ImportDestinationDialog destination_dialog(
+      workspace_tree_model_.get(), QFileInfo(file_name).completeBaseName(), workspace_tree_view_);
+  if (destination_dialog.exec() != QDialog::Accepted) {
+    return;
+  }
+
+  const auto workspace_id = destination_dialog.chosenWorkspaceId();
+  const auto parent_document_id = destination_dialog.chosenParentDocumentId();
+  const auto title = destination_dialog.chosenTitle();
+  const auto kind_key = QString::fromStdString(document::ToDocumentKindKey(*detected_kind));
+
+  const auto create_response =
+      parent_document_id.has_value()
+          ? editor_bridge_->createChildDocumentInWorkspace(
+                workspace_id, QString::fromStdString(*parent_document_id), kind_key)
+          : editor_bridge_->createDocumentInWorkspace(workspace_id, kind_key);
+  if (!create_response.value(QStringLiteral("ok")).toBool()) {
+    const auto error = create_response.value(QStringLiteral("error")).toMap();
     emit documentStatusChanged(
         QStringLiteral("Import failed: %1").arg(error.value(QStringLiteral("message")).toString()),
         true);
     return;
   }
 
-  emit documentStatusChanged(
-      QStringLiteral("Imported %1").arg(result.value(QStringLiteral("fileName")).toString()), false);
-  // Refresh only the editor view. Re-opening the backend view session here would release the
-  // active edit lock, so use the bridge's normal load-and-notify path directly.
-  editor_bridge_->openDocument(selected_page_id_);
+  const auto created = create_response.value(QStringLiteral("result")).toMap();
+  const auto new_page_id = created.value(QStringLiteral("id")).toString();
+  if (new_page_id.isEmpty()) {
+    emit documentStatusChanged(QStringLiteral("Import failed: created document has no id."), true);
+    return;
+  }
+
+  const auto rename_response = editor_bridge_->renameDocument(new_page_id, title);
+  if (!rename_response.value(QStringLiteral("ok")).toBool()) {
+    spdlog::warn("Imported document created but rename failed: {}",
+                rename_response.value(QStringLiteral("error"))
+                    .toMap()
+                    .value(QStringLiteral("message"))
+                    .toString()
+                    .toStdString());
+  }
+
+  if (*detected_kind == document::DocumentKind::kWikiPage) {
+    // No Markdown parser on the C++ side: stash the raw text and let the frontend convert it
+    // via BlockNoteEditor::tryParseMarkdownToBlocks() the moment it loads this freshly created,
+    // still-empty document (see QEditorBridge::openDocument()/main.tsx).
+    editor_bridge_->StashPendingMarkdownImport(new_page_id, imported_content);
+  } else {
+    // Written directly to the repository (not via updateSnapshot()) because this document has
+    // never been opened yet — updateSnapshot() requires its target to be the currently-open
+    // document, which this new document isn't until HandleCreatedDocument() below opens it.
+    const auto seed_response =
+        editor_bridge_->SeedNewDocumentRawContent(new_page_id, imported_content);
+    if (!seed_response.value(QStringLiteral("ok")).toBool()) {
+      const auto error = seed_response.value(QStringLiteral("error")).toMap();
+      emit documentStatusChanged(
+          QStringLiteral("Import failed: %1").arg(error.value(QStringLiteral("message")).toString()),
+          true);
+      return;
+    }
+  }
+
+  HandleCreatedDocument(create_response, workspace_id);
+  PopulatePageList();
+  SelectDocumentById(new_page_id);
+  emit documentStatusChanged(QStringLiteral("Imported %1").arg(file_name), false);
 }
 
 void Page::ApplyConflictStateForDocument(const QString& page_id) {

@@ -83,6 +83,20 @@ auto FileDialogNameFilterForKind(document::DocumentKind kind) -> QString;
 // kWikiPage.
 auto FileExtensionForKind(document::DocumentKind kind) -> QString;
 
+// Native file dialog name filter covering every importable file type (issue #102 follow-up:
+// import is no longer scoped to the currently open document's kind), used to pick the source
+// file for Page::ImportDocumentAsNewFile().
+auto ImportAnyKindNameFilter() -> QString;
+
+// Determines which DocumentKind an imported file's content represents: valid nbformat JSON
+// (has a "cells" array and numeric "nbformat") -> kJupyterNotebook; valid Excalidraw scene JSON
+// (has "elements"/"appState"/"files") -> kExcalidrawCanvas; otherwise, if `file_name` has a
+// .md/.markdown extension, kWikiPage (content is treated as Markdown text, not this kind's
+// native JSON block format — see QEditorBridge::StashPendingMarkdownImport()). std::nullopt if
+// none of these match.
+auto DetectImportableDocumentKind(const QString& file_name, const QString& content)
+    -> std::optional<document::DocumentKind>;
+
 }  // namespace cppwiki::gui::page_helpers
 
 #endif  // CPPWIKI_SRC_GUI_PAGE_HELPERS_H_

@@ -94,11 +94,13 @@ class MainWindow final : public QMainWindow {
   void UpdateDocumentStatus(const QString& message, bool is_error);
   void UpdateCollaborationStatus(const QString& summary, const QString& details, bool is_warning);
   void UpdateEditModeUi(const QString& label, bool checked, bool enabled);
-  // Shows/hides and labels the native Import/Export controls (issue #96) per
+  // Shows/hides and labels the native Export control (issue #96) per
   // Page::documentKindStateChanged(): visible only while a Jupyter notebook or Excalidraw canvas
-  // document is open (never for wiki pages or no selection); Import is additionally hidden when
-  // the open document isn't currently editable (locked/conflicted/view mode).
-  void UpdateFileActionsUi(document::DocumentKind kind, bool has_document, bool editable);
+  // document is open (never for wiki pages or no selection). Import (issue #102 follow-up)
+  // always creates a brand new document rather than acting on the open one, so it isn't gated
+  // here at all — see BuildUi(). The slot signature drops documentKindStateChanged()'s trailing
+  // `editable` argument (Qt allows connecting to a slot with fewer parameters than the signal).
+  void UpdateFileActionsUi(document::DocumentKind kind, bool has_document);
   void UpdateAuthCollaborationHint();
   void RefreshCollaborationSecondaryText();
   void RefreshSyncDetailsDialog();

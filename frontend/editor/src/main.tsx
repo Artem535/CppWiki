@@ -282,6 +282,20 @@ function EditorApp() {
         replacing_document.current = true;
         setHasLoadedDocumentOnce(true);
         applyLoadedBlocks(document.blocks);
+        if (document.pendingMarkdownImport) {
+          // Imported Markdown file (issue #102 follow-up): this document was just created empty
+          // by Page::ImportDocumentAsNewFile() (no Markdown parser on the C++ side), so convert
+          // the stashed text here and persist it — this is the document's first real save, so
+          // there's no stale-write race with updateSnapshot()'s current-document check.
+          const parsed_blocks = editor.tryParseMarkdownToBlocks(document.pendingMarkdownImport);
+          const current_block_ids = editor.document
+            .map((block) => block.id)
+            .filter((id): id is string => typeof id === "string" && id.length > 0);
+          if (current_block_ids.length > 0 && parsed_blocks.length > 0) {
+            editor.replaceBlocks(current_block_ids, parsed_blocks);
+          }
+          void created_bridge.updateSnapshot(document.id, editor.document);
+        }
         selected_page_id.current = document.id;
         setSelectedPageId(document.id);
         setIsEditable(document.editable);

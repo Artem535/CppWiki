@@ -536,12 +536,14 @@ void MainWindow::BuildUi() {
 
   // (Actions are created here so their page callbacks are defined alongside the other Page UI
   // wiring; MainWindow owns them and the File menu presents them.)
-  import_action_ = new QAction(QStringLiteral("Import"), this);
+  // Import always creates a brand new document (issue #102 follow-up) rather than acting on
+  // whatever's currently open, so — unlike Export below — its visibility doesn't depend on the
+  // open document's kind/editability; it's visible unconditionally.
+  import_action_ = new QAction(QStringLiteral("Import..."), this);
   import_action_->setObjectName(QStringLiteral("importDocumentAction"));
-  import_action_->setVisible(false);
   connect(import_action_, &QAction::triggered, this, [this]() {
     if (current_page_ != nullptr) {
-      current_page_->ImportCurrentDocumentFromFile();
+      current_page_->ImportDocumentAsNewFile();
     }
   });
   export_action_ = new QAction(QStringLiteral("Export"), this);
@@ -649,7 +651,10 @@ void MainWindow::BuildUi() {
   file_menu_button_->setMenu(file_menu_);
   file_menu_button_->setPopupMode(QToolButton::InstantPopup);
   document_tools_toolbar_->addWidget(file_menu_button_);
-  document_tools_toolbar_->hide();
+  // Always visible (issue #102 follow-up): Import no longer depends on a document being open,
+  // so unlike the old two-flat-buttons layout, there's no state where the toolbar has nothing
+  // useful to show. Export's own visibility inside the File menu is still gated per-document by
+  // UpdateFileActionsUi().
   statusBar()->addPermanentWidget(backend_refresh_button_);
   statusBar()->addPermanentWidget(document_status_widget_);
   statusBar()->addPermanentWidget(backend_status_widget_);
@@ -996,25 +1001,22 @@ void MainWindow::UpdateEditModeUi(const QString& label, bool checked, bool enabl
   }
 }
 
-void MainWindow::UpdateFileActionsUi(document::DocumentKind kind, bool has_document,
-                                     bool editable) {
+void MainWindow::UpdateFileActionsUi(document::DocumentKind kind, bool has_document) {
   if (document_tools_toolbar_ == nullptr || import_action_ == nullptr || export_action_ == nullptr) {
     return;
   }
 
-  // Wiki pages have no import/export concept, and neither does "no document selected" — hide
-  // both controls entirely rather than merely disabling them (issue #96).
-  const bool applicable = has_document && kind != document::DocumentKind::kWikiPage;
-  document_tools_toolbar_->setVisible(applicable);
-  export_action_->setVisible(applicable);
-  // Import additionally requires the open document to currently be editable (unlocked, no
-  // conflict) — mirrors the removed in-page toolbar's `editable ? <button>Import</button> : null`.
-  import_action_->setVisible(applicable && editable);
-  if (!applicable) {
+  // Export operates on the currently open document — wiki pages have no export concept, and
+  // neither does "no document selected", so hide it entirely rather than merely disabling it
+  // (issue #96). Import (issue #102 follow-up) always creates a brand new document instead, so
+  // its visibility no longer depends on `kind`/`has_document`/`editable` at all — see where it's
+  // constructed in BuildUi().
+  const bool export_applicable = has_document && kind != document::DocumentKind::kWikiPage;
+  export_action_->setVisible(export_applicable);
+  if (!export_applicable) {
     return;
   }
 
-  import_action_->setText(ImportButtonLabel(kind));
   export_action_->setText(ExportButtonLabel(kind));
 }
 

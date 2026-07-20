@@ -1,5 +1,8 @@
 #include "gui/page_helpers.h"
 
+#include <QJsonDocument>
+#include <QJsonObject>
+
 #include "backend/backend_client.h"
 #include "sync/sync_service.h"
 
@@ -247,6 +250,42 @@ auto FileExtensionForKind(document::DocumentKind kind) -> QString {
       return QString();
   }
   return QString();
+}
+
+auto ImportAnyKindNameFilter() -> QString {
+  return QStringLiteral(
+      "All supported files (*.ipynb *.excalidraw *.md *.markdown);;"
+      "Jupyter Notebook (*.ipynb);;"
+      "Excalidraw scene (*.excalidraw);;"
+      "Markdown (*.md *.markdown)");
+}
+
+auto DetectImportableDocumentKind(const QString& file_name, const QString& content)
+    -> std::optional<document::DocumentKind> {
+  const auto parsed = QJsonDocument::fromJson(content.toUtf8());
+  if (parsed.isObject()) {
+    const auto object = parsed.object();
+    const bool looks_like_notebook =
+        object.value(QStringLiteral("cells")).isArray() &&
+        object.value(QStringLiteral("nbformat")).isDouble();
+    if (looks_like_notebook) {
+      return document::DocumentKind::kJupyterNotebook;
+    }
+
+    const bool looks_like_canvas = object.value(QStringLiteral("elements")).isArray() &&
+        object.value(QStringLiteral("appState")).isObject() &&
+        object.value(QStringLiteral("files")).isObject();
+    if (looks_like_canvas) {
+      return document::DocumentKind::kExcalidrawCanvas;
+    }
+  }
+
+  const auto lower_name = file_name.toLower();
+  if (lower_name.endsWith(QStringLiteral(".md")) || lower_name.endsWith(QStringLiteral(".markdown"))) {
+    return document::DocumentKind::kWikiPage;
+  }
+
+  return std::nullopt;
 }
 
 }  // namespace cppwiki::gui::page_helpers

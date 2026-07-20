@@ -502,6 +502,11 @@ void QEditorBridge::RequestOpenDocument(const QString& page_id) {
   emit documentOpenRequested(page_id);
 }
 
+void QEditorBridge::StashPendingMarkdownImport(const QString& page_id,
+                                               const QString& markdown_text) {
+  pending_markdown_imports_.insert(page_id, markdown_text);
+}
+
 void QEditorBridge::ClearCurrentDocumentSelection() {
   current_page_id_.clear();
   current_page_kind_ = document::DocumentKind::kWikiPage;
@@ -665,6 +670,38 @@ QVariantMap QEditorBridge::createChildDocumentInWorkspace(const QString& workspa
 
 QVariantMap QEditorBridge::createChildDocument(const QString& parent_id, const QString& kind) {
   return createChildDocumentInWorkspace(current_workspace_id_, parent_id, kind);
+}
+
+QVariantMap QEditorBridge::SeedNewDocumentRawContent(const QString& page_id,
+                                                     const QString& raw_content) {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+
+  auto loaded = repository_->LoadDocument(page_id.toStdString());
+  if (!loaded.document) {
+    return ErrorResponse(QStringLiteral("not_found"), QStringLiteral("Document was not found."));
+  }
+
+  auto record = *loaded.document;
+  const auto validation = document::DocumentValidator::ParseAndValidateSnapshot(
+      raw_content.toUtf8(), record.metadata.kind);
+  if (validation.error) {
+    return ErrorResponse(ToQString(document::ToString(validation.error->code)),
+                         QString::fromStdString(validation.error->message));
+  }
+
+  ApplyDocumentMutationAudit(record.metadata, current_author_id_);
+  record.raw_snapshot_json = validation.raw_snapshot_json;
+
+  const auto save_result = repository_->SaveDocument(record);
+  if (save_result.error) {
+    return ErrorResponse(QStringLiteral("save_failed"),
+                         QString::fromStdString(save_result.error->message));
+  }
+
+  return SuccessResponse(QVariant{});
 }
 
 std::optional<QVariantMap> QEditorBridge::RejectIfCurrentDocumentLocked(
@@ -875,7 +912,12 @@ QVariantMap QEditorBridge::openDocument(const QString& page_id) {
     return response;
   }
 
-  emit documentLoaded(response.value(QStringLiteral("result")).toMap());
+  auto loaded_document = response.value(QStringLiteral("result")).toMap();
+  const auto pending_markdown = pending_markdown_imports_.take(page_id);
+  if (!pending_markdown.isEmpty()) {
+    loaded_document.insert(QStringLiteral("pendingMarkdownImport"), pending_markdown);
+  }
+  emit documentLoaded(loaded_document);
   emit documentAccessChanged(current_document_editable_, current_lock_owner_,
                              current_access_message_);
   return response;

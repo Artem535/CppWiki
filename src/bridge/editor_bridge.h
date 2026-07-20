@@ -1,6 +1,7 @@
 #ifndef CPPWIKI_EDITOR_BRIDGE_H
 #define CPPWIKI_EDITOR_BRIDGE_H
 
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QVariant>
@@ -63,6 +64,13 @@ class QEditorBridge final : public QObject {
                          bool inline_suggestions_enabled);
   void RequestOpenDocument(const QString& page_id);
   void ClearCurrentDocumentSelection();
+  // Stashes raw Markdown text to be converted to BlockNote blocks by the frontend the next
+  // time `page_id` is loaded (see openDocument()) — one-shot, consumed on first load. Used by
+  // Page::ImportDocumentAsNewFile() when importing a .md/.markdown file: the new wikiPage
+  // document is created empty (this bridge has no Markdown parser), and the JS side converts
+  // the stashed text via BlockNoteEditor::tryParseMarkdownToBlocks() once it observes the
+  // "pendingMarkdownImport" field on the documentLoaded payload.
+  void StashPendingMarkdownImport(const QString& page_id, const QString& markdown_text);
   [[nodiscard]] QVariantMap listDocumentsInWorkspace(const QString& workspace_id);
   // `kind` is the DocumentKind key (see document::ToDocumentKindKey/DocumentKindFromKey),
   // e.g. "wikiPage" (default), "jupyterNotebook", "excalidrawCanvas". Unrecognized/empty
@@ -72,6 +80,15 @@ class QEditorBridge final : public QObject {
   [[nodiscard]] QVariantMap createChildDocumentInWorkspace(
       const QString& workspace_id, const QString& parent_id,
       const QString& kind = QStringLiteral("wikiPage"));
+  // Writes `raw_content` as the persisted raw snapshot for `page_id` directly, without
+  // requiring it to be the currently-open document — unlike updateSnapshot(), which rejects
+  // exactly that (see its doc comment) to guard against JS's async debounced-save race. Used by
+  // Page::ImportDocumentAsNewFile() to seed a freshly created document's content before it has
+  // ever been opened (there is no "current document" to match yet). `page_id`'s own kind (read
+  // from its metadata, not current_page_kind_) drives DocumentValidator, the same validation
+  // updateSnapshot() applies to the currently-open document's non-wikiPage content.
+  [[nodiscard]] QVariantMap SeedNewDocumentRawContent(const QString& page_id,
+                                                      const QString& raw_content);
 
   Q_INVOKABLE QVariantMap getBridgeInfo();
   Q_INVOKABLE QVariantMap getInitialDocument();
@@ -190,6 +207,9 @@ class QEditorBridge final : public QObject {
   document::DocumentKind current_page_kind_ = document::DocumentKind::kWikiPage;
   QString current_author_id_;
   QString current_workspace_id_{QStringLiteral("default")};
+  // See StashPendingMarkdownImport(). Keyed by page id; consumed (erased) the first time that
+  // document is loaded, whether or not this bridge instance is the one that stashed it.
+  QHash<QString, QString> pending_markdown_imports_;
 
   bool ai_backend_enabled_ = false;
   QString ai_backend_base_url_;
