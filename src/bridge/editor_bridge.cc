@@ -304,6 +304,19 @@ auto MakeEmptyNotebookSnapshotJson() -> QByteArray {
   return QJsonDocument(notebook).toJson(QJsonDocument::Compact);
 }
 
+// Minimal, valid Excalidraw scene with no elements — the seed content for a newly created
+// kExcalidrawCanvas document. Shape must match ExcalidrawSceneJson (frontend/editor/src/canvas/
+// excalidrawScene.ts): {type: "excalidraw", version: 2, elements: [], appState: {...}, files: {}}.
+auto MakeEmptyExcalidrawSceneSnapshotJson() -> QByteArray {
+  QJsonObject scene;
+  scene.insert(QStringLiteral("type"), QStringLiteral("excalidraw"));
+  scene.insert(QStringLiteral("version"), 2);
+  scene.insert(QStringLiteral("elements"), QJsonArray{});
+  scene.insert(QStringLiteral("appState"), QJsonObject{});
+  scene.insert(QStringLiteral("files"), QJsonObject{});
+  return QJsonDocument(scene).toJson(QJsonDocument::Compact);
+}
+
 auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
                            std::int32_t sort_order = 0,
                            QString workspace_id = QStringLiteral("default"), QString author_id = {},
@@ -313,9 +326,17 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
   const auto title = std::string(constants::kNewDocumentTitle);
   const auto now = CurrentUtcTimestamp();
 
-  const auto raw_snapshot_json = kind == document::DocumentKind::kJupyterNotebook
-                                     ? MakeEmptyNotebookSnapshotJson()
-                                     : MakeDocumentSnapshotJson(id, title, QJsonArray{});
+  const auto raw_snapshot_json = [&]() -> QByteArray {
+    switch (kind) {
+      case document::DocumentKind::kJupyterNotebook:
+        return MakeEmptyNotebookSnapshotJson();
+      case document::DocumentKind::kExcalidrawCanvas:
+        return MakeEmptyExcalidrawSceneSnapshotJson();
+      case document::DocumentKind::kWikiPage:
+        return MakeDocumentSnapshotJson(id, title, QJsonArray{});
+    }
+    return MakeDocumentSnapshotJson(id, title, QJsonArray{});
+  }();
 
   return storage::DocumentRecord{
       .metadata =
