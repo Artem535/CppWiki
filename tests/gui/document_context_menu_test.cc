@@ -2,6 +2,8 @@
 
 #include <QApplication>
 #include <QAction>
+#include <QCoreApplication>
+#include <QEventLoop>
 #include <QMenu>
 #include <QPushButton>
 #include <cstdlib>
@@ -15,6 +17,16 @@ void Require(bool condition, const char* message) {
   if (!condition) {
     std::cerr << message << '\n';
     std::exit(EXIT_FAILURE);
+  }
+}
+
+// ShowNewDocumentSubmenu() is deferred via QTimer::singleShot(0, ...) (issue #78: opening it
+// synchronously inside the "New document" button's clicked/release handler caused the submenu to
+// close itself immediately in the real app). Pump the event loop so that deferred call runs
+// before the test inspects the submenu.
+void RunDeferredCalls() {
+  for (int i = 0; i < 10; ++i) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
   }
 }
 
@@ -44,7 +56,8 @@ std::optional<cppwiki::document::DocumentKind> TriggerSubmenuChoice(
                      captured_kind = kind;
                    });
 
-  button->click();  // Synchronously runs ShowNewDocumentSubmenu(), which calls QMenu::popup().
+  button->click();
+  RunDeferredCalls();  // ShowNewDocumentSubmenu() runs on the next event-loop iteration.
 
   auto* submenu = menu.findChild<QMenu*>();
   if (submenu == nullptr) {
@@ -67,6 +80,7 @@ void TestNewDocumentSubmenuOffersThreeKindChoices() {
   Require(button != nullptr, "context menu should expose a 'New document' button");
 
   button->click();
+  RunDeferredCalls();
   auto* submenu = menu.findChild<QMenu*>();
   Require(submenu != nullptr, "clicking 'New document' should open a submenu");
 
