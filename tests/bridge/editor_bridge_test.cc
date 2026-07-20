@@ -2,6 +2,9 @@
 
 #include <spdlog/spdlog.h>
 
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QVariant>
 #include <cstdlib>
 #include <map>
@@ -402,6 +405,131 @@ auto TestDeleteDocumentRemovesItFromList() -> void {
   RequireSuccessEnvelope(listed);
   const auto pages = listed.value(QStringLiteral("result")).toList();
   Require(pages.size() == 1, "after deleting only note, welcome page should be bootstrapped again");
+}
+
+auto TestCreateJupyterNotebookProducesLoadableNbformatContent() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created =
+      bridge.createDocumentInWorkspace(QStringLiteral("default"), QStringLiteral("jupyterNotebook"));
+  RequireSuccessEnvelope(created);
+  const auto created_result = created.value(QStringLiteral("result")).toMap();
+  Require(created_result.value(QStringLiteral("kind")).toString() ==
+              QStringLiteral("jupyterNotebook"),
+          "created document should report kind=jupyterNotebook");
+  const auto page_id = created_result.value(QStringLiteral("id")).toString();
+
+  const auto loaded = bridge.loadDocument(page_id);
+  RequireSuccessEnvelope(loaded);
+  const auto loaded_result = loaded.value(QStringLiteral("result")).toMap();
+  const auto raw_content = loaded_result.value(QStringLiteral("rawContent")).toString();
+  Require(!raw_content.isEmpty(), "loadDocument should return non-empty rawContent for a notebook");
+
+  const auto parsed = QJsonDocument::fromJson(raw_content.toUtf8());
+  Require(parsed.isObject(), "rawContent must be valid JSON for a freshly-created notebook");
+  Require(parsed.object().value(QStringLiteral("cells")).isArray(),
+          "freshly-created notebook's rawContent must have a 'cells' array (nbformat v4 shape)");
+}
+
+auto TestCreateExcalidrawCanvasProducesLoadableSceneContent() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created = bridge.createDocumentInWorkspace(QStringLiteral("default"),
+                                                         QStringLiteral("excalidrawCanvas"));
+  RequireSuccessEnvelope(created);
+  const auto created_result = created.value(QStringLiteral("result")).toMap();
+  Require(created_result.value(QStringLiteral("kind")).toString() ==
+              QStringLiteral("excalidrawCanvas"),
+          "created document should report kind=excalidrawCanvas");
+  const auto page_id = created_result.value(QStringLiteral("id")).toString();
+
+  const auto loaded = bridge.loadDocument(page_id);
+  RequireSuccessEnvelope(loaded);
+  const auto loaded_result = loaded.value(QStringLiteral("result")).toMap();
+  const auto raw_content = loaded_result.value(QStringLiteral("rawContent")).toString();
+  Require(!raw_content.isEmpty(), "loadDocument should return non-empty rawContent for a canvas");
+
+  const auto parsed = QJsonDocument::fromJson(raw_content.toUtf8());
+  Require(parsed.isObject(), "rawContent must be valid JSON for a freshly-created canvas");
+  Require(parsed.object().value(QStringLiteral("type")).toString() == QStringLiteral("excalidraw"),
+          "freshly-created canvas's rawContent must have type=\"excalidraw\" (Excalidraw scene "
+          "shape), not the BlockNote snapshot shape");
+  Require(parsed.object().value(QStringLiteral("elements")).isArray(),
+          "freshly-created canvas's rawContent must have an 'elements' array (Excalidraw scene "
+          "shape)");
+}
+
+// Mirrors NotebookView.tsx's scheduleSave(): edit a cell, call updateSnapshot() with the whole
+// notebook object, then reload and check the edit persisted and the content is still valid JSON.
+auto TestUpdateSnapshotRoundTripsForJupyterNotebook() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created =
+      bridge.createDocumentInWorkspace(QStringLiteral("default"), QStringLiteral("jupyterNotebook"));
+  RequireSuccessEnvelope(created);
+  const auto page_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+  RequireSuccessEnvelope(bridge.loadDocument(page_id));
+
+  const auto edited = bridge.updateSnapshot(QStringLiteral(R"({
+    "cells": [
+      { "cell_type": "markdown", "source": ["Edited from test"], "metadata": {} }
+    ],
+    "metadata": {},
+    "nbformat": 4,
+    "nbformat_minor": 5
+  })"));
+  RequireSuccessEnvelope(edited);
+
+  const auto reloaded = bridge.loadDocument(page_id);
+  RequireSuccessEnvelope(reloaded);
+  const auto raw_content =
+      reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("rawContent")).toString();
+
+  const auto parsed = QJsonDocument::fromJson(raw_content.toUtf8());
+  Require(parsed.isObject(), "rawContent must still be valid JSON after an edit+save");
+  const auto cells = parsed.object().value(QStringLiteral("cells")).toArray();
+  Require(cells.size() == 1, "edited cell should persist through updateSnapshot -> loadDocument");
+}
+
+// Mirrors ExcalidrawCanvasView.tsx's debounced onChange: edit the scene, call updateSnapshot()
+// with the whole scene object, then reload and check the edit persisted.
+auto TestUpdateSnapshotRoundTripsForExcalidrawCanvas() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created = bridge.createDocumentInWorkspace(QStringLiteral("default"),
+                                                         QStringLiteral("excalidrawCanvas"));
+  RequireSuccessEnvelope(created);
+  const auto page_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+  RequireSuccessEnvelope(bridge.loadDocument(page_id));
+
+  const auto edited = bridge.updateSnapshot(QStringLiteral(R"({
+    "type": "excalidraw",
+    "version": 2,
+    "elements": [{ "id": "el1", "type": "rectangle" }],
+    "appState": { "viewBackgroundColor": "#ffffff" },
+    "files": {}
+  })"));
+  RequireSuccessEnvelope(edited);
+
+  const auto reloaded = bridge.loadDocument(page_id);
+  RequireSuccessEnvelope(reloaded);
+  const auto raw_content =
+      reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("rawContent")).toString();
+
+  const auto parsed = QJsonDocument::fromJson(raw_content.toUtf8());
+  Require(parsed.isObject(), "rawContent must still be valid JSON after an edit+save");
+  const auto elements = parsed.object().value(QStringLiteral("elements")).toArray();
+  Require(elements.size() == 1, "edited element should persist through updateSnapshot -> loadDocument");
 }
 
 auto TestOpenDocumentReturnsLoadedDocument() -> void {
@@ -940,6 +1068,10 @@ auto main() -> int {
   TestDeleteDocumentRejectedWhenCurrentDocumentConflicted();
   TestUpdateSnapshotRejectedWhenCurrentDocumentConflicted();
   TestConflictFlagClearsOnFreshLoad();
+  TestCreateJupyterNotebookProducesLoadableNbformatContent();
+  TestCreateExcalidrawCanvasProducesLoadableSceneContent();
+  TestUpdateSnapshotRoundTripsForJupyterNotebook();
+  TestUpdateSnapshotRoundTripsForExcalidrawCanvas();
   TestOpenDocumentReturnsLoadedDocument();
   TestWorkspaceListIsolation();
   TestEmptyRepositoryWithRemoteSyncExpectedSkipsWelcome();

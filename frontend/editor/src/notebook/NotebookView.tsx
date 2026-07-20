@@ -71,18 +71,32 @@ function CellView({
   index,
   editable,
   onSourceChange,
+  onDeleteCell,
 }: {
   cell: NbCell;
   index: number;
   editable: boolean;
   onSourceChange: (index: number, source: string) => void;
+  onDeleteCell: (index: number) => void;
 }) {
   const sourceText = joinNbSource(cell.source);
   const isCode = cell.cell_type === "code";
 
   return (
     <div className="notebook-cell" data-cell-type={cell.cell_type}>
-      <div className="notebook-cell-kind">{isCode ? "Code" : cell.cell_type}</div>
+      <div className="notebook-cell-toolbar">
+        <div className="notebook-cell-kind">{isCode ? "Code" : cell.cell_type}</div>
+        {editable ? (
+          <button
+            type="button"
+            className="notebook-cell-delete"
+            onClick={() => onDeleteCell(index)}
+            aria-label="Delete cell"
+          >
+            Delete cell
+          </button>
+        ) : null}
+      </div>
       <textarea
         className={`notebook-cell-source${isCode ? " notebook-cell-source--code" : ""}`}
         value={sourceText}
@@ -99,6 +113,23 @@ function CellView({
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function AddCellToolbar({
+  onAddCell,
+}: {
+  onAddCell: (cellType: "markdown" | "code") => void;
+}) {
+  return (
+    <div className="notebook-add-cell-toolbar">
+      <button type="button" onClick={() => onAddCell("markdown")}>
+        + Markdown cell
+      </button>
+      <button type="button" onClick={() => onAddCell("code")}>
+        + Code cell
+      </button>
     </div>
   );
 }
@@ -166,6 +197,26 @@ export function NotebookView({
     scheduleSave(next);
   };
 
+  const handleAddCell = (cellType: "markdown" | "code") => {
+    // notebook may be null only when parsing failed (handled by the parseFailed early return
+    // below) or, per parseNotebookJson(), for a genuinely blank rawContent — which still yields
+    // {cells: [], nbformat: 4, nbformat_minor: 5}, not null. Fall back to that shape defensively.
+    const base = notebook ?? { cells: [], nbformat: 4, nbformat_minor: 5 };
+    const newCell: NbCell = { cell_type: cellType, source: [], metadata: {} };
+    const next = { ...base, cells: [...base.cells, newCell] };
+    setNotebook(next);
+    scheduleSave(next);
+  };
+
+  const handleDeleteCell = (index: number) => {
+    if (!notebook) {
+      return;
+    }
+    const next = { ...notebook, cells: notebook.cells.filter((_, i) => i !== index) };
+    setNotebook(next);
+    scheduleSave(next);
+  };
+
   const cells = useMemo(() => notebook?.cells ?? [], [notebook]);
 
   if (parseFailed) {
@@ -192,9 +243,11 @@ export function NotebookView({
             index={index}
             editable={editable}
             onSourceChange={handleSourceChange}
+            onDeleteCell={handleDeleteCell}
           />
         ))
       )}
+      {editable ? <AddCellToolbar onAddCell={handleAddCell} /> : null}
     </div>
   );
 }

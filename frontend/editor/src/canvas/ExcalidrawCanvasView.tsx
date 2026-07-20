@@ -83,7 +83,16 @@ export function ExcalidrawCanvasView({
   };
 
   return (
-    <div className="excalidraw-canvas" data-testid="excalidraw-canvas-view" style={{ height: "100%", width: "100%" }}>
+    // Excalidraw sizes its internal canvas to this wrapper's resolved height; a percentage
+    // height here silently resolves to 0 (and the canvas renders blank, with no error) because
+    // none of the ancestor chain (.editor-surface/.editor-pane/.app-shell) sets an explicit
+    // `height` — they only set `min-height`, which doesn't establish a percentage basis for
+    // descendants. Viewport units don't have that problem, so use 100vh directly instead.
+    <div
+      className="excalidraw-canvas"
+      data-testid="excalidraw-canvas-view"
+      style={{ height: "100vh", width: "100%" }}
+    >
       <Excalidraw
         initialData={initialData}
         onChange={handleChange}
