@@ -142,6 +142,7 @@ class QEditorBridge final : public QObject {
   void documentLoaded(const QVariantMap& document);
   void documentLoadFailed(const QString& pageId, const QString& message);
   void documentSelectionCleared();
+  void exportCurrentDocumentRequested();
   void documentAccessChanged(bool editable, const QString& lock_owner,
                              const QString& access_message);
 

@@ -1,11 +1,10 @@
 import "@excalidraw/excalidraw/index.css";
 
 import { Excalidraw } from "@excalidraw/excalidraw";
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { EditorBridge } from "../bridge/editorBridge";
 import { snapshotDebounceMs } from "../constants";
-import { buildExcalidrawScene, parseExcalidrawSceneJson, serializeExcalidrawScene } from "./excalidrawScene";
+import { buildExcalidrawScene, parseExcalidrawSceneJson } from "./excalidrawScene";
 
 // Issue #82 audit: @excalidraw/excalidraw's built-in canvasActions, and which are kept vs.
 // disabled here, and why.
@@ -32,12 +31,14 @@ import { buildExcalidrawScene, parseExcalidrawSceneJson, serializeExcalidrawScen
 //   - saveToActiveFile ("Save" / Ctrl+S to a previously-picked file handle) — CppWiki has no
 //     concept of an externally-picked "active file" for a document it owns and syncs; this
 //     would always be a no-op even if it worked.
-//   - loadScene ("Open" — import a .excalidraw file) — replaced below by a CppWiki-native
-//     "Import .excalidraw" button (EditorBridge.importTextFromFile(), QFileDialog-backed).
+//   - loadScene ("Open" — import a .excalidraw file) — replaced by CppWiki's native "Import
+//     .excalidraw" control (issue #96: now lives in MainWindow's top-level UI, not this
+//     component — see Page::ImportCurrentDocumentFromFile() in page.cc), which calls
+//     EditorBridge.importTextFromFile() (QFileDialog-backed) directly from C++.
 //   - export.saveFileToDisk (the "Export image" dialog's own save-to-disk button) — image
 //     export (PNG/SVG) and copy-to-clipboard still work as normal (those don't depend on the
 //     File System Access API); only the broken save-to-disk sub-affordance is turned off.
-//     Scene (not image) export is covered by the "Export .excalidraw" button below.
+//     Scene (not image) export is likewise covered by the native "Export .excalidraw" control.
 const kExcalidrawUiOptions = {
   canvasActions: {
     saveToActiveFile: false,
@@ -45,8 +46,6 @@ const kExcalidrawUiOptions = {
     export: { saveFileToDisk: false },
   },
 };
-
-const kExcalidrawFileFilter = "Excalidraw scene (*.excalidraw)";
 
 type ExcalidrawCanvasViewProps = {
   // Identifies the open document, purely so the debounce/save wiring below resets cleanly when
@@ -76,12 +75,12 @@ export function ExcalidrawCanvasView({
   const bridgeRef = useRef(bridge);
   bridgeRef.current = bridge;
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
-  const [importExportStatus, setImportExportStatus] = useState<string | null>(null);
+  const latestSceneRef = useRef(rawContent);
 
   // Excalidraw's `initialData` is only read once at mount, so this only needs to be recomputed
-  // when the open document changes (main.tsx remounts this component via `key={documentId}` on
-  // document switch, but recompute defensively if rawContent changes without a remount too).
+  // when the open document changes (main.tsx remounts this component via `key` on document
+  // switch AND on a same-document reload — see main.tsx's documentLoadNonce, issue #96 — but
+  // recompute defensively if rawContent changes without a remount too).
   const initialData = useMemo(() => {
     const scene = parseExcalidrawSceneJson(rawContent);
     if (!scene) {
@@ -123,75 +122,25 @@ export function ExcalidrawCanvasView({
       if (!activeBridge) {
         return;
       }
-      void activeBridge.updateSnapshot(documentId, buildExcalidrawScene(elements, appState, files));
+      const scene = buildExcalidrawScene(elements, appState, files);
+      latestSceneRef.current = JSON.stringify(scene);
+      void activeBridge.updateSnapshot(documentId, scene);
     }, snapshotDebounceMs);
   };
 
-  // Native "Export .excalidraw" (issue #82): the stored snapshot shape (see excalidrawScene.ts)
-  // is already Excalidraw's own `{type, version, elements, appState, files}` file format, so
-  // export is a straight file-save of the current in-memory scene through
-  // EditorBridge.exportTextToFile() — see the UIOptions comment above for why this replaces
-  // Excalidraw's own (broken in this embedding) save-to-disk affordance instead of just
-  // re-enabling it.
-  const handleExport = async () => {
-    const api = excalidrawApiRef.current;
-    if (!api || !bridgeRef.current) {
-      return;
-    }
-    const json = serializeExcalidrawScene(api.getSceneElements(), api.getAppState(), api.getFiles());
-    const response = await bridgeRef.current.exportTextToFile(
-      `${documentId}.excalidraw`,
-      kExcalidrawFileFilter,
-      json,
-    );
-    if (!response.ok) {
-      if (response.error.code !== "cancelled") {
-        setImportExportStatus(`Export failed: ${response.error.message}`);
-      }
-      return;
-    }
-    setImportExportStatus(`Exported to ${response.result.fileName}`);
-  };
-
-  // Native "Import .excalidraw" (issue #82): loads a scene file into the *currently open*
-  // canvas document via Excalidraw's imperative updateScene() API, then saves it through the
-  // normal updateSnapshot() pathway like any other edit — imported content isn't a separate
-  // kind of write. parseExcalidrawSceneJson() tolerates malformed/non-Excalidraw JSON by
-  // falling back to a blank scene rather than throwing (same validation used for loading a
-  // stored snapshot), so a bad file doesn't crash the view.
-  const handleImport = async () => {
-    const api = excalidrawApiRef.current;
-    if (!api || !bridgeRef.current || !isEditable) {
-      return;
-    }
-    const response = await bridgeRef.current.importTextFromFile(kExcalidrawFileFilter);
-    if (!response.ok) {
-      if (response.error.code !== "cancelled") {
-        setImportExportStatus(`Import failed: ${response.error.message}`);
-      }
-      return;
-    }
-    const scene = parseExcalidrawSceneJson(response.result.content);
-    if (!scene) {
-      setImportExportStatus(`Import failed: ${response.result.fileName} is not a valid Excalidraw scene.`);
-      return;
-    }
-    api.updateScene({ elements: scene.elements as never, appState: scene.appState as never });
-    api.addFiles(Object.values(scene.files) as never);
-    setImportExportStatus(`Imported ${response.result.fileName}`);
-    void bridgeRef.current.updateSnapshot(
-      documentId,
-      buildExcalidrawScene(api.getSceneElements(), api.getAppState(), scene.files),
-    );
-  };
-
   useEffect(() => {
-    if (importExportStatus === null) {
-      return;
-    }
-    const timer = window.setTimeout(() => setImportExportStatus(null), 4000);
-    return () => window.clearTimeout(timer);
-  }, [importExportStatus]);
+    const flushForExport = () => {
+      const activeBridge = bridgeRef.current;
+      if (!activeBridge || !isEditable || !latestSceneRef.current) return;
+      if (saveTimer.current !== null) {
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      void activeBridge.updateSnapshot(documentId, JSON.parse(latestSceneRef.current));
+    };
+    window.addEventListener("cppwiki-export-current-document", flushForExport);
+    return () => window.removeEventListener("cppwiki-export-current-document", flushForExport);
+  }, [documentId, isEditable]);
 
   return (
     // Sizing comes entirely from the `.excalidraw-canvas` CSS class (position: absolute; inset:
@@ -205,32 +154,6 @@ export function ExcalidrawCanvasView({
         onChange={handleChange}
         viewModeEnabled={!isEditable}
         UIOptions={kExcalidrawUiOptions}
-        excalidrawAPI={(api) => {
-          excalidrawApiRef.current = api;
-        }}
-        renderTopRightUI={() => (
-          <div className="excalidraw-file-actions">
-            {importExportStatus ? (
-              <span className="excalidraw-file-actions-status">{importExportStatus}</span>
-            ) : null}
-            {isEditable ? (
-              <button
-                type="button"
-                className="excalidraw-file-actions-button"
-                onClick={() => void handleImport()}
-              >
-                Import .excalidraw
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="excalidraw-file-actions-button"
-              onClick={() => void handleExport()}
-            >
-              Export .excalidraw
-            </button>
-          </div>
-        )}
       />
     </div>
   );

@@ -294,4 +294,28 @@ auto MakeStatusWidget(const QString& initial_text, QWidget* parent)
   return {container, badge, label};
 }
 
+auto ImportButtonLabel(document::DocumentKind kind) -> QString {
+  switch (kind) {
+    case document::DocumentKind::kJupyterNotebook:
+      return QStringLiteral("Import .ipynb");
+    case document::DocumentKind::kExcalidrawCanvas:
+      return QStringLiteral("Import .excalidraw");
+    case document::DocumentKind::kWikiPage:
+      return QStringLiteral("Import");
+  }
+  return QStringLiteral("Import");
+}
+
+auto ExportButtonLabel(document::DocumentKind kind) -> QString {
+  switch (kind) {
+    case document::DocumentKind::kJupyterNotebook:
+      return QStringLiteral("Export .ipynb");
+    case document::DocumentKind::kExcalidrawCanvas:
+      return QStringLiteral("Export .excalidraw");
+    case document::DocumentKind::kWikiPage:
+      return QStringLiteral("Export");
+  }
+  return QStringLiteral("Export");
+}
+
 }  // namespace cppwiki::gui::main_window_helpers

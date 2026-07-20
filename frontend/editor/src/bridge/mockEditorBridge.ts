@@ -171,6 +171,9 @@ export function createMockEditorBridge(): EditorBridge {
     onDocumentSelectionCleared() {
       return () => undefined;
     },
+    onExportCurrentDocumentRequested() {
+      return () => undefined;
+    },
 
     async startAiRequest(prompt, contextText, _mode, toolName, toolSchemaJson) {
       const requestId = `mock-ai-${Math.random().toString(36).slice(2)}`;

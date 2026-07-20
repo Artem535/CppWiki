@@ -56,6 +56,19 @@ class Page final : public QWidget, public IPage {
   // conflict is resolved elsewhere (e.g. from the auto-popup conflict window).
   void RefreshCurrentDocumentConflictState();
 
+  // Native Import/Export entry points (issue #96) for MainWindow's top-level Import/Export
+  // controls — replaces the removed in-page FileActionsToolbar (NotebookView.tsx) and inline
+  // Excalidraw import/export buttons. Both call QEditorBridge's existing
+  // exportTextToFile()/importTextFromFile() (QFileDialog-backed, unchanged) directly instead of
+  // routing through the JS/React layer; ImportCurrentDocumentFromFile() reuses
+  // OpenDocumentWithAccess() (the same native document-reload path used elsewhere, e.g. after
+  // create/delete) to refresh the JS-side view with the imported content rather than inventing a
+  // separate refresh mechanism. No-ops when no document is open or the open document is a
+  // kWikiPage (wiki pages have no import/export concept); ImportCurrentDocumentFromFile() also
+  // no-ops when the open document is not currently editable.
+  void ExportCurrentDocumentToFile();
+  void ImportCurrentDocumentFromFile();
+
  signals:
   void settingsRequested();
   void documentStatusChanged(const QString& message, bool is_error);
@@ -65,6 +78,13 @@ class Page final : public QWidget, public IPage {
   // conflict (ADR-013) — MainWindow uses this to auto-open the standalone
   // conflict resolution window.
   void documentConflictDetected(const QString& page_id, const QString& conflict_id);
+  // Emitted whenever the currently open document (or lack thereof) changes in a way that
+  // affects the native Import/Export controls (issue #96): on open/close/reload and on
+  // editability changes (lock gained/lost, sync conflict). `has_document` is false when no
+  // document is selected at all; `kind` is only meaningful when `has_document` is true.
+  // MainWindow uses this to show/hide and label its native Import/Export buttons — wiki pages
+  // have no import/export concept, so it hides them for `kind == DocumentKind::kWikiPage` too.
+  void documentKindStateChanged(document::DocumentKind kind, bool has_document, bool editable);
 
  private:
   void BuildUi();
@@ -118,6 +138,11 @@ class Page final : public QWidget, public IPage {
   void RefreshWorkspaceHydrationState();
   void ApplyConflictStateForDocument(const QString& page_id);
   void RefreshConflictedDocumentIndicators();
+  // Emits documentKindStateChanged() with the current selection/kind/editability. Called
+  // wherever those change (document load/load-failure/selection-cleared, and from
+  // UpdateEditModeControls() so editability-only changes are also reflected).
+  void EmitDocumentKindState();
+  void ExportPersistedCurrentDocument();
 
   const AppContext& context_;
   QWidget* page_panel_ = nullptr;
@@ -137,6 +162,11 @@ class Page final : public QWidget, public IPage {
   QStringList available_workspace_ids_{QStringList{QStringLiteral("default")}};
   bool current_document_editable_ = false;
   bool current_document_local_only_ = true;
+  // Kind of the currently open document (ADR-017), mirrored from the "kind" field of the
+  // documentLoaded payload — see EmitDocumentKindState(). Meaningless while selected_page_id_ is
+  // empty (no document open); defaults to kWikiPage, matching PageMetadata's default.
+  document::DocumentKind current_document_kind_ = document::DocumentKind::kWikiPage;
+  bool export_after_save_ = false;
   bool pending_inactivity_exit_notice_ = false;
   QTimer* edit_inactivity_timer_ = nullptr;
   std::vector<storage::DocumentSummary> last_document_summaries_;

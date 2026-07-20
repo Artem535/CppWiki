@@ -104,6 +104,7 @@ export interface EditorBridge {
   ): () => void;
   onDocumentLoadFailed(callback: (pageId: string, message: string) => void): () => void;
   onDocumentSelectionCleared(callback: () => void): () => void;
+  onExportCurrentDocumentRequested(callback: () => void): () => void;
 
   // AI transport (ADR-012): every AI request is forwarded through the bridge
   // to C++, never fetched directly from this JS context. `mode` matches the

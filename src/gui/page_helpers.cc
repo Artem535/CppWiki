@@ -225,4 +225,28 @@ auto SummaryFromVariantMap(const QVariantMap& document) -> storage::DocumentSumm
   return summary;
 }
 
+auto FileDialogNameFilterForKind(document::DocumentKind kind) -> QString {
+  switch (kind) {
+    case document::DocumentKind::kJupyterNotebook:
+      return QStringLiteral("Jupyter Notebook (*.ipynb)");
+    case document::DocumentKind::kExcalidrawCanvas:
+      return QStringLiteral("Excalidraw scene (*.excalidraw)");
+    case document::DocumentKind::kWikiPage:
+      return QString();
+  }
+  return QString();
+}
+
+auto FileExtensionForKind(document::DocumentKind kind) -> QString {
+  switch (kind) {
+    case document::DocumentKind::kJupyterNotebook:
+      return QStringLiteral("ipynb");
+    case document::DocumentKind::kExcalidrawCanvas:
+      return QStringLiteral("excalidraw");
+    case document::DocumentKind::kWikiPage:
+      return QString();
+  }
+  return QString();
+}
+
 }  // namespace cppwiki::gui::page_helpers
