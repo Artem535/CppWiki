@@ -1,5 +1,6 @@
 #include "gui/main_window.h"
 
+#include <QAction>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QEvent>
@@ -18,6 +19,7 @@
 #include <QStatusBar>
 #include <QString>
 #include <QStyle>
+#include <QToolBar>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -252,8 +254,7 @@ void MainWindow::ApplyStylesheetToSafeDescendants(AccentColor accent_color) {
                        static_cast<QWidget*>(presence_strip_widget_),
                        static_cast<QWidget*>(edit_mode_label_),
                        static_cast<QWidget*>(save_state_label_),
-                       static_cast<QWidget*>(import_button_),
-                       static_cast<QWidget*>(export_button_),
+                       static_cast<QWidget*>(document_tools_toolbar_),
                        static_cast<QWidget*>(backend_refresh_button_),
                        document_status_widget_, backend_status_widget_, sync_status_widget_,
                        sync_conflicts_widget_, current_sidebar_widget_,
@@ -529,31 +530,28 @@ void MainWindow::BuildUi() {
   save_state_label_->hide();
   edit_mode_layout->addWidget(save_state_label_, 0, Qt::AlignVCenter);
 
-  // Native Import/Export controls (issue #96): live in this same "LOCAL EDITING" strip rather
-  // than the hidden QMenuBar, next to the edit-mode switch they're contextually related to (both
-  // gate on the currently open document). Hidden by default; UpdateFileActionsUi() shows/labels
-  // them once Page reports a Jupyter notebook or Excalidraw canvas document is open.
-  import_button_ = new QPushButton(QStringLiteral("Import"), edit_mode_widget);
-  import_button_->setObjectName(QStringLiteral("fileActionButton"));
-  import_button_->setCursor(Qt::PointingHandCursor);
-  import_button_->hide();
-  connect(import_button_, &QPushButton::clicked, this, [this]() {
+  // Import/Export belong in the application's native tools toolbar, not in this collaboration
+  // status strip. The toolbar is created after the central widget below, once the document-mode
+  // shell is complete.
+
+  // (Actions are created here so their page callbacks are defined alongside the other Page UI
+  // wiring; MainWindow owns them and the toolbar presents them.)
+  import_action_ = new QAction(QStringLiteral("Import"), this);
+  import_action_->setObjectName(QStringLiteral("importDocumentAction"));
+  import_action_->setVisible(false);
+  connect(import_action_, &QAction::triggered, this, [this]() {
     if (current_page_ != nullptr) {
       current_page_->ImportCurrentDocumentFromFile();
     }
   });
-  edit_mode_layout->addWidget(import_button_, 0, Qt::AlignVCenter);
-
-  export_button_ = new QPushButton(QStringLiteral("Export"), edit_mode_widget);
-  export_button_->setObjectName(QStringLiteral("fileActionButton"));
-  export_button_->setCursor(Qt::PointingHandCursor);
-  export_button_->hide();
-  connect(export_button_, &QPushButton::clicked, this, [this]() {
+  export_action_ = new QAction(QStringLiteral("Export"), this);
+  export_action_->setObjectName(QStringLiteral("exportDocumentAction"));
+  export_action_->setVisible(false);
+  connect(export_action_, &QAction::triggered, this, [this]() {
     if (current_page_ != nullptr) {
       current_page_->ExportCurrentDocumentToFile();
     }
   });
-  edit_mode_layout->addWidget(export_button_, 0, Qt::AlignVCenter);
 
   backend_refresh_button_ = new QToolButton(this);
   backend_refresh_button_->setObjectName(QStringLiteral("statusLineButton"));
@@ -635,6 +633,13 @@ void MainWindow::BuildUi() {
   root_layout->addWidget(mode_stack_, 1);
 
   setCentralWidget(root_widget);
+  document_tools_toolbar_ = addToolBar(QStringLiteral("Document tools"));
+  document_tools_toolbar_->setObjectName(QStringLiteral("documentToolsToolbar"));
+  document_tools_toolbar_->setMovable(false);
+  document_tools_toolbar_->setFloatable(false);
+  document_tools_toolbar_->addAction(import_action_);
+  document_tools_toolbar_->addAction(export_action_);
+  document_tools_toolbar_->hide();
   statusBar()->addPermanentWidget(backend_refresh_button_);
   statusBar()->addPermanentWidget(document_status_widget_);
   statusBar()->addPermanentWidget(backend_status_widget_);
@@ -983,23 +988,24 @@ void MainWindow::UpdateEditModeUi(const QString& label, bool checked, bool enabl
 
 void MainWindow::UpdateFileActionsUi(document::DocumentKind kind, bool has_document,
                                      bool editable) {
-  if (import_button_ == nullptr || export_button_ == nullptr) {
+  if (document_tools_toolbar_ == nullptr || import_action_ == nullptr || export_action_ == nullptr) {
     return;
   }
 
   // Wiki pages have no import/export concept, and neither does "no document selected" — hide
   // both controls entirely rather than merely disabling them (issue #96).
   const bool applicable = has_document && kind != document::DocumentKind::kWikiPage;
-  export_button_->setVisible(applicable);
+  document_tools_toolbar_->setVisible(applicable);
+  export_action_->setVisible(applicable);
   // Import additionally requires the open document to currently be editable (unlocked, no
   // conflict) — mirrors the removed in-page toolbar's `editable ? <button>Import</button> : null`.
-  import_button_->setVisible(applicable && editable);
+  import_action_->setVisible(applicable && editable);
   if (!applicable) {
     return;
   }
 
-  import_button_->setText(ImportButtonLabel(kind));
-  export_button_->setText(ExportButtonLabel(kind));
+  import_action_->setText(ImportButtonLabel(kind));
+  export_action_->setText(ExportButtonLabel(kind));
 }
 
 void MainWindow::UpdateAuthCollaborationHint() {
