@@ -3,10 +3,12 @@
 // scope, not just a v1 cut, so this component must never grow a "Run cell" affordance.
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 
 import type { EditorBridge } from "../bridge/editorBridge";
 import { snapshotDebounceMs } from "../constants";
 import { CodeCellEditor } from "./CodeCellEditor";
+import { renderMarkdownToHtml } from "./markdown";
 import {
   joinNbSource,
   parseNotebookJson,
@@ -85,6 +87,23 @@ function CellView({
 }) {
   const sourceText = joinNbSource(cell.source);
   const isCode = cell.cell_type === "code";
+  const isMarkdown = cell.cell_type === "markdown";
+
+  // Per-cell rendered/raw-source toggle for markdown cells (issue #89): local, not lifted into
+  // notebook state, since different cells can independently be rendered or being edited. Code
+  // cells never set this — they have no rendered mode at all, only raw source.
+  const [isRendered, setIsRendered] = useState(false);
+
+  const handleSourceKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isMarkdown && event.key === "Enter" && event.shiftKey) {
+      // Mirrors classic Jupyter's Shift+Enter: switch this markdown cell to its rendered display,
+      // without inserting a newline into the source.
+      event.preventDefault();
+      setIsRendered(true);
+    }
+  };
+
+  const showRendered = isMarkdown && isRendered;
 
   return (
     <div className="notebook-cell" data-cell-type={cell.cell_type}>
@@ -104,13 +123,29 @@ function CellView({
       {isCode ? (
         // Syntax-highlighted, still-editable source for code cells (issue #88) — language comes
         // from the notebook-level kernelspec/language_info (nbformat has no per-cell language),
-        // resolved once by the parent via resolveKernelLanguage(). Markdown/raw cells keep the
-        // plain textarea below (markdown-aware rendering is issue #89, not this one).
+        // resolved once by the parent via resolveKernelLanguage(). Markdown cells get their own
+        // render/edit toggle below (issue #89); other cell types keep the plain textarea.
         <CodeCellEditor
           value={sourceText}
           editable={editable}
           language={notebookLanguage}
           onChange={(nextText) => onSourceChange(index, nextText)}
+        />
+      ) : showRendered ? (
+        <div
+          className="notebook-cell-markdown-rendered"
+          data-testid={`notebook-cell-markdown-rendered-${index}`}
+          role="button"
+          tabIndex={0}
+          onClick={() => setIsRendered(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setIsRendered(false);
+            }
+          }}
+          // eslint-disable-next-line react/no-danger -- sanitized via DOMPurify below.
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdownToHtml(sourceText)) }}
         />
       ) : (
         <textarea
@@ -119,6 +154,7 @@ function CellView({
           readOnly={!editable}
           spellCheck
           onChange={(event) => onSourceChange(index, event.target.value)}
+          onKeyDown={handleSourceKeyDown}
           rows={Math.max(2, sourceText.split("\n").length)}
         />
       )}
