@@ -150,6 +150,13 @@ button {
   overflow: hidden;
 }
 
+/* Deliberately NOT .empty-state (position: absolute; inset: 0) — this sits inline inside
+   .notebook-view's flex column, above the AddCellToolbar rendered after it; an absolutely
+   positioned message would escape the flex flow and paint over the toolbar instead. */
+.notebook-empty-cells {
+  color: var(--app-text-muted);
+}
+
 .notebook-cell-toolbar {
   display: flex;
   align-items: center;

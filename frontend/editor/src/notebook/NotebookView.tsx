@@ -239,7 +239,12 @@ export function NotebookView({
   return (
     <div className="notebook-view" data-testid="notebook-view">
       {cells.length === 0 ? (
-        <div className="empty-state">
+        // NOT .empty-state: that class is position: absolute; inset: 0 (meant for a full-page
+        // placeholder with nothing else on screen), which took this message out of .notebook-view's
+        // flex flow and painted it over the AddCellToolbar rendered below — the buttons were still
+        // in the DOM and clickable in theory, just visually hidden underneath this message's opaque
+        // background. This needs to stay a normal in-flow block since the toolbar follows it.
+        <div className="notebook-empty-cells">
           <p>This notebook has no cells yet.</p>
         </div>
       ) : (
