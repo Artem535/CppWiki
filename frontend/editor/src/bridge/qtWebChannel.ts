@@ -82,6 +82,7 @@ type QtEditorBridgeObject = {
     callback: (response: BridgeResult<LoadedDocument>) => void,
   ): void;
   updateSnapshot(
+    pageId: string,
     snapshotJson: string,
     callback: (response: BridgeResult<void>) => void,
   ): void;
@@ -129,9 +130,9 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
       });
     },
 
-    updateSnapshot(snapshot) {
+    updateSnapshot(pageId, snapshot) {
       return new Promise((resolve) => {
-        qtObject.updateSnapshot(JSON.stringify(snapshot), resolve);
+        qtObject.updateSnapshot(pageId, JSON.stringify(snapshot), resolve);
       });
     },
 

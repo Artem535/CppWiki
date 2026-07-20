@@ -72,7 +72,13 @@ export interface EditorBridge {
   // well-formed JSON, see DocumentValidator::ParseAndValidateSnapshot) instead of parsing it as a
   // BlockNote block array. Widened from `DocumentSnapshot` alone so callers outside the BlockNote
   // path don't need an unsound cast.
-  updateSnapshot(snapshot: DocumentSnapshot | unknown): Promise<BridgeResult<void>>;
+  //
+  // `pageId` is the document this snapshot is meant for, captured by the caller at the moment
+  // it decided to save (not read from "whatever's current" at call time) — the C++ side rejects
+  // the write with a "stale_document" error if the currently open document has since changed,
+  // instead of silently applying it to the wrong document. This matters because saves are
+  // debounced/async: the open document can change before a scheduled save actually fires.
+  updateSnapshot(pageId: string, snapshot: DocumentSnapshot | unknown): Promise<BridgeResult<void>>;
   onDocumentOpenRequested(callback: (pageId: string) => void): () => void;
   onDocumentLoaded(callback: (document: LoadedDocument) => void): () => void;
   onDocumentAccessChanged(

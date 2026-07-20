@@ -870,10 +870,19 @@ QVariantMap QEditorBridge::openDocument(const QString& page_id) {
   return response;
 }
 
-QVariantMap QEditorBridge::updateSnapshot(const QString& snapshot_json) {
+QVariantMap QEditorBridge::updateSnapshot(const QString& page_id, const QString& snapshot_json) {
   if (current_page_id_.isEmpty()) {
     return ErrorResponse(QStringLiteral("no_document_selected"),
                          QStringLiteral("No document is selected."));
+  }
+
+  // The caller (JS) captured page_id at the time it decided to save, but the save may reach
+  // here after an intervening document switch (debounced timers, overlapping async open
+  // chains). Silently applying it would corrupt whatever document happens to be open now, with
+  // no way to distinguish that from a legitimate write — see the header doc comment.
+  if (page_id != current_page_id_) {
+    return ErrorResponse(QStringLiteral("stale_document"),
+                         QStringLiteral("Snapshot targets a document that is no longer open."));
   }
 
   if (!current_document_editable_) {

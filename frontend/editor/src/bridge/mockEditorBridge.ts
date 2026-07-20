@@ -125,7 +125,7 @@ export function createMockEditorBridge(): EditorBridge {
       };
     },
 
-    async updateSnapshot(): Promise<BridgeResult<void>> {
+    async updateSnapshot(_pageId, _snapshot): Promise<BridgeResult<void>> {
       return { apiVersion: bridgeApiVersion, ok: true, result: undefined };
     },
 
