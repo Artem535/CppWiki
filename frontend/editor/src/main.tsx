@@ -186,9 +186,6 @@ function EditorApp() {
   };
 
   const flushAutosave = async (activeBridge: EditorBridge | null) => {
-    console.warn(
-      `[flushAutosave-debug] called, kind=${document_kind_ref.current}, isEditable=${isEditable}, pageId=${selected_page_id.current}`,
-    );
     if (!activeBridge || !selected_page_id.current || !isEditable) {
       return;
     }
@@ -205,11 +202,9 @@ function EditorApp() {
     // document's real content with a stray BlockNote block array right before navigating away,
     // corrupting it (surfaced as "not valid nbformat JSON" on the next open).
     if (document_kind_ref.current !== "wikiPage") {
-      console.warn("[flushAutosave-debug] skipping updateSnapshot: kind is not wikiPage");
       return;
     }
 
-    console.warn("[flushAutosave-debug] sending editor.document snapshot (wikiPage)");
     await activeBridge.updateSnapshot(editor.document);
   };
 
@@ -435,13 +430,6 @@ function EditorApp() {
     </main>
   );
 }
-
-window.addEventListener("error", (event) => {
-  console.error(`[global-error-debug] uncaught error: ${event.message} at ${event.filename}:${event.lineno}`);
-});
-window.addEventListener("unhandledrejection", (event) => {
-  console.error(`[global-error-debug] unhandled rejection: ${String(event.reason)}`);
-});
 
 const root = document.getElementById("root");
 if (!root) {

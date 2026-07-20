@@ -33,6 +33,7 @@ export function ExcalidrawCanvasView({
   const saveTimer = useRef<number | null>(null);
   const bridgeRef = useRef(bridge);
   bridgeRef.current = bridge;
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   // Excalidraw's `initialData` is only read once at mount, so this only needs to be recomputed
   // when the open document changes (main.tsx remounts this component via `key={documentId}` on
@@ -83,16 +84,12 @@ export function ExcalidrawCanvasView({
   };
 
   return (
-    // Excalidraw sizes its internal canvas to this wrapper's resolved height; a percentage
-    // height here silently resolves to 0 (and the canvas renders blank, with no error) because
-    // none of the ancestor chain (.editor-surface/.editor-pane/.app-shell) sets an explicit
-    // `height` — they only set `min-height`, which doesn't establish a percentage basis for
-    // descendants. Viewport units don't have that problem, so use 100vh directly instead.
-    <div
-      className="excalidraw-canvas"
-      data-testid="excalidraw-canvas-view"
-      style={{ height: "100vh", width: "100%" }}
-    >
+    // Sizing comes entirely from the `.excalidraw-canvas` CSS class (position: absolute; inset:
+    // 0, anchored to .editor-pane) — see styles.css for why: Excalidraw measures its container
+    // via ResizeObserver, and `100vh` doesn't reliably resolve inside this app's embedded
+    // QWebEngineView (confirmed via devtools: computed width was correct but height stuck at 0
+    // regardless of the CSS height value used here).
+    <div ref={containerRef} className="excalidraw-canvas" data-testid="excalidraw-canvas-view">
       <Excalidraw
         initialData={initialData}
         onChange={handleChange}

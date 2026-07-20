@@ -54,6 +54,17 @@ button {
   pointer-events: none;
 }
 
+/* Excalidraw canvas kind (issue #53): Excalidraw measures its container via ResizeObserver, not
+   pure CSS cascade, and `100vh` doesn't reliably resolve inside this app's embedded
+   QWebEngineView (confirmed: canvas ended up with a real computed width but height stuck at 0).
+   Anchor to .editor-pane (position: relative, see above) with inset instead — the same proven
+   pattern .empty-state already uses below — so the container always gets .editor-pane's actual
+   laid-out box regardless of viewport-unit quirks. */
+.excalidraw-canvas {
+  position: absolute;
+  inset: 0;
+}
+
 .empty-state {
   position: absolute;
   inset: 0;
