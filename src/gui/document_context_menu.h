@@ -3,6 +3,7 @@
 
 #include <QFrame>
 #include <QIcon>
+#include <QList>
 #include <QPoint>
 #include <QString>
 
@@ -37,7 +38,7 @@ class DocumentContextMenu final : public QFrame {
  signals:
   void actionRequested(cppwiki::gui::DocumentContextMenu::Action action);
 
-  // Emitted when a specific kind was chosen from the "New document" submenu
+  // Emitted when a specific kind was chosen from the "New document" options
   // (Wiki page / Jupyter notebook / Excalidraw canvas). `kind` defaults to
   // DocumentKind::kWikiPage when "Wiki page" is chosen, matching today's
   // single hardcoded "Add child page" behavior byte-for-byte.
@@ -45,8 +46,13 @@ class DocumentContextMenu final : public QFrame {
 
  private:
   void AddButton(Action action, const QString& text, const QIcon& icon, bool enabled);
-  void AddNewDocumentSubmenuButton();
-  void ShowNewDocumentSubmenu(QPushButton* anchor);
+  // Adds the "New document" toggle and its three (initially hidden) kind
+  // options, expanded/collapsed inline within this same popup's layout —
+  // see the .cc file for why a nested QMenu submenu doesn't work here.
+  void AddNewDocumentOptions();
+  void AddKindOption(document::DocumentKind kind, const QString& text);
+
+  QList<QPushButton*> new_document_kind_buttons_;
 };
 
 }  // namespace cppwiki::gui

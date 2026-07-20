@@ -1,13 +1,11 @@
 #include "gui/document_context_menu.h"
 
 #include <QIcon>
-#include <QMenu>
-#include <QPointer>
 #include <QPushButton>
 #include <QSize>
 #include <QStyle>
-#include <QTimer>
 #include <QVBoxLayout>
+#include <utility>
 
 namespace cppwiki::gui {
 
@@ -44,11 +42,11 @@ DocumentContextMenu::DocumentContextMenu(const Options& options, QWidget* parent
   layout->setContentsMargins(6, 6, 6, 6);
   layout->setSpacing(2);
 
-  AddNewDocumentSubmenuButton();
+  AddNewDocumentOptions();
   AddButton(Action::kRenameTitle, QStringLiteral("Rename title"),
             QIcon::fromTheme(QStringLiteral("document-edit")), true);
-  AddButton(Action::kMoveUp, QStringLiteral("Move up"),
-            style()->standardIcon(QStyle::SP_ArrowUp), options.can_move_up);
+  AddButton(Action::kMoveUp, QStringLiteral("Move up"), style()->standardIcon(QStyle::SP_ArrowUp),
+            options.can_move_up);
   AddButton(Action::kMoveDown, QStringLiteral("Move down"),
             style()->standardIcon(QStyle::SP_ArrowDown), options.can_move_down);
 
@@ -87,10 +85,49 @@ void DocumentContextMenu::AddButton(Action action, const QString& text, const QI
   });
 }
 
-void DocumentContextMenu::AddNewDocumentSubmenuButton() {
-  auto* button = new QPushButton(QStringLiteral("New document"), this);
-  button->setIcon(style()->standardIcon(QStyle::SP_FileDialogNewFolder));
-  button->setIconSize(QSize(16, 16));
+void DocumentContextMenu::AddNewDocumentOptions() {
+  auto* toggle = new QPushButton(QStringLiteral("New document"), this);
+  toggle->setIcon(style()->standardIcon(QStyle::SP_FileDialogNewFolder));
+  toggle->setIconSize(QSize(16, 16));
+  toggle->setCursor(Qt::PointingHandCursor);
+  toggle->setFocusPolicy(Qt::NoFocus);
+  toggle->setFlat(true);
+
+  if (auto* layout = qobject_cast<QVBoxLayout*>(this->layout())) {
+    layout->addWidget(toggle);
+  }
+
+  // "Wiki page" is first/default and, when chosen, must produce byte-identical
+  // behavior to the old single hardcoded "Add child page" action.
+  AddKindOption(document::DocumentKind::kWikiPage, QStringLiteral("Wiki page"));
+  AddKindOption(document::DocumentKind::kJupyterNotebook, QStringLiteral("Jupyter notebook"));
+  AddKindOption(document::DocumentKind::kExcalidrawCanvas, QStringLiteral("Excalidraw canvas"));
+
+  for (auto* kind_button : std::as_const(new_document_kind_buttons_)) {
+    kind_button->setVisible(false);
+  }
+
+  // The kind options are expanded/collapsed inline, in this same popup's
+  // layout, rather than shown in a nested QMenu submenu. A nested QMenu
+  // (itself Qt::Popup-flavored) stacked on top of this widget (also
+  // Qt::Popup) never delivered clicks as QAction::triggered() in practice:
+  // Qt's popup-stack close-on-outside-click handling tore down the whole
+  // popup chain before the inner QMenu's own click routing ran, so choosing
+  // a kind silently did nothing. Expanding inline reuses the exact
+  // single-popup click pattern that already works for Rename/Move/Delete
+  // above (AddButton()).
+  connect(toggle, &QPushButton::clicked, this, [this]() {
+    const bool now_visible =
+        !new_document_kind_buttons_.isEmpty() && !new_document_kind_buttons_.first()->isVisible();
+    for (auto* kind_button : std::as_const(new_document_kind_buttons_)) {
+      kind_button->setVisible(now_visible);
+    }
+    adjustSize();
+  });
+}
+
+void DocumentContextMenu::AddKindOption(document::DocumentKind kind, const QString& text) {
+  auto* button = new QPushButton(QStringLiteral("    ") + text, this);
   button->setCursor(Qt::PointingHandCursor);
   button->setFocusPolicy(Qt::NoFocus);
   button->setFlat(true);
@@ -99,46 +136,12 @@ void DocumentContextMenu::AddNewDocumentSubmenuButton() {
     layout->addWidget(button);
   }
 
-  // QPushButton::clicked fires on mouse release. Opening the submenu (itself
-  // a Qt::Popup-flavored QMenu) synchronously within that same release event
-  // is a well-known Qt gotcha: the still-in-flight release ends up closing
-  // the freshly-shown submenu immediately, before the user can click any of
-  // its actions. Deferring to the next event-loop iteration lets the click
-  // that opened this menu finish being processed first.
-  connect(button, &QPushButton::clicked, this, [this, button]() {
-    QPointer<QPushButton> anchor(button);
-    QTimer::singleShot(0, this, [this, anchor]() {
-      if (anchor) {
-        ShowNewDocumentSubmenu(anchor);
-      }
-    });
-  });
-}
-
-void DocumentContextMenu::ShowNewDocumentSubmenu(QPushButton* anchor) {
-  auto* submenu = new QMenu(this);
-  submenu->setAttribute(Qt::WA_DeleteOnClose);
-
-  // "Wiki page" is first/default and, when chosen, must produce byte-identical
-  // behavior to the old single hardcoded "Add child page" action.
-  auto* wiki_page_action = submenu->addAction(QStringLiteral("Wiki page"));
-  auto* jupyter_notebook_action = submenu->addAction(QStringLiteral("Jupyter notebook"));
-  auto* excalidraw_canvas_action = submenu->addAction(QStringLiteral("Excalidraw canvas"));
-
-  connect(wiki_page_action, &QAction::triggered, this, [this]() {
+  connect(button, &QPushButton::clicked, this, [this, kind]() {
     close();
-    emit newDocumentRequested(document::DocumentKind::kWikiPage);
-  });
-  connect(jupyter_notebook_action, &QAction::triggered, this, [this]() {
-    close();
-    emit newDocumentRequested(document::DocumentKind::kJupyterNotebook);
-  });
-  connect(excalidraw_canvas_action, &QAction::triggered, this, [this]() {
-    close();
-    emit newDocumentRequested(document::DocumentKind::kExcalidrawCanvas);
+    emit newDocumentRequested(kind);
   });
 
-  submenu->popup(anchor->mapToGlobal(QPoint(anchor->width(), 0)));
+  new_document_kind_buttons_.append(button);
 }
 
 }  // namespace cppwiki::gui
