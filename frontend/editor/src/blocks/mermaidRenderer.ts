@@ -15,6 +15,18 @@ let initialized = false;
 // still re-sanitize the resulting SVG with DOMPurify below rather than relying on it alone,
 // matching this app's existing pattern for rendering foreign markup (see
 // notebook/NotebookView.tsx's OutputView, which does the same for text/html cell output).
+//
+// htmlLabels: false (issue #95) turns off mermaid's default HTML-in-SVG node/edge label
+// rendering (`<foreignObject><div>...</div></foreignObject>`) in favor of plain SVG
+// `<text>/<tspan>` for every diagram type. This was chosen over trying to make sanitizeSvg()
+// below preserve foreignObject content correctly: verified empirically (standalone
+// mermaid+DOMPurify+jsdom repro, not committed here) that DOMPurify strips a foreignObject's
+// nested HTML regardless of ADD_ATTR (e.g. `xmlns`) tweaks — the html/svg profile mismatch
+// isn't fixable by attribute allowlisting alone — while htmlLabels: false removes the
+// foreignObject/HTML content entirely, so there's nothing sanitization-sensitive left to strip.
+// Must be set at the top level, not nested under `flowchart:` — mermaid 11.x's flowchart
+// renderer reads `config.htmlLabels` (top-level) in some code paths and the deprecated
+// `config.flowchart.htmlLabels` in others, so only the nested key is unreliable.
 function ensureInitialized(): void {
   if (initialized) {
     return;
@@ -24,6 +36,7 @@ function ensureInitialized(): void {
     securityLevel: "strict",
     theme: "dark",
     fontFamily: "inherit",
+    htmlLabels: false,
   });
   initialized = true;
 }

@@ -175,7 +175,8 @@ button {
   border: 1px solid var(--app-border);
   border-radius: 8px;
   background: var(--app-surface);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* Deliberately NOT .empty-state (position: absolute; inset: 0) — this sits inline inside
@@ -384,6 +385,57 @@ button {
   margin: 4px 0;
 }
 
+.mermaid-block-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--app-surface-muted);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.mermaid-block-toolbar-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--app-text-muted);
+}
+
+.mermaid-block-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--app-text-muted);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.mermaid-block-toggle:hover {
+  background: var(--app-border);
+  color: var(--app-text);
+}
+
+.mermaid-block-toggle-icon {
+  display: inline-flex;
+  transition: transform 0.15s ease;
+}
+
+/* Collapsed = source hidden = chevron points "closed" (right) instead of "open" (down). */
+.mermaid-block-toggle-icon--collapsed {
+  transform: rotate(-90deg);
+}
+
+/* CSS-only visual collapse (issue #95): props.contentRef's DOM node (see MermaidBlock.tsx) must
+   stay mounted and attached for ProseMirror's contentDOM bookkeeping, so collapsing clips it via
+   max-height/opacity instead of display:none or conditional unmounting — the node keeps its
+   layout box (just zero-height and non-interactive) rather than disappearing from the tree. */
 .mermaid-block-source {
   width: 100%;
   box-sizing: border-box;
@@ -395,6 +447,18 @@ button {
   line-height: 1.5;
   white-space: pre-wrap;
   outline: none;
+  max-height: 400px;
+  overflow: hidden;
+  opacity: 1;
+  transition: max-height 0.2s ease, opacity 0.15s ease, padding 0.2s ease;
+}
+
+.mermaid-block-source--collapsed {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .mermaid-block-source:empty::before {

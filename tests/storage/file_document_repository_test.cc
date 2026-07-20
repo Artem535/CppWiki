@@ -197,6 +197,23 @@ auto TestFileRepositoryRoundTripsNonWikiPageRawSnapshotContent() -> void {
           "excalidraw raw_snapshot_json must round-trip byte-for-byte through the file "
           "repository");
 
+  // Issue #95: Mermaid source is saved as a normal BlockNote inline-content snapshot. Keep a
+  // multi-line source in this real file-repository round trip so Enter-created newlines cannot
+  // be lost through JSON-in-JSON serialization or a later load from disk.
+  const auto mermaid_snapshot = std::string(
+      R"([{"id":"mermaid-1","type":"mermaid","props":{},"content":[)"
+      R"({"type":"text","text":"graph TD\n  A[Start] --> B[Finish]","styles":{}}],)"
+      R"("children":[]}])");
+  auto mermaid_document = MakeDocument();
+  mermaid_document.metadata.id = "mermaid-content-test";
+  mermaid_document.raw_snapshot_json = mermaid_snapshot;
+  Require(!repository.SaveDocument(mermaid_document).error,
+          "file repository should save a multi-line Mermaid snapshot");
+  const auto loaded_mermaid = repository.LoadDocument("mermaid-content-test");
+  Require(loaded_mermaid.document.has_value(), "file repository should load Mermaid back");
+  Require(loaded_mermaid.document->raw_snapshot_json == mermaid_snapshot,
+          "multi-line Mermaid raw_snapshot_json must round-trip byte-for-byte through disk");
+
   std::filesystem::remove_all(storage_directory);
 }
 
