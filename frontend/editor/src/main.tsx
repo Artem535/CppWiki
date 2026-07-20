@@ -313,25 +313,24 @@ function EditorApp() {
       return;
     }
 
-    // Defense in depth alongside flushAutosave()'s equivalent check: BlockNoteView is only
-    // *mounted* for isWikiPage, but there's a narrow window around switching to/creating a
-    // non-wikiPage document where a still-in-flight ProseMirror transaction's onChange can fire
-    // after replacing_document.current has already been reset (its setTimeout(0) reset can lose
-    // the race against an async onChange callback) but before this component has re-rendered to
-    // unmount BlockNoteView. Confirmed via C++ logs: creating a Jupyter notebook immediately
-    // triggered an is_wiki_page-branch save (blocks=1) onto that same new document's id,
-    // corrupting its nbformat content. Checking the kind ref directly closes that window
-    // regardless of mount/unmount timing.
-    if (document_kind_ref.current !== "wikiPage") {
-      return;
-    }
-
     if (snapshot_timer.current !== null) {
       window.clearTimeout(snapshot_timer.current);
     }
 
     snapshot_timer.current = window.setTimeout(() => {
       snapshot_timer.current = null;
+      // The kind check must happen HERE, at fire time, not before scheduling the timer: the
+      // user can switch to (or create) a non-wikiPage document within the debounce window,
+      // which repoints the bridge's current document to the new id before this callback runs.
+      // Checking document_kind_ref only at schedule time let a stale BlockNote block array from
+      // the old wikiPage land on the new document's id once the timer fired — confirmed on disk
+      // (a freshly created jupyterNotebook/excalidrawCanvas document ending up with
+      // raw_snapshot_json containing a BlockNote paragraph block instead of nbformat/scene JSON).
+      // The C++ validator accepts it silently for non-wikiPage kinds since it only checks JSON
+      // well-formedness there, not shape.
+      if (document_kind_ref.current !== "wikiPage") {
+        return;
+      }
       void bridge.updateSnapshot(editor.document);
     }, snapshotDebounceMs);
   };

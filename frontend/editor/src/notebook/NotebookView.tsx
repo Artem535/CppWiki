@@ -157,6 +157,14 @@ export function NotebookView({
       return;
     }
     loaded_page_id.current = pageId;
+    // NotebookView doesn't remount on document switch (only on a documentKind change does the
+    // parent unmount it), so a debounced save scheduled for the previous notebook must be
+    // cancelled here — otherwise it fires against the newly switched-to document's id once the
+    // debounce elapses, saving stale content from the wrong notebook onto it.
+    if (snapshot_timer.current !== null) {
+      window.clearTimeout(snapshot_timer.current);
+      snapshot_timer.current = null;
+    }
     const parsed = parseNotebookJson(rawContent ?? "");
     setNotebook(parsed);
     setParseFailed(parsed === null);
