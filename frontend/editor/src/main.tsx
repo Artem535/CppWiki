@@ -62,6 +62,13 @@ function EditorApp() {
   // (existing documents / bridges that predate this field) renders the
   // BlockNote editor exactly as before.
   const [documentKind, setDocumentKind] = useState<DocumentKind>("wikiPage");
+  // Mirrors documentKind for flushAutosave() below, which runs from an event-loop callback
+  // (onDocumentOpenRequested) outside React's render cycle and needs the *current* kind, not
+  // whatever was captured in the closure at effect-setup time.
+  const document_kind_ref = useRef<DocumentKind>("wikiPage");
+  useEffect(() => {
+    document_kind_ref.current = documentKind;
+  }, [documentKind]);
   // Raw stored snapshot JSON for non-wikiPage kinds (see LoadedDocument.rawContent) — consumed by
   // NotebookView (#52, "jupyterNotebook") and ExcalidrawCanvasView (#53, "excalidrawCanvas").
   const [documentRawContent, setDocumentRawContent] = useState<string | undefined>(undefined);
@@ -186,6 +193,16 @@ function EditorApp() {
     if (snapshot_timer.current !== null) {
       window.clearTimeout(snapshot_timer.current);
       snapshot_timer.current = null;
+    }
+
+    // The BlockNote `editor` instance is created once and always exists, even while a
+    // non-wikiPage document (notebook/canvas) is open — its `.document` content is only
+    // meaningful for kind === "wikiPage". Sending it unconditionally here (on every document
+    // switch, via onDocumentOpenRequested below) overwrote the still-current non-wikiPage
+    // document's real content with a stray BlockNote block array right before navigating away,
+    // corrupting it (surfaced as "not valid nbformat JSON" on the next open).
+    if (document_kind_ref.current !== "wikiPage") {
+      return;
     }
 
     await activeBridge.updateSnapshot(editor.document);

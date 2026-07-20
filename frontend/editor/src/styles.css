@@ -133,13 +133,56 @@ button {
   overflow: hidden;
 }
 
+.notebook-cell-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--app-border);
+}
+
 .notebook-cell-kind {
   padding: 6px 12px;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--app-text-muted);
-  border-bottom: 1px solid var(--app-border);
+}
+
+.notebook-cell-delete {
+  margin-right: 8px;
+  padding: 2px 8px;
+  font-size: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.notebook-cell-delete:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+}
+
+.notebook-add-cell-toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.notebook-add-cell-toolbar button {
+  padding: 8px 14px;
+  font-size: 13px;
+  border: 1px dashed var(--app-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.notebook-add-cell-toolbar button:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+  border-style: solid;
 }
 
 .notebook-cell-source {
