@@ -250,15 +250,13 @@ void MainWindow::ApplyStylesheetToSafeDescendants(AccentColor accent_color) {
   // an ancestor of edit_mode_switch_. collaboration_panel_ IS such an ancestor and paints
   // its own background/border in code instead (see CollaborationPanelFrame).
   current_accent_color_ = accent_color;
-  for (auto* target : {static_cast<QWidget*>(workspace_rail_),
-                       static_cast<QWidget*>(presence_strip_widget_),
-                       static_cast<QWidget*>(edit_mode_label_),
-                       static_cast<QWidget*>(save_state_label_),
-                       static_cast<QWidget*>(document_tools_toolbar_),
-                       static_cast<QWidget*>(backend_refresh_button_),
-                       document_status_widget_, backend_status_widget_, sync_status_widget_,
-                       sync_conflicts_widget_, current_sidebar_widget_,
-                       current_content_widget_}) {
+  for (auto* target :
+       {static_cast<QWidget*>(workspace_rail_), static_cast<QWidget*>(presence_strip_widget_),
+        static_cast<QWidget*>(edit_mode_label_), static_cast<QWidget*>(save_state_label_),
+        static_cast<QWidget*>(document_tools_toolbar_),
+        static_cast<QWidget*>(backend_refresh_button_), document_status_widget_,
+        backend_status_widget_, sync_status_widget_, sync_conflicts_widget_,
+        current_sidebar_widget_, current_content_widget_}) {
     if (target != nullptr) {
       ApplyApplicationStylesheet(target, accent_color);
     }
@@ -1002,7 +1000,8 @@ void MainWindow::UpdateEditModeUi(const QString& label, bool checked, bool enabl
 }
 
 void MainWindow::UpdateFileActionsUi(document::DocumentKind kind, bool has_document) {
-  if (document_tools_toolbar_ == nullptr || import_action_ == nullptr || export_action_ == nullptr) {
+  if (document_tools_toolbar_ == nullptr || import_action_ == nullptr ||
+      export_action_ == nullptr) {
     return;
   }
 

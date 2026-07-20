@@ -1,19 +1,18 @@
 #ifndef CPPWIKI_SRC_GUI_PAGE_HELPERS_H_
 #define CPPWIKI_SRC_GUI_PAGE_HELPERS_H_
 
-#include <functional>
-#include <initializer_list>
-#include <optional>
-#include <string>
-#include <string_view>
-#include <vector>
-
 #include <QAbstractItemModel>
 #include <QModelIndex>
 #include <QString>
 #include <QStringList>
 #include <QVariant>
 #include <QVariantMap>
+#include <functional>
+#include <initializer_list>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include "app/app_context.h"
 #include "storage/local_document_repository.h"

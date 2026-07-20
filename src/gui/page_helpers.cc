@@ -123,7 +123,8 @@ auto EffectiveWorkspaceIds(const AppContext& context) -> QStringList {
 
 auto EffectiveAuthorId(const AppContext& context) -> QString {
   if (context.document_sync_service != nullptr) {
-    const auto author_id = AuthorIdFromBootstrap(context.document_sync_service->Snapshot().bootstrap);
+    const auto author_id =
+        AuthorIdFromBootstrap(context.document_sync_service->Snapshot().bootstrap);
     if (!author_id.trimmed().isEmpty()) {
       return author_id.trimmed();
     }
@@ -139,7 +140,8 @@ auto EffectiveAuthorId(const AppContext& context) -> QString {
 auto PreferredWorkspaceId(const AppContext& context, const QStringList& available_workspace_ids)
     -> QString {
   if (context.document_sync_service != nullptr) {
-    const auto preferred = WorkspaceIdFromBootstrap(context.document_sync_service->Snapshot().bootstrap);
+    const auto preferred =
+        WorkspaceIdFromBootstrap(context.document_sync_service->Snapshot().bootstrap);
     if (available_workspace_ids.contains(preferred)) {
       return preferred;
     }
@@ -207,21 +209,27 @@ auto SummaryFromVariantMap(const QVariantMap& document) -> storage::DocumentSumm
   summary.kind = document::DocumentKindFromKey(
       StringFromFirstExistingKey(document, {QStringLiteral("kind")}).toStdString());
   summary.title = StringFromFirstExistingKey(document, {QStringLiteral("title")}).toStdString();
-  summary.workspace_id = StringFromFirstExistingKey(
-      document, {QStringLiteral("workspaceId"), QStringLiteral("workspace_id")}).toStdString();
+  summary.workspace_id = StringFromFirstExistingKey(document, {QStringLiteral("workspaceId"),
+                                                               QStringLiteral("workspace_id")})
+                             .toStdString();
   summary.parent_id = OptionalParentId(document);
   summary.sort_order = IntFromFirstExistingKey(
       document, {QStringLiteral("sortOrder"), QStringLiteral("sort_order")});
   summary.created_at = StringFromFirstExistingKey(
-      document, {QStringLiteral("createdAt"), QStringLiteral("created_at")}).toStdString();
+                           document, {QStringLiteral("createdAt"), QStringLiteral("created_at")})
+                           .toStdString();
   summary.updated_at = StringFromFirstExistingKey(
-      document, {QStringLiteral("updatedAt"), QStringLiteral("updated_at")}).toStdString();
+                           document, {QStringLiteral("updatedAt"), QStringLiteral("updated_at")})
+                           .toStdString();
   summary.created_by = StringFromFirstExistingKey(
-      document, {QStringLiteral("createdBy"), QStringLiteral("created_by")}).toStdString();
+                           document, {QStringLiteral("createdBy"), QStringLiteral("created_by")})
+                           .toStdString();
   summary.updated_by = StringFromFirstExistingKey(
-      document, {QStringLiteral("updatedBy"), QStringLiteral("updated_by")}).toStdString();
-  summary.content_version = ValueFromFirstExistingKey(
-      document, {QStringLiteral("contentVersion"), QStringLiteral("content_version")}).toLongLong();
+                           document, {QStringLiteral("updatedBy"), QStringLiteral("updated_by")})
+                           .toStdString();
+  summary.content_version = ValueFromFirstExistingKey(document, {QStringLiteral("contentVersion"),
+                                                                 QStringLiteral("content_version")})
+                                .toLongLong();
   if (summary.content_version < 1) {
     summary.content_version = 1;
   }
@@ -265,23 +273,23 @@ auto DetectImportableDocumentKind(const QString& file_name, const QString& conte
   const auto parsed = QJsonDocument::fromJson(content.toUtf8());
   if (parsed.isObject()) {
     const auto object = parsed.object();
-    const bool looks_like_notebook =
-        object.value(QStringLiteral("cells")).isArray() &&
-        object.value(QStringLiteral("nbformat")).isDouble();
+    const bool looks_like_notebook = object.value(QStringLiteral("cells")).isArray() &&
+                                     object.value(QStringLiteral("nbformat")).isDouble();
     if (looks_like_notebook) {
       return document::DocumentKind::kJupyterNotebook;
     }
 
     const bool looks_like_canvas = object.value(QStringLiteral("elements")).isArray() &&
-        object.value(QStringLiteral("appState")).isObject() &&
-        object.value(QStringLiteral("files")).isObject();
+                                   object.value(QStringLiteral("appState")).isObject() &&
+                                   object.value(QStringLiteral("files")).isObject();
     if (looks_like_canvas) {
       return document::DocumentKind::kExcalidrawCanvas;
     }
   }
 
   const auto lower_name = file_name.toLower();
-  if (lower_name.endsWith(QStringLiteral(".md")) || lower_name.endsWith(QStringLiteral(".markdown"))) {
+  if (lower_name.endsWith(QStringLiteral(".md")) ||
+      lower_name.endsWith(QStringLiteral(".markdown"))) {
     return document::DocumentKind::kWikiPage;
   }
 

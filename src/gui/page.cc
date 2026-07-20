@@ -1,9 +1,5 @@
 #include "gui/page.h"
 
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-
 #include <spdlog/spdlog.h>
 
 #include <QAbstractItemView>
@@ -13,6 +9,9 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QInputDialog>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -786,9 +785,9 @@ void Page::ExportPersistedCurrentDocument() {
   if (!response.value(QStringLiteral("ok")).toBool()) {
     const auto error = response.value(QStringLiteral("error")).toMap();
     if (error.value(QStringLiteral("code")).toString() != QStringLiteral("cancelled")) {
-      emit documentStatusChanged(
-          QStringLiteral("Export failed: %1").arg(error.value(QStringLiteral("message")).toString()),
-          true);
+      emit documentStatusChanged(QStringLiteral("Export failed: %1")
+                                     .arg(error.value(QStringLiteral("message")).toString()),
+                                 true);
     }
     return;
   }
@@ -808,9 +807,9 @@ void Page::ImportDocumentAsNewFile() {
   if (!response.value(QStringLiteral("ok")).toBool()) {
     const auto error = response.value(QStringLiteral("error")).toMap();
     if (error.value(QStringLiteral("code")).toString() != QStringLiteral("cancelled")) {
-      emit documentStatusChanged(
-          QStringLiteral("Import failed: %1").arg(error.value(QStringLiteral("message")).toString()),
-          true);
+      emit documentStatusChanged(QStringLiteral("Import failed: %1")
+                                     .arg(error.value(QStringLiteral("message")).toString()),
+                                 true);
     }
     return;
   }
@@ -862,11 +861,11 @@ void Page::ImportDocumentAsNewFile() {
   const auto rename_response = editor_bridge_->renameDocument(new_page_id, title);
   if (!rename_response.value(QStringLiteral("ok")).toBool()) {
     spdlog::warn("Imported document created but rename failed: {}",
-                rename_response.value(QStringLiteral("error"))
-                    .toMap()
-                    .value(QStringLiteral("message"))
-                    .toString()
-                    .toStdString());
+                 rename_response.value(QStringLiteral("error"))
+                     .toMap()
+                     .value(QStringLiteral("message"))
+                     .toString()
+                     .toStdString());
   }
 
   if (*detected_kind == document::DocumentKind::kWikiPage) {
@@ -882,9 +881,9 @@ void Page::ImportDocumentAsNewFile() {
         editor_bridge_->SeedNewDocumentRawContent(new_page_id, imported_content);
     if (!seed_response.value(QStringLiteral("ok")).toBool()) {
       const auto error = seed_response.value(QStringLiteral("error")).toMap();
-      emit documentStatusChanged(
-          QStringLiteral("Import failed: %1").arg(error.value(QStringLiteral("message")).toString()),
-          true);
+      emit documentStatusChanged(QStringLiteral("Import failed: %1")
+                                     .arg(error.value(QStringLiteral("message")).toString()),
+                                 true);
       return;
     }
   }
