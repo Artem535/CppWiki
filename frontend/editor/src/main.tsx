@@ -274,6 +274,11 @@ function EditorApp() {
       );
 
       const unsubscribeLoaded = created_bridge.onDocumentLoaded((document) => {
+        console.info("[DEBUG-mmd-reopen] Frontend applying loaded snapshot", {
+          id: document.id,
+          blocks: document.blocks.length,
+          blockTypes: document.blocks.map((block) => block.type ?? "<missing>"),
+        });
         replacing_document.current = true;
         setHasLoadedDocumentOnce(true);
         applyLoadedBlocks(document.blocks);
