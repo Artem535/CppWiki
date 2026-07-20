@@ -152,11 +152,60 @@ auto TestFileRepositoryRoundTripsDocumentKind() -> void {
   std::filesystem::remove_all(storage_directory);
 }
 
+// Reported after #78-#81: newly created Jupyter notebook/Excalidraw canvas documents appeared
+// broken after saving. TestFileRepositoryRoundTripsDocumentKind above only checks the `kind`
+// field round-trips; this checks the actual nbformat/Excalidraw-shaped raw_snapshot_json content
+// (not the generic BlockNote-shaped fixture from MakeDocument()) survives a real disk
+// save/load cycle byte-for-byte, ruling out any reflect-cpp JSON-in-JSON escaping issue specific
+// to the file-based repository (as opposed to the in-memory FakeDocumentRepository used by the
+// bridge-level regression tests in editor_bridge_test.cc, which already pass).
+auto TestFileRepositoryRoundTripsNonWikiPageRawSnapshotContent() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-raw-content-test";
+  std::filesystem::remove_all(storage_directory);
+
+  cppwiki::storage::FileDocumentRepository repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+
+  const auto notebook_json = std::string(
+      R"({"cells":[{"cell_type":"markdown","source":["Hi"],"metadata":{}}],)"
+      R"("metadata":{},"nbformat":4,"nbformat_minor":5})");
+  auto notebook_document = MakeDocument();
+  notebook_document.metadata.id = "notebook-content-test";
+  notebook_document.metadata.kind = cppwiki::document::DocumentKind::kJupyterNotebook;
+  notebook_document.raw_snapshot_json = notebook_json;
+  Require(!repository.SaveDocument(notebook_document).error,
+          "file repository should save a notebook document");
+  const auto loaded_notebook = repository.LoadDocument("notebook-content-test");
+  Require(loaded_notebook.document.has_value(), "file repository should load the notebook back");
+  Require(loaded_notebook.document->raw_snapshot_json == notebook_json,
+          "notebook raw_snapshot_json must round-trip byte-for-byte through the file repository");
+
+  const auto excalidraw_json = std::string(
+      R"({"type":"excalidraw","version":2,"elements":[{"id":"el1","type":"rectangle"}],)"
+      R"("appState":{"viewBackgroundColor":"#ffffff"},"files":{}})");
+  auto excalidraw_document = MakeDocument();
+  excalidraw_document.metadata.id = "excalidraw-content-test";
+  excalidraw_document.metadata.kind = cppwiki::document::DocumentKind::kExcalidrawCanvas;
+  excalidraw_document.raw_snapshot_json = excalidraw_json;
+  Require(!repository.SaveDocument(excalidraw_document).error,
+          "file repository should save an excalidraw document");
+  const auto loaded_excalidraw = repository.LoadDocument("excalidraw-content-test");
+  Require(loaded_excalidraw.document.has_value(),
+          "file repository should load the excalidraw canvas back");
+  Require(loaded_excalidraw.document->raw_snapshot_json == excalidraw_json,
+          "excalidraw raw_snapshot_json must round-trip byte-for-byte through the file "
+          "repository");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
 }  // namespace
 
 auto main() -> int {
   TestFileRepositoryPersistsDocumentsAndConflicts();
   TestFileRepositoryRoundTripsDocumentKind();
+  TestFileRepositoryRoundTripsNonWikiPageRawSnapshotContent();
   spdlog::info("cppwiki_file_document_repository_tests passed");
   return EXIT_SUCCESS;
 }
