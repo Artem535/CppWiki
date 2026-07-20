@@ -125,17 +125,25 @@ void DocumentContextMenu::ShowNewDocumentSubmenu(QPushButton* anchor) {
   auto* jupyter_notebook_action = submenu->addAction(QStringLiteral("Jupyter notebook"));
   auto* excalidraw_canvas_action = submenu->addAction(QStringLiteral("Excalidraw canvas"));
 
+  // Same Qt::Popup timing hazard as opening the submenu (see the "New document"
+  // button's clicked handler above): QAction::triggered() fires synchronously
+  // from within QMenu's own mouse-release handling. Closing `this` (another
+  // Qt::Popup widget, an ancestor of `submenu` in the widget tree) *before*
+  // that handling has finished interferes with it — the trigger appears to
+  // "flash" but neither the emit nor anything after it visibly happens.
+  // Emitting first (a plain signal, no popup side effects) and deferring the
+  // close to the next event-loop iteration avoids the interference.
   connect(wiki_page_action, &QAction::triggered, this, [this]() {
-    close();
     emit newDocumentRequested(document::DocumentKind::kWikiPage);
+    QTimer::singleShot(0, this, [this]() { close(); });
   });
   connect(jupyter_notebook_action, &QAction::triggered, this, [this]() {
-    close();
     emit newDocumentRequested(document::DocumentKind::kJupyterNotebook);
+    QTimer::singleShot(0, this, [this]() { close(); });
   });
   connect(excalidraw_canvas_action, &QAction::triggered, this, [this]() {
-    close();
     emit newDocumentRequested(document::DocumentKind::kExcalidrawCanvas);
+    QTimer::singleShot(0, this, [this]() { close(); });
   });
 
   submenu->popup(anchor->mapToGlobal(QPoint(anchor->width(), 0)));
