@@ -6,9 +6,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { EditorBridge } from "../bridge/editorBridge";
 import { snapshotDebounceMs } from "../constants";
+import { CodeCellEditor } from "./CodeCellEditor";
 import {
   joinNbSource,
   parseNotebookJson,
+  resolveKernelLanguage,
   resolveOutputData,
   splitToNbSource,
   type NbCell,
@@ -70,12 +72,14 @@ function CellView({
   cell,
   index,
   editable,
+  notebookLanguage,
   onSourceChange,
   onDeleteCell,
 }: {
   cell: NbCell;
   index: number;
   editable: boolean;
+  notebookLanguage: string;
   onSourceChange: (index: number, source: string) => void;
   onDeleteCell: (index: number) => void;
 }) {
@@ -97,14 +101,27 @@ function CellView({
           </button>
         ) : null}
       </div>
-      <textarea
-        className={`notebook-cell-source${isCode ? " notebook-cell-source--code" : ""}`}
-        value={sourceText}
-        readOnly={!editable}
-        spellCheck={!isCode}
-        onChange={(event) => onSourceChange(index, event.target.value)}
-        rows={Math.max(2, sourceText.split("\n").length)}
-      />
+      {isCode ? (
+        // Syntax-highlighted, still-editable source for code cells (issue #88) — language comes
+        // from the notebook-level kernelspec/language_info (nbformat has no per-cell language),
+        // resolved once by the parent via resolveKernelLanguage(). Markdown/raw cells keep the
+        // plain textarea below (markdown-aware rendering is issue #89, not this one).
+        <CodeCellEditor
+          value={sourceText}
+          editable={editable}
+          language={notebookLanguage}
+          onChange={(nextText) => onSourceChange(index, nextText)}
+        />
+      ) : (
+        <textarea
+          className="notebook-cell-source"
+          value={sourceText}
+          readOnly={!editable}
+          spellCheck
+          onChange={(event) => onSourceChange(index, event.target.value)}
+          rows={Math.max(2, sourceText.split("\n").length)}
+        />
+      )}
       {isCode && cell.outputs && cell.outputs.length > 0 ? (
         <div className="notebook-cell-outputs">
           {cell.outputs.map((output, outputIndex) => (
@@ -226,6 +243,7 @@ export function NotebookView({
   };
 
   const cells = useMemo(() => notebook?.cells ?? [], [notebook]);
+  const notebookLanguage = useMemo(() => resolveKernelLanguage(notebook), [notebook]);
 
   if (parseFailed) {
     return (
@@ -250,6 +268,7 @@ export function NotebookView({
             cell={cell}
             index={index}
             editable={editable}
+            notebookLanguage={notebookLanguage}
             onSourceChange={handleSourceChange}
             onDeleteCell={handleDeleteCell}
           />

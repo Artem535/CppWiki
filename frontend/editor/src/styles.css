@@ -214,13 +214,33 @@ button {
   line-height: 1.5;
 }
 
-.notebook-cell-source--code {
-  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-}
-
 .notebook-cell-source:focus {
   outline: none;
   background: var(--app-surface-active);
+}
+
+/* CodeMirror 6 code-cell editor (issue #88): the editor chrome and syntax-highlight colors come
+   from CodeMirror's own One Dark theme (see CodeCellEditor.tsx), close enough to this app's dark
+   palette that only sizing/wrapping needs overriding here. */
+.notebook-code-editor {
+  width: 100%;
+}
+
+.notebook-code-editor .cm-editor {
+  font-size: 14px;
+}
+
+.notebook-code-editor .cm-content,
+.notebook-code-editor .cm-gutter {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+.notebook-code-editor .cm-content {
+  padding: 12px 0;
+}
+
+.notebook-code-editor .cm-editor.cm-focused {
+  outline: none;
 }
 
 .notebook-cell-outputs {
