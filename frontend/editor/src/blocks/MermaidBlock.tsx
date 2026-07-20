@@ -55,6 +55,22 @@ function MermaidIcon() {
   );
 }
 
+// Small chevron, rotated via CSS depending on collapsed state (see .mermaid-block-toggle-icon
+// below) rather than swapping between two separate icon markups.
+function ChevronIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M6 9l6 6 6-6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function MermaidBlockContent(
   props: ReactCustomBlockRenderProps<
     typeof mermaidBlockType,
@@ -71,6 +87,20 @@ function MermaidBlockContent(
   );
   const [renderState, setRenderState] = useState<MermaidRenderState>({ status: "pending" });
   const debounceTimer = useRef<number | null>(null);
+  // Collapse/expand affordance for the raw source (issue #95): once a diagram has rendered
+  // successfully, the raw text stays permanently visible above it by default otherwise, wasting
+  // space for a "finished" diagram. Manual toggle only (no auto-collapse-on-success) — collapsing
+  // out from under a user who's still actively editing the source would be surprising, and this
+  // re-runs on every keystroke via the debounced render effect below.
+  //
+  // Deliberately CSS-only visual collapsing (max-height/opacity, see .mermaid-block-source
+  // --collapsed in styles.css): props.contentRef below is BlockNote's actual ProseMirror
+  // contentDOM node for this block. Unmounting it (conditional render) or `display: none`-ing it
+  // would detach it from the DOM the ProseMirror view expects to keep measuring, breaking
+  // editability/undo. Keeping it mounted with zero clipped height is the same trick BlockNote's
+  // own toggleListItem-style "collapsed content" patterns and most collapsible-code-block widgets
+  // use for exactly this reason.
+  const [isSourceCollapsed, setIsSourceCollapsed] = useState(false);
 
   // Re-renders the diagram a short debounce after the source text last changed (same
   // setTimeout/clearTimeout debounce pattern used for autosave in main.tsx and
@@ -107,14 +137,44 @@ function MermaidBlockContent(
     };
   }, [source, props.block.id]);
 
+  // Only offer the collapse toggle once there's a rendered diagram to collapse the source in
+  // favor of — while empty/pending/erroring, the user needs the source visible to write or fix it.
+  const canCollapseSource = renderState.status === "ok";
+  const sourceIsCollapsed = canCollapseSource && isSourceCollapsed;
+
   return (
     <div className="mermaid-block" data-testid="mermaid-block">
+      <div className="mermaid-block-toolbar" contentEditable={false}>
+        <span className="mermaid-block-toolbar-label">Mermaid source</span>
+        {canCollapseSource ? (
+          <button
+            type="button"
+            className="mermaid-block-toggle"
+            aria-expanded={!sourceIsCollapsed}
+            data-testid="mermaid-block-toggle-source"
+            onClick={() => setIsSourceCollapsed((collapsed) => !collapsed)}
+          >
+            <span
+              className={`mermaid-block-toggle-icon${
+                sourceIsCollapsed ? " mermaid-block-toggle-icon--collapsed" : ""
+              }`}
+            >
+              <ChevronIcon />
+            </span>
+            {sourceIsCollapsed ? "Show source" : "Hide source"}
+          </button>
+        ) : null}
+      </div>
       {/* The editable raw diagram source. This div (via contentRef) becomes BlockNote's
           ProseMirror contentDOM for the block — the same role @blocknote/core's codeBlock gives
           its <code> element (see Code/block.ts's render()); everything else rendered here is a
-          plain sibling, not part of the editable content model. */}
+          plain sibling, not part of the editable content model. Stays mounted at all times (see
+          isSourceCollapsed above) — only its CSS class toggles, via
+          mermaid-block-source--collapsed in styles.css. */}
       <div
-        className="mermaid-block-source"
+        className={`mermaid-block-source${
+          sourceIsCollapsed ? " mermaid-block-source--collapsed" : ""
+        }`}
         ref={props.contentRef}
         data-placeholder={source ? undefined : "Type a Mermaid diagram, e.g. graph TD; A-->B;"}
       />
@@ -146,6 +206,11 @@ export const MermaidBlock = createReactBlockSpec(
     content: "inline",
   } as const,
   {
+    // Mermaid source is inherently multi-line. BlockNote's ordinary inline blocks split into a
+    // new paragraph on Enter, so make Enter insert a literal newline in this block just as it
+    // does in BlockNote's built-in codeBlock. The newline is then part of the regular text item
+    // and therefore reaches updateSnapshot() and the file repository unchanged.
+    meta: { hardBreakShortcut: "enter" },
     render: MermaidBlockContent,
   },
 );
