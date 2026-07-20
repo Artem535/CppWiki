@@ -79,6 +79,24 @@ export interface EditorBridge {
   // instead of silently applying it to the wrong document. This matters because saves are
   // debounced/async: the open document can change before a scheduled save actually fires.
   updateSnapshot(pageId: string, snapshot: DocumentSnapshot | unknown): Promise<BridgeResult<void>>;
+
+  // Native file export/import (issue #82). Kind-agnostic: `content` is written/read verbatim
+  // (no interpretation on the C++ side) via a native QFileDialog, specifically so CppWiki never
+  // needs to expose Excalidraw's/Chromium's own File System Access API-backed save/open-to-disk
+  // affordances in this embedding (calling those directly crashes the app — see
+  // ExcalidrawCanvasView.tsx's UIOptions comment and page.cc's fileSystemAccessRequested
+  // handling). Resolves with an `{ok: false, error: {code: "cancelled"}}` envelope (not a
+  // rejected promise) if the user dismisses the native dialog without choosing a file, so
+  // callers can treat that as a normal, silent no-op rather than an error to surface.
+  exportTextToFile(
+    suggestedFileName: string,
+    nameFilter: string,
+    content: string,
+  ): Promise<BridgeResult<{ path: string; fileName: string }>>;
+  importTextFromFile(
+    nameFilter: string,
+  ): Promise<BridgeResult<{ path: string; fileName: string; content: string }>>;
+
   onDocumentOpenRequested(callback: (pageId: string) => void): () => void;
   onDocumentLoaded(callback: (document: LoadedDocument) => void): () => void;
   onDocumentAccessChanged(

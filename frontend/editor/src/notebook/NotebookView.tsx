@@ -187,6 +187,43 @@ function AddCellToolbar({
   );
 }
 
+const kIpynbFileFilter = "Jupyter Notebook (*.ipynb)";
+
+// Native .ipynb import/export (issue #82), via the same EditorBridge.exportTextToFile()/
+// importTextFromFile() QFileDialog-backed pair the Excalidraw canvas kind uses — see
+// ExcalidrawCanvasView.tsx's UIOptions comment for why this app builds its own native file
+// dialogs rather than relying on any browser-native affordance. The notebook's stored snapshot
+// is already raw nbformat JSON (see nbformat.ts), so export is a straight file-save of the
+// current in-memory notebook object and import is parseNotebookJson() (the same
+// well-formedness check used when loading a stored snapshot — a malformed file falls back to
+// "could not read notebook" rather than crashing the view) followed by the normal
+// updateSnapshot() save path.
+function FileActionsToolbar({
+  editable,
+  status,
+  onExport,
+  onImport,
+}: {
+  editable: boolean;
+  status: string | null;
+  onExport: () => void;
+  onImport: () => void;
+}) {
+  return (
+    <div className="notebook-file-actions">
+      {status ? <span className="notebook-file-actions-status">{status}</span> : null}
+      {editable ? (
+        <button type="button" className="notebook-file-actions-button" onClick={onImport}>
+          Import .ipynb
+        </button>
+      ) : null}
+      <button type="button" className="notebook-file-actions-button" onClick={onExport}>
+        Export .ipynb
+      </button>
+    </div>
+  );
+}
+
 export function NotebookView({
   bridge,
   pageId,
@@ -200,8 +237,11 @@ export function NotebookView({
 }) {
   const [notebook, setNotebook] = useState<NbNotebook | null>(() => parseNotebookJson(rawContent ?? ""));
   const [parseFailed, setParseFailed] = useState(false);
+  const [fileActionStatus, setFileActionStatus] = useState<string | null>(null);
   const snapshot_timer = useRef<number | null>(null);
   const loaded_page_id = useRef<string | null>(null);
+  const notebookRef = useRef(notebook);
+  notebookRef.current = notebook;
 
   // Re-parse whenever a different document (or the same one reloaded) is handed to us — mirrors
   // main.tsx's applyLoadedBlocks()/onDocumentLoaded reset for the BlockNote path.
@@ -278,6 +318,55 @@ export function NotebookView({
     scheduleSave(next);
   };
 
+  const handleExportNotebook = async () => {
+    if (!bridge) {
+      return;
+    }
+    const current = notebookRef.current ?? { cells: [], nbformat: 4, nbformat_minor: 5 };
+    const response = await bridge.exportTextToFile(
+      `${pageId}.ipynb`,
+      kIpynbFileFilter,
+      JSON.stringify(current, null, 1),
+    );
+    if (!response.ok) {
+      if (response.error.code !== "cancelled") {
+        setFileActionStatus(`Export failed: ${response.error.message}`);
+      }
+      return;
+    }
+    setFileActionStatus(`Exported to ${response.result.fileName}`);
+  };
+
+  const handleImportNotebook = async () => {
+    if (!bridge || !editable) {
+      return;
+    }
+    const response = await bridge.importTextFromFile(kIpynbFileFilter);
+    if (!response.ok) {
+      if (response.error.code !== "cancelled") {
+        setFileActionStatus(`Import failed: ${response.error.message}`);
+      }
+      return;
+    }
+    const parsed = parseNotebookJson(response.result.content);
+    if (!parsed) {
+      setFileActionStatus(`Import failed: ${response.result.fileName} is not valid nbformat JSON.`);
+      return;
+    }
+    setNotebook(parsed);
+    setParseFailed(false);
+    setFileActionStatus(`Imported ${response.result.fileName}`);
+    scheduleSave(parsed);
+  };
+
+  useEffect(() => {
+    if (fileActionStatus === null) {
+      return;
+    }
+    const timer = window.setTimeout(() => setFileActionStatus(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [fileActionStatus]);
+
   const cells = useMemo(() => notebook?.cells ?? [], [notebook]);
   const notebookLanguage = useMemo(() => resolveKernelLanguage(notebook), [notebook]);
 
@@ -292,6 +381,12 @@ export function NotebookView({
 
   return (
     <div className="notebook-view" data-testid="notebook-view">
+      <FileActionsToolbar
+        editable={editable}
+        status={fileActionStatus}
+        onExport={() => void handleExportNotebook()}
+        onImport={() => void handleImportNotebook()}
+      />
       {cells.length === 0 ? (
         // NOT .empty-state: that class is position: absolute; inset: 0 (meant for a full-page
         // placeholder with nothing else on screen), which took this message out of .notebook-view's

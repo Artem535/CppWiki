@@ -77,6 +77,34 @@ button {
   inset: 0;
 }
 
+/* Native import/export (issue #82) — rendered via Excalidraw's renderTopRightUI, alongside its
+   own (still-enabled) zoom/menu controls. */
+.excalidraw-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.excalidraw-file-actions-status {
+  font-size: 12px;
+  color: var(--app-text-muted);
+  white-space: nowrap;
+}
+
+.excalidraw-file-actions-button {
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-surface);
+  color: var(--app-text);
+  cursor: pointer;
+}
+
+.excalidraw-file-actions-button:hover {
+  background: var(--app-surface-hover);
+}
+
 .empty-state {
   position: absolute;
   inset: 0;
@@ -186,6 +214,35 @@ button {
 .notebook-cell-delete:hover {
   background: var(--app-surface-hover);
   color: var(--app-text);
+}
+
+/* Native import/export (issue #82) — mirrors .excalidraw-file-actions above. */
+.notebook-file-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.notebook-file-actions-status {
+  font-size: 12px;
+  color: var(--app-text-muted);
+  white-space: nowrap;
+}
+
+.notebook-file-actions-button {
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-surface);
+  color: var(--app-text);
+  cursor: pointer;
+}
+
+.notebook-file-actions-button:hover {
+  background: var(--app-surface-hover);
 }
 
 .notebook-add-cell-toolbar {

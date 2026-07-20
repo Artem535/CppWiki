@@ -19,6 +19,8 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWebChannel>
+#include <QWebEngineDownloadRequest>
+#include <QWebEngineFileSystemAccessRequest>
 #include <QWebEnginePage>
 #include <QWebEngineProfile>
 #include <QWebEngineScript>
@@ -92,7 +94,7 @@ void Page::BuildUi() {
                                     context_.settings.AiAutocompleteEnabled(),
                                     context_.settings.AiInlineSuggestionsEnabled());
   editor_bridge_->SetAiTransportConfig(context_.settings.BackendEnabled(),
-                                      context_.settings.BackendBaseUrl(), QString{});
+                                       context_.settings.BackendBaseUrl(), QString{});
   auto* ai_api_key_store =
       new auth::AiApiKeyStore(ToQString(constants::kApplicationName), editor_bridge_);
   editor_bridge_->SetAiApiKeyStore(ai_api_key_store);
@@ -100,13 +102,15 @@ void Page::BuildUi() {
     connect(context_.auth_session_manager, &auth::AuthSessionManager::accessTokenChanged,
             editor_bridge_, [this](const QString& access_token) {
               editor_bridge_->SetAiTransportConfig(context_.settings.BackendEnabled(),
-                                                  context_.settings.BackendBaseUrl(), access_token);
+                                                   context_.settings.BackendBaseUrl(),
+                                                   access_token);
             });
   }
 
   editor_view_ = new QWebEngineView(this);
   editor_view_->page()->setWebChannel(channel_);
   InstallWebChannelScript();
+  InstallNativeFilePickerGuards();
 
   page_panel_ = new QWidget(this);
   page_panel_->setObjectName(QStringLiteral("pagePanel"));
@@ -434,6 +438,41 @@ void Page::InstallWebChannelScript() {
   script.setRunsOnSubFrames(false);
 
   editor_view_->page()->scripts().insert(script);
+}
+
+void Page::InstallNativeFilePickerGuards() {
+  // Excalidraw's (and any future embedded library's) own "save/open to disk" UI affordances
+  // ultimately call the File System Access API (window.showSaveFilePicker()/
+  // showOpenFilePicker()) when it's available, which it is in this QtWebEngine build. Issue
+  // #82: reproduced that an unhandled fileSystemAccessRequested() terminates the whole
+  // application outright (not just the page) the moment JS calls showSaveFilePicker() — no
+  // signal, no crash log, the process simply exits, apparently because this embedding has no
+  // working native picker/portal plumbing behind that API. Always reject synchronously so the
+  // request is resolved through Qt's own API instead of whatever native flow Chromium would
+  // otherwise attempt. CppWiki provides its own native import/export via
+  // EditorBridge::exportTextToFile()/importTextFromFile() (QFileDialog-backed) instead of
+  // exposing Excalidraw's/Chromium's built-in file pickers — see the audit notes on
+  // ExcalidrawCanvasView.tsx's UIOptions.
+  connect(editor_view_->page(), &QWebEnginePage::fileSystemAccessRequested, this,
+          [](QWebEngineFileSystemAccessRequest request) {
+            spdlog::warn(
+                "Rejecting File System Access API request (unsupported in this embedding, "
+                "see issue #82): {}",
+                request.filePath().toString().toStdString());
+            request.reject();
+          });
+
+  // Defense in depth for the legacy fallback path browser-fs-access (Excalidraw's save-to-disk
+  // dependency) takes when the File System Access API isn't available: a blob-URL `<a
+  // download>` click, which Chromium routes through the profile's download manager. Nothing in
+  // this app is wired up to actually save arbitrary browser-initiated downloads to disk, so
+  // cancel them explicitly rather than leaving the request unresolved.
+  connect(editor_view_->page()->profile(), &QWebEngineProfile::downloadRequested, this,
+          [](QWebEngineDownloadRequest* download) {
+            spdlog::warn("Cancelling unexpected browser download request: {}",
+                         download->downloadFileName().toStdString());
+            download->cancel();
+          });
 }
 
 void Page::PopulatePageList() {
@@ -1182,8 +1221,7 @@ void Page::ShowContextMenu(const QPoint& position) {
       {.can_move_up = can_move_up, .can_move_down = can_move_down}, workspace_tree_view_);
   connect(menu, &gui::DocumentContextMenu::newDocumentRequested, this,
           [this, index](document::DocumentKind kind) {
-            spdlog::info("Context menu: new document (kind={})",
-                        document::ToDocumentKindKey(kind));
+            spdlog::info("Context menu: new document (kind={})", document::ToDocumentKindKey(kind));
             CreateChildDocument(index, kind);
           });
   connect(menu, &gui::DocumentContextMenu::actionRequested, this,

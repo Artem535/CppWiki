@@ -60,15 +60,15 @@ class QEditorBridge final : public QObject {
   // ghost-text extension at all. `inline_suggestions_enabled` is a separate
   // opt-in (issue #59), independent of `features_enabled`.
   void SetAiFeatureFlags(bool features_enabled, bool autocomplete_enabled,
-                        bool inline_suggestions_enabled);
+                         bool inline_suggestions_enabled);
   void RequestOpenDocument(const QString& page_id);
   void ClearCurrentDocumentSelection();
   [[nodiscard]] QVariantMap listDocumentsInWorkspace(const QString& workspace_id);
   // `kind` is the DocumentKind key (see document::ToDocumentKindKey/DocumentKindFromKey),
   // e.g. "wikiPage" (default), "jupyterNotebook", "excalidrawCanvas". Unrecognized/empty
   // values fall back to "wikiPage".
-  [[nodiscard]] QVariantMap createDocumentInWorkspace(const QString& workspace_id,
-                                                      const QString& kind = QStringLiteral("wikiPage"));
+  [[nodiscard]] QVariantMap createDocumentInWorkspace(
+      const QString& workspace_id, const QString& kind = QStringLiteral("wikiPage"));
   [[nodiscard]] QVariantMap createChildDocumentInWorkspace(
       const QString& workspace_id, const QString& parent_id,
       const QString& kind = QStringLiteral("wikiPage"));
@@ -91,6 +91,25 @@ class QEditorBridge final : public QObject {
   // changes before that save actually reaches this method, an implicit "whatever's current"
   // write would silently land on the wrong (newly opened) document instead of being dropped.
   Q_INVOKABLE QVariantMap updateSnapshot(const QString& page_id, const QString& snapshot_json);
+
+  // Native file export/import (issue #82). Kind-agnostic: `content` is whatever
+  // JSON-serialized text the caller wants written verbatim (e.g. nbformat JSON for
+  // "jupyterNotebook", Excalidraw scene JSON for "excalidrawCanvas") — this method does not
+  // interpret it. Shows a native QFileDialog save dialog; returns a "cancelled" error if the
+  // user dismisses it without choosing a path, so callers can distinguish "user cancelled"
+  // from "write failed". Exists specifically so CppWiki never needs to expose Excalidraw's/
+  // Chromium's own File System Access API-backed save-to-disk affordance in this embedding
+  // (see page.cc's fileSystemAccessRequested handling — reproduced (2026-07-20): calling
+  // window.showSaveFilePicker() from JS here terminates the whole application, not just the
+  // page).
+  Q_INVOKABLE QVariantMap exportTextToFile(const QString& suggested_file_name,
+                                           const QString& name_filter, const QString& content);
+  // Mirrors exportTextToFile() for reading: shows a native QFileDialog open dialog and returns
+  // the chosen file's raw text content. Returns a "cancelled" error if the user dismisses the
+  // dialog. Validation of `content`'s shape (nbformat/Excalidraw scene JSON) is left to the
+  // caller, matching updateSnapshot()'s existing well-formedness-only checks for non-wikiPage
+  // kinds.
+  Q_INVOKABLE QVariantMap importTextFromFile(const QString& name_filter);
 
   // Starts an AI request (rewrite or autocomplete, per ADR-010's MVP scope)
   // and returns a request id immediately; the actual provider call happens
@@ -149,9 +168,8 @@ class QEditorBridge final : public QObject {
   void StartLocalKeyAiRequest(const QString& request_id, const QString& prompt,
                               const QString& context_text, const QString& mode,
                               const QString& tool_name, const QString& tool_schema_json);
-  void CallProviderAndRelay(const QString& request_id, const QUrl& url,
-                           const QByteArray& body, const QString& auth_header_value,
-                           const QString& tool_name);
+  void CallProviderAndRelay(const QString& request_id, const QUrl& url, const QByteArray& body,
+                            const QString& auth_header_value, const QString& tool_name);
   void EmitChunkedCompletion(const QString& request_id, const QString& full_text);
 
   bool pending_document_editable_ = true;

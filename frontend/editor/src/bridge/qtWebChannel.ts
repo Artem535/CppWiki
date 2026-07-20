@@ -86,6 +86,18 @@ type QtEditorBridgeObject = {
     snapshotJson: string,
     callback: (response: BridgeResult<void>) => void,
   ): void;
+  exportTextToFile(
+    suggestedFileName: string,
+    nameFilter: string,
+    content: string,
+    callback: (response: BridgeResult<{ path: string; fileName: string }>) => void,
+  ): void;
+  importTextFromFile(
+    nameFilter: string,
+    callback: (
+      response: BridgeResult<{ path: string; fileName: string; content: string }>,
+    ) => void,
+  ): void;
 };
 
 export async function createQtEditorBridge(): Promise<EditorBridge | null> {
@@ -133,6 +145,18 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
     updateSnapshot(pageId, snapshot) {
       return new Promise((resolve) => {
         qtObject.updateSnapshot(pageId, JSON.stringify(snapshot), resolve);
+      });
+    },
+
+    exportTextToFile(suggestedFileName, nameFilter, content) {
+      return new Promise((resolve) => {
+        qtObject.exportTextToFile(suggestedFileName, nameFilter, content, resolve);
+      });
+    },
+
+    importTextFromFile(nameFilter) {
+      return new Promise((resolve) => {
+        qtObject.importTextFromFile(nameFilter, resolve);
       });
     },
 
