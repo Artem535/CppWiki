@@ -186,6 +186,9 @@ function EditorApp() {
   };
 
   const flushAutosave = async (activeBridge: EditorBridge | null) => {
+    console.warn(
+      `[flushAutosave-debug] called, kind=${document_kind_ref.current}, isEditable=${isEditable}, pageId=${selected_page_id.current}`,
+    );
     if (!activeBridge || !selected_page_id.current || !isEditable) {
       return;
     }
@@ -202,9 +205,11 @@ function EditorApp() {
     // document's real content with a stray BlockNote block array right before navigating away,
     // corrupting it (surfaced as "not valid nbformat JSON" on the next open).
     if (document_kind_ref.current !== "wikiPage") {
+      console.warn("[flushAutosave-debug] skipping updateSnapshot: kind is not wikiPage");
       return;
     }
 
+    console.warn("[flushAutosave-debug] sending editor.document snapshot (wikiPage)");
     await activeBridge.updateSnapshot(editor.document);
   };
 
@@ -313,6 +318,19 @@ function EditorApp() {
       return;
     }
 
+    // Defense in depth alongside flushAutosave()'s equivalent check: BlockNoteView is only
+    // *mounted* for isWikiPage, but there's a narrow window around switching to/creating a
+    // non-wikiPage document where a still-in-flight ProseMirror transaction's onChange can fire
+    // after replacing_document.current has already been reset (its setTimeout(0) reset can lose
+    // the race against an async onChange callback) but before this component has re-rendered to
+    // unmount BlockNoteView. Confirmed via C++ logs: creating a Jupyter notebook immediately
+    // triggered an is_wiki_page-branch save (blocks=1) onto that same new document's id,
+    // corrupting its nbformat content. Checking the kind ref directly closes that window
+    // regardless of mount/unmount timing.
+    if (document_kind_ref.current !== "wikiPage") {
+      return;
+    }
+
     if (snapshot_timer.current !== null) {
       window.clearTimeout(snapshot_timer.current);
     }
@@ -417,6 +435,13 @@ function EditorApp() {
     </main>
   );
 }
+
+window.addEventListener("error", (event) => {
+  console.error(`[global-error-debug] uncaught error: ${event.message} at ${event.filename}:${event.lineno}`);
+});
+window.addEventListener("unhandledrejection", (event) => {
+  console.error(`[global-error-debug] unhandled rejection: ${String(event.reason)}`);
+});
 
 const root = document.getElementById("root");
 if (!root) {
