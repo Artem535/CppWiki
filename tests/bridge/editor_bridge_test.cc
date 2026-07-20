@@ -268,7 +268,7 @@ auto TestCreateDocumentLoadsEmptyAndSaves() -> void {
               QStringLiteral("wikiPage"),
           "newly created document should default to kind 'wikiPage' in the bridge payload");
 
-  const auto saved = bridge.updateSnapshot(QStringLiteral(R"([
+  const auto saved = bridge.updateSnapshot(created_id, QStringLiteral(R"([
     {
       "id": "b1",
       "type": "paragraph",
@@ -314,7 +314,7 @@ auto TestCreateDocumentDoesNotHijackAutosaveSelection() -> void {
   const auto created_id =
       created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
 
-  const auto saved = bridge.updateSnapshot(QStringLiteral(R"([
+  const auto saved = bridge.updateSnapshot(welcome_id, QStringLiteral(R"([
     {
       "id": "welcome-heading",
       "type": "heading",
@@ -477,7 +477,7 @@ auto TestUpdateSnapshotRoundTripsForJupyterNotebook() -> void {
       created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
   RequireSuccessEnvelope(bridge.loadDocument(page_id));
 
-  const auto edited = bridge.updateSnapshot(QStringLiteral(R"({
+  const auto edited = bridge.updateSnapshot(page_id, QStringLiteral(R"({
     "cells": [
       { "cell_type": "markdown", "source": ["Edited from test"], "metadata": {} }
     ],
@@ -512,7 +512,7 @@ auto TestUpdateSnapshotRoundTripsForExcalidrawCanvas() -> void {
       created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
   RequireSuccessEnvelope(bridge.loadDocument(page_id));
 
-  const auto edited = bridge.updateSnapshot(QStringLiteral(R"({
+  const auto edited = bridge.updateSnapshot(page_id, QStringLiteral(R"({
     "type": "excalidraw",
     "version": 2,
     "elements": [{ "id": "el1", "type": "rectangle" }],
@@ -689,7 +689,7 @@ auto TestValidSnapshot() -> void {
 
   RequireSuccessEnvelope(bridge.loadDocument(page_id));
 
-  const auto response = bridge.updateSnapshot(QStringLiteral(R"([
+  const auto response = bridge.updateSnapshot(page_id, QStringLiteral(R"([
     {
       "id": "b1",
       "type": "paragraph",
@@ -725,7 +725,7 @@ auto TestInvalidJsonSnapshot() -> void {
                            .toString();
   RequireSuccessEnvelope(bridge.loadDocument(page_id));
 
-  const auto response = bridge.updateSnapshot(QStringLiteral("{"));
+  const auto response = bridge.updateSnapshot(page_id, QStringLiteral("{"));
 
   RequireErrorEnvelope(response, QStringLiteral("invalid_json"));
 }
@@ -744,7 +744,7 @@ auto TestInvalidRootSnapshot() -> void {
                            .toString();
   RequireSuccessEnvelope(bridge.loadDocument(page_id));
 
-  const auto response = bridge.updateSnapshot(QStringLiteral(R"({ "type": "paragraph" })"));
+  const auto response = bridge.updateSnapshot(page_id, QStringLiteral(R"({ "type": "paragraph" })"));
 
   RequireErrorEnvelope(response, QStringLiteral("missing_schema_version"));
 }
@@ -956,7 +956,7 @@ auto TestUpdateSnapshotRejectedWhenCurrentDocumentConflicted() -> void {
   RequireSuccessEnvelope(bridge.loadDocument(page_id));
   bridge.SetCurrentDocumentConflicted(true);
 
-  const auto response = bridge.updateSnapshot(QStringLiteral(R"([
+  const auto response = bridge.updateSnapshot(page_id, QStringLiteral(R"([
     {
       "id": "b1",
       "type": "paragraph",

@@ -190,7 +190,7 @@ export function NotebookView({
       // Serializes the edited nbformat JSON as the document's snapshot, reusing the same
       // updateSnapshot()/DocumentValidator/sync/lock/conflict pipeline the BlockNote path uses
       // (see main.tsx's handleEditorChange) — no separate save pathway for notebooks.
-      void bridge.updateSnapshot(next);
+      void bridge.updateSnapshot(pageId, next);
     }, snapshotDebounceMs);
   };
 

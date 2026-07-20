@@ -205,7 +205,7 @@ function EditorApp() {
       return;
     }
 
-    await activeBridge.updateSnapshot(editor.document);
+    await activeBridge.updateSnapshot(selected_page_id.current, editor.document);
   };
 
   useEffect(() => {
@@ -317,21 +317,23 @@ function EditorApp() {
       window.clearTimeout(snapshot_timer.current);
     }
 
+    // Capture the document this edit belongs to now, at schedule time — not whatever happens to
+    // be open when the debounced callback below actually fires. The user can switch to (or
+    // create) a different document within the debounce window; sending the ORIGINAL id lets the
+    // bridge (see EditorBridge.updateSnapshot()'s doc comment) reject the write as stale instead
+    // of silently landing a stray BlockNote block array on whatever document is open by then.
+    // Confirmed on disk: a freshly created jupyterNotebook/excalidrawCanvas document ending up
+    // with raw_snapshot_json containing a BlockNote paragraph block instead of nbformat/scene
+    // JSON — the C++ side used to accept it silently for non-wikiPage kinds since it only
+    // checked JSON well-formedness there, not shape or target id.
+    const target_page_id = selectedPageId;
+
     snapshot_timer.current = window.setTimeout(() => {
       snapshot_timer.current = null;
-      // The kind check must happen HERE, at fire time, not before scheduling the timer: the
-      // user can switch to (or create) a non-wikiPage document within the debounce window,
-      // which repoints the bridge's current document to the new id before this callback runs.
-      // Checking document_kind_ref only at schedule time let a stale BlockNote block array from
-      // the old wikiPage land on the new document's id once the timer fired — confirmed on disk
-      // (a freshly created jupyterNotebook/excalidrawCanvas document ending up with
-      // raw_snapshot_json containing a BlockNote paragraph block instead of nbformat/scene JSON).
-      // The C++ validator accepts it silently for non-wikiPage kinds since it only checks JSON
-      // well-formedness there, not shape.
       if (document_kind_ref.current !== "wikiPage") {
         return;
       }
-      void bridge.updateSnapshot(editor.document);
+      void bridge.updateSnapshot(target_page_id, editor.document);
     }, snapshotDebounceMs);
   };
 

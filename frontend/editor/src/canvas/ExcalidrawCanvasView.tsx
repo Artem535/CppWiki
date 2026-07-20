@@ -79,7 +79,7 @@ export function ExcalidrawCanvasView({
       if (!activeBridge) {
         return;
       }
-      void activeBridge.updateSnapshot(buildExcalidrawScene(elements, appState, files));
+      void activeBridge.updateSnapshot(documentId, buildExcalidrawScene(elements, appState, files));
     }, snapshotDebounceMs);
   };
 

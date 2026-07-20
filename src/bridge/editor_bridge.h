@@ -85,7 +85,12 @@ class QEditorBridge final : public QObject {
   QVariantMap deleteDocument(const QString& page_id);
   Q_INVOKABLE QVariantMap loadDocument(const QString& page_id);
   Q_INVOKABLE QVariantMap openDocument(const QString& page_id);
-  Q_INVOKABLE QVariantMap updateSnapshot(const QString& snapshot_json);
+  // `page_id` must match the currently open document (current_page_id_); a mismatch is
+  // rejected with a "stale_document" error rather than silently applied. This closes a real
+  // corruption path: JS schedules saves on a debounce/async chain, and if the open document
+  // changes before that save actually reaches this method, an implicit "whatever's current"
+  // write would silently land on the wrong (newly opened) document instead of being dropped.
+  Q_INVOKABLE QVariantMap updateSnapshot(const QString& page_id, const QString& snapshot_json);
 
   // Starts an AI request (rewrite or autocomplete, per ADR-010's MVP scope)
   // and returns a request id immediately; the actual provider call happens
