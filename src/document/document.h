@@ -36,6 +36,11 @@ enum class BlockType : std::uint8_t {
   kFile,
   kDivider,
   kPageBreak,
+  // Mermaid diagram block (ADR-017, issue #50): a custom BlockNote block spec whose inline
+  // content is the raw Mermaid diagram source text, rendered to SVG client-side in
+  // frontend/editor — this validator only needs to recognize the block type name and extract
+  // the source text like any other inline-content block, not understand Mermaid syntax itself.
+  kMermaid,
 };
 
 struct HeadingProps {

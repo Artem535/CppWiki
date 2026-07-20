@@ -9,6 +9,11 @@ export const snapshotDebounceMs = 500;
 export const inlineSuggestionDebounceMs = 450;
 export const inlineSuggestionContextChars = 800;
 
+// Mermaid diagram block (ADR-017, issue #50): how long to wait after the last keystroke in a
+// diagram's source before re-rendering it — mermaid.render() does real layout work, so
+// re-running it on every keystroke would be wasteful and janky while typing.
+export const mermaidRenderDebounceMs = 400;
+
 export const mockPageId = "mock-page";
 export const mockHeadingBlockId = "mock-heading";
 export const mockBodyBlockId = "mock-body";

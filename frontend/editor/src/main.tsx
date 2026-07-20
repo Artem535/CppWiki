@@ -3,7 +3,12 @@ import "@blocknote/mantine/style.css";
 import "@blocknote/xl-ai/style.css";
 import "./styles.css";
 
-import { createBlockNoteExtension, filterSuggestionItems } from "@blocknote/core";
+import {
+  BlockNoteSchema,
+  createBlockNoteExtension,
+  defaultBlockSpecs,
+  filterSuggestionItems,
+} from "@blocknote/core";
 import { en as coreEnDictionary } from "@blocknote/core/locales";
 import { BlockNoteView } from "@blocknote/mantine";
 import {
@@ -19,6 +24,7 @@ import { en as aiEnDictionary } from "@blocknote/xl-ai/locales";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ExcalidrawCanvasView } from "./canvas/ExcalidrawCanvasView";
+import { getMermaidSlashMenuItem, MermaidBlock } from "./blocks/MermaidBlock";
 import { createEditorBridge } from "./bridge";
 import { BridgeChatTransport } from "./bridge/aiChatTransport";
 import {
@@ -37,6 +43,17 @@ import {
 } from "./constants";
 import { createInlineSuggestionExtension } from "./extensions/inlineSuggestionExtension";
 import { NotebookView } from "./notebook/NotebookView";
+
+// BlockNote's default schema plus the Mermaid diagram block (ADR-017, issue #50). Built once at
+// module scope, not per-render, since it doesn't depend on any component state.
+const editorSchema = BlockNoteSchema.create({
+  blockSpecs: {
+    ...defaultBlockSpecs,
+    // createReactBlockSpec() returns an options factory, not a BlockSpec itself — call it with
+    // no options to get the actual spec, same as how @blocknote/core builds defaultBlockSpecs.
+    mermaid: MermaidBlock(),
+  },
+});
 
 // Placeholder mounted for document kinds that don't have a real renderer yet. Both
 // "jupyterNotebook" (NotebookView, #52) and "excalidrawCanvas" (ExcalidrawCanvasView, #53) now
@@ -151,6 +168,7 @@ function EditorApp() {
       // "AI dictionary not found" — merge the xl-ai package's own locale in.
       dictionary: { ...coreEnDictionary, ai: aiEnDictionary },
       extensions: [createAIExtension({ transport: aiTransport }), inlineSuggestionExtension],
+      schema: editorSchema,
     },
     [],
   );
@@ -384,12 +402,12 @@ function EditorApp() {
               onChange={handleEditorChange}
               theme={editorTheme}
               formattingToolbar={!aiFeaturesEnabled}
-              // BlockNoteDefaultUI always mounts its own "/" SuggestionMenuController
-              // regardless of children; when AI features are on we render a second one
-              // below with merged default+AI items, and two controllers on the same
-              // trigger character silently break each other. Disable the built-in one
-              // whenever our own slash menu takes over.
-              slashMenu={!(aiFeaturesEnabled && aiAutocompleteEnabled)}
+              // BlockNoteDefaultUI's built-in "/" SuggestionMenuController only lists items for
+              // @blocknote/core's own default block types, which would leave the Mermaid
+              // diagram block (registered via editorSchema above) undiscoverable through the
+              // slash menu. Always disable it and always mount our own below instead, which
+              // merges the default items with the Mermaid item and, when enabled, the AI items.
+              slashMenu={false}
             >
               {aiFeaturesEnabled ? (
                 <>
@@ -405,19 +423,23 @@ function EditorApp() {
                       </FormattingToolbar>
                     )}
                   />
-                  {aiAutocompleteEnabled ? (
-                    <SuggestionMenuController
-                      triggerCharacter="/"
-                      getItems={async (query) =>
-                        filterSuggestionItems(
-                          [...getDefaultReactSlashMenuItems(editor), ...getAISlashMenuItems(editor)],
-                          query,
-                        )
-                      }
-                    />
-                  ) : null}
                 </>
               ) : null}
+              <SuggestionMenuController
+                triggerCharacter="/"
+                getItems={async (query) =>
+                  filterSuggestionItems(
+                    [
+                      ...getDefaultReactSlashMenuItems(editor),
+                      getMermaidSlashMenuItem(editor),
+                      ...(aiFeaturesEnabled && aiAutocompleteEnabled
+                        ? getAISlashMenuItems(editor)
+                        : []),
+                    ],
+                    query,
+                  )
+                }
+              />
             </BlockNoteView>
           </div>
         ) : null}
