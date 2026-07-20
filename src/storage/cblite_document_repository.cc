@@ -431,6 +431,9 @@ class CbliteDocumentRepository::Impl {
           };
         }
         record.snapshot = result.value();
+        spdlog::info("[DEBUG-mmd-reopen] CBLite loaded snapshot: id={}, bytes={}, blocks={}",
+                     page_id, record.raw_snapshot_json.size(),
+                     record.snapshot.blocks ? record.snapshot.blocks->size() : 0);
       } catch (const std::exception& e) {
         return LoadDocumentResult{
             .document = std::nullopt,

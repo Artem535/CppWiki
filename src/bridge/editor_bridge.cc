@@ -840,6 +840,9 @@ QVariantMap QEditorBridge::loadDocument(const QString& page_id) {
       return ErrorResponse(QStringLiteral("invalid_stored_snapshot"), std::get<QString>(blocks));
     }
     blocks_variant = std::get<QVariantList>(std::move(blocks));
+    spdlog::info("[DEBUG-mmd-reopen] Bridge opened snapshot: id={}, bytes={}, blocks={}",
+                 page_id.toStdString(), result.document->raw_snapshot_json.size(),
+                 blocks_variant.size());
   } else {
     // Non-wikiPage kinds (nbformat/Excalidraw, #52/#53) don't fit the BlockNote block-array
     // shape; hand the raw stored JSON to the frontend as-is via `rawContent` instead, and leave
@@ -928,6 +931,9 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& page_id, const QString&
   const bool is_wiki_page = current_page_kind_ == document::DocumentKind::kWikiPage;
   if (is_wiki_page) {
     spdlog::info("editor snapshot received: bytes={}, blocks={}", snapshot_bytes.size(),
+                 validation.document->blocks.size());
+    spdlog::info("[DEBUG-mmd-reopen] Bridge saving snapshot: id={}, bytes={}, blocks={}",
+                 current_page_id_.toStdString(), snapshot_bytes.size(),
                  validation.document->blocks.size());
   } else {
     spdlog::info("editor snapshot received: bytes={}, kind={}", snapshot_bytes.size(),
