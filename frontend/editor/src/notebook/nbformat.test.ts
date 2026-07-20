@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   joinNbSource,
   parseNotebookJson,
+  resolveKernelLanguage,
   resolveOutputData,
   splitToNbSource,
+  type NbNotebook,
 } from "./nbformat";
 
 describe("joinNbSource", () => {
@@ -92,5 +94,42 @@ describe("resolveOutputData", () => {
 
   it("returns null for an undefined bundle", () => {
     expect(resolveOutputData(undefined)).toBeNull();
+  });
+});
+
+describe("resolveKernelLanguage", () => {
+  const withMetadata = (metadata: Record<string, unknown>): NbNotebook => ({
+    cells: [],
+    metadata,
+  });
+
+  it("prefers metadata.language_info.name when present", () => {
+    const notebook = withMetadata({
+      kernelspec: { name: "python3", language: "python" },
+      language_info: { name: "python" },
+    });
+    expect(resolveKernelLanguage(notebook)).toBe("python");
+  });
+
+  it("falls back to metadata.kernelspec.language when language_info is absent", () => {
+    const notebook = withMetadata({ kernelspec: { name: "ir", language: "R" } });
+    expect(resolveKernelLanguage(notebook)).toBe("r");
+  });
+
+  it("normalizes to lowercase", () => {
+    const notebook = withMetadata({ language_info: { name: "JavaScript" } });
+    expect(resolveKernelLanguage(notebook)).toBe("javascript");
+  });
+
+  it("defaults to python when metadata has neither field", () => {
+    expect(resolveKernelLanguage(withMetadata({}))).toBe("python");
+  });
+
+  it("defaults to python when metadata is absent entirely", () => {
+    expect(resolveKernelLanguage({ cells: [] })).toBe("python");
+  });
+
+  it("defaults to python for a null notebook", () => {
+    expect(resolveKernelLanguage(null)).toBe("python");
   });
 });

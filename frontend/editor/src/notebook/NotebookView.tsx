@@ -7,10 +7,12 @@ import type { KeyboardEvent } from "react";
 
 import type { EditorBridge } from "../bridge/editorBridge";
 import { snapshotDebounceMs } from "../constants";
+import { CodeCellEditor } from "./CodeCellEditor";
 import { renderMarkdownToHtml } from "./markdown";
 import {
   joinNbSource,
   parseNotebookJson,
+  resolveKernelLanguage,
   resolveOutputData,
   splitToNbSource,
   type NbCell,
@@ -72,12 +74,14 @@ function CellView({
   cell,
   index,
   editable,
+  notebookLanguage,
   onSourceChange,
   onDeleteCell,
 }: {
   cell: NbCell;
   index: number;
   editable: boolean;
+  notebookLanguage: string;
   onSourceChange: (index: number, source: string) => void;
   onDeleteCell: (index: number) => void;
 }) {
@@ -116,7 +120,18 @@ function CellView({
           </button>
         ) : null}
       </div>
-      {showRendered ? (
+      {isCode ? (
+        // Syntax-highlighted, still-editable source for code cells (issue #88) — language comes
+        // from the notebook-level kernelspec/language_info (nbformat has no per-cell language),
+        // resolved once by the parent via resolveKernelLanguage(). Markdown cells get their own
+        // render/edit toggle below (issue #89); other cell types keep the plain textarea.
+        <CodeCellEditor
+          value={sourceText}
+          editable={editable}
+          language={notebookLanguage}
+          onChange={(nextText) => onSourceChange(index, nextText)}
+        />
+      ) : showRendered ? (
         <div
           className="notebook-cell-markdown-rendered"
           data-testid={`notebook-cell-markdown-rendered-${index}`}
@@ -134,10 +149,10 @@ function CellView({
         />
       ) : (
         <textarea
-          className={`notebook-cell-source${isCode ? " notebook-cell-source--code" : ""}`}
+          className="notebook-cell-source"
           value={sourceText}
           readOnly={!editable}
-          spellCheck={!isCode}
+          spellCheck
           onChange={(event) => onSourceChange(index, event.target.value)}
           onKeyDown={handleSourceKeyDown}
           rows={Math.max(2, sourceText.split("\n").length)}
@@ -264,6 +279,7 @@ export function NotebookView({
   };
 
   const cells = useMemo(() => notebook?.cells ?? [], [notebook]);
+  const notebookLanguage = useMemo(() => resolveKernelLanguage(notebook), [notebook]);
 
   if (parseFailed) {
     return (
@@ -277,7 +293,12 @@ export function NotebookView({
   return (
     <div className="notebook-view" data-testid="notebook-view">
       {cells.length === 0 ? (
-        <div className="empty-state">
+        // NOT .empty-state: that class is position: absolute; inset: 0 (meant for a full-page
+        // placeholder with nothing else on screen), which took this message out of .notebook-view's
+        // flex flow and painted it over the AddCellToolbar rendered below — the buttons were still
+        // in the DOM and clickable in theory, just visually hidden underneath this message's opaque
+        // background. This needs to stay a normal in-flow block since the toolbar follows it.
+        <div className="notebook-empty-cells">
           <p>This notebook has no cells yet.</p>
         </div>
       ) : (
@@ -288,6 +309,7 @@ export function NotebookView({
             cell={cell}
             index={index}
             editable={editable}
+            notebookLanguage={notebookLanguage}
             onSourceChange={handleSourceChange}
             onDeleteCell={handleDeleteCell}
           />
