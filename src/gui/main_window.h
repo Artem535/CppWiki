@@ -13,6 +13,7 @@ class QFrame;
 class QDialog;
 class QAction;
 class QLabel;
+class QMenu;
 class QStackedWidget;
 class QToolBar;
 class QToolButton;
@@ -131,6 +132,10 @@ class MainWindow final : public QMainWindow {
   // Standard native document-tools toolbar. It is deliberately separate from the collaboration
   // status strip: that strip reports state, whereas these are application actions.
   QToolBar* document_tools_toolbar_ = nullptr;
+  // File menu button (issue #102): Import/Export live under a "File" dropdown on the toolbar
+  // rather than as two flat toolbar buttons.
+  QToolButton* file_menu_button_ = nullptr;
+  QMenu* file_menu_ = nullptr;
   QAction* import_action_ = nullptr;
   QAction* export_action_ = nullptr;
   QString save_state_hint_;
