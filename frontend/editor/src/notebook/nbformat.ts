@@ -72,6 +72,29 @@ export function splitToNbSource(text: string): string[] {
   return lines.map((line, index) => (index < lines.length - 1 ? `${line}\n` : line));
 }
 
+// nbformat carries language at the notebook level, not per-cell (metadata.language_info.name is
+// the authoritative source when present; metadata.kernelspec.language is the older/looser
+// fallback some notebooks only set). Normalized to lowercase/trimmed for case-insensitive matching
+// by callers (e.g. mapping to a CodeMirror language extension); defaults to "python" when neither
+// field is present, per issue #88.
+const kDefaultNotebookLanguage = "python";
+
+export function resolveKernelLanguage(notebook: NbNotebook | null | undefined): string {
+  const metadata = notebook?.metadata;
+  if (!metadata || typeof metadata !== "object") {
+    return kDefaultNotebookLanguage;
+  }
+  const languageInfo = metadata.language_info as { name?: unknown } | undefined;
+  if (languageInfo && typeof languageInfo.name === "string" && languageInfo.name.trim() !== "") {
+    return languageInfo.name.trim().toLowerCase();
+  }
+  const kernelspec = metadata.kernelspec as { language?: unknown } | undefined;
+  if (kernelspec && typeof kernelspec.language === "string" && kernelspec.language.trim() !== "") {
+    return kernelspec.language.trim().toLowerCase();
+  }
+  return kDefaultNotebookLanguage;
+}
+
 export function parseNotebookJson(raw: string): NbNotebook | null {
   if (!raw || raw.trim() === "") {
     return { cells: [], nbformat: 4, nbformat_minor: 5 };
