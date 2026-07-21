@@ -639,30 +639,38 @@ button {
   border-left: 1px solid var(--app-border);
 }
 
-/* Gantt/Grid's own small Undo/Redo row, sat above the widget (see GanttTab/GridTab) — a plain
-   flex column wrapping the mini-toolbar plus the existing board+editor layout (or grid wrap),
-   which now needs `flex: 1` instead of `height: 100%` since it's no longer the outermost element. */
-.project-board-tab-column {
+/* Undo/Redo (see UndoRedoButtons): icon-only, ghost-style buttons rather than the dashed
+   text-label buttons used elsewhere in the toolbar — history controls are a different kind of
+   action (transient, high-frequency) than "Columns"/"+ Task", so they're styled to read as a
+   compact, native-feeling pair instead of another full toolbar button. */
+.project-board-undo-redo {
   display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
+  gap: 2px;
 }
 
-.project-board-widget-toolbar {
-  flex: 0 0 auto;
-  padding-bottom: 8px;
+.project-board-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
 }
 
-.project-board-tab-column > .project-board-tab-layout,
-.project-board-tab-column > .project-board-grid-wrap {
-  flex: 1;
-  min-height: 0;
-  height: auto;
+.project-board-icon-button:hover:not(:disabled) {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
 }
 
-.project-board-toolbar-actions button:disabled {
-  opacity: 0.4;
+.project-board-icon-button:disabled {
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
@@ -705,9 +713,10 @@ button {
   border-bottom: 1px solid var(--app-border);
 }
 
-.project-board-swimlane-label .project-board-toolbar-actions button {
-  padding: 3px 10px;
-  font-size: 12px;
+.project-board-swimlane-label .project-board-icon-button {
+  width: 22px;
+  height: 22px;
+  font-size: 13px;
 }
 
 .project-board-swimlane .project-board-tab-layout {

@@ -138,20 +138,60 @@ const kanbanEditorItems = [
   { comp: TagListField, key: "users", label: "Assignees" },
 ];
 
+// A small icon-only pair, reused wherever a widget's undo/redo history needs a control: the page
+// toolbar for Gantt/Grid (one shared instance each), and each Kanban swimlane's own header (one
+// per epic, since every stacked board keeps an independent history — see KanbanSwimlane). Plain
+// Unicode glyphs rather than SVAR's own icon font, which is disabled everywhere (`fonts={false}`)
+// to avoid its external CDN request.
+function UndoRedoButtons({ api }: { api: SvarApi | null }) {
+  return (
+    <div className="project-board-undo-redo">
+      <button
+        type="button"
+        className="project-board-icon-button"
+        onClick={() => void api?.exec("undo")}
+        disabled={!api}
+        title="Undo"
+        aria-label="Undo"
+      >
+        ↶
+      </button>
+      <button
+        type="button"
+        className="project-board-icon-button"
+        onClick={() => void api?.exec("redo")}
+        disabled={!api}
+        title="Redo"
+        aria-label="Redo"
+      >
+        ↷
+      </button>
+    </div>
+  );
+}
+
 function GanttTab({
   tasks,
   onChange,
   links,
   onLinksChange,
+  onApiReady,
 }: {
   tasks: ParsedProjectTask[];
   onChange: (tasks: ParsedProjectTask[]) => void;
   links: ProjectLink[];
   onLinksChange: (links: ProjectLink[]) => void;
+  onApiReady: (api: SvarApi | null) => void;
 }) {
   // `useState` (not `useRef`) so mounting <GanttEditor> below re-renders once the api is ready —
   // it's null on the very first render, before Gantt's `init` callback fires post-mount.
   const [api, setApi] = useState<SvarApi>(null);
+
+  useEffect(() => {
+    onApiReady(api);
+    return () => onApiReady(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see KanbanSwimlane's identical comment.
+  }, [api]);
 
   useEffect(() => {
     if (!api) {
@@ -205,26 +245,16 @@ function GanttTab({
           doesn't compose with this app's own layout (wrong height, floating close button). Gantt's
           own Editor wrapper renders nothing at all until a task is open for editing, so this
           costs no extra space otherwise. */}
-      <div className="project-board-tab-column">
-        <div className="project-board-widget-toolbar project-board-toolbar-actions">
-          <button type="button" onClick={() => void api?.exec("undo")} disabled={!api}>
-            Undo
-          </button>
-          <button type="button" onClick={() => void api?.exec("redo")} disabled={!api}>
-            Redo
-          </button>
+      <div className="project-board-tab-layout">
+        <div className="project-board-tab-widget">
+          {/* `links`: drag from a task bar's edge to another to create a dependency; `undo` enables
+              Gantt's built-in undo/redo history — the buttons for it live in the page toolbar (see
+              ProjectBoardView), driven by the api handed up via onApiReady above. */}
+          <Gantt init={setApi} tasks={tasks} links={links} undo />
         </div>
-        <div className="project-board-tab-layout">
-          <div className="project-board-tab-widget">
-            {/* `links`: drag from a task bar's edge to another to create a dependency; `undo`
-                enables Gantt's built-in undo/redo history (see the buttons above), which already
-                covers task AND link edits together. */}
-            <Gantt init={setApi} tasks={tasks} links={links} undo />
-          </div>
-          {/* Double-clicking a task opens this automatically (SVAR's built-in behavior) — no
-              separate wiring needed beyond mounting it alongside Gantt with the same api. */}
-          {api ? <GanttEditor api={api} items={getGanttEditorItems()} placement="inline" /> : null}
-        </div>
+        {/* Double-clicking a task opens this automatically (SVAR's built-in behavior) — no
+            separate wiring needed beyond mounting it alongside Gantt with the same api. */}
+        {api ? <GanttEditor api={api} items={getGanttEditorItems()} placement="inline" /> : null}
       </div>
     </GanttTheme>
   );
@@ -336,14 +366,7 @@ function KanbanSwimlane({
             rather than in the shared page toolbar (see GanttTab/GridTab for the single-instance
             equivalent). Undo/redo-driven mutations fire the same add/update/move/delete-card
             events already wired above, so no separate persistence hookup is needed here. */}
-        <div className="project-board-toolbar-actions">
-          <button type="button" onClick={() => void api?.exec("undo")} disabled={!api}>
-            Undo
-          </button>
-          <button type="button" onClick={() => void api?.exec("redo")} disabled={!api}>
-            Redo
-          </button>
-        </div>
+        <UndoRedoButtons api={api} />
       </div>
       {/* See GanttTab's identical comment on `fonts={false}` and `placement="inline"`. */}
       <KanbanTheme fonts={false}>
@@ -432,12 +455,20 @@ function GridTab({
   tasks,
   columns,
   onChange,
+  onApiReady,
 }: {
   tasks: ParsedProjectTask[];
   columns: ProjectColumn[];
   onChange: (tasks: ParsedProjectTask[]) => void;
+  onApiReady: (api: SvarApi | null) => void;
 }) {
   const [api, setApi] = useState<SvarApi>(null);
+
+  useEffect(() => {
+    onApiReady(api);
+    return () => onApiReady(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see KanbanSwimlane's identical comment.
+  }, [api]);
 
   useEffect(() => {
     if (!api) {
@@ -562,24 +593,16 @@ function GridTab({
   return (
     // See GanttTab's identical comment on `fonts={false}`.
     <GridTheme fonts={false}>
-      <div className="project-board-tab-column">
-        <div className="project-board-widget-toolbar project-board-toolbar-actions">
-          <button type="button" onClick={() => void api?.exec("undo")} disabled={!api}>
-            Undo
-          </button>
-          <button type="button" onClick={() => void api?.exec("redo")} disabled={!api}>
-            Redo
-          </button>
-        </div>
-        <div className="project-board-grid-wrap">
-          <Grid
-            init={setApi}
-            data={tasks}
-            columns={gridColumns}
-            sizes={{ rowHeight: 40, headerHeight: 38 }}
-            undo
-          />
-        </div>
+      <div className="project-board-grid-wrap">
+        {/* `undo`: the Undo/Redo buttons for this live in the page toolbar (see ProjectBoardView),
+            driven by the api handed up via onApiReady above. */}
+        <Grid
+          init={setApi}
+          data={tasks}
+          columns={gridColumns}
+          sizes={{ rowHeight: 40, headerHeight: 38 }}
+          undo
+        />
       </div>
     </GridTheme>
   );
@@ -608,6 +631,10 @@ export function ProjectBoardView({
   // all of them); add-task pushes into just the lane matching the new task's epic — see
   // KanbanSwimlane's comment on why changing `cards`/`columns` after mount is unsafe.
   const kanbanApisRef = useRef<Map<string, SvarApi>>(new Map());
+  // The Gantt/Grid tabs each have exactly one instance mounted at a time (conditional rendering,
+  // see the render section below), so a single slot — rather than the Kanban map above — is enough
+  // to drive the page toolbar's Undo/Redo buttons for whichever of the two is showing.
+  const [activeSingleApi, setActiveSingleApi] = useState<SvarApi>(null);
 
   // Re-parse whenever a different document (or the same one reloaded) is handed to us — mirrors
   // NotebookView's identical reset-on-switch effect, including cancelling any debounced save
@@ -836,6 +863,13 @@ export function ProjectBoardView({
         </div>
         {editable ? (
           <div className="project-board-toolbar-actions">
+            {/* Gantt/Grid each have one instance mounted at a time, so activeSingleApi always
+                refers to whichever of the two is currently showing (see its declaration above).
+                Kanban's Undo/Redo live per-lane instead — one shared history button here wouldn't
+                map onto any single stacked board (see KanbanSwimlane). */}
+            {viewMode === "gantt" || viewMode === "grid" ? (
+              <UndoRedoButtons api={activeSingleApi} />
+            ) : null}
             <button
               type="button"
               className={columnsPanelOpen ? "project-board-tab--active" : undefined}
@@ -899,6 +933,7 @@ export function ProjectBoardView({
             onChange={handleTasksChange}
             links={links}
             onLinksChange={handleLinksChange}
+            onApiReady={setActiveSingleApi}
           />
         ) : null}
         {viewMode === "kanban" ? (
@@ -918,7 +953,12 @@ export function ProjectBoardView({
           />
         ) : null}
         {viewMode === "grid" ? (
-          <GridTab tasks={tasks} columns={columns} onChange={handleTasksChange} />
+          <GridTab
+            tasks={tasks}
+            columns={columns}
+            onChange={handleTasksChange}
+            onApiReady={setActiveSingleApi}
+          />
         ) : null}
       </div>
     </div>
