@@ -31,9 +31,24 @@ export type ProjectColumn = {
   label: string;
 };
 
+// A Gantt task dependency (drawn/edited only from the Gantt view — Kanban/Grid don't visualize
+// these). `type` follows the standard scheduling notation: "s2s"/"s2e"/"e2s"/"e2e" = start-to-start
+// / start-to-end / end-to-start / end-to-end; "e2s" (finish-to-start) is the common case.
+export type ProjectLinkType = "s2s" | "s2e" | "e2s" | "e2e";
+
+export type ProjectLink = {
+  id: string;
+  type: ProjectLinkType;
+  source: ProjectTaskId;
+  target: ProjectTaskId;
+  lag?: number;
+};
+
 export type ProjectBoard = {
   tasks: ProjectTask[];
   columns: ProjectColumn[];
+  // Optional: documents saved before dependency links existed won't have this field.
+  links?: ProjectLink[];
 };
 
 // Dates hydrated to real Date instances — the shape @svar-ui/react-gantt's ITask actually wants,

@@ -32,6 +32,7 @@ import {
   type ParsedProjectTask,
   type ProjectBoard,
   type ProjectColumn,
+  type ProjectLink,
   type ProjectTask,
 } from "./projectBoard";
 
@@ -140,9 +141,13 @@ const kanbanEditorItems = [
 function GanttTab({
   tasks,
   onChange,
+  links,
+  onLinksChange,
 }: {
   tasks: ParsedProjectTask[];
   onChange: (tasks: ParsedProjectTask[]) => void;
+  links: ProjectLink[];
+  onLinksChange: (links: ProjectLink[]) => void;
 }) {
   // `useState` (not `useRef`) so mounting <GanttEditor> below re-renders once the api is ready —
   // it's null on the very first render, before Gantt's `init` callback fires post-mount.
@@ -171,6 +176,19 @@ function GanttTab({
     });
     // Editor writes task field changes (rename, dates, progress, ...) via "update-task" too, so
     // the same listener above already covers it — no separate hookup needed.
+
+    // Dependency links: dragging between two task bars (or the Editor's own link controls, if any)
+    // fires these three events; `serialize({data: "links"})` mirrors the `pushChange` pattern above
+    // for tasks.
+    const pushLinksChange = () => {
+      const serialized = api.serialize({ data: "links" }) as ProjectLink[] | null;
+      if (serialized) {
+        onLinksChange(serialized);
+      }
+    };
+    api.on("add-link", pushLinksChange);
+    api.on("update-link", pushLinksChange);
+    api.on("delete-link", pushLinksChange);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `api` is stable once set;
     // re-running this on every `tasks`/`onChange` change would attach duplicate listeners.
   }, [api]);
@@ -187,13 +205,26 @@ function GanttTab({
           doesn't compose with this app's own layout (wrong height, floating close button). Gantt's
           own Editor wrapper renders nothing at all until a task is open for editing, so this
           costs no extra space otherwise. */}
-      <div className="project-board-tab-layout">
-        <div className="project-board-tab-widget">
-          <Gantt init={setApi} tasks={tasks} />
+      <div className="project-board-tab-column">
+        <div className="project-board-widget-toolbar project-board-toolbar-actions">
+          <button type="button" onClick={() => void api?.exec("undo")} disabled={!api}>
+            Undo
+          </button>
+          <button type="button" onClick={() => void api?.exec("redo")} disabled={!api}>
+            Redo
+          </button>
         </div>
-        {/* Double-clicking a task opens this automatically (SVAR's built-in behavior) — no
-            separate wiring needed beyond mounting it alongside Gantt with the same api. */}
-        {api ? <GanttEditor api={api} items={getGanttEditorItems()} placement="inline" /> : null}
+        <div className="project-board-tab-layout">
+          <div className="project-board-tab-widget">
+            {/* `links`: drag from a task bar's edge to another to create a dependency; `undo`
+                enables Gantt's built-in undo/redo history (see the buttons above), which already
+                covers task AND link edits together. */}
+            <Gantt init={setApi} tasks={tasks} links={links} undo />
+          </div>
+          {/* Double-clicking a task opens this automatically (SVAR's built-in behavior) — no
+              separate wiring needed beyond mounting it alongside Gantt with the same api. */}
+          {api ? <GanttEditor api={api} items={getGanttEditorItems()} placement="inline" /> : null}
+        </div>
       </div>
     </GanttTheme>
   );
@@ -299,12 +330,32 @@ function KanbanSwimlane({
 
   return (
     <div className="project-board-swimlane">
-      <div className="project-board-swimlane-label">{epicLabel}</div>
+      <div className="project-board-swimlane-label">
+        <span>{epicLabel}</span>
+        {/* Each stacked board keeps its own independent history, so Undo/Redo live per-lane
+            rather than in the shared page toolbar (see GanttTab/GridTab for the single-instance
+            equivalent). Undo/redo-driven mutations fire the same add/update/move/delete-card
+            events already wired above, so no separate persistence hookup is needed here. */}
+        <div className="project-board-toolbar-actions">
+          <button type="button" onClick={() => void api?.exec("undo")} disabled={!api}>
+            Undo
+          </button>
+          <button type="button" onClick={() => void api?.exec("redo")} disabled={!api}>
+            Redo
+          </button>
+        </div>
+      </div>
       {/* See GanttTab's identical comment on `fonts={false}` and `placement="inline"`. */}
       <KanbanTheme fonts={false}>
         <div className="project-board-tab-layout">
           <div className="project-board-tab-widget">
-            <Kanban init={setApi} cards={cards} columns={kanbanColumns} card={kanbanCardShape} />
+            <Kanban
+              init={setApi}
+              cards={cards}
+              columns={kanbanColumns}
+              card={kanbanCardShape}
+              history
+            />
           </div>
           {/* Clicking a card dispatches select-card, which this picks up automatically. */}
           {api ? <KanbanEditor api={api} items={editorItems} placement="inline" /> : null}
@@ -511,13 +562,24 @@ function GridTab({
   return (
     // See GanttTab's identical comment on `fonts={false}`.
     <GridTheme fonts={false}>
-      <div className="project-board-grid-wrap">
-        <Grid
-          init={setApi}
-          data={tasks}
-          columns={gridColumns}
-          sizes={{ rowHeight: 40, headerHeight: 38 }}
-        />
+      <div className="project-board-tab-column">
+        <div className="project-board-widget-toolbar project-board-toolbar-actions">
+          <button type="button" onClick={() => void api?.exec("undo")} disabled={!api}>
+            Undo
+          </button>
+          <button type="button" onClick={() => void api?.exec("redo")} disabled={!api}>
+            Redo
+          </button>
+        </div>
+        <div className="project-board-grid-wrap">
+          <Grid
+            init={setApi}
+            data={tasks}
+            columns={gridColumns}
+            sizes={{ rowHeight: 40, headerHeight: 38 }}
+            undo
+          />
+        </div>
       </div>
     </GridTheme>
   );
@@ -603,6 +665,17 @@ export function ProjectBoardView({
     }
     const untouched = board.tasks.filter((task) => !originalIds.has(task.id));
     const next = { ...board, tasks: [...untouched, ...fromParsedTasks(updatedSubset)] };
+    setBoard(next);
+    scheduleSave(next);
+  };
+
+  // Dependency links are only ever drawn/edited from the Gantt view (see GanttTab) — this just
+  // persists whatever the full links array looks like after each add/update/delete.
+  const handleLinksChange = (nextLinks: ProjectLink[]) => {
+    if (!board) {
+      return;
+    }
+    const next = { ...board, links: nextLinks };
     setBoard(next);
     scheduleSave(next);
   };
@@ -724,6 +797,7 @@ export function ProjectBoardView({
   // stay before the parseFailed early return below so the hook always runs (Rules of Hooks).
   const tasks = useMemo(() => toParsedTasks(board?.tasks ?? []), [board?.tasks]);
   const columns = board?.columns ?? [];
+  const links = useMemo(() => board?.links ?? [], [board?.links]);
 
   if (parseFailed) {
     return (
@@ -819,7 +893,13 @@ export function ProjectBoardView({
           remounting fresh. */}
       <div className="project-board-surface">
         {viewMode === "gantt" ? (
-          <GanttTab key={pageId} tasks={tasks} onChange={handleTasksChange} />
+          <GanttTab
+            key={pageId}
+            tasks={tasks}
+            onChange={handleTasksChange}
+            links={links}
+            onLinksChange={handleLinksChange}
+          />
         ) : null}
         {viewMode === "kanban" ? (
           <KanbanBoard

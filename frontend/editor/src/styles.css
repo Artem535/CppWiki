@@ -639,6 +639,33 @@ button {
   border-left: 1px solid var(--app-border);
 }
 
+/* Gantt/Grid's own small Undo/Redo row, sat above the widget (see GanttTab/GridTab) — a plain
+   flex column wrapping the mini-toolbar plus the existing board+editor layout (or grid wrap),
+   which now needs `flex: 1` instead of `height: 100%` since it's no longer the outermost element. */
+.project-board-tab-column {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.project-board-widget-toolbar {
+  flex: 0 0 auto;
+  padding-bottom: 8px;
+}
+
+.project-board-tab-column > .project-board-tab-layout,
+.project-board-tab-column > .project-board-grid-wrap {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.project-board-toolbar-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Jira-style epics: one full SVAR Kanban instance per epic, stacked vertically (see KanbanBoard/
    KanbanSwimlane) rather than true swimlanes within a single board — no open-source Kanban library
    supports real cross-lane grouping, and a from-scratch DnD rebuild was judged far more work than
@@ -666,13 +693,21 @@ button {
 }
 
 .project-board-swimlane-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex: 0 0 auto;
-  padding: 8px 14px;
+  padding: 6px 14px;
   font-size: 13px;
   font-weight: 600;
   color: var(--app-text);
   background: var(--app-surface-muted);
   border-bottom: 1px solid var(--app-border);
+}
+
+.project-board-swimlane-label .project-board-toolbar-actions button {
+  padding: 3px 10px;
+  font-size: 12px;
 }
 
 .project-board-swimlane .project-board-tab-layout {
