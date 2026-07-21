@@ -435,3 +435,69 @@ button {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* Project board document kind (issue #106): Gantt/Kanban/DataGrid views (SVAR) need a real,
+   definite, non-zero height to render into — the same `height: 100%` chain requirement
+   documented at the top of this file for .editor-surface/.excalidraw-canvas. .project-board-view
+   fills .editor-surface's height, and .project-board-surface (the flex child actually holding
+   whichever SVAR component is mounted) takes all remaining space after the toolbar. */
+.project-board-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  color: var(--app-text);
+}
+
+.project-board-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.project-board-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.project-board-tabs button {
+  padding: 6px 14px;
+  font-size: 13px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.project-board-tabs button.project-board-tab--active {
+  background: var(--app-surface-active);
+  color: var(--app-text);
+}
+
+.project-board-toolbar > button {
+  padding: 6px 14px;
+  font-size: 13px;
+  border: 1px dashed var(--app-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.project-board-toolbar > button:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+  border-style: solid;
+}
+
+.project-board-empty {
+  padding: 24px;
+  color: var(--app-text-muted);
+}
+
+.project-board-surface {
+  flex: 1;
+  min-height: 0;
+}

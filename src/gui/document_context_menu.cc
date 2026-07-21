@@ -102,6 +102,7 @@ void DocumentContextMenu::AddNewDocumentOptions() {
   AddKindOption(document::DocumentKind::kWikiPage, QStringLiteral("Wiki page"));
   AddKindOption(document::DocumentKind::kJupyterNotebook, QStringLiteral("Jupyter notebook"));
   AddKindOption(document::DocumentKind::kExcalidrawCanvas, QStringLiteral("Excalidraw canvas"));
+  AddKindOption(document::DocumentKind::kProjectBoard, QStringLiteral("Project board"));
 
   for (auto* kind_button : std::as_const(new_document_kind_buttons_)) {
     kind_button->setVisible(false);

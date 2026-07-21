@@ -18,6 +18,10 @@ enum class DocumentKind : std::uint8_t {
   kWikiPage,
   kJupyterNotebook,
   kExcalidrawCanvas,
+  // Project board (ADR-017 follow-up): a shared task list rendered through switchable
+  // Gantt/Kanban/DataGrid views (SVAR's open-source React components), all reading/writing the
+  // same underlying tasks array — see frontend/editor/src/project/ProjectBoardView.tsx.
+  kProjectBoard,
 };
 
 enum class BlockType : std::uint8_t {
@@ -84,6 +88,8 @@ struct Document {
       return "jupyterNotebook";
     case DocumentKind::kExcalidrawCanvas:
       return "excalidrawCanvas";
+    case DocumentKind::kProjectBoard:
+      return "projectBoard";
     case DocumentKind::kWikiPage:
       return "wikiPage";
   }
@@ -99,6 +105,9 @@ struct Document {
   }
   if (key == "excalidrawCanvas") {
     return DocumentKind::kExcalidrawCanvas;
+  }
+  if (key == "projectBoard") {
+    return DocumentKind::kProjectBoard;
   }
   return DocumentKind::kWikiPage;
 }

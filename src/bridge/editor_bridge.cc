@@ -325,6 +325,25 @@ auto MakeEmptyExcalidrawSceneSnapshotJson() -> QByteArray {
   return QJsonDocument(scene).toJson(QJsonDocument::Compact);
 }
 
+// Minimal seed content for a newly created kProjectBoard document: an empty task list plus a
+// default set of Kanban columns, matching the shared task/column schema frontend/editor/src/
+// project/ProjectBoardView.tsx's Gantt/Kanban/DataGrid views all read from.
+auto MakeEmptyProjectBoardSnapshotJson() -> QByteArray {
+  QJsonObject board;
+  board.insert(QStringLiteral("tasks"), QJsonArray{});
+  QJsonArray columns;
+  for (const auto& [id, label] :
+       {std::pair{"todo", "To do"}, std::pair{"inProgress", "In progress"},
+        std::pair{"done", "Done"}}) {
+    QJsonObject column;
+    column.insert(QStringLiteral("id"), QString::fromLatin1(id));
+    column.insert(QStringLiteral("label"), QString::fromLatin1(label));
+    columns.append(column);
+  }
+  board.insert(QStringLiteral("columns"), columns);
+  return QJsonDocument(board).toJson(QJsonDocument::Compact);
+}
+
 auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
                            std::int32_t sort_order = 0,
                            QString workspace_id = QStringLiteral("default"), QString author_id = {},
@@ -340,6 +359,8 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
         return MakeEmptyNotebookSnapshotJson();
       case document::DocumentKind::kExcalidrawCanvas:
         return MakeEmptyExcalidrawSceneSnapshotJson();
+      case document::DocumentKind::kProjectBoard:
+        return MakeEmptyProjectBoardSnapshotJson();
       case document::DocumentKind::kWikiPage:
         return MakeDocumentSnapshotJson(id, title, QJsonArray{});
     }
