@@ -82,3 +82,9 @@ export function makeTaskId(): ProjectTaskId {
   nextTaskSuffix += 1;
   return `task-${Date.now()}-${nextTaskSuffix}`;
 }
+
+let nextColumnSuffix = 0;
+export function makeColumnId(): string {
+  nextColumnSuffix += 1;
+  return `column-${Date.now()}-${nextColumnSuffix}`;
+}

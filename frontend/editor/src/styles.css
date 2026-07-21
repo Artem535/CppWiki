@@ -471,12 +471,17 @@ button {
   cursor: pointer;
 }
 
-.project-board-tabs button.project-board-tab--active {
+.project-board-tab--active {
   background: var(--app-surface-active);
   color: var(--app-text);
 }
 
-.project-board-toolbar > button {
+.project-board-toolbar-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.project-board-toolbar-actions button {
   padding: 6px 14px;
   font-size: 13px;
   border: 1px dashed var(--app-border);
@@ -486,9 +491,13 @@ button {
   cursor: pointer;
 }
 
-.project-board-toolbar > button:hover {
+.project-board-toolbar-actions button:hover {
   background: var(--app-surface-hover);
   color: var(--app-text);
+  border-style: solid;
+}
+
+.project-board-toolbar-actions button.project-board-tab--active {
   border-style: solid;
 }
 
@@ -500,4 +509,111 @@ button {
 .project-board-surface {
   flex: 1;
   min-height: 0;
+}
+
+.project-board-columns-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface);
+}
+
+.project-board-columns-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-board-columns-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-board-columns-row input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 13px;
+  font: inherit;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+}
+
+.project-board-columns-row input:focus {
+  outline: none;
+  border-color: var(--app-surface-hover);
+}
+
+.project-board-columns-remove {
+  padding: 4px 10px;
+  font-size: 15px;
+  line-height: 1;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.project-board-columns-remove:hover:not(:disabled) {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+}
+
+.project-board-columns-remove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.project-board-columns-panel > button {
+  align-self: flex-start;
+  padding: 6px 14px;
+  font-size: 13px;
+  border: 1px dashed var(--app-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.project-board-columns-panel > button:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+  border-style: solid;
+}
+
+/* SVAR's WillowDark theme ships its own purple accent (#7a67eb) and font stack, which reads as
+   visibly foreign next to this app's monochrome dark theme (no accent color anywhere else, see
+   :root above) — remap its CSS custom properties (all under the `.wx-willow-dark-theme` class
+   its <WillowDark> wrapper applies, see node_modules/@svar-ui/react-core) onto this app's own
+   palette so the Gantt/Kanban/Grid views and their edit forms read as part of the app, not a
+   dropped-in widget. */
+.project-board-view .wx-willow-dark-theme {
+  --wx-font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --wx-background: var(--app-surface);
+  --wx-background-alt: var(--app-surface-muted);
+  --wx-background-hover: var(--app-surface-hover);
+  --wx-border-color: var(--app-border);
+  --wx-color-font: var(--app-text);
+  --wx-color-font-alt: var(--app-text-muted);
+  --wx-color-primary: var(--app-surface-hover);
+  --wx-color-primary-selected: rgb(83 92 120 / 35%);
+  --wx-color-primary-font: var(--app-text);
+  --wx-color-secondary-font: var(--app-text);
+  --wx-color-secondary-font-hover: var(--app-text);
+  --wx-color-secondary-border: var(--app-border);
+  --wx-color-secondary-border-disabled: var(--app-border);
+  --wx-input-background: var(--app-surface-muted);
+  --wx-button-background: var(--app-surface-muted);
+  --wx-modal-background: var(--app-surface);
+  --wx-popup-background: var(--app-surface);
+  --wx-tabs-active-color: var(--app-text);
 }

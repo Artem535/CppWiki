@@ -6,7 +6,7 @@
 // DataGrid view. Only one tab is mounted at a time (conditional rendering below), so switching
 // tabs always remounts the next view with the latest shared state rather than needing live
 // cross-component sync while multiple are mounted simultaneously.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Editor as GanttEditor, Gantt, WillowDark as GanttTheme, getEditorItems as getGanttEditorItems } from "@svar-ui/react-gantt";
 import "@svar-ui/react-gantt/all.css";
@@ -19,6 +19,7 @@ import type { EditorBridge } from "../bridge/editorBridge";
 import { snapshotDebounceMs } from "../constants";
 import {
   fromParsedTasks,
+  makeColumnId,
   makeTaskId,
   parseProjectBoardJson,
   toParsedTasks,
@@ -111,10 +112,17 @@ function KanbanTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see GanttTab's identical comment.
   }, [api]);
 
-  const kanbanColumns = columns.map((column) => ({ id: column.id, label: column.label }));
+  // Kanban re-seeds its whole store whenever the `columns`/`cards` prop identity changes (see its
+  // `useEffect([cards, columns, ...])` re-init), so these must stay referentially stable across
+  // renders that don't actually touch columns/tasks — otherwise every unrelated re-render (e.g. a
+  // task edit while the columns panel is open) would blow away the board's scroll/collapsed state.
+  const kanbanColumns = useMemo(
+    () => columns.map((column) => ({ id: column.id, label: column.label })),
+    [columns],
+  );
   // KanbanCard's title field is `label`, not our schema's `text` — without this mapping the
   // card renders with no visible title at all (the board only ever reads `.label`).
-  const cards = tasks.map((task) => ({ ...task, label: task.text }));
+  const cards = useMemo(() => tasks.map((task) => ({ ...task, label: task.text })), [tasks]);
 
   return (
     <KanbanTheme>
@@ -158,6 +166,7 @@ export function ProjectBoardView({
   const [board, setBoard] = useState<ProjectBoard | null>(() => parseProjectBoardJson(rawContent ?? ""));
   const [parseFailed, setParseFailed] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("gantt");
+  const [columnsPanelOpen, setColumnsPanelOpen] = useState(false);
   const snapshot_timer = useRef<number | null>(null);
   const loaded_page_id = useRef<string | null>(null);
 
@@ -224,6 +233,44 @@ export function ProjectBoardView({
     scheduleSave(next);
   };
 
+  const handleAddColumn = () => {
+    const base = board ?? { tasks: [], columns: [] };
+    const newColumn: ProjectColumn = { id: makeColumnId(), label: "New column" };
+    const next = { ...base, columns: [...base.columns, newColumn] };
+    setBoard(next);
+    scheduleSave(next);
+  };
+
+  const handleRenameColumn = (columnId: string, label: string) => {
+    if (!board) {
+      return;
+    }
+    const next = {
+      ...board,
+      columns: board.columns.map((column) => (column.id === columnId ? { ...column, label } : column)),
+    };
+    setBoard(next);
+    scheduleSave(next);
+  };
+
+  const handleDeleteColumn = (columnId: string) => {
+    if (!board || board.columns.length <= 1) {
+      return;
+    }
+    const remaining = board.columns.filter((column) => column.id !== columnId);
+    const fallbackColumnId = remaining[0].id;
+    const next = {
+      columns: remaining,
+      // Tasks orphaned by the deleted column move to the first remaining one instead of being
+      // silently dropped from every view.
+      tasks: board.tasks.map((task) =>
+        task.column === columnId ? { ...task, column: fallbackColumnId } : task,
+      ),
+    };
+    setBoard(next);
+    scheduleSave(next);
+  };
+
   if (parseFailed) {
     return (
       <div className="empty-state" data-testid="project-board-parse-error">
@@ -263,11 +310,47 @@ export function ProjectBoardView({
           </button>
         </div>
         {editable ? (
-          <button type="button" onClick={handleAddTask}>
-            + Task
-          </button>
+          <div className="project-board-toolbar-actions">
+            <button
+              type="button"
+              className={columnsPanelOpen ? "project-board-tab--active" : undefined}
+              onClick={() => setColumnsPanelOpen((open) => !open)}
+            >
+              Columns
+            </button>
+            <button type="button" onClick={handleAddTask}>
+              + Task
+            </button>
+          </div>
         ) : null}
       </div>
+      {editable && columnsPanelOpen ? (
+        <div className="project-board-columns-panel" data-testid="project-board-columns-panel">
+          <ul className="project-board-columns-list">
+            {columns.map((column) => (
+              <li key={column.id} className="project-board-columns-row">
+                <input
+                  type="text"
+                  value={column.label}
+                  onChange={(event) => handleRenameColumn(column.id, event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="project-board-columns-remove"
+                  onClick={() => handleDeleteColumn(column.id)}
+                  disabled={columns.length <= 1}
+                  aria-label={`Remove column ${column.label}`}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button type="button" onClick={handleAddColumn}>
+            + Add column
+          </button>
+        </div>
+      ) : null}
       {tasks.length === 0 ? (
         <div className="project-board-empty">
           <p>This project board has no tasks yet.</p>
