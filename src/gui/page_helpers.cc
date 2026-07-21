@@ -244,6 +244,8 @@ auto FileDialogNameFilterForKind(document::DocumentKind kind) -> QString {
       return QStringLiteral("Excalidraw scene (*.excalidraw)");
     case document::DocumentKind::kOpenApiSpec:
       return QStringLiteral("OpenAPI spec (*.json)");
+    case document::DocumentKind::kProjectBoard:
+      return QStringLiteral("Project board (*.json)");
     case document::DocumentKind::kWikiPage:
       return QString();
   }
@@ -257,6 +259,7 @@ auto FileExtensionForKind(document::DocumentKind kind) -> QString {
     case document::DocumentKind::kExcalidrawCanvas:
       return QStringLiteral("excalidraw");
     case document::DocumentKind::kOpenApiSpec:
+    case document::DocumentKind::kProjectBoard:
       return QStringLiteral("json");
     case document::DocumentKind::kWikiPage:
       return QString();
@@ -270,6 +273,7 @@ auto ImportAnyKindNameFilter() -> QString {
       "Jupyter Notebook (*.ipynb);;"
       "Excalidraw scene (*.excalidraw);;"
       "OpenAPI spec (*.json);;"
+      "Project board (*.json);;"
       "Markdown (*.md *.markdown)");
 }
 
@@ -295,6 +299,12 @@ auto DetectImportableDocumentKind(const QString& file_name, const QString& conte
                                          object.value(QStringLiteral("swagger")).isString();
     if (looks_like_openapi_spec) {
       return document::DocumentKind::kOpenApiSpec;
+    }
+
+    const bool looks_like_project_board = object.value(QStringLiteral("tasks")).isArray() &&
+                                          object.value(QStringLiteral("columns")).isArray();
+    if (looks_like_project_board) {
+      return document::DocumentKind::kProjectBoard;
     }
   }
 

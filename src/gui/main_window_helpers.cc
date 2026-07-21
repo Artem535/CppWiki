@@ -297,6 +297,7 @@ auto ImportButtonLabel(document::DocumentKind kind) -> QString {
     case document::DocumentKind::kExcalidrawCanvas:
       return QStringLiteral("Import .excalidraw");
     case document::DocumentKind::kOpenApiSpec:
+    case document::DocumentKind::kProjectBoard:
       return QStringLiteral("Import .json");
     case document::DocumentKind::kWikiPage:
       return QStringLiteral("Import");
@@ -311,6 +312,7 @@ auto ExportButtonLabel(document::DocumentKind kind) -> QString {
     case document::DocumentKind::kExcalidrawCanvas:
       return QStringLiteral("Export .excalidraw");
     case document::DocumentKind::kOpenApiSpec:
+    case document::DocumentKind::kProjectBoard:
       return QStringLiteral("Export .json");
     case document::DocumentKind::kWikiPage:
       return QStringLiteral("Export");

@@ -25,6 +25,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ExcalidrawCanvasView } from "./canvas/ExcalidrawCanvasView";
 import { getMermaidSlashMenuItem, MermaidBlock } from "./blocks/MermaidBlock";
+import { ProjectBoardView } from "./project/ProjectBoardView";
 import { createEditorBridge } from "./bridge";
 import { BridgeChatTransport } from "./bridge/aiChatTransport";
 import {
@@ -57,10 +58,17 @@ const editorSchema = BlockNoteSchema.create({
 });
 
 // Placeholder mounted for document kinds that don't have a real renderer yet. "jupyterNotebook"
-// (NotebookView, #52), "excalidrawCanvas" (ExcalidrawCanvasView, #53), and "openApiSpec"
-// (OpenApiSpecView, #107) now have real renderers; this stays in place only for a future kind
-// added without one yet.
-function UnsupportedKindPlaceholder({ kind }: { kind: Exclude<DocumentKind, "wikiPage" | "jupyterNotebook" | "excalidrawCanvas" | "openApiSpec"> }) {
+// (NotebookView, #52), "excalidrawCanvas" (ExcalidrawCanvasView, #53), "openApiSpec"
+// (OpenApiSpecView, #107), and "projectBoard" (ProjectBoardView, #106) now have real renderers;
+// this stays in place only for a future kind added without one yet.
+function UnsupportedKindPlaceholder({
+  kind,
+}: {
+  kind: Exclude<
+    DocumentKind,
+    "wikiPage" | "jupyterNotebook" | "excalidrawCanvas" | "openApiSpec" | "projectBoard"
+  >;
+}) {
   const messages: Record<typeof kind, string> = {};
   return (
     <div className="empty-state" data-testid="unsupported-kind-placeholder">
@@ -396,6 +404,7 @@ function EditorApp() {
   const isJupyterNotebook = documentKind === "jupyterNotebook";
   const isExcalidrawCanvas = documentKind === "excalidrawCanvas";
   const isOpenApiSpec = documentKind === "openApiSpec";
+  const isProjectBoard = documentKind === "projectBoard";
 
   return (
     <main className="app-shell">
@@ -440,11 +449,23 @@ function EditorApp() {
             />
           </div>
         ) : null}
+        {shouldMountEditor && isProjectBoard ? (
+          <div className="editor-surface" data-document-kind={documentKind}>
+            <ProjectBoardView
+              key={`${selectedPageId ?? "project-board"}-${documentLoadNonce}`}
+              bridge={bridge}
+              pageId={selectedPageId ?? ""}
+              editable={isEditable}
+              rawContent={documentRawContent}
+            />
+          </div>
+        ) : null}
         {shouldMountEditor &&
         !isWikiPage &&
         !isJupyterNotebook &&
         !isExcalidrawCanvas &&
-        !isOpenApiSpec ? (
+        !isOpenApiSpec &&
+        !isProjectBoard ? (
           <div className="editor-surface" data-document-kind={documentKind}>
             <UnsupportedKindPlaceholder kind={documentKind as never} />
           </div>
