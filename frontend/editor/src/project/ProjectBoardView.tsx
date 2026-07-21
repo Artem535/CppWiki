@@ -192,15 +192,38 @@ function GanttTab({
   onChange,
   links,
   onLinksChange,
+  onApiReady,
 }: {
   tasks: ParsedProjectTask[];
   onChange: (tasks: ParsedProjectTask[]) => void;
   links: ProjectLink[];
   onLinksChange: (links: ProjectLink[]) => void;
+  onApiReady: (api: SvarApi | null) => void;
 }) {
   // `useState` (not `useRef`) so mounting <GanttEditor> below re-renders once the api is ready —
   // it's null on the very first render, before Gantt's `init` callback fires post-mount.
   const [api, setApi] = useState<SvarApi>(null);
+
+  useEffect(() => {
+    onApiReady(api);
+    return () => onApiReady(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see KanbanSwimlane's identical comment.
+  }, [api]);
+
+  // Gantt does the exact same hard-reset-on-prop-change thing Kanban does (see KanbanSwimlane's
+  // comment) — feeding it a fresh `tasks`/`links` array on every single render (which is what
+  // happens naturally, since every edit updates `board` and both are recomputed from it) meant
+  // Gantt fully reinitialized its internal store after every single action, visible as a constant
+  // flicker/reset of the whole chart. Freeze both at mount instead: ordinary edits (drag, resize,
+  // the Editor) already land in Gantt's own store the moment they happen — there's nothing to feed
+  // back in for those. The one thing that still needs pushing in from outside is a task added via
+  // the page's "+ Task" button while this tab is showing (see handleAddTask's use of onApiReady
+  // above); anything that changes `board` in a way too broad to replay as one action (Undo/Redo)
+  // instead forces a full remount via a key change (see ProjectBoardView's historyVersion).
+  const initialTasksRef = useRef(tasks);
+  const initialLinksRef = useRef(links);
+  const ganttTasks = useMemo(() => initialTasksRef.current, []);
+  const ganttLinks = useMemo(() => initialLinksRef.current, []);
 
   useEffect(() => {
     if (!api) {
@@ -257,7 +280,7 @@ function GanttTab({
       <div className="project-board-tab-layout">
         <div className="project-board-tab-widget">
           {/* `links`: drag from a task bar's edge to another to create a dependency. */}
-          <Gantt init={setApi} tasks={tasks} links={links} />
+          <Gantt init={setApi} tasks={ganttTasks} links={ganttLinks} />
         </div>
         {/* Double-clicking a task opens this automatically (SVAR's built-in behavior) — no
             separate wiring needed beyond mounting it alongside Gantt with the same api. */}
@@ -614,12 +637,24 @@ export function ProjectBoardView({
   // all of them); add-task pushes into just the lane matching the new task's epic — see
   // KanbanSwimlane's comment on why changing `cards`/`columns` after mount is unsafe.
   const kanbanApisRef = useRef<Map<string, SvarApi>>(new Map());
+  // Gantt has exactly one instance mounted at a time (unlike Kanban's per-epic map above), so a
+  // single slot is enough — used only to push a task added via "+ Task" straight into Gantt's live
+  // store while its tab is showing (see GanttTab's comment on why its `tasks`/`links` are otherwise
+  // frozen at mount and don't take further pushes through props).
+  const ganttApiRef = useRef<SvarApi | null>(null);
   // A single, document-wide undo/redo history over `board` itself — see UndoRedoButtons' comment
   // for why this replaced trying to use each SVAR widget's own (partly broken) history module.
   // `past`/`future` hold full prior/subsequent `ProjectBoard` snapshots, oldest-adjacent-to-current
   // first, so `past[past.length - 1]` / `future[0]` are always the one step away from `board`.
   const [past, setPast] = useState<ProjectBoard[]>([]);
   const [future, setFuture] = useState<ProjectBoard[]>([]);
+  // Bumped only by Undo/Redo (see handleUndo/handleRedo) — folded into the Gantt/Kanban tabs' `key`
+  // below to force a full remount specifically then. Both freeze their task/card data at mount
+  // (see GanttTab/KanbanSwimlane) to stop SVAR's own reinit-on-every-edit flicker, which means an
+  // arbitrary Undo/Redo (not a single replayable action, unlike a normal edit) can only actually
+  // reach the screen through a deliberate remount — an occasional, expected refresh on an explicit
+  // "jump to a different state" action, not the same thing as flickering on every routine edit.
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   // Re-parse whenever a different document (or the same one reloaded) is handed to us — mirrors
   // NotebookView's identical reset-on-switch effect, including cancelling any debounced save
@@ -640,6 +675,7 @@ export function ProjectBoardView({
     // back into a document they've since navigated away from — start fresh each time.
     setPast([]);
     setFuture([]);
+    setHistoryVersion(0);
   }, [pageId, rawContent]);
 
   useEffect(() => {
@@ -684,6 +720,7 @@ export function ProjectBoardView({
     setFuture((f) => [board, ...f]);
     setBoard(previous);
     scheduleSave(previous);
+    setHistoryVersion((v) => v + 1);
   };
 
   const handleRedo = () => {
@@ -695,6 +732,7 @@ export function ProjectBoardView({
     setPast((p) => [...p, board]);
     setBoard(next);
     scheduleSave(next);
+    setHistoryVersion((v) => v + 1);
   };
 
   const handleTasksChange = (nextParsedTasks: ParsedProjectTask[]) => {
@@ -743,6 +781,12 @@ export function ProjectBoardView({
     const noEpicApi = kanbanApisRef.current.get(NO_EPIC_KEY);
     if (viewMode === "kanban" && noEpicApi) {
       void noEpicApi.exec("add-card", { card: { ...newTask, label: newTask.text } });
+    }
+    // Same story for Gantt — its `tasks` are frozen at mount too (see GanttTab), so a task added
+    // this way needs pushing into its live store directly, with `start` hydrated to a real Date
+    // (Gantt needs one to place the bar; `newTask` above only has the ISO string form).
+    if (viewMode === "gantt" && ganttApiRef.current) {
+      void ganttApiRef.current.exec("add-task", { task: toParsedTasks([newTask])[0] });
     }
   };
 
@@ -935,23 +979,29 @@ export function ProjectBoardView({
           also hid the columns whenever that count dipped to zero even transiently (e.g. from a
           stale intermediate read while Kanban re-seeds its store after a drag), matching reports
           of a newly added column disappearing entirely. */}
-      {/* `key={pageId}`: each Kanban swimlane freezes its initial cards/columns at mount (see
-          KanbanSwimlane's comment) — without this, switching to a different document while
-          staying on the Kanban tab would leave it seeded from the previous document instead of
-          remounting fresh. */}
+      {/* `key`: both Gantt and every Kanban swimlane freeze their initial tasks/cards/columns at
+          mount (see GanttTab/KanbanSwimlane's comments) — without a `pageId` component, switching
+          to a different document while staying on the same tab would leave it seeded from the
+          previous document instead of remounting fresh. The `historyVersion` component forces the
+          same kind of remount specifically for Undo/Redo, since restoring an arbitrary past board
+          state isn't something that can be pushed in as a single replayable action the way a
+          normal edit can (see handleUndo/handleRedo). */}
       <div className="project-board-surface">
         {viewMode === "gantt" ? (
           <GanttTab
-            key={pageId}
+            key={`${pageId}:${historyVersion}`}
             tasks={tasks}
             onChange={handleTasksChange}
             links={links}
             onLinksChange={handleLinksChange}
+            onApiReady={(api) => {
+              ganttApiRef.current = api;
+            }}
           />
         ) : null}
         {viewMode === "kanban" ? (
           <KanbanBoard
-            key={pageId}
+            key={`${pageId}:${historyVersion}`}
             tasks={tasks}
             columns={columns}
             onChange={handleSwimlaneChange}
