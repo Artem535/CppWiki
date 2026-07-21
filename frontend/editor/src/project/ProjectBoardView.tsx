@@ -8,9 +8,9 @@
 // cross-component sync while multiple are mounted simultaneously.
 import { useEffect, useRef, useState } from "react";
 
-import { Gantt, WillowDark as GanttTheme } from "@svar-ui/react-gantt";
+import { Editor as GanttEditor, Gantt, WillowDark as GanttTheme, getEditorItems as getGanttEditorItems } from "@svar-ui/react-gantt";
 import "@svar-ui/react-gantt/all.css";
-import { Kanban, WillowDark as KanbanTheme } from "@svar-ui/react-kanban";
+import { Editor as KanbanEditor, Kanban, WillowDark as KanbanTheme } from "@svar-ui/react-kanban";
 import "@svar-ui/react-kanban/all.css";
 import { Grid, WillowDark as GridTheme } from "@svar-ui/react-grid";
 import "@svar-ui/react-grid/all.css";
@@ -30,6 +30,11 @@ import {
 
 type ViewMode = "gantt" | "kanban" | "grid";
 
+// SVAR's IApi/KanbanInstanceApi types are generic over each package's internal store action
+// config; typing them precisely here isn't worth the friction, hence the `any`s below.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SvarApi = any;
+
 function GanttTab({
   tasks,
   onChange,
@@ -37,12 +42,11 @@ function GanttTab({
   tasks: ParsedProjectTask[];
   onChange: (tasks: ParsedProjectTask[]) => void;
 }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SVAR's IApi type is generic
-  // over its internal store action config; typing it precisely here isn't worth the friction.
-  const apiRef = useRef<any>(null);
+  // `useState` (not `useRef`) so mounting <GanttEditor> below re-renders once the api is ready —
+  // it's null on the very first render, before Gantt's `init` callback fires post-mount.
+  const [api, setApi] = useState<SvarApi>(null);
 
   useEffect(() => {
-    const api = apiRef.current;
     if (!api) {
       return;
     }
@@ -63,13 +67,18 @@ function GanttTab({
         pushChange();
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- apiRef.current is stable once set;
+    // Editor writes task field changes (rename, dates, progress, ...) via "update-task" too, so
+    // the same listener above already covers it — no separate hookup needed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `api` is stable once set;
     // re-running this on every `tasks`/`onChange` change would attach duplicate listeners.
-  }, []);
+  }, [api]);
 
   return (
     <GanttTheme>
-      <Gantt ref={apiRef} tasks={tasks} />
+      <Gantt init={setApi} tasks={tasks} />
+      {/* Double-clicking a task opens this automatically (SVAR's built-in behavior) — no
+          separate wiring needed beyond mounting it alongside Gantt with the same api. */}
+      {api ? <GanttEditor api={api} items={getGanttEditorItems()} /> : null}
     </GanttTheme>
   );
 }
@@ -83,29 +92,35 @@ function KanbanTab({
   columns: ProjectColumn[];
   onChange: (tasks: ParsedProjectTask[]) => void;
 }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see GanttTab's apiRef.
-  const apiRef = useRef<any>(null);
+  // See GanttTab's identical comment on why this is useState, not useRef.
+  const [api, setApi] = useState<SvarApi>(null);
 
   useEffect(() => {
-    const api = apiRef.current;
     if (!api) {
       return;
     }
     const pushChange = () => {
-      onChange(api.getCards() as ParsedProjectTask[]);
+      const cards = api.getCards() as (ParsedProjectTask & { label?: string })[];
+      // Reverse of the `label: task.text` mapping below — Kanban only ever mutates `label`.
+      onChange(cards.map(({ label, ...card }) => ({ ...card, text: label ?? card.text })));
     };
     api.on("add-card", pushChange);
     api.on("update-card", pushChange);
     api.on("move-card", pushChange);
     api.on("delete-card", pushChange);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see GanttTab's identical comment.
-  }, []);
+  }, [api]);
 
   const kanbanColumns = columns.map((column) => ({ id: column.id, label: column.label }));
+  // KanbanCard's title field is `label`, not our schema's `text` — without this mapping the
+  // card renders with no visible title at all (the board only ever reads `.label`).
+  const cards = tasks.map((task) => ({ ...task, label: task.text }));
 
   return (
     <KanbanTheme>
-      <Kanban ref={apiRef} cards={tasks} columns={kanbanColumns} />
+      <Kanban init={setApi} cards={cards} columns={kanbanColumns} />
+      {/* Clicking a card dispatches select-card, which this picks up automatically. */}
+      {api ? <KanbanEditor api={api} /> : null}
     </KanbanTheme>
   );
 }
