@@ -56,18 +56,19 @@ class Page final : public QWidget, public IPage {
   // conflict is resolved elsewhere (e.g. from the auto-popup conflict window).
   void RefreshCurrentDocumentConflictState();
 
-  // Native Import/Export entry points (issue #96) for MainWindow's top-level Import/Export
-  // controls — replaces the removed in-page FileActionsToolbar (NotebookView.tsx) and inline
-  // Excalidraw import/export buttons. Both call QEditorBridge's existing
-  // exportTextToFile()/importTextFromFile() (QFileDialog-backed, unchanged) directly instead of
-  // routing through the JS/React layer; ImportCurrentDocumentFromFile() reuses
-  // OpenDocumentWithAccess() (the same native document-reload path used elsewhere, e.g. after
-  // create/delete) to refresh the JS-side view with the imported content rather than inventing a
-  // separate refresh mechanism. No-ops when no document is open or the open document is a
-  // kWikiPage (wiki pages have no import/export concept); ImportCurrentDocumentFromFile() also
-  // no-ops when the open document is not currently editable.
+  // Native Export entry point (issue #96) for MainWindow's top-level File menu — replaces the
+  // removed in-page FileActionsToolbar (NotebookView.tsx) and inline Excalidraw export button.
+  // Calls QEditorBridge's existing exportTextToFile() (QFileDialog-backed) directly instead of
+  // routing through the JS/React layer. No-ops when no document is open or the open document is
+  // a kWikiPage (wiki pages have no export concept).
   void ExportCurrentDocumentToFile();
-  void ImportCurrentDocumentFromFile();
+  // Native Import entry point (issue #102 follow-up): unlike ExportCurrentDocumentToFile(),
+  // deliberately does NOT touch the currently open document — it always creates a brand new
+  // document instead, so it no longer depends on a document being open or editable (the old
+  // ImportCurrentDocumentFromFile() overwrote the open document and required it to be
+  // editable). Picks a source file (.ipynb/.excalidraw/.md), a destination in the tree via
+  // ImportDestinationDialog, then creates the new document there.
+  void ImportDocumentAsNewFile();
 
  signals:
   void settingsRequested();

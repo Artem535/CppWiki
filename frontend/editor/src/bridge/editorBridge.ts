@@ -45,6 +45,11 @@ export type LoadedDocument = {
   // eventually, "excalidrawCanvas" (#53). Unset/empty for "wikiPage", where `blocks` is
   // authoritative. See EditorBridge.updateSnapshot()'s doc comment for the write-side mirror.
   rawContent?: string;
+  // Present, one-shot, when this document was just created by Page::ImportDocumentAsNewFile()
+  // from an imported Markdown file (issue #102 follow-up): raw Markdown text to convert via
+  // BlockNoteEditor.tryParseMarkdownToBlocks() and apply in place of `blocks` (which is empty
+  // for a freshly created document). See QEditorBridge::StashPendingMarkdownImport().
+  pendingMarkdownImport?: string;
 };
 
 export type BridgeInfo = {
