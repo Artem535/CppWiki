@@ -271,6 +271,16 @@ export function ProjectBoardView({
     scheduleSave(next);
   };
 
+  // Both Gantt and Kanban fully reinitialize their internal store whenever the `tasks`/`cards`
+  // prop identity changes (see KanbanTab's comment above) — recomputing this on every render,
+  // even ones that don't touch task data (switching tabs, renaming a column, toggling the columns
+  // panel), was forcing a hard reset on every such render. Worst case: a reset landing mid-drag,
+  // which is what made a column appear to vanish while a task was being dragged. Memoize on
+  // `board?.tasks` so identity only changes when the task data itself actually changed. This must
+  // stay before the parseFailed early return below so the hook always runs (Rules of Hooks).
+  const tasks = useMemo(() => toParsedTasks(board?.tasks ?? []), [board?.tasks]);
+  const columns = board?.columns ?? [];
+
   if (parseFailed) {
     return (
       <div className="empty-state" data-testid="project-board-parse-error">
@@ -279,9 +289,6 @@ export function ProjectBoardView({
       </div>
     );
   }
-
-  const tasks = toParsedTasks(board?.tasks ?? []);
-  const columns = board?.columns ?? [];
 
   return (
     <div className="project-board-view" data-testid="project-board-view">
