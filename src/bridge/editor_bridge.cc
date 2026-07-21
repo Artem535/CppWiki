@@ -325,6 +325,22 @@ auto MakeEmptyExcalidrawSceneSnapshotJson() -> QByteArray {
   return QJsonDocument(scene).toJson(QJsonDocument::Compact);
 }
 
+// Minimal, valid OpenAPI 3.0 document with no paths — the seed content for a newly created
+// kOpenApiSpec document (issue #107). JSON only for v1 (no YAML support); the shape just needs
+// to be well-formed JSON with the fields swagger-ui-react (frontend/editor/src/openapi/
+// OpenApiSpecView.tsx) expects to render an empty spec.
+auto MakeEmptyOpenApiSpecSnapshotJson() -> QByteArray {
+  QJsonObject info;
+  info.insert(QStringLiteral("title"), QStringLiteral("New API"));
+  info.insert(QStringLiteral("version"), QStringLiteral("1.0.0"));
+
+  QJsonObject spec;
+  spec.insert(QStringLiteral("openapi"), QStringLiteral("3.0.0"));
+  spec.insert(QStringLiteral("info"), info);
+  spec.insert(QStringLiteral("paths"), QJsonObject{});
+  return QJsonDocument(spec).toJson(QJsonDocument::Compact);
+}
+
 auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
                            std::int32_t sort_order = 0,
                            QString workspace_id = QStringLiteral("default"), QString author_id = {},
@@ -340,6 +356,8 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
         return MakeEmptyNotebookSnapshotJson();
       case document::DocumentKind::kExcalidrawCanvas:
         return MakeEmptyExcalidrawSceneSnapshotJson();
+      case document::DocumentKind::kOpenApiSpec:
+        return MakeEmptyOpenApiSpecSnapshotJson();
       case document::DocumentKind::kWikiPage:
         return MakeDocumentSnapshotJson(id, title, QJsonArray{});
     }

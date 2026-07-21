@@ -18,6 +18,7 @@ enum class DocumentKind : std::uint8_t {
   kWikiPage,
   kJupyterNotebook,
   kExcalidrawCanvas,
+  kOpenApiSpec,
 };
 
 enum class BlockType : std::uint8_t {
@@ -84,6 +85,8 @@ struct Document {
       return "jupyterNotebook";
     case DocumentKind::kExcalidrawCanvas:
       return "excalidrawCanvas";
+    case DocumentKind::kOpenApiSpec:
+      return "openApiSpec";
     case DocumentKind::kWikiPage:
       return "wikiPage";
   }
@@ -99,6 +102,9 @@ struct Document {
   }
   if (key == "excalidrawCanvas") {
     return DocumentKind::kExcalidrawCanvas;
+  }
+  if (key == "openApiSpec") {
+    return DocumentKind::kOpenApiSpec;
   }
   return DocumentKind::kWikiPage;
 }

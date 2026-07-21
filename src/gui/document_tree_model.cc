@@ -659,6 +659,8 @@ QString DocumentTreeModel::DocumentKindIconResourcePath(document::DocumentKind k
       return QStringLiteral(":/cppwiki/icons/document-jupyter-notebook.svg");
     case document::DocumentKind::kExcalidrawCanvas:
       return QStringLiteral(":/cppwiki/icons/document-excalidraw-canvas.svg");
+    case document::DocumentKind::kOpenApiSpec:
+      return QStringLiteral(":/cppwiki/icons/document-openapi-spec.svg");
     case document::DocumentKind::kWikiPage:
       return QStringLiteral(":/cppwiki/icons/document-wiki-page.svg");
   }

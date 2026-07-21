@@ -40,6 +40,7 @@
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
+    "swagger-ui-react": "^5.32.10",
     "typescript": "^5.9.3",
     "unified": "^11.0.5",
     "vite": "^7.2.7"
@@ -48,6 +49,7 @@
     "@types/dompurify": "^3.0.5",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "@types/swagger-ui-react": "^5.18.0",
     "vitest": "^3.2.7"
   }
 }

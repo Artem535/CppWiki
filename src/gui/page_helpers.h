@@ -89,10 +89,11 @@ auto ImportAnyKindNameFilter() -> QString;
 
 // Determines which DocumentKind an imported file's content represents: valid nbformat JSON
 // (has a "cells" array and numeric "nbformat") -> kJupyterNotebook; valid Excalidraw scene JSON
-// (has "elements"/"appState"/"files") -> kExcalidrawCanvas; otherwise, if `file_name` has a
-// .md/.markdown extension, kWikiPage (content is treated as Markdown text, not this kind's
-// native JSON block format — see QEditorBridge::StashPendingMarkdownImport()). std::nullopt if
-// none of these match.
+// (has "elements"/"appState"/"files") -> kExcalidrawCanvas; OpenAPI/Swagger JSON (has a
+// top-level "openapi" (v3) or "swagger" (v2) string key) -> kOpenApiSpec; otherwise, if
+// `file_name` has a .md/.markdown extension, kWikiPage (content is treated as Markdown text, not
+// this kind's native JSON block format — see QEditorBridge::StashPendingMarkdownImport()).
+// std::nullopt if none of these match.
 auto DetectImportableDocumentKind(const QString& file_name, const QString& content)
     -> std::optional<document::DocumentKind>;
 

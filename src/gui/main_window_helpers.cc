@@ -3,7 +3,6 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QWidget>
-
 #include <oclero/qlementine/widgets/StatusBadgeWidget.hpp>
 
 #include "auth/auth_session_manager.h"
@@ -23,8 +22,7 @@ auto StateTextColor(bool is_error, bool is_warning, bool is_success) -> QString 
   return QStringLiteral("#d0d7de");
 }
 
-auto BoolLabel(bool value, QStringView true_text, QStringView false_text)
-    -> QString {
+auto BoolLabel(bool value, QStringView true_text, QStringView false_text) -> QString {
   return value ? true_text.toString() : false_text.toString();
 }
 
@@ -43,8 +41,7 @@ auto SyncLifecycleStateLabel(storage::SyncLifecycleState state) -> QString {
   return QStringLiteral("Unknown");
 }
 
-auto JoinOrFallback(const QStringList& values, const QString& fallback)
-    -> QString {
+auto JoinOrFallback(const QStringList& values, const QString& fallback) -> QString {
   if (values.isEmpty()) {
     return fallback;
   }
@@ -73,8 +70,8 @@ auto BuildWorkspaceHydrationSummary(const sync::DocumentSyncSnapshot& snapshot) 
 
   QStringList lines;
   for (const auto& workspace_id : snapshot.workspace_ids) {
-    const auto state = snapshot.workspace_hydration.value(workspace_id,
-                                                          sync::WorkspaceHydrationState::kNotStarted);
+    const auto state = snapshot.workspace_hydration.value(
+        workspace_id, sync::WorkspaceHydrationState::kNotStarted);
     QString state_text = HydrationStateLabel(state);
     switch (state) {
       case sync::WorkspaceHydrationState::kNotStarted:
@@ -137,7 +134,8 @@ auto BuildSyncGuidance(const sync::DocumentSyncSnapshot& snapshot) -> QString {
         .arg(BuildWorkspaceHydrationSummary(snapshot));
   }
   if (snapshot.has_conflicts) {
-    return QStringLiteral("Sync detected %1 pending conflict%2. Resolve or dismiss them from sync details.")
+    return QStringLiteral(
+               "Sync detected %1 pending conflict%2. Resolve or dismiss them from sync details.")
         .arg(QString::number(snapshot.conflict_count),
              snapshot.conflict_count == 1 ? QString{} : QStringLiteral("s"));
   }
@@ -177,8 +175,7 @@ auto FirstPendingConflict(const std::shared_ptr<storage::LocalDocumentRepository
 }
 
 void ApplyStatusTooltip(QWidget* widget, QLabel* label,
-                        oclero::qlementine::StatusBadgeWidget* badge,
-                        const QString& tooltip) {
+                        oclero::qlementine::StatusBadgeWidget* badge, const QString& tooltip) {
   if (widget != nullptr) {
     widget->setToolTip(tooltip);
   }
@@ -284,8 +281,7 @@ auto MakeStatusWidget(const QString& initial_text, QWidget* parent)
   layout->setSpacing(6);
 
   auto* badge = new oclero::qlementine::StatusBadgeWidget(
-      oclero::qlementine::StatusBadge::Info, oclero::qlementine::StatusBadgeSize::Small,
-      container);
+      oclero::qlementine::StatusBadge::Info, oclero::qlementine::StatusBadgeSize::Small, container);
   auto* label = new QLabel(initial_text, container);
 
   layout->addWidget(badge, 0, Qt::AlignVCenter);
@@ -300,6 +296,8 @@ auto ImportButtonLabel(document::DocumentKind kind) -> QString {
       return QStringLiteral("Import .ipynb");
     case document::DocumentKind::kExcalidrawCanvas:
       return QStringLiteral("Import .excalidraw");
+    case document::DocumentKind::kOpenApiSpec:
+      return QStringLiteral("Import .json");
     case document::DocumentKind::kWikiPage:
       return QStringLiteral("Import");
   }
@@ -312,6 +310,8 @@ auto ExportButtonLabel(document::DocumentKind kind) -> QString {
       return QStringLiteral("Export .ipynb");
     case document::DocumentKind::kExcalidrawCanvas:
       return QStringLiteral("Export .excalidraw");
+    case document::DocumentKind::kOpenApiSpec:
+      return QStringLiteral("Export .json");
     case document::DocumentKind::kWikiPage:
       return QStringLiteral("Export");
   }

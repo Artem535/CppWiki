@@ -242,6 +242,8 @@ auto FileDialogNameFilterForKind(document::DocumentKind kind) -> QString {
       return QStringLiteral("Jupyter Notebook (*.ipynb)");
     case document::DocumentKind::kExcalidrawCanvas:
       return QStringLiteral("Excalidraw scene (*.excalidraw)");
+    case document::DocumentKind::kOpenApiSpec:
+      return QStringLiteral("OpenAPI spec (*.json)");
     case document::DocumentKind::kWikiPage:
       return QString();
   }
@@ -254,6 +256,8 @@ auto FileExtensionForKind(document::DocumentKind kind) -> QString {
       return QStringLiteral("ipynb");
     case document::DocumentKind::kExcalidrawCanvas:
       return QStringLiteral("excalidraw");
+    case document::DocumentKind::kOpenApiSpec:
+      return QStringLiteral("json");
     case document::DocumentKind::kWikiPage:
       return QString();
   }
@@ -262,9 +266,10 @@ auto FileExtensionForKind(document::DocumentKind kind) -> QString {
 
 auto ImportAnyKindNameFilter() -> QString {
   return QStringLiteral(
-      "All supported files (*.ipynb *.excalidraw *.md *.markdown);;"
+      "All supported files (*.ipynb *.excalidraw *.json *.md *.markdown);;"
       "Jupyter Notebook (*.ipynb);;"
       "Excalidraw scene (*.excalidraw);;"
+      "OpenAPI spec (*.json);;"
       "Markdown (*.md *.markdown)");
 }
 
@@ -284,6 +289,12 @@ auto DetectImportableDocumentKind(const QString& file_name, const QString& conte
                                    object.value(QStringLiteral("files")).isObject();
     if (looks_like_canvas) {
       return document::DocumentKind::kExcalidrawCanvas;
+    }
+
+    const bool looks_like_openapi_spec = object.value(QStringLiteral("openapi")).isString() ||
+                                         object.value(QStringLiteral("swagger")).isString();
+    if (looks_like_openapi_spec) {
+      return document::DocumentKind::kOpenApiSpec;
     }
   }
 
