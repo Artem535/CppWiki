@@ -17,6 +17,9 @@ export type ProjectTask = {
   parent?: string;
   type?: "task" | "summary" | "milestone";
   tags?: string[];
+  // Kanban's built-in priority levels (1 = Low, 2 = Medium, 3 = High), each mapped to a color —
+  // this is the "card color" knob exposed in the Kanban card/editor (see ProjectBoardView.tsx).
+  priority?: number;
 };
 
 export type ProjectColumn = {

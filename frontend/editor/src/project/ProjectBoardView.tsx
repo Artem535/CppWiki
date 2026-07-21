@@ -10,7 +10,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Editor as GanttEditor, Gantt, WillowDark as GanttTheme, getEditorItems as getGanttEditorItems } from "@svar-ui/react-gantt";
 import "@svar-ui/react-gantt/all.css";
-import { Editor as KanbanEditor, Kanban, WillowDark as KanbanTheme } from "@svar-ui/react-kanban";
+import {
+  Editor as KanbanEditor,
+  Kanban,
+  WillowDark as KanbanTheme,
+  getEditorItems as getKanbanEditorItems,
+  getPriorityOptions,
+} from "@svar-ui/react-kanban";
 import "@svar-ui/react-kanban/all.css";
 import { Grid, WillowDark as GridTheme } from "@svar-ui/react-grid";
 import "@svar-ui/react-grid/all.css";
@@ -35,6 +41,19 @@ type ViewMode = "gantt" | "kanban" | "grid";
 // config; typing them precisely here isn't worth the friction, hence the `any`s below.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SvarApi = any;
+
+// Kanban's built-in Low/Medium/High priority levels are the only per-card "color" knob the
+// library exposes (each level maps to a colored card accent) — this is what "changing a card's
+// color" maps onto in our schema (ProjectTask.priority). Description/deadline/tags/users have no
+// backing field in our schema, so they're turned off on both the card face and the edit form
+// rather than left dangling (editable but silently discarded on save).
+const kanbanCardShape = {
+  priority: { data: getPriorityOptions() },
+  description: false,
+  deadline: false,
+  tags: false,
+  users: false,
+};
 
 function GanttTab({
   tasks,
@@ -75,7 +94,11 @@ function GanttTab({
   }, [api]);
 
   return (
-    <GanttTheme>
+    // `fonts={false}`: WillowDark's default (`fonts: true`) injects a <link> to
+    // https://cdn.svar.dev's icon font — this app is offline-first and never makes ad hoc
+    // external network calls, and that fetch silently failing was also leaving icon-dependent
+    // controls (chevrons, calendar glyphs) rendering as blank boxes.
+    <GanttTheme fonts={false}>
       <Gantt init={setApi} tasks={tasks} />
       {/* Double-clicking a task opens this automatically (SVAR's built-in behavior) — no
           separate wiring needed beyond mounting it alongside Gantt with the same api. */}
@@ -125,28 +148,37 @@ function KanbanTab({
   const cards = useMemo(() => tasks.map((task) => ({ ...task, label: task.text })), [tasks]);
 
   return (
-    <KanbanTheme>
-      <Kanban init={setApi} cards={cards} columns={kanbanColumns} />
+    // See GanttTab's identical comment on `fonts={false}`.
+    <KanbanTheme fonts={false}>
+      <Kanban init={setApi} cards={cards} columns={kanbanColumns} card={kanbanCardShape} />
       {/* Clicking a card dispatches select-card, which this picks up automatically. */}
-      {api ? <KanbanEditor api={api} /> : null}
+      {api ? <KanbanEditor api={api} items={getKanbanEditorItems(kanbanCardShape)} /> : null}
     </KanbanTheme>
   );
 }
+
+const priorityLabelById = new Map(getPriorityOptions().map((option) => [option.id, option.label]));
 
 function GridTab({ tasks }: { tasks: ParsedProjectTask[] }) {
   const columns = [
     { id: "text", header: "Task", width: 240 },
     { id: "column", header: "Status", width: 120 },
+    { id: "priority", header: "Priority", width: 100 },
     { id: "start", header: "Start", width: 140 },
     { id: "duration", header: "Duration (days)", width: 140 },
     { id: "progress", header: "Progress %", width: 120 },
   ];
-  // Grid renders whatever's in each cell as-is; format the Date back to a plain date string so
-  // it doesn't show up as a verbose Date#toString() in the table.
-  const rows = tasks.map((task) => ({ ...task, start: task.start.toLocaleDateString() }));
+  // Grid renders whatever's in each cell as-is; format the Date back to a plain date string, and
+  // the numeric priority level back to its label, so neither shows up as a raw value.
+  const rows = tasks.map((task) => ({
+    ...task,
+    start: task.start.toLocaleDateString(),
+    priority: task.priority !== undefined ? (priorityLabelById.get(task.priority) ?? "") : "",
+  }));
 
   return (
-    <GridTheme>
+    // See GanttTab's identical comment on `fonts={false}`.
+    <GridTheme fonts={false}>
       <Grid data={rows} columns={columns} />
     </GridTheme>
   );
