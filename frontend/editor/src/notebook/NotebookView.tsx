@@ -92,7 +92,13 @@ function CellView({
   // Per-cell rendered/raw-source toggle for markdown cells (issue #89): local, not lifted into
   // notebook state, since different cells can independently be rendered or being edited. Code
   // cells never set this — they have no rendered mode at all, only raw source.
-  const [isRendered, setIsRendered] = useState(false);
+  //
+  // Defaults to rendered for markdown cells (issue #108): a freshly opened notebook should show
+  // markdown cells the way real Jupyter shows an already-executed notebook — rendered output
+  // only, never the raw source box underneath. Clicking the rendered view (or pressing Enter/Space
+  // on it, below) still flips back to the raw textarea for editing; this only changes the
+  // *initial* state on open, not the toggle itself.
+  const [isRendered, setIsRendered] = useState(isMarkdown);
 
   const handleSourceKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (isMarkdown && event.key === "Enter" && event.shiftKey) {

@@ -316,6 +316,47 @@ button {
   white-space: normal;
 }
 
+/* Styling for raw HTML output cells (issue #108) — e.g. a pandas DataFrame's _repr_html_ table.
+   The HTML itself is produced by the notebook's stored output (sanitized via DOMPurify in
+   OutputView above), not by this app, so it arrives with no styling of its own; without this the
+   table renders with the browser's unstyled default look (no borders/padding/striping), out of
+   place against the rest of this dark-themed editor. Scoped under .notebook-output--html so it
+   only touches notebook HTML output, not tables anywhere else in the app. */
+.notebook-output--html table {
+  border-collapse: collapse;
+  width: auto;
+  max-width: 100%;
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.notebook-output--html th,
+.notebook-output--html td {
+  border: 1px solid var(--app-border);
+  padding: 6px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.notebook-output--html thead th,
+.notebook-output--html th {
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+  font-weight: 600;
+}
+
+.notebook-output--html td {
+  color: var(--app-text);
+}
+
+.notebook-output--html tbody tr:nth-child(even) td {
+  background: var(--app-surface-muted);
+}
+
+.notebook-output--html tbody tr:hover td {
+  background: var(--app-surface-hover);
+}
+
 /* Mermaid diagram block (ADR-017, issue #50): raw source (editable, ProseMirror-managed via
    contentRef — see blocks/MermaidBlock.tsx) stacked above the rendered/sanitized SVG preview,
    mirroring the notebook cell's source-above/output-below layout for a consistent editing
