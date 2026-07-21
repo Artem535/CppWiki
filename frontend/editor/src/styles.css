@@ -435,3 +435,482 @@ button {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* Project board document kind (issue #106): Gantt/Kanban/DataGrid views (SVAR) need a real,
+   definite, non-zero height to render into — the same `height: 100%` chain requirement
+   documented at the top of this file for .editor-surface/.excalidraw-canvas. .project-board-view
+   fills .editor-surface's height, and .project-board-surface (the flex child actually holding
+   whichever SVAR component is mounted) takes all remaining space after the toolbar. */
+.project-board-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  color: var(--app-text);
+}
+
+.project-board-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.project-board-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.project-board-tabs button {
+  padding: 6px 14px;
+  font-size: 13px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.project-board-tab--active {
+  background: var(--app-surface-active);
+  color: var(--app-text);
+}
+
+.project-board-toolbar-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.project-board-toolbar-actions button {
+  padding: 6px 14px;
+  font-size: 13px;
+  border: 1px dashed var(--app-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.project-board-toolbar-actions button:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+  border-style: solid;
+}
+
+.project-board-toolbar-actions button.project-board-tab--active {
+  border-style: solid;
+}
+
+.project-board-surface {
+  flex: 1;
+  min-height: 0;
+}
+
+.project-board-columns-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface);
+}
+
+.project-board-columns-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-board-columns-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-board-columns-row input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 13px;
+  font: inherit;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+}
+
+.project-board-columns-row input:focus {
+  outline: none;
+  border-color: var(--app-surface-hover);
+}
+
+.project-board-columns-remove {
+  padding: 4px 10px;
+  font-size: 15px;
+  line-height: 1;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.project-board-columns-remove:hover:not(:disabled) {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+}
+
+.project-board-columns-remove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.project-board-columns-panel > button {
+  align-self: flex-start;
+  padding: 6px 14px;
+  font-size: 13px;
+  border: 1px dashed var(--app-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.project-board-columns-panel > button:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+  border-style: solid;
+}
+
+/* SVAR's WillowDark theme ships its own purple accent (#7a67eb) and font stack, which reads as
+   visibly foreign next to this app's monochrome dark theme (no accent color anywhere else, see
+   :root above) — remap its CSS custom properties (all under the `.wx-willow-dark-theme` class
+   its <WillowDark> wrapper applies, see node_modules/@svar-ui/react-core) onto this app's own
+   palette so the Gantt/Kanban/Grid views and their edit forms read as part of the app, not a
+   dropped-in widget. */
+.project-board-view .wx-willow-dark-theme {
+  --wx-font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --wx-background: var(--app-surface);
+  --wx-background-alt: var(--app-surface-muted);
+  --wx-background-hover: var(--app-surface-hover);
+  --wx-border-color: var(--app-border);
+  --wx-color-font: var(--app-text);
+  --wx-color-font-alt: var(--app-text-muted);
+  --wx-color-primary: var(--app-surface-hover);
+  --wx-color-primary-selected: rgb(83 92 120 / 35%);
+  --wx-color-primary-font: var(--app-text);
+  --wx-color-secondary-font: var(--app-text);
+  --wx-color-secondary-font-hover: var(--app-text);
+  --wx-color-secondary-border: var(--app-border);
+  --wx-color-secondary-border-disabled: var(--app-border);
+  --wx-input-background: var(--app-surface-muted);
+  --wx-button-background: var(--app-surface-muted);
+  --wx-modal-background: var(--app-surface);
+  --wx-popup-background: var(--app-surface);
+  --wx-tabs-active-color: var(--app-text);
+}
+
+/* Gantt/Kanban's Editor, mounted with `placement="inline"`, renders as a normal flow sibling of
+   the board (see GanttTab/KanbanTab) instead of `placement="sidebar"`'s viewport-fixed drawer,
+   which didn't compose with this app's own layout (wrong height, a close button floating above
+   empty space). Both `.wx-editor-kanban`/`.wx-gantt-editor` render nothing at all until an item
+   is open for editing, so this costs no space otherwise. */
+.project-board-tab-layout {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.project-board-tab-widget {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.project-board-tab-layout > .wx-editor-kanban,
+.project-board-tab-layout > .wx-gantt-editor {
+  flex: 0 0 340px;
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  border-left: 1px solid var(--app-border);
+}
+
+/* Undo/Redo (see UndoRedoButtons): icon-only, ghost-style buttons rather than the dashed
+   text-label buttons used elsewhere in the toolbar — history controls are a different kind of
+   action (transient, high-frequency) than "Columns"/"+ Task", so they're styled to read as a
+   compact, native-feeling pair instead of another full toolbar button. */
+.project-board-undo-redo {
+  display: flex;
+  gap: 2px;
+}
+
+.project-board-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.project-board-icon-button:hover:not(:disabled) {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+}
+
+.project-board-icon-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Jira-style epics: one full SVAR Kanban instance per epic, stacked vertically (see KanbanBoard/
+   KanbanSwimlane) rather than true swimlanes within a single board — no open-source Kanban library
+   supports real cross-lane grouping, and a from-scratch DnD rebuild was judged far more work than
+   this whole integration. Each lane needs an explicit bounded height (SVAR's Kanban requires a
+   definite non-zero height from its ancestor; "100%" is meaningless once N lanes stack inside a
+   scrolling parent), so the swimlanes container scrolls and each lane gets a fixed height instead. */
+.project-board-swimlanes {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  overflow-y: auto;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+.project-board-swimlane {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 420px;
+  min-height: 0;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.project-board-swimlane-label {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text);
+  background: var(--app-surface-muted);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.project-board-swimlane .project-board-tab-layout {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The built-in close icon (`wxi-close`) has no glyph now that the icon font is disabled
+   (`fonts={false}` above) — give it a plain "×" so the button isn't a blank, unlabeled pill. */
+.project-board-view .wxi-close::before {
+  content: "\00d7";
+}
+
+/* Table (Grid) view cosmetic pass: remap SVAR Grid's own header/border variables onto the app
+   palette (same idea as the Willow-Dark remap above, just the table-specific subset) and give the
+   whole grid a contained, rounded surface instead of a flush edge-to-edge table. */
+.project-board-view .wx-willow-dark-theme {
+  --wx-table-header-background: var(--app-surface-muted);
+  --wx-table-header-border: var(--app-border);
+  --wx-table-header-cell-border: var(--app-border);
+  --wx-table-border: var(--app-border);
+  --wx-table-cell-border: var(--app-border);
+  --wx-table-footer-cell-border: var(--app-border);
+  --wx-table-select-background: rgb(83 92 120 / 20%);
+  --wx-table-select-border: var(--app-surface-hover);
+  --wx-table-drag-over-background: var(--app-surface-hover);
+}
+
+.project-board-grid-wrap {
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Notion-style row/header treatment rather than SVAR's default dense spreadsheet look: more
+   breathing room per cell (row height is set via the `sizes` prop on <Grid>, see GridTab, so this
+   just adjusts padding to match), a muted uppercase header instead of plain bold text, and a hover
+   highlight + single bottom divider per row instead of a full grid of cell borders. `[role=...]`
+   attribute selectors target SVAR's own accessibility contract (stable across versions); `.wx-row`/
+   `.wx-h-row` are the library's real (non-hashed) row-kind classes — safer to target than its
+   hashed per-build utility classes. */
+.project-board-grid-wrap [role="gridcell"],
+.project-board-grid-wrap [role="columnheader"] {
+  padding: 0 14px;
+}
+
+.project-board-grid-wrap [role="columnheader"] {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--app-text-muted);
+}
+
+.project-board-grid-wrap .wx-row {
+  border-bottom: 1px solid var(--app-border);
+}
+
+.project-board-grid-wrap .wx-row:hover {
+  background: var(--app-surface-hover);
+}
+
+/* Status/Priority pills (Notion-style tags): a per-column `cell` renderer (see GridTab's
+   StatusCell/PriorityCell) replaces the plain text value with a colored chip. Status tones cycle
+   through a fixed 6-color palette keyed by the status's position in the board's column list, so
+   colors stay stable per status without needing per-status color config in the schema. */
+.project-board-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  border-radius: 999px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
+.project-board-pill--unknown {
+  border: 1px dashed var(--app-border);
+  color: var(--app-text-muted);
+}
+
+.project-board-pill--tone-0 {
+  background: rgb(85 130 200 / 22%);
+  color: #8fb8ec;
+}
+
+.project-board-pill--tone-1 {
+  background: rgb(120 170 110 / 22%);
+  color: #9bcf8d;
+}
+
+.project-board-pill--tone-2 {
+  background: rgb(200 150 80 / 22%);
+  color: #e0b877;
+}
+
+.project-board-pill--tone-3 {
+  background: rgb(170 110 190 / 22%);
+  color: #cc9ee3;
+}
+
+.project-board-pill--tone-4 {
+  background: rgb(200 100 110 / 22%);
+  color: #e59aa2;
+}
+
+.project-board-pill--tone-5 {
+  background: rgb(90 170 180 / 22%);
+  color: #8fd4dd;
+}
+
+.project-board-pill--priority-low {
+  background: rgb(110 130 150 / 22%);
+  color: #a9bcce;
+}
+
+.project-board-pill--priority-medium {
+  background: rgb(210 160 70 / 24%);
+  color: #e6c069;
+}
+
+.project-board-pill--priority-high {
+  background: rgb(210 90 90 / 24%);
+  color: #e88888;
+}
+
+/* TagListField (Tags/Assignees in the Kanban edit form) — chips with a remove button, plus an
+   "+ Add" button that swaps in a small text input to name the new one. */
+.project-board-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.project-board-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  font-size: 13px;
+  border-radius: 999px;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+}
+
+.project-board-tag-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.project-board-tag-chip button:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+}
+
+.project-board-tag-add {
+  padding: 4px 12px;
+  font-size: 13px;
+  border: 1px dashed var(--app-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.project-board-tag-add:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+  border-style: solid;
+}
+
+.project-board-tag-input {
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+  min-width: 100px;
+}
+
+.project-board-tag-input:focus {
+  outline: none;
+  border-color: var(--app-surface-hover);
+}

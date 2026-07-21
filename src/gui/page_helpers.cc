@@ -242,6 +242,8 @@ auto FileDialogNameFilterForKind(document::DocumentKind kind) -> QString {
       return QStringLiteral("Jupyter Notebook (*.ipynb)");
     case document::DocumentKind::kExcalidrawCanvas:
       return QStringLiteral("Excalidraw scene (*.excalidraw)");
+    case document::DocumentKind::kProjectBoard:
+      return QStringLiteral("Project board (*.json)");
     case document::DocumentKind::kWikiPage:
       return QString();
   }
@@ -254,6 +256,8 @@ auto FileExtensionForKind(document::DocumentKind kind) -> QString {
       return QStringLiteral("ipynb");
     case document::DocumentKind::kExcalidrawCanvas:
       return QStringLiteral("excalidraw");
+    case document::DocumentKind::kProjectBoard:
+      return QStringLiteral("json");
     case document::DocumentKind::kWikiPage:
       return QString();
   }
@@ -262,10 +266,11 @@ auto FileExtensionForKind(document::DocumentKind kind) -> QString {
 
 auto ImportAnyKindNameFilter() -> QString {
   return QStringLiteral(
-      "All supported files (*.ipynb *.excalidraw *.md *.markdown);;"
+      "All supported files (*.ipynb *.excalidraw *.md *.markdown *.json);;"
       "Jupyter Notebook (*.ipynb);;"
       "Excalidraw scene (*.excalidraw);;"
-      "Markdown (*.md *.markdown)");
+      "Markdown (*.md *.markdown);;"
+      "Project board (*.json)");
 }
 
 auto DetectImportableDocumentKind(const QString& file_name, const QString& content)
@@ -284,6 +289,12 @@ auto DetectImportableDocumentKind(const QString& file_name, const QString& conte
                                    object.value(QStringLiteral("files")).isObject();
     if (looks_like_canvas) {
       return document::DocumentKind::kExcalidrawCanvas;
+    }
+
+    const bool looks_like_project_board = object.value(QStringLiteral("tasks")).isArray() &&
+                                          object.value(QStringLiteral("columns")).isArray();
+    if (looks_like_project_board) {
+      return document::DocumentKind::kProjectBoard;
     }
   }
 
