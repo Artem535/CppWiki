@@ -44,6 +44,7 @@ import {
 } from "./constants";
 import { createInlineSuggestionExtension } from "./extensions/inlineSuggestionExtension";
 import { NotebookView } from "./notebook/NotebookView";
+import { OpenApiSpecView } from "./openapi/OpenApiSpecView";
 
 // BlockNote's default schema plus the Mermaid diagram block (ADR-017, issue #50). Built once at
 // module scope, not per-render, since it doesn't depend on any component state.
@@ -57,13 +58,16 @@ const editorSchema = BlockNoteSchema.create({
 });
 
 // Placeholder mounted for document kinds that don't have a real renderer yet. "jupyterNotebook"
-// (NotebookView, #52), "excalidrawCanvas" (ExcalidrawCanvasView, #53) and "projectBoard"
-// (ProjectBoardView, #106) now have real renderers; this stays in place only for a future kind
-// added without one yet.
+// (NotebookView, #52), "excalidrawCanvas" (ExcalidrawCanvasView, #53), "openApiSpec"
+// (OpenApiSpecView, #107), and "projectBoard" (ProjectBoardView, #106) now have real renderers;
+// this stays in place only for a future kind added without one yet.
 function UnsupportedKindPlaceholder({
   kind,
 }: {
-  kind: Exclude<DocumentKind, "wikiPage" | "jupyterNotebook" | "excalidrawCanvas" | "projectBoard">;
+  kind: Exclude<
+    DocumentKind,
+    "wikiPage" | "jupyterNotebook" | "excalidrawCanvas" | "openApiSpec" | "projectBoard"
+  >;
 }) {
   const messages: Record<typeof kind, string> = {};
   return (
@@ -394,10 +398,12 @@ function EditorApp() {
   };
 
   // Kind-based routing (ADR-017, issue #58): kWikiPage mounts the real BlockNote editor,
-  // jupyterNotebook mounts NotebookView (#52), excalidrawCanvas mounts ExcalidrawCanvasView (#53).
+  // jupyterNotebook mounts NotebookView (#52), excalidrawCanvas mounts ExcalidrawCanvasView (#53),
+  // openApiSpec mounts OpenApiSpecView (#107).
   const isWikiPage = documentKind === "wikiPage";
   const isJupyterNotebook = documentKind === "jupyterNotebook";
   const isExcalidrawCanvas = documentKind === "excalidrawCanvas";
+  const isOpenApiSpec = documentKind === "openApiSpec";
   const isProjectBoard = documentKind === "projectBoard";
 
   return (
@@ -430,6 +436,19 @@ function EditorApp() {
             />
           </div>
         ) : null}
+        {shouldMountEditor && isOpenApiSpec ? (
+          <div className="editor-surface" data-document-kind={documentKind}>
+            <OpenApiSpecView
+              // Remounts on document switch AND on a same-document reload (issue #96's native
+              // Import control) via documentLoadNonce — see its declaration above for why.
+              key={`${selectedPageId ?? "openapi-spec"}-${documentLoadNonce}`}
+              bridge={bridge}
+              pageId={selectedPageId ?? ""}
+              editable={isEditable}
+              rawContent={documentRawContent}
+            />
+          </div>
+        ) : null}
         {shouldMountEditor && isProjectBoard ? (
           <div className="editor-surface" data-document-kind={documentKind}>
             <ProjectBoardView
@@ -445,6 +464,7 @@ function EditorApp() {
         !isWikiPage &&
         !isJupyterNotebook &&
         !isExcalidrawCanvas &&
+        !isOpenApiSpec &&
         !isProjectBoard ? (
           <div className="editor-surface" data-document-kind={documentKind}>
             <UnsupportedKindPlaceholder kind={documentKind as never} />

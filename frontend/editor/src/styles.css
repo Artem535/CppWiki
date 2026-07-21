@@ -158,6 +158,15 @@ button {
   color: var(--app-text-muted);
 }
 
+/* OpenAPI spec document kind (issue #107): read-only swagger-ui-react viewer. It's mounted inside
+   .editor-surface, which already establishes the real (non-vh) height: 100% chain documented
+   above, so this just needs to fill that box and let swagger-ui-react's own internal layout
+   (which brings its own CSS via swagger-ui-react/swagger-ui.css) scroll within it. */
+.openapi-spec-view {
+  height: 100%;
+  background: var(--app-text);
+}
+
 .notebook-cell-toolbar {
   display: flex;
   align-items: center;

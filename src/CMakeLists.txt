@@ -130,6 +130,7 @@ qt_add_resources(cppwiki_app cppwiki_icon_resources
         gui/assets/icons/document-wiki-page.svg
         gui/assets/icons/document-jupyter-notebook.svg
         gui/assets/icons/document-excalidraw-canvas.svg
+        gui/assets/icons/document-openapi-spec.svg
         gui/assets/icons/document-project-board.svg
 )
 

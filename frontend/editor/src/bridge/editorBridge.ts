@@ -16,7 +16,12 @@ export type InitialDocumentSnapshot = PartialBlock[];
 // Content-schema/renderer discriminator for a document (ADR-017), mirroring
 // cppwiki::document::DocumentKind on the C++ side. Persisted/transmitted as
 // the string key produced by ToDocumentKindKey(), not a raw enum value.
-export type DocumentKind = "wikiPage" | "jupyterNotebook" | "excalidrawCanvas" | "projectBoard";
+export type DocumentKind =
+  | "wikiPage"
+  | "jupyterNotebook"
+  | "excalidrawCanvas"
+  | "openApiSpec"
+  | "projectBoard";
 
 export type DocumentSummary = {
   id: string;
