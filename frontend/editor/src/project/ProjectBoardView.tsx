@@ -6,7 +6,7 @@
 // DataGrid view. Only one tab is mounted at a time (conditional rendering below), so switching
 // tabs always remounts the next view with the latest shared state rather than needing live
 // cross-component sync while multiple are mounted simultaneously.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { Editor as GanttEditor, Gantt, WillowDark as GanttTheme, getEditorItems as getGanttEditorItems } from "@svar-ui/react-gantt";
 import "@svar-ui/react-gantt/all.css";
@@ -52,9 +52,8 @@ type SvarApi = any;
 // tags/users stay off here: SVAR's built-in multicombo field only lets you *pick* from a fixed
 // `options` list passed in up front — there's no "type a new one" support, so an empty options
 // list (this app has no predefined tag vocabulary or user directory) makes it impossible to add
-// anything at all. Plain free-text fields are added separately below instead (tagsText/usersText,
-// see kanbanEditorItems), which our own read/write mapping in KanbanTab turns into `tags`/`users`
-// string arrays.
+// anything at all. TagListField below (a plain "chips + add button" field we own) replaces it,
+// reading/writing the `tags`/`users` string arrays directly — no separate text-parsing needed.
 const kanbanCardShape = {
   priority: { data: getPriorityOptions() },
   progress: true,
@@ -64,22 +63,75 @@ const kanbanCardShape = {
   users: false,
 };
 
+// A custom Editor field component (passed directly as `comp`, see kanbanEditorItems — SVAR's
+// items config accepts a component here just as readily as one of its built-in type names). The
+// surrounding <Field> wrapper already renders the item's `label` as a heading above this, and
+// calls this with `value`/`onChange` bound to the raw array field named by the item's `key`
+// (`tags` or `users`) — see react-editor's Field implementation.
+function TagListField({
+  value,
+  onChange,
+}: {
+  value?: string[];
+  onChange?: (ev: { value: string[] }) => void;
+}) {
+  const items = value ?? [];
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commitDraft = () => {
+    const trimmed = draft?.trim();
+    if (trimmed) {
+      onChange?.({ value: [...items, trimmed] });
+    }
+    setDraft(null);
+  };
+
+  return (
+    <div className="project-board-tag-list">
+      {items.map((item, index) => (
+        <span key={`${item}-${index}`} className="project-board-tag-chip">
+          {item}
+          <button
+            type="button"
+            onClick={() => onChange?.({ value: items.filter((_, i) => i !== index) })}
+            aria-label={`Remove ${item}`}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      {draft !== null ? (
+        <input
+          autoFocus
+          className="project-board-tag-input"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commitDraft();
+            } else if (event.key === "Escape") {
+              setDraft(null);
+            }
+          }}
+        />
+      ) : (
+        <button type="button" className="project-board-tag-add" onClick={() => setDraft("")}>
+          + Add
+        </button>
+      )}
+    </div>
+  );
+}
+
 const kanbanEditorItems = [
   ...getKanbanEditorItems(kanbanCardShape),
-  { comp: "text", key: "tagsText", label: "Tags (comma-separated)" },
-  { comp: "text", key: "usersText", label: "Assignees (comma-separated)" },
+  { comp: TagListField, key: "tags", label: "Tags" },
+  // Assignees are plain free-text names for now — this app has no user directory yet (planned to
+  // come from Authentik later); the point right now is just to let a name be attached to a task.
+  { comp: TagListField, key: "users", label: "Assignees" },
 ];
-
-function splitCommaList(value: string | undefined): string[] | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const items = value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return items.length ? items : undefined;
-}
 
 function GanttTab({
   tasks,
@@ -147,33 +199,31 @@ function KanbanTab({
   tasks,
   columns,
   onChange,
+  onApiReady,
 }: {
   tasks: ParsedProjectTask[];
   columns: ProjectColumn[];
   onChange: (tasks: ParsedProjectTask[]) => void;
+  onApiReady: (api: SvarApi | null) => void;
 }) {
   // See GanttTab's identical comment on why this is useState, not useRef.
   const [api, setApi] = useState<SvarApi>(null);
+
+  useEffect(() => {
+    onApiReady(api);
+    return () => onApiReady(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onApiReady is a stable ref setter
+    // from the parent; re-running this for identity changes there would serve no purpose.
+  }, [api]);
 
   useEffect(() => {
     if (!api) {
       return;
     }
     const pushChange = () => {
-      const rawCards = api.getCards() as (ParsedProjectTask & {
-        label?: string;
-        tagsText?: string;
-        usersText?: string;
-      })[];
-      // Reverse of the mapping below — Kanban only ever mutates `label`/`tagsText`/`usersText`.
-      onChange(
-        rawCards.map(({ label, tagsText, usersText, ...card }) => ({
-          ...card,
-          text: label ?? card.text,
-          tags: splitCommaList(tagsText),
-          users: splitCommaList(usersText),
-        })),
-      );
+      const cards = api.getCards() as (ParsedProjectTask & { label?: string })[];
+      // Reverse of the `label: task.text` mapping below — Kanban only ever mutates `label`.
+      onChange(cards.map(({ label, ...card }) => ({ ...card, text: label ?? card.text })));
     };
     api.on("add-card", pushChange);
     api.on("update-card", pushChange);
@@ -182,26 +232,25 @@ function KanbanTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see GanttTab's identical comment.
   }, [api]);
 
-  // Kanban re-seeds its whole store whenever the `columns`/`cards` prop identity changes (see its
-  // `useEffect([cards, columns, ...])` re-init), so these must stay referentially stable across
-  // renders that don't actually touch columns/tasks — otherwise every unrelated re-render (e.g. a
-  // task edit while the columns panel is open) would blow away the board's scroll/collapsed state.
+  // Kanban fully reinitializes its whole internal store whenever the `cards`/`columns` prop
+  // identity changes (a hard reset, not a merge) — recomputing these from `tasks`/`columns` on
+  // every render, even for edits Kanban's own store already knows about (its own `onChange` echo
+  // above feeding back into a changed `tasks` prop), was forcing repeated resets, one of which
+  // landing mid-drag is what made columns/cards vanish. So: seed ONLY from the props Kanban had
+  // at mount time (frozen via ref, ignoring all later prop changes), and after that route every
+  // mutation through the live api instead — Kanban's own interactions already do this natively;
+  // ours (the parent's Add Task / Columns panel) do it explicitly via `onApiReady`'s ref, see
+  // ProjectBoardView's handlers. The parent also keys this whole tab on `pageId` so switching to
+  // a different document still gets a clean remount instead of a stale frozen seed.
+  const initialTasksRef = useRef(tasks);
+  const initialColumnsRef = useRef(columns);
   const kanbanColumns = useMemo(
-    () => columns.map((column) => ({ id: column.id, label: column.label })),
-    [columns],
+    () => initialColumnsRef.current.map((column) => ({ id: column.id, label: column.label })),
+    [],
   );
-  // KanbanCard's title field is `label`, not our schema's `text` — without this mapping the card
-  // renders with no visible title at all (the board only ever reads `.label`). tagsText/usersText
-  // are the flat, editable string form of our `tags`/`users` arrays (see kanbanEditorItems above).
   const cards = useMemo(
-    () =>
-      tasks.map((task) => ({
-        ...task,
-        label: task.text,
-        tagsText: (task.tags ?? []).join(", "),
-        usersText: (task.users ?? []).join(", "),
-      })),
-    [tasks],
+    () => initialTasksRef.current.map((task) => ({ ...task, label: task.text })),
+    [],
   );
 
   return (
@@ -218,29 +267,83 @@ function KanbanTab({
   );
 }
 
-const priorityLabelById = new Map(getPriorityOptions().map((option) => [option.id, option.label]));
+const priorityOptions = getPriorityOptions();
+const priorityLabelById = new Map(priorityOptions.map((option) => [option.id, option.label]));
 
-function GridTab({ tasks }: { tasks: ParsedProjectTask[] }) {
-  const columns = [
-    { id: "text", header: "Task", width: 240 },
-    { id: "column", header: "Status", width: 120 },
-    { id: "priority", header: "Priority", width: 100 },
-    { id: "start", header: "Start", width: 140 },
-    { id: "duration", header: "Duration (days)", width: 140 },
-    { id: "progress", header: "Progress %", width: 120 },
+function GridTab({
+  tasks,
+  columns,
+  onChange,
+}: {
+  tasks: ParsedProjectTask[];
+  columns: ProjectColumn[];
+  onChange: (tasks: ParsedProjectTask[]) => void;
+}) {
+  const [api, setApi] = useState<SvarApi>(null);
+
+  useEffect(() => {
+    if (!api) {
+      return;
+    }
+    // `duration`/`priority` come back as strings/numbers from their editors (a plain text input
+    // and a richselect keyed by numeric id, respectively) — coerce those two, everything else
+    // (text, the status/column richselect, the datepicker's Date) already matches its field type.
+    const pushChange = (ev: { id: string; column: string; value: string | number | Date }) => {
+      onChange(
+        tasks.map((task) => {
+          if (task.id !== ev.id) {
+            return task;
+          }
+          if (ev.column === "duration") {
+            return { ...task, duration: Number(ev.value) || 0 };
+          }
+          if (ev.column === "priority") {
+            return { ...task, priority: Number(ev.value) };
+          }
+          return { ...task, [ev.column]: ev.value };
+        }),
+      );
+    };
+    api.on("update-cell", pushChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see GanttTab's identical comment.
+  }, [api]);
+
+  const columnOptions = useMemo(
+    () => columns.map((column) => ({ id: column.id, label: column.label })),
+    [columns],
+  );
+  const columnLabelById = useMemo(() => new Map(columns.map((c) => [c.id, c.label])), [columns]);
+
+  // Sortable by clicking a header, and editable in place (status/priority via a dropdown of the
+  // board's actual columns/priority levels, dates via a real date picker) — using what the Grid
+  // already provides instead of a plain read-only table.
+  const gridColumns = [
+    { id: "text", header: "Task", width: 240, sort: true, editor: "text" },
+    {
+      id: "column",
+      header: "Status",
+      width: 140,
+      sort: true,
+      editor: { type: "richselect", config: { options: columnOptions } },
+      template: (value: string) => columnLabelById.get(value) ?? value,
+    },
+    {
+      id: "priority",
+      header: "Priority",
+      width: 120,
+      sort: true,
+      editor: { type: "richselect", config: { options: priorityOptions } },
+      template: (value: number | undefined) => (value !== undefined ? (priorityLabelById.get(value) ?? "") : ""),
+    },
+    { id: "start", header: "Start", width: 140, sort: true, editor: "datepicker" },
+    { id: "duration", header: "Duration (days)", width: 140, sort: true, editor: "text" },
+    { id: "progress", header: "Progress %", width: 120, sort: true },
   ];
-  // Grid renders whatever's in each cell as-is; format the Date back to a plain date string, and
-  // the numeric priority level back to its label, so neither shows up as a raw value.
-  const rows = tasks.map((task) => ({
-    ...task,
-    start: task.start.toLocaleDateString(),
-    priority: task.priority !== undefined ? (priorityLabelById.get(task.priority) ?? "") : "",
-  }));
 
   return (
     // See GanttTab's identical comment on `fonts={false}`.
     <GridTheme fonts={false}>
-      <Grid data={rows} columns={columns} />
+      <Grid init={setApi} data={tasks} columns={gridColumns} />
     </GridTheme>
   );
 }
@@ -262,6 +365,11 @@ export function ProjectBoardView({
   const [columnsPanelOpen, setColumnsPanelOpen] = useState(false);
   const snapshot_timer = useRef<number | null>(null);
   const loaded_page_id = useRef<string | null>(null);
+  // Set by KanbanTab's onApiReady while it's mounted and its Kanban instance is ready; null
+  // otherwise (a different tab is showing, or the page just switched). Add/rename/delete-column
+  // and add-task push through this directly when it's live, instead of through a changed prop —
+  // see KanbanTab's comment on why changing `cards`/`columns` after mount is unsafe.
+  const kanbanApiRef = useRef<SvarApi | null>(null);
 
   // Re-parse whenever a different document (or the same one reloaded) is handed to us — mirrors
   // NotebookView's identical reset-on-switch effect, including cancelling any debounced save
@@ -324,14 +432,30 @@ export function ProjectBoardView({
     const next = { ...base, tasks: [...base.tasks, newTask] };
     setBoard(next);
     scheduleSave(next);
+    if (viewMode === "kanban" && kanbanApiRef.current) {
+      // Kanban's `cards` prop is frozen after mount (see KanbanTab) — the state update above
+      // alone wouldn't show up in the already-live board, so push it in directly too. The
+      // resulting "add-card" event is a no-op for `board` (same data, already applied above).
+      void kanbanApiRef.current.exec("add-card", { card: { ...newTask, label: newTask.text } });
+    }
   };
 
   const handleAddColumn = () => {
     const base = board ?? { tasks: [], columns: [] };
     const newColumn: ProjectColumn = { id: makeColumnId(), label: "New column" };
-    const next = { ...base, columns: [...base.columns, newColumn] };
+    const nextColumns = [...base.columns, newColumn];
+    const next = { ...base, columns: nextColumns };
     setBoard(next);
     scheduleSave(next);
+    if (kanbanApiRef.current) {
+      // No public "add-column" store action exists (only "update-column"); patch the store's
+      // own state directly instead of going through the `columns` prop, which is frozen after
+      // mount for the same reason `cards` is (see KanbanTab) — changing it would force a full
+      // store reinit rather than a live update.
+      kanbanApiRef.current
+        .getStores()
+        .data.setState({ columns: nextColumns.map((column) => ({ id: column.id, label: column.label })) });
+    }
   };
 
   const handleRenameColumn = (columnId: string, label: string) => {
@@ -344,6 +468,9 @@ export function ProjectBoardView({
     };
     setBoard(next);
     scheduleSave(next);
+    if (kanbanApiRef.current) {
+      void kanbanApiRef.current.exec("update-column", { id: columnId, column: { label } });
+    }
   };
 
   const handleDeleteColumn = (columnId: string) => {
@@ -362,6 +489,17 @@ export function ProjectBoardView({
     };
     setBoard(next);
     scheduleSave(next);
+    if (kanbanApiRef.current) {
+      const api = kanbanApiRef.current;
+      api
+        .getStores()
+        .data.setState({ columns: remaining.map((column) => ({ id: column.id, label: column.label })) });
+      for (const task of board.tasks) {
+        if (task.column === columnId) {
+          void api.exec("move-card", { id: task.id, column: fallbackColumnId });
+        }
+      }
+    }
   };
 
   // Both Gantt and Kanban fully reinitialize their internal store whenever the `tasks`/`cards`
@@ -457,12 +595,27 @@ export function ProjectBoardView({
           also hid the columns whenever that count dipped to zero even transiently (e.g. from a
           stale intermediate read while Kanban re-seeds its store after a drag), matching reports
           of a newly added column disappearing entirely. */}
+      {/* `key={pageId}`: KanbanTab freezes its initial cards/columns at mount (see its comment) —
+          without this, switching to a different document while staying on the Kanban tab would
+          leave it seeded from the previous document instead of remounting fresh. */}
       <div className="project-board-surface">
-        {viewMode === "gantt" ? <GanttTab tasks={tasks} onChange={handleTasksChange} /> : null}
-        {viewMode === "kanban" ? (
-          <KanbanTab tasks={tasks} columns={columns} onChange={handleTasksChange} />
+        {viewMode === "gantt" ? (
+          <GanttTab key={pageId} tasks={tasks} onChange={handleTasksChange} />
         ) : null}
-        {viewMode === "grid" ? <GridTab tasks={tasks} /> : null}
+        {viewMode === "kanban" ? (
+          <KanbanTab
+            key={pageId}
+            tasks={tasks}
+            columns={columns}
+            onChange={handleTasksChange}
+            onApiReady={(api) => {
+              kanbanApiRef.current = api;
+            }}
+          />
+        ) : null}
+        {viewMode === "grid" ? (
+          <GridTab tasks={tasks} columns={columns} onChange={handleTasksChange} />
+        ) : null}
       </div>
     </div>
   );

@@ -644,3 +644,76 @@ button {
 .project-board-view .wxi-close::before {
   content: "\00d7";
 }
+
+/* TagListField (Tags/Assignees in the Kanban edit form) — chips with a remove button, plus an
+   "+ Add" button that swaps in a small text input to name the new one. */
+.project-board-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.project-board-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  font-size: 13px;
+  border-radius: 999px;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+}
+
+.project-board-tag-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.project-board-tag-chip button:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+}
+
+.project-board-tag-add {
+  padding: 4px 12px;
+  font-size: 13px;
+  border: 1px dashed var(--app-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.project-board-tag-add:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+  border-style: solid;
+}
+
+.project-board-tag-input {
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+  min-width: 100px;
+}
+
+.project-board-tag-input:focus {
+  outline: none;
+  border-color: var(--app-surface-hover);
+}
