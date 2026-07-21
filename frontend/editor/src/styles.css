@@ -501,11 +501,6 @@ button {
   border-style: solid;
 }
 
-.project-board-empty {
-  padding: 24px;
-  color: var(--app-text-muted);
-}
-
 .project-board-surface {
   flex: 1;
   min-height: 0;

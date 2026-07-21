@@ -47,16 +47,39 @@ type SvarApi = any;
 // color" maps onto in our schema (ProjectTask.priority). Every key must be listed explicitly:
 // passing any shape object at all replaces Kanban's defaults wholesale rather than merging with
 // them, so a key missing here is the same as turning it off (this is what silently dropped
-// `progress` before it was added back). `tags`/`users` need an explicit (even empty) options
-// list to render at all — `true` alone isn't enough for those two.
+// `progress` before it was added back).
+//
+// tags/users stay off here: SVAR's built-in multicombo field only lets you *pick* from a fixed
+// `options` list passed in up front — there's no "type a new one" support, so an empty options
+// list (this app has no predefined tag vocabulary or user directory) makes it impossible to add
+// anything at all. Plain free-text fields are added separately below instead (tagsText/usersText,
+// see kanbanEditorItems), which our own read/write mapping in KanbanTab turns into `tags`/`users`
+// string arrays.
 const kanbanCardShape = {
   priority: { data: getPriorityOptions() },
   progress: true,
   description: true,
   deadline: true,
-  tags: { data: [] },
-  users: { data: [] },
+  tags: false,
+  users: false,
 };
+
+const kanbanEditorItems = [
+  ...getKanbanEditorItems(kanbanCardShape),
+  { comp: "text", key: "tagsText", label: "Tags (comma-separated)" },
+  { comp: "text", key: "usersText", label: "Assignees (comma-separated)" },
+];
+
+function splitCommaList(value: string | undefined): string[] | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const items = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length ? items : undefined;
+}
 
 function GanttTab({
   tasks,
@@ -137,9 +160,20 @@ function KanbanTab({
       return;
     }
     const pushChange = () => {
-      const cards = api.getCards() as (ParsedProjectTask & { label?: string })[];
-      // Reverse of the `label: task.text` mapping below — Kanban only ever mutates `label`.
-      onChange(cards.map(({ label, ...card }) => ({ ...card, text: label ?? card.text })));
+      const rawCards = api.getCards() as (ParsedProjectTask & {
+        label?: string;
+        tagsText?: string;
+        usersText?: string;
+      })[];
+      // Reverse of the mapping below — Kanban only ever mutates `label`/`tagsText`/`usersText`.
+      onChange(
+        rawCards.map(({ label, tagsText, usersText, ...card }) => ({
+          ...card,
+          text: label ?? card.text,
+          tags: splitCommaList(tagsText),
+          users: splitCommaList(usersText),
+        })),
+      );
     };
     api.on("add-card", pushChange);
     api.on("update-card", pushChange);
@@ -156,9 +190,19 @@ function KanbanTab({
     () => columns.map((column) => ({ id: column.id, label: column.label })),
     [columns],
   );
-  // KanbanCard's title field is `label`, not our schema's `text` — without this mapping the
-  // card renders with no visible title at all (the board only ever reads `.label`).
-  const cards = useMemo(() => tasks.map((task) => ({ ...task, label: task.text })), [tasks]);
+  // KanbanCard's title field is `label`, not our schema's `text` — without this mapping the card
+  // renders with no visible title at all (the board only ever reads `.label`). tagsText/usersText
+  // are the flat, editable string form of our `tags`/`users` arrays (see kanbanEditorItems above).
+  const cards = useMemo(
+    () =>
+      tasks.map((task) => ({
+        ...task,
+        label: task.text,
+        tagsText: (task.tags ?? []).join(", "),
+        usersText: (task.users ?? []).join(", "),
+      })),
+    [tasks],
+  );
 
   return (
     // See GanttTab's identical comment on `fonts={false}` and `placement="inline"`.
@@ -168,9 +212,7 @@ function KanbanTab({
           <Kanban init={setApi} cards={cards} columns={kanbanColumns} card={kanbanCardShape} />
         </div>
         {/* Clicking a card dispatches select-card, which this picks up automatically. */}
-        {api ? (
-          <KanbanEditor api={api} items={getKanbanEditorItems(kanbanCardShape)} placement="inline" />
-        ) : null}
+        {api ? <KanbanEditor api={api} items={kanbanEditorItems} placement="inline" /> : null}
       </div>
     </KanbanTheme>
   );
@@ -409,19 +451,19 @@ export function ProjectBoardView({
           </button>
         </div>
       ) : null}
-      {tasks.length === 0 ? (
-        <div className="project-board-empty">
-          <p>This project board has no tasks yet.</p>
-        </div>
-      ) : (
-        <div className="project-board-surface">
-          {viewMode === "gantt" ? <GanttTab tasks={tasks} onChange={handleTasksChange} /> : null}
-          {viewMode === "kanban" ? (
-            <KanbanTab tasks={tasks} columns={columns} onChange={handleTasksChange} />
-          ) : null}
-          {viewMode === "grid" ? <GridTab tasks={tasks} /> : null}
-        </div>
-      )}
+      {/* Always render the actual board, even with zero tasks (an empty Kanban still shows its
+          columns, an empty Gantt/Grid still shows their structure) — this used to swap the whole
+          surface out for a plain "no tasks yet" placeholder whenever `tasks.length === 0`, which
+          also hid the columns whenever that count dipped to zero even transiently (e.g. from a
+          stale intermediate read while Kanban re-seeds its store after a drag), matching reports
+          of a newly added column disappearing entirely. */}
+      <div className="project-board-surface">
+        {viewMode === "gantt" ? <GanttTab tasks={tasks} onChange={handleTasksChange} /> : null}
+        {viewMode === "kanban" ? (
+          <KanbanTab tasks={tasks} columns={columns} onChange={handleTasksChange} />
+        ) : null}
+        {viewMode === "grid" ? <GridTab tasks={tasks} /> : null}
+      </div>
     </div>
   );
 }
