@@ -138,6 +138,12 @@ const kanbanEditorItems = [
   { comp: TagListField, key: "users", label: "Assignees" },
 ];
 
+// Computed once (like kanbanEditorItems above), not inline in GanttTab's JSX — `getGanttEditorItems()`
+// was being called fresh on every render there, handing <GanttEditor> a brand-new `items` array
+// identity on every single edit even after Gantt's own `tasks`/`links` were frozen at mount (see
+// GanttTab), which was still enough to make the whole widget flicker on every action.
+const ganttEditorItems = getGanttEditorItems();
+
 // A small icon-only Undo/Redo pair for the page toolbar. Earlier this called into each SVAR
 // widget's own built-in history (`api.exec("undo"/"redo")`, `undo`/`history` config), but that
 // turned out not to actually work: reading the compiled bundles, Gantt's `getHistory()` reads a
@@ -284,7 +290,7 @@ function GanttTab({
         </div>
         {/* Double-clicking a task opens this automatically (SVAR's built-in behavior) — no
             separate wiring needed beyond mounting it alongside Gantt with the same api. */}
-        {api ? <GanttEditor api={api} items={getGanttEditorItems()} placement="inline" /> : null}
+        {api ? <GanttEditor api={api} items={ganttEditorItems} placement="inline" /> : null}
       </div>
     </GanttTheme>
   );
