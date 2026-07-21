@@ -199,26 +199,53 @@ function GanttTab({
   );
 }
 
-function KanbanTab({
+// One epic's own Kanban board — a full <Kanban> + inline editor instance scoped to just that
+// epic's tasks, all sharing the same status `columns`. This is how "epics" are done here: SVAR
+// Kanban has no native swimlane/grouping-into-lanes concept (confirmed against its docs/types —
+// its own "grouping" feature only lets you swap the whole column set for a different one, not
+// stack multiple lanes of the same columns), and every other maintained open-source React kanban
+// library we found has the same gap; a real swimlane board with cross-lane drag would mean
+// building our own drag-and-drop engine, cards, and edit form from scratch — a much bigger,
+// separate undertaking. Stacking one full board per epic reuses everything already built here
+// (cards, editing, in-column drag) at the cost of one thing: dragging a card to a DIFFERENT
+// epic doesn't work (each instance's drag-and-drop is scoped to itself) — that's done instead via
+// the "Epic" field in the edit form (see epicOptions/parent below), which updates the data
+// immediately but only shows the card in its new lane after the Kanban tab is remounted (switch
+// tabs and back, or reopen the document) — the same frozen-props tradeoff that fixed the
+// disappearing-column bug applies per-lane here too.
+function KanbanSwimlane({
+  epicId,
+  epicLabel,
   tasks,
   columns,
+  epicOptions,
   onChange,
   onApiReady,
 }: {
+  epicId: string | null;
+  epicLabel: string;
   tasks: ParsedProjectTask[];
   columns: ProjectColumn[];
-  onChange: (tasks: ParsedProjectTask[]) => void;
-  onApiReady: (api: SvarApi | null) => void;
+  epicOptions: { id: string; label: string }[];
+  onChange: (originalIds: Set<string>, updatedTasks: ParsedProjectTask[]) => void;
+  onApiReady: (epicId: string | null, api: SvarApi | null) => void;
 }) {
   // See GanttTab's identical comment on why this is useState, not useRef.
   const [api, setApi] = useState<SvarApi>(null);
 
   useEffect(() => {
-    onApiReady(api);
-    return () => onApiReady(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- onApiReady is a stable ref setter
-    // from the parent; re-running this for identity changes there would serve no purpose.
+    onApiReady(epicId, api);
+    return () => onApiReady(epicId, null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onApiReady/epicId are stable for
+    // this instance's lifetime; re-running for parent re-renders would serve no purpose.
   }, [api]);
+
+  // Which task ids this lane started with, frozen at mount — lets the change handler below merge
+  // just this lane's edits back into the full shared task list without touching other lanes' data
+  // (see ProjectBoardView's handleSwimlaneChange). A task moved OUT of this epic via the "Epic"
+  // field still counts as "this lane's edit" (it's still in this set), same for one moved in via
+  // handleAddTask while this lane is live.
+  const initialTaskIdsRef = useRef(new Set(tasks.map((task) => task.id)));
 
   useEffect(() => {
     if (!api) {
@@ -227,7 +254,10 @@ function KanbanTab({
     const pushChange = () => {
       const cards = api.getCards() as (ParsedProjectTask & { label?: string })[];
       // Reverse of the `label: task.text` mapping below — Kanban only ever mutates `label`.
-      onChange(cards.map(({ label, ...card }) => ({ ...card, text: label ?? card.text })));
+      onChange(
+        initialTaskIdsRef.current,
+        cards.map(({ label, ...card }) => ({ ...card, text: label ?? card.text })),
+      );
     };
     api.on("add-card", pushChange);
     api.on("update-card", pushChange);
@@ -236,16 +266,9 @@ function KanbanTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see GanttTab's identical comment.
   }, [api]);
 
-  // Kanban fully reinitializes its whole internal store whenever the `cards`/`columns` prop
-  // identity changes (a hard reset, not a merge) — recomputing these from `tasks`/`columns` on
-  // every render, even for edits Kanban's own store already knows about (its own `onChange` echo
-  // above feeding back into a changed `tasks` prop), was forcing repeated resets, one of which
-  // landing mid-drag is what made columns/cards vanish. So: seed ONLY from the props Kanban had
-  // at mount time (frozen via ref, ignoring all later prop changes), and after that route every
-  // mutation through the live api instead — Kanban's own interactions already do this natively;
-  // ours (the parent's Add Task / Columns panel) do it explicitly via `onApiReady`'s ref, see
-  // ProjectBoardView's handlers. The parent also keys this whole tab on `pageId` so switching to
-  // a different document still gets a clean remount instead of a stale frozen seed.
+  // See the identical comment on KanbanTab's predecessor (still applies per-lane): Kanban fully
+  // reinitializes its whole internal store whenever `cards`/`columns` prop identity changes, so
+  // these are seeded once at mount and never recomputed from later prop changes.
   const initialTasksRef = useRef(tasks);
   const initialColumnsRef = useRef(columns);
   const kanbanColumns = useMemo(
@@ -257,17 +280,97 @@ function KanbanTab({
     [],
   );
 
+  // The "Epic" field is a plain built-in richselect (not a custom field like TagListField) since
+  // it just needs an options list — but that list depends on the board's current epics, so it's
+  // computed fresh per render (safe: this only affects the Editor's `items` prop, not Kanban's own
+  // `cards`/`columns`, so it doesn't trigger the store reinit described above).
+  const editorItems = useMemo(
+    () => [
+      ...kanbanEditorItems,
+      {
+        comp: "richselect",
+        key: "parent",
+        label: "Epic",
+        options: [{ id: "", label: "No epic" }, ...epicOptions],
+      },
+    ],
+    [epicOptions],
+  );
+
   return (
-    // See GanttTab's identical comment on `fonts={false}` and `placement="inline"`.
-    <KanbanTheme fonts={false}>
-      <div className="project-board-tab-layout">
-        <div className="project-board-tab-widget">
-          <Kanban init={setApi} cards={cards} columns={kanbanColumns} card={kanbanCardShape} />
+    <div className="project-board-swimlane">
+      <div className="project-board-swimlane-label">{epicLabel}</div>
+      {/* See GanttTab's identical comment on `fonts={false}` and `placement="inline"`. */}
+      <KanbanTheme fonts={false}>
+        <div className="project-board-tab-layout">
+          <div className="project-board-tab-widget">
+            <Kanban init={setApi} cards={cards} columns={kanbanColumns} card={kanbanCardShape} />
+          </div>
+          {/* Clicking a card dispatches select-card, which this picks up automatically. */}
+          {api ? <KanbanEditor api={api} items={editorItems} placement="inline" /> : null}
         </div>
-        {/* Clicking a card dispatches select-card, which this picks up automatically. */}
-        {api ? <KanbanEditor api={api} items={kanbanEditorItems} placement="inline" /> : null}
-      </div>
-    </KanbanTheme>
+      </KanbanTheme>
+    </div>
+  );
+}
+
+// Epics are just tasks with `type: "summary"` — the same concept Gantt already uses for a
+// parent/rollup task with children (via other tasks' `parent` field pointing at it). Reusing it
+// here keeps "one shared task list" true across all three views instead of inventing a
+// Kanban-only epic concept: a Gantt summary bar and a Kanban swimlane are the same underlying row.
+const NO_EPIC_KEY = "__no_epic__";
+
+function KanbanBoard({
+  tasks,
+  columns,
+  onChange,
+  onApiReady,
+}: {
+  tasks: ParsedProjectTask[];
+  columns: ProjectColumn[];
+  onChange: (originalIds: Set<string>, updatedTasks: ParsedProjectTask[]) => void;
+  onApiReady: (epicId: string | null, api: SvarApi | null) => void;
+}) {
+  const epics = useMemo(() => tasks.filter((task) => task.type === "summary"), [tasks]);
+  const epicOptions = useMemo(
+    () => epics.map((epic) => ({ id: epic.id, label: epic.text })),
+    [epics],
+  );
+
+  const lanes = useMemo(() => {
+    const byEpic = new Map<string, ParsedProjectTask[]>();
+    byEpic.set(NO_EPIC_KEY, []);
+    for (const epic of epics) {
+      byEpic.set(epic.id, []);
+    }
+    for (const task of tasks) {
+      if (task.type === "summary") {
+        continue;
+      }
+      const key = task.parent && byEpic.has(task.parent) ? task.parent : NO_EPIC_KEY;
+      byEpic.get(key)!.push(task);
+    }
+    return [
+      ...epics.map((epic) => ({ epicId: epic.id, label: epic.text, tasks: byEpic.get(epic.id)! })),
+      { epicId: null, label: "No epic", tasks: byEpic.get(NO_EPIC_KEY)! },
+    ];
+  }, [tasks, epics]);
+
+  return (
+    <div className="project-board-swimlanes">
+      {lanes.map((lane) => (
+        <KanbanSwimlane
+          key={lane.epicId ?? NO_EPIC_KEY}
+          epicId={lane.epicId}
+          epicLabel={lane.label}
+          tasks={lane.tasks}
+          columns={columns}
+          epicOptions={epicOptions}
+          onChange={onChange}
+          onApiReady={onApiReady}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -317,6 +420,47 @@ function GridTab({
     [columns],
   );
   const columnLabelById = useMemo(() => new Map(columns.map((c) => [c.id, c.label])), [columns]);
+  // Status pills cycle through a fixed small palette by the status's position in the board's
+  // column list, so each status keeps a stable, distinct color (Notion-style tag) without needing
+  // per-status color configuration anywhere in the schema.
+  const columnToneById = useMemo(
+    () => new Map(columns.map((column, index) => [column.id, index % 6])),
+    [columns],
+  );
+
+  // Column-level `cell` renderers (a real React component, distinct from `template`'s plain-string
+  // formatting — see @svar-ui/grid-store's getRenderValue vs. react-grid's `n.cell`) let Status/
+  // Priority render as colored pills instead of raw text; `template` is kept alongside for the
+  // plain-text fallback used by tooltips/export.
+  const StatusCell = useMemo(
+    () =>
+      function StatusCell({ row }: { row: Record<string, any> }) {
+        const value = row.column as string;
+        const tone = columnToneById.get(value) ?? 0;
+        return (
+          <span className={`project-board-pill project-board-pill--tone-${tone}`}>
+            {columnLabelById.get(value) ?? value}
+          </span>
+        );
+      },
+    [columnLabelById, columnToneById],
+  );
+  const PriorityCell = useMemo(
+    () =>
+      function PriorityCell({ row }: { row: Record<string, any> }) {
+        const value = row.priority as number | undefined;
+        if (value === undefined) {
+          return null;
+        }
+        const tone = value === 3 ? "high" : value === 2 ? "medium" : "low";
+        return (
+          <span className={`project-board-pill project-board-pill--priority-${tone}`}>
+            {priorityLabelById.get(value) ?? ""}
+          </span>
+        );
+      },
+    [],
+  );
 
   // Sortable by clicking a header, and editable in place (status/priority via a dropdown of the
   // board's actual columns/priority levels, dates via a real date picker) — using what the Grid
@@ -326,18 +470,20 @@ function GridTab({
     {
       id: "column",
       header: "Status",
-      width: 140,
+      width: 150,
       sort: true,
       editor: { type: "richselect", config: { options: columnOptions } },
       template: (value: string) => columnLabelById.get(value) ?? value,
+      cell: StatusCell,
     },
     {
       id: "priority",
       header: "Priority",
-      width: 120,
+      width: 130,
       sort: true,
       editor: { type: "richselect", config: { options: priorityOptions } },
       template: (value: number | undefined) => (value !== undefined ? (priorityLabelById.get(value) ?? "") : ""),
+      cell: PriorityCell,
     },
     { id: "start", header: "Start", width: 140, sort: true, editor: "datepicker" },
     { id: "duration", header: "Duration (days)", width: 140, sort: true, editor: "text" },
@@ -347,7 +493,9 @@ function GridTab({
   return (
     // See GanttTab's identical comment on `fonts={false}`.
     <GridTheme fonts={false}>
-      <Grid init={setApi} data={tasks} columns={gridColumns} />
+      <div className="project-board-grid-wrap">
+        <Grid init={setApi} data={tasks} columns={gridColumns} />
+      </div>
     </GridTheme>
   );
 }
@@ -369,11 +517,12 @@ export function ProjectBoardView({
   const [columnsPanelOpen, setColumnsPanelOpen] = useState(false);
   const snapshot_timer = useRef<number | null>(null);
   const loaded_page_id = useRef<string | null>(null);
-  // Set by KanbanTab's onApiReady while it's mounted and its Kanban instance is ready; null
-  // otherwise (a different tab is showing, or the page just switched). Add/rename/delete-column
-  // and add-task push through this directly when it's live, instead of through a changed prop —
-  // see KanbanTab's comment on why changing `cards`/`columns` after mount is unsafe.
-  const kanbanApiRef = useRef<SvarApi | null>(null);
+  // One live Kanban api per epic swimlane (keyed by epic id, or NO_EPIC_KEY for the "No epic"
+  // lane), populated by KanbanSwimlane's onApiReady while the Kanban tab is showing; empty
+  // otherwise. Add/rename/delete-column push into every lane at once (columns are shared across
+  // all of them); add-task pushes into just the lane matching the new task's epic — see
+  // KanbanSwimlane's comment on why changing `cards`/`columns` after mount is unsafe.
+  const kanbanApisRef = useRef<Map<string, SvarApi>>(new Map());
 
   // Re-parse whenever a different document (or the same one reloaded) is handed to us — mirrors
   // NotebookView's identical reset-on-switch effect, including cancelling any debounced save
@@ -422,6 +571,19 @@ export function ProjectBoardView({
     scheduleSave(next);
   };
 
+  // Merges one swimlane's edits back into the full shared task list — `originalIds` is the set of
+  // task ids that lane started with (frozen at its mount), so this replaces exactly those and
+  // leaves every other lane's tasks untouched, regardless of adds/edits/deletes/moves within it.
+  const handleSwimlaneChange = (originalIds: Set<string>, updatedSubset: ParsedProjectTask[]) => {
+    if (!board) {
+      return;
+    }
+    const untouched = board.tasks.filter((task) => !originalIds.has(task.id));
+    const next = { ...board, tasks: [...untouched, ...fromParsedTasks(updatedSubset)] };
+    setBoard(next);
+    scheduleSave(next);
+  };
+
   const handleAddTask = () => {
     const base = board ?? { tasks: [], columns: [] };
     const newTask: ProjectTask = {
@@ -436,12 +598,34 @@ export function ProjectBoardView({
     const next = { ...base, tasks: [...base.tasks, newTask] };
     setBoard(next);
     scheduleSave(next);
-    if (viewMode === "kanban" && kanbanApiRef.current) {
-      // Kanban's `cards` prop is frozen after mount (see KanbanTab) — the state update above
-      // alone wouldn't show up in the already-live board, so push it in directly too. The
-      // resulting "add-card" event is a no-op for `board` (same data, already applied above).
-      void kanbanApiRef.current.exec("add-card", { card: { ...newTask, label: newTask.text } });
+    // The new task has no epic (`parent` unset), so it belongs to the "No epic" lane — push it
+    // into that lane's live api directly if the Kanban tab is showing (its `cards` prop is frozen
+    // after mount, see KanbanSwimlane, so the state update above alone wouldn't show up there).
+    const noEpicApi = kanbanApisRef.current.get(NO_EPIC_KEY);
+    if (viewMode === "kanban" && noEpicApi) {
+      void noEpicApi.exec("add-card", { card: { ...newTask, label: newTask.text } });
     }
+  };
+
+  const handleAddEpic = () => {
+    const base = board ?? { tasks: [], columns: [] };
+    const newEpic: ProjectTask = {
+      id: makeTaskId(),
+      text: "New epic",
+      start: new Date().toISOString(),
+      duration: 1,
+      progress: 0,
+      column: base.columns[0]?.id ?? "",
+      type: "summary",
+    };
+    const next = { ...base, tasks: [...base.tasks, newEpic] };
+    setBoard(next);
+    scheduleSave(next);
+    // A new epic means a whole new swimlane, which no live api can add on its own — the Kanban
+    // tab just needs a remount to pick it up (switching to it does this naturally via `tasks`
+    // changing; if it's already the active tab, force it by dropping all live refs so the render
+    // below re-derives `lanes` and mounts a fresh <KanbanSwimlane> for it).
+    kanbanApisRef.current.clear();
   };
 
   const handleAddColumn = () => {
@@ -451,12 +635,13 @@ export function ProjectBoardView({
     const next = { ...base, columns: nextColumns };
     setBoard(next);
     scheduleSave(next);
-    if (kanbanApiRef.current) {
+    // Columns are shared across every epic's lane — patch all of them, not just one.
+    for (const api of kanbanApisRef.current.values()) {
       // No public "add-column" store action exists (only "update-column"); patch the store's
       // own state directly instead of going through the `columns` prop, which is frozen after
-      // mount for the same reason `cards` is (see KanbanTab) — changing it would force a full
-      // store reinit rather than a live update.
-      kanbanApiRef.current
+      // mount for the same reason `cards` is (see KanbanSwimlane) — changing it would force a
+      // full store reinit rather than a live update.
+      api
         .getStores()
         .data.setState({ columns: nextColumns.map((column) => ({ id: column.id, label: column.label })) });
     }
@@ -472,8 +657,8 @@ export function ProjectBoardView({
     };
     setBoard(next);
     scheduleSave(next);
-    if (kanbanApiRef.current) {
-      void kanbanApiRef.current.exec("update-column", { id: columnId, column: { label } });
+    for (const api of kanbanApisRef.current.values()) {
+      void api.exec("update-column", { id: columnId, column: { label } });
     }
   };
 
@@ -493,15 +678,16 @@ export function ProjectBoardView({
     };
     setBoard(next);
     scheduleSave(next);
-    if (kanbanApiRef.current) {
-      const api = kanbanApiRef.current;
+    const affectedTaskIds = board.tasks.filter((task) => task.column === columnId).map((task) => task.id);
+    // Each affected task only lives in one lane's api, but we don't track that mapping here — a
+    // "move-card" call against a lane that doesn't have the card is expected to just no-op, so
+    // broadcasting to every lane is simpler and safe (not independently verified live).
+    for (const api of kanbanApisRef.current.values()) {
       api
         .getStores()
         .data.setState({ columns: remaining.map((column) => ({ id: column.id, label: column.label })) });
-      for (const task of board.tasks) {
-        if (task.column === columnId) {
-          void api.exec("move-card", { id: task.id, column: fallbackColumnId });
-        }
+      for (const taskId of affectedTaskIds) {
+        void api.exec("move-card", { id: taskId, column: fallbackColumnId });
       }
     }
   };
@@ -563,6 +749,11 @@ export function ProjectBoardView({
             <button type="button" onClick={handleAddTask}>
               + Task
             </button>
+            {viewMode === "kanban" ? (
+              <button type="button" onClick={handleAddEpic}>
+                + Epic
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -599,21 +790,27 @@ export function ProjectBoardView({
           also hid the columns whenever that count dipped to zero even transiently (e.g. from a
           stale intermediate read while Kanban re-seeds its store after a drag), matching reports
           of a newly added column disappearing entirely. */}
-      {/* `key={pageId}`: KanbanTab freezes its initial cards/columns at mount (see its comment) —
-          without this, switching to a different document while staying on the Kanban tab would
-          leave it seeded from the previous document instead of remounting fresh. */}
+      {/* `key={pageId}`: each Kanban swimlane freezes its initial cards/columns at mount (see
+          KanbanSwimlane's comment) — without this, switching to a different document while
+          staying on the Kanban tab would leave it seeded from the previous document instead of
+          remounting fresh. */}
       <div className="project-board-surface">
         {viewMode === "gantt" ? (
           <GanttTab key={pageId} tasks={tasks} onChange={handleTasksChange} />
         ) : null}
         {viewMode === "kanban" ? (
-          <KanbanTab
+          <KanbanBoard
             key={pageId}
             tasks={tasks}
             columns={columns}
-            onChange={handleTasksChange}
-            onApiReady={(api) => {
-              kanbanApiRef.current = api;
+            onChange={handleSwimlaneChange}
+            onApiReady={(epicId, api) => {
+              const key = epicId ?? NO_EPIC_KEY;
+              if (api) {
+                kanbanApisRef.current.set(key, api);
+              } else {
+                kanbanApisRef.current.delete(key);
+              }
             }}
           />
         ) : null}
