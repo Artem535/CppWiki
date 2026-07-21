@@ -701,22 +701,13 @@ button {
 }
 
 .project-board-swimlane-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex: 0 0 auto;
-  padding: 6px 14px;
+  padding: 8px 14px;
   font-size: 13px;
   font-weight: 600;
   color: var(--app-text);
   background: var(--app-surface-muted);
   border-bottom: 1px solid var(--app-border);
-}
-
-.project-board-swimlane-label .project-board-icon-button {
-  width: 22px;
-  height: 22px;
-  font-size: 13px;
 }
 
 .project-board-swimlane .project-board-tab-layout {
