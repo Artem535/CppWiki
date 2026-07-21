@@ -49,18 +49,20 @@ type SvarApi = any;
 // them, so a key missing here is the same as turning it off (this is what silently dropped
 // `progress` before it was added back).
 //
-// tags/users stay off here: SVAR's built-in multicombo field only lets you *pick* from a fixed
-// `options` list passed in up front — there's no "type a new one" support, so an empty options
-// list (this app has no predefined tag vocabulary or user directory) makes it impossible to add
-// anything at all. TagListField below (a plain "chips + add button" field we own) replaces it,
-// reading/writing the `tags`/`users` string arrays directly — no separate text-parsing needed.
+// tags/users: `true` (not an options object) is enough for the card *face* — its tag/avatar
+// renderer resolves each raw string against the (absent) options list, and falls back to
+// displaying the string itself when no match is found, so plain free-text values show up fine
+// with no predefined vocabulary needed. The *editor* still needs its own, separate shape with
+// these two off (see kanbanEditorItems) — its built-in multicombo field, unlike the card
+// renderer, only lets you pick from a fixed options list with no "type a new one" support, which
+// is why TagListField (a small field we own) replaces it there instead.
 const kanbanCardShape = {
   priority: { data: getPriorityOptions() },
   progress: true,
   description: true,
   deadline: true,
-  tags: false,
-  users: false,
+  tags: true,
+  users: true,
 };
 
 // A custom Editor field component (passed directly as `comp`, see kanbanEditorItems — SVAR's
@@ -125,8 +127,10 @@ function TagListField({
   );
 }
 
+// tags/users off here (unlike kanbanCardShape) so getKanbanEditorItems doesn't also add its own
+// broken built-in multicombo item alongside TagListField's replacement below.
 const kanbanEditorItems = [
-  ...getKanbanEditorItems(kanbanCardShape),
+  ...getKanbanEditorItems({ ...kanbanCardShape, tags: false, users: false }),
   { comp: TagListField, key: "tags", label: "Tags" },
   // Assignees are plain free-text names for now — this app has no user directory yet (planned to
   // come from Authentik later); the point right now is just to let a name be attached to a task.
