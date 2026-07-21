@@ -710,6 +710,34 @@ button {
   overflow: hidden;
 }
 
+/* Notion-style row/header treatment rather than SVAR's default dense spreadsheet look: more
+   breathing room per cell (row height is set via the `sizes` prop on <Grid>, see GridTab, so this
+   just adjusts padding to match), a muted uppercase header instead of plain bold text, and a hover
+   highlight + single bottom divider per row instead of a full grid of cell borders. `[role=...]`
+   attribute selectors target SVAR's own accessibility contract (stable across versions); `.wx-row`/
+   `.wx-h-row` are the library's real (non-hashed) row-kind classes — safer to target than its
+   hashed per-build utility classes. */
+.project-board-grid-wrap [role="gridcell"],
+.project-board-grid-wrap [role="columnheader"] {
+  padding: 0 14px;
+}
+
+.project-board-grid-wrap [role="columnheader"] {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--app-text-muted);
+}
+
+.project-board-grid-wrap .wx-row {
+  border-bottom: 1px solid var(--app-border);
+}
+
+.project-board-grid-wrap .wx-row:hover {
+  background: var(--app-surface-hover);
+}
+
 /* Status/Priority pills (Notion-style tags): a per-column `cell` renderer (see GridTab's
    StatusCell/PriorityCell) replaces the plain text value with a colored chip. Status tones cycle
    through a fixed 6-color palette keyed by the status's position in the board's column list, so
@@ -717,12 +745,21 @@ button {
 .project-board-pill {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
   padding: 2px 10px;
   font-size: 12px;
   font-weight: 500;
   line-height: 1.6;
   border-radius: 999px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
+.project-board-pill--unknown {
+  border: 1px dashed var(--app-border);
+  color: var(--app-text-muted);
 }
 
 .project-board-pill--tone-0 {

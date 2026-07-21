@@ -436,12 +436,15 @@ function GridTab({
     () =>
       function StatusCell({ row }: { row: Record<string, any> }) {
         const value = row.column as string;
+        const label = columnLabelById.get(value);
+        // A task can end up pointing at a column id that no longer exists (e.g. a column deleted
+        // out from under it in an older build) — show a neutral placeholder instead of leaking the
+        // raw internal id (`column-<timestamp>-<n>`) onto the screen.
+        if (label === undefined) {
+          return <span className="project-board-pill project-board-pill--unknown">Unassigned</span>;
+        }
         const tone = columnToneById.get(value) ?? 0;
-        return (
-          <span className={`project-board-pill project-board-pill--tone-${tone}`}>
-            {columnLabelById.get(value) ?? value}
-          </span>
-        );
+        return <span className={`project-board-pill project-board-pill--tone-${tone}`}>{label}</span>;
       },
     [columnLabelById, columnToneById],
   );
@@ -485,16 +488,36 @@ function GridTab({
       template: (value: number | undefined) => (value !== undefined ? (priorityLabelById.get(value) ?? "") : ""),
       cell: PriorityCell,
     },
-    { id: "start", header: "Start", width: 140, sort: true, editor: "datepicker" },
-    { id: "duration", header: "Duration (days)", width: 140, sort: true, editor: "text" },
-    { id: "progress", header: "Progress %", width: 120, sort: true },
+    {
+      id: "start",
+      header: "Start",
+      width: 150,
+      sort: true,
+      editor: "datepicker",
+      // Grid's default display value is the raw Date's `toString()` (e.g. "Fri Jul 24 2026
+      // 20:00:00 GMT+0300 (MSK)"), which is both unreadable and gets clipped by the column width.
+      template: (value: Date | undefined) =>
+        value instanceof Date
+          ? value.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+          : "",
+    },
+    { id: "duration", header: "Duration (days)", width: 150, sort: true, editor: "text" },
+    // `flexgrow` lets this last column absorb any leftover width so the row width matches the
+    // header row's — without it the header's full-bleed background extends past where the data
+    // rows actually end, which read as a stray highlighted block to the right of the table.
+    { id: "progress", header: "Progress %", width: 120, sort: true, flexgrow: 1 },
   ];
 
   return (
     // See GanttTab's identical comment on `fonts={false}`.
     <GridTheme fonts={false}>
       <div className="project-board-grid-wrap">
-        <Grid init={setApi} data={tasks} columns={gridColumns} />
+        <Grid
+          init={setApi}
+          data={tasks}
+          columns={gridColumns}
+          sizes={{ rowHeight: 40, headerHeight: 38 }}
+        />
       </div>
     </GridTheme>
   );
