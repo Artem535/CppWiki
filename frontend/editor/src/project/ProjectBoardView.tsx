@@ -44,15 +44,18 @@ type SvarApi = any;
 
 // Kanban's built-in Low/Medium/High priority levels are the only per-card "color" knob the
 // library exposes (each level maps to a colored card accent) — this is what "changing a card's
-// color" maps onto in our schema (ProjectTask.priority). Description/deadline/tags/users have no
-// backing field in our schema, so they're turned off on both the card face and the edit form
-// rather than left dangling (editable but silently discarded on save).
+// color" maps onto in our schema (ProjectTask.priority). Every key must be listed explicitly:
+// passing any shape object at all replaces Kanban's defaults wholesale rather than merging with
+// them, so a key missing here is the same as turning it off (this is what silently dropped
+// `progress` before it was added back). `tags`/`users` need an explicit (even empty) options
+// list to render at all — `true` alone isn't enough for those two.
 const kanbanCardShape = {
   priority: { data: getPriorityOptions() },
-  description: false,
-  deadline: false,
-  tags: false,
-  users: false,
+  progress: true,
+  description: true,
+  deadline: true,
+  tags: { data: [] },
+  users: { data: [] },
 };
 
 function GanttTab({
@@ -99,10 +102,20 @@ function GanttTab({
     // external network calls, and that fetch silently failing was also leaving icon-dependent
     // controls (chevrons, calendar glyphs) rendering as blank boxes.
     <GanttTheme fonts={false}>
-      <Gantt init={setApi} tasks={tasks} />
-      {/* Double-clicking a task opens this automatically (SVAR's built-in behavior) — no
-          separate wiring needed beyond mounting it alongside Gantt with the same api. */}
-      {api ? <GanttEditor api={api} items={getGanttEditorItems()} /> : null}
+      {/* `placement="inline"` renders the editor in normal flow as a sibling of the board (see
+          .project-board-tab-layout in styles.css), sized to match the widget's own height,
+          instead of the default `placement="sidebar"`, which is a viewport-fixed drawer that
+          doesn't compose with this app's own layout (wrong height, floating close button). Gantt's
+          own Editor wrapper renders nothing at all until a task is open for editing, so this
+          costs no extra space otherwise. */}
+      <div className="project-board-tab-layout">
+        <div className="project-board-tab-widget">
+          <Gantt init={setApi} tasks={tasks} />
+        </div>
+        {/* Double-clicking a task opens this automatically (SVAR's built-in behavior) — no
+            separate wiring needed beyond mounting it alongside Gantt with the same api. */}
+        {api ? <GanttEditor api={api} items={getGanttEditorItems()} placement="inline" /> : null}
+      </div>
     </GanttTheme>
   );
 }
@@ -148,11 +161,17 @@ function KanbanTab({
   const cards = useMemo(() => tasks.map((task) => ({ ...task, label: task.text })), [tasks]);
 
   return (
-    // See GanttTab's identical comment on `fonts={false}`.
+    // See GanttTab's identical comment on `fonts={false}` and `placement="inline"`.
     <KanbanTheme fonts={false}>
-      <Kanban init={setApi} cards={cards} columns={kanbanColumns} card={kanbanCardShape} />
-      {/* Clicking a card dispatches select-card, which this picks up automatically. */}
-      {api ? <KanbanEditor api={api} items={getKanbanEditorItems(kanbanCardShape)} /> : null}
+      <div className="project-board-tab-layout">
+        <div className="project-board-tab-widget">
+          <Kanban init={setApi} cards={cards} columns={kanbanColumns} card={kanbanCardShape} />
+        </div>
+        {/* Clicking a card dispatches select-card, which this picks up automatically. */}
+        {api ? (
+          <KanbanEditor api={api} items={getKanbanEditorItems(kanbanCardShape)} placement="inline" />
+        ) : null}
+      </div>
     </KanbanTheme>
   );
 }

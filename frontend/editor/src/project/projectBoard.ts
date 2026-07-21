@@ -17,9 +17,13 @@ export type ProjectTask = {
   parent?: string;
   type?: "task" | "summary" | "milestone";
   tags?: string[];
+  users?: string[];
   // Kanban's built-in priority levels (1 = Low, 2 = Medium, 3 = High), each mapped to a color —
   // this is the "card color" knob exposed in the Kanban card/editor (see ProjectBoardView.tsx).
   priority?: number;
+  description?: string;
+  // ISO date string in storage, like start/end — see ParsedProjectTask.
+  deadline?: string;
 };
 
 export type ProjectColumn = {
@@ -32,10 +36,12 @@ export type ProjectBoard = {
   columns: ProjectColumn[];
 };
 
-// Dates hydrated to real Date instances — the shape @svar-ui/react-gantt's ITask actually wants.
-export type ParsedProjectTask = Omit<ProjectTask, "start" | "end"> & {
+// Dates hydrated to real Date instances — the shape @svar-ui/react-gantt's ITask actually wants,
+// and what Kanban's own datepicker editor field produces for `deadline`.
+export type ParsedProjectTask = Omit<ProjectTask, "start" | "end" | "deadline"> & {
   start: Date;
   end?: Date;
+  deadline?: Date;
 };
 
 const defaultColumns: ProjectColumn[] = [
@@ -69,6 +75,7 @@ export function toParsedTasks(tasks: ProjectTask[]): ParsedProjectTask[] {
     ...task,
     start: new Date(task.start),
     end: task.end ? new Date(task.end) : undefined,
+    deadline: task.deadline ? new Date(task.deadline) : undefined,
   }));
 }
 
@@ -77,6 +84,7 @@ export function fromParsedTasks(tasks: ParsedProjectTask[]): ProjectTask[] {
     ...task,
     start: task.start.toISOString(),
     end: task.end ? task.end.toISOString() : undefined,
+    deadline: task.deadline ? task.deadline.toISOString() : undefined,
   }));
 }
 

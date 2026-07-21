@@ -617,3 +617,35 @@ button {
   --wx-popup-background: var(--app-surface);
   --wx-tabs-active-color: var(--app-text);
 }
+
+/* Gantt/Kanban's Editor, mounted with `placement="inline"`, renders as a normal flow sibling of
+   the board (see GanttTab/KanbanTab) instead of `placement="sidebar"`'s viewport-fixed drawer,
+   which didn't compose with this app's own layout (wrong height, a close button floating above
+   empty space). Both `.wx-editor-kanban`/`.wx-gantt-editor` render nothing at all until an item
+   is open for editing, so this costs no space otherwise. */
+.project-board-tab-layout {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.project-board-tab-widget {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.project-board-tab-layout > .wx-editor-kanban,
+.project-board-tab-layout > .wx-gantt-editor {
+  flex: 0 0 340px;
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  border-left: 1px solid var(--app-border);
+}
+
+/* The built-in close icon (`wxi-close`) has no glyph now that the icon font is disabled
+   (`fonts={false}` above) — give it a plain "×" so the button isn't a blank, unlabeled pill. */
+.project-board-view .wxi-close::before {
+  content: "\00d7";
+}
