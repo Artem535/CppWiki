@@ -68,6 +68,8 @@ qt_add_executable(cppwiki_app
         gui/page.h
         gui/page_helpers.cc
         gui/page_helpers.h
+        gui/project_board/project_board_native_widget.cc
+        gui/project_board/project_board_native_widget.h
         gui/workspace_rail_widget.cc
         gui/workspace_rail_widget.h
 
@@ -357,4 +359,17 @@ endif ()
 # add their own equivalent block without touching these lines.
 if (CPPWIKI_BUILD_DESKTOP_APP)
     add_subdirectory(gui/project_board/table)
+endif ()
+
+# gui/project_board/project_board_native_widget.{cc,h} (compiled directly into cppwiki_app, see
+# its entry in the qt_add_executable() call above) hosts all three of the above widgets — link
+# them into cppwiki_app now that their add_subdirectory() calls above have actually defined the
+# targets (a target_link_libraries() call earlier in this file, before these existed, would fail).
+if (CPPWIKI_BUILD_DESKTOP_APP)
+    target_link_libraries(cppwiki_app
+            PRIVATE
+            cppwiki_project_board_gantt
+            cppwiki_kanban_board
+            cppwiki_project_board_table
+    )
 endif ()

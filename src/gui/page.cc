@@ -17,6 +17,7 @@
 #include <QPushButton>
 #include <QSet>
 #include <QSize>
+#include <QStackedWidget>
 #include <QTimer>
 #include <QTreeView>
 #include <QUrl>
@@ -50,6 +51,7 @@
 #include "gui/document_tree_view.h"
 #include "gui/import_destination_dialog.h"
 #include "gui/page_helpers.h"
+#include "gui/project_board/project_board_native_widget.h"
 #include "sync/sync_service.h"
 
 namespace cppwiki {
@@ -260,7 +262,16 @@ void Page::BuildUi() {
   auto* content_layout = new QVBoxLayout(content_widget_);
   content_layout->setContentsMargins(0, 0, 0, 0);
   content_layout->setSpacing(0);
-  content_layout->addWidget(editor_view_, 1);
+
+  content_stack_ = new QStackedWidget(content_widget_);
+  content_stack_->addWidget(editor_view_);
+  project_board_widget_ = new gui::project_board::ProjectBoardNativeWidget(content_stack_);
+  content_stack_->addWidget(project_board_widget_);
+  content_stack_->setCurrentWidget(editor_view_);
+  content_layout->addWidget(content_stack_, 1);
+
+  connect(project_board_widget_, &gui::project_board::ProjectBoardNativeWidget::documentEdited,
+          this, &Page::HandleProjectBoardEdited);
 
   edit_inactivity_timer_ = new QTimer(this);
   edit_inactivity_timer_->setSingleShot(true);
@@ -317,6 +328,7 @@ void Page::BuildUi() {
           [this](const QString&, const QString& message) {
             emit documentStatusChanged(QStringLiteral("Load error: %1").arg(message), true);
             current_document_kind_ = document::DocumentKind::kWikiPage;
+            SyncContentStackToDocumentKind();
             EmitDocumentKindState();
           });
   connect(editor_bridge_, &bridge::QEditorBridge::documentLoaded, this,
@@ -324,6 +336,11 @@ void Page::BuildUi() {
             ApplyConflictStateForDocument(document.value(QStringLiteral("id")).toString());
             current_document_kind_ = document::DocumentKindFromKey(
                 document.value(QStringLiteral("kind")).toString().toStdString());
+            if (current_document_kind_ == document::DocumentKind::kProjectBoard) {
+              project_board_widget_->LoadFromJson(
+                  document.value(QStringLiteral("rawContent")).toString().toUtf8());
+            }
+            SyncContentStackToDocumentKind();
             EmitDocumentKindState();
           });
   // JS listens to this bridge signal to clear its own view; Page also needs it so the native
@@ -333,6 +350,7 @@ void Page::BuildUi() {
   // workspace is deleted).
   connect(editor_bridge_, &bridge::QEditorBridge::documentSelectionCleared, this, [this]() {
     current_document_kind_ = document::DocumentKind::kWikiPage;
+    SyncContentStackToDocumentKind();
     EmitDocumentKindState();
   });
 
@@ -1121,6 +1139,26 @@ void Page::UpdateEditModeControls() {
 void Page::EmitDocumentKindState() {
   emit documentKindStateChanged(current_document_kind_, !selected_page_id_.isEmpty(),
                                 current_document_editable_);
+}
+
+void Page::SyncContentStackToDocumentKind() {
+  if (content_stack_ == nullptr) {
+    return;
+  }
+
+  content_stack_->setCurrentWidget(current_document_kind_ == document::DocumentKind::kProjectBoard
+                                       ? static_cast<QWidget*>(project_board_widget_)
+                                       : static_cast<QWidget*>(editor_view_));
+}
+
+void Page::HandleProjectBoardEdited() {
+  if (editor_bridge_ == nullptr || selected_page_id_.isEmpty() ||
+      current_document_kind_ != document::DocumentKind::kProjectBoard) {
+    return;
+  }
+
+  editor_bridge_->updateSnapshot(selected_page_id_,
+                                 QString::fromUtf8(project_board_widget_->ToJson()));
 }
 
 void Page::StartEditInactivityTimer() {

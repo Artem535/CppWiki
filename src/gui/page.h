@@ -21,6 +21,7 @@ class QVBoxLayout;
 class QModelIndex;
 class QTimer;
 class QWidget;
+class QStackedWidget;
 
 namespace cppwiki::bridge {
 class QEditorBridge;
@@ -30,6 +31,10 @@ namespace cppwiki::gui {
 class DocumentTreeModel;
 class DocumentTreeView;
 }  // namespace cppwiki::gui
+
+namespace cppwiki::gui::project_board {
+class ProjectBoardNativeWidget;
+}  // namespace cppwiki::gui::project_board
 
 namespace cppwiki {
 
@@ -144,12 +149,20 @@ class Page final : public QWidget, public IPage {
   // UpdateEditModeControls() so editability-only changes are also reflected).
   void EmitDocumentKindState();
   void ExportPersistedCurrentDocument();
+  // Shows the native Project board widget instead of editor_view_ when
+  // current_document_kind_ == kProjectBoard (issue #127), switching content_stack_ back to
+  // editor_view_ for every other kind. Called from the documentLoaded/documentLoadFailed/
+  // documentSelectionCleared handlers, right after current_document_kind_ is updated.
+  void SyncContentStackToDocumentKind();
+  void HandleProjectBoardEdited();
 
   const AppContext& context_;
   QWidget* page_panel_ = nullptr;
   gui::DocumentTreeView* workspace_tree_view_ = nullptr;
   std::unique_ptr<gui::DocumentTreeModel> workspace_tree_model_;
   QWidget* content_widget_ = nullptr;
+  QStackedWidget* content_stack_ = nullptr;
+  gui::project_board::ProjectBoardNativeWidget* project_board_widget_ = nullptr;
   QPushButton* settings_button_ = nullptr;
   QLabel* profile_avatar_label_ = nullptr;
   QLabel* profile_name_label_ = nullptr;
