@@ -147,7 +147,6 @@ button {
   border: 1px solid var(--app-border);
   border-radius: 8px;
   background: var(--app-surface);
-  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -329,6 +328,12 @@ button {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* Output content (a wide pandas DataFrame's rendered HTML table, a long unwrapped stream line,
+     etc.) can easily be wider than .notebook-view's 920px column. Previously .notebook-cell had
+     overflow-x: hidden, which silently clipped that content instead of letting it scroll -- scope
+     the horizontal scrollbar to just the outputs area (not the whole cell, which would otherwise
+     drag the toolbar's row into the same scroll region for no reason). */
+  overflow-x: auto;
 }
 
 .notebook-output {
