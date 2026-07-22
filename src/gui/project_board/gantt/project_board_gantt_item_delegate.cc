@@ -45,6 +45,22 @@ void PaintShadow(QPainter* painter, const QPainterPath& shape) {
   painter->restore();
 }
 
+constexpr qreal kConnectorDotRadius = 3.5;
+
+// KDGantt::GraphicsItem already lets you start a dependency-link drag from a Task or Milestone
+// bar (press, then drag mostly vertically -- see GraphicsItem::mouseMoveEvent()) with zero visual
+// affordance: no connector handles, no cursor change, nothing. A small dot at each end of the bar
+// is a cheap hint that "something can be grabbed here", without needing to touch KDGantt's own
+// (private, un-overridable from here) mouse-event handling to make the gesture itself discoverable
+// beyond the toolTip() override below.
+void PaintConnectorDot(QPainter* painter, const QPointF& center) {
+  painter->save();
+  painter->setPen(QPen(QColor(0xff, 0xff, 0xff, 0x66), 1.0));
+  painter->setBrush(QColor(0xff, 0xff, 0xff, 0x33));
+  painter->drawEllipse(center, kConnectorDotRadius, kConnectorDotRadius);
+  painter->restore();
+}
+
 }  // namespace
 
 ProjectBoardGanttItemDelegate::ProjectBoardGanttItemDelegate(QObject* parent)
@@ -112,6 +128,15 @@ void ProjectBoardGanttItemDelegate::paintGanttItem(QPainter* painter,
           painter->drawPath(bar_path);
           painter->restore();
         }
+
+        // Only plain tasks can start/end a dependency drag (interactionStateFor() returns
+        // State_None for TypeSummary, so a summary bar is neither move/resize/link-draggable) --
+        // no point hinting at a gesture that won't actually work here.
+        if (type == KDGantt::TypeTask) {
+          const qreal mid_y = bar_rect.center().y();
+          PaintConnectorDot(painter, QPointF(bar_rect.left(), mid_y));
+          PaintConnectorDot(painter, QPointF(bar_rect.right(), mid_y));
+        }
       }
       break;
     }
@@ -138,6 +163,9 @@ void ProjectBoardGanttItemDelegate::paintGanttItem(QPainter* painter,
           painter->drawPath(diamond_path);
           painter->restore();
         }
+
+        PaintConnectorDot(painter, QPointF(center.x() - half, center.y()));
+        PaintConnectorDot(painter, QPointF(center.x() + half, center.y()));
       }
       break;
     }
@@ -170,6 +198,44 @@ void ProjectBoardGanttItemDelegate::paintGanttItem(QPainter* painter,
   }
 
   painter->restore();
+}
+
+auto ProjectBoardGanttItemDelegate::itemBoundingSpan(const KDGantt::StyleOptionGanttItem& opt,
+                                                     const QModelIndex& idx) const
+    -> KDGantt::Span {
+  const KDGantt::Span base_span = KDGantt::ItemDelegate::itemBoundingSpan(opt, idx);
+  if (!idx.isValid()) {
+    return base_span;
+  }
+  const auto type =
+      static_cast<KDGantt::ItemType>(idx.model()->data(idx, KDGantt::ItemTypeRole).toInt());
+  if (type != KDGantt::TypeTask && type != KDGantt::TypeEvent) {
+    return base_span;
+  }
+  // paintGanttItem() draws a connector dot (radius kConnectorDotRadius, 1px pen) centered exactly
+  // on the bar's left/right edges for these two types, so it extends kConnectorDotRadius + 1px
+  // past base_span on both sides. GraphicsItem::updateItemFromMouse() only ever setPos()'s the
+  // item during a plain drag -- it never re-queries this method or recomputes boundingRect() --
+  // so whatever span is returned here is exactly the region Qt invalidates each frame; anything
+  // painted outside it is left un-erased at every historical drag position (the smear reported
+  // as a bug).
+  constexpr qreal kOverflow = kConnectorDotRadius + 1.0;
+  return KDGantt::Span(base_span.start() - kOverflow, base_span.length() + 2.0 * kOverflow);
+}
+
+auto ProjectBoardGanttItemDelegate::toolTip(const QModelIndex& idx) const -> QString {
+  const QString base_tip = KDGantt::ItemDelegate::toolTip(idx);
+  if (!idx.isValid()) {
+    return base_tip;
+  }
+  const auto type =
+      static_cast<KDGantt::ItemType>(idx.model()->data(idx, KDGantt::ItemTypeRole).toInt());
+  if (type != KDGantt::TypeTask && type != KDGantt::TypeEvent) {
+    return base_tip;
+  }
+  const QString hint =
+      tr("Drag up or down, then drop on another bar to link them as a dependency.");
+  return base_tip.isEmpty() ? hint : base_tip + QLatin1Char('\n') + hint;
 }
 
 }  // namespace cppwiki::gui::project_board::gantt

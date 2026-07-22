@@ -12,6 +12,7 @@
 #include <QFrame>
 #include <QGraphicsView>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QLabel>
 #include <QPageLayout>
 #include <QPrinter>
@@ -210,6 +211,14 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
     // stuttery. Non-opaque resize shows a plain divider line while dragging and only resizes
     // (and repaints) the actual widgets once, on release.
     sp->setOpaqueResize(false);
+  }
+
+  // The left panel's tree view has exactly one column ("Task"); left at QHeaderView's default,
+  // that column keeps whatever width it was given (or its content-derived size), leaving a strip
+  // of dead space to the right of task names whenever the panel is wider than the longest name.
+  // Stretching the (only, so also last) section makes it fill the panel instead.
+  if (auto* tree_view = qobject_cast<QTreeView*>(view_->leftView())) {
+    tree_view->header()->setStretchLastSection(true);
   }
 
   // --- Visual theme -----------------------------------------------------------

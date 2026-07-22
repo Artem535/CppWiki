@@ -3,12 +3,14 @@
 #include <KDGanttConstraint>
 #include <KDGanttConstraintModel>
 #include <KDGanttGlobal>
+#include <QColor>
 #include <QDateTime>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QList>
+#include <QPen>
 #include <QStringList>
 #include <QVariant>
 #include <QtGlobal>
@@ -25,6 +27,31 @@ namespace {
 // ValidConstraintPen/InvalidConstraintPen (Qt::UserRole, Qt::UserRole + 1).
 constexpr int kLinkIdDataRole = Qt::UserRole + 500;
 constexpr int kLinkLagDataRole = Qt::UserRole + 501;
+
+// KDGantt::ItemDelegate::Private::constraintPen() hardcodes Qt::black (or Qt::red for a
+// "backwards" link) for every dependency-link arrow unless the Constraint itself carries a
+// ValidConstraintPen/InvalidConstraintPen data-role override -- the exact same category of
+// invisible-against-the-dark-theme bug the bar outline/text pen had (see
+// project_board_gantt_widget.cc's theme block), just reached through Constraint's own data map
+// instead of ItemDelegate's.
+auto LinkPen() -> QPen {
+  QPen pen(QColor(0xff, 0xff, 0xff, 0xe5));
+  pen.setWidthF(2.0);
+  return pen;
+}
+
+// KDGantt::ItemDelegate::Private::constraintPen() picks the "invalid" (normally red) pen whenever
+// the source's rendered right edge isn't strictly left of the target's rendered left edge -- a
+// raw pixel-coordinate comparison, not a check of the tasks' actual dates. Verified by probe: an
+// ordinary finish-to-start link between two tasks with zero gap (the source ends the exact instant
+// the target starts -- the most common way to chain sequential tasks) already lands in this
+// "invalid" bucket, while the same link with a multi-day gap didn't render into the "valid"
+// bucket either (see the same probe). Since this pen can't reliably distinguish a genuinely
+// backwards-pointing link from an entirely ordinary adjacent one, both roles get the same themed
+// pen rather than keeping a red "warning" color that would fire on completely valid documents.
+auto InvalidLinkPen() -> QPen {
+  return LinkPen();
+}
 
 auto ParseIsoDateTime(const QString& text) -> QDateTime {
   auto parsed = QDateTime::fromString(text, Qt::ISODateWithMs);
@@ -233,6 +260,9 @@ void ProjectBoardGanttModel::LoadFromJson(const QJsonObject& board) {
     if (link.contains(QStringLiteral("lag"))) {
       constraint.setData(kLinkLagDataRole, link.value(QStringLiteral("lag")).toInt());
     }
+    constraint.setData(KDGantt::Constraint::ValidConstraintPen, QVariant::fromValue(LinkPen()));
+    constraint.setData(KDGantt::Constraint::InvalidConstraintPen,
+                       QVariant::fromValue(InvalidLinkPen()));
     constraint_model_->addConstraint(constraint);
   }
 }
