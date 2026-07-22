@@ -69,6 +69,7 @@ class ProjectBoardGanttWidget final : public QWidget {
   void ApplyDayWidth(qreal day_width);
   void HandleCompactToggled(bool checked);
   void ExportToPdf();
+  void HandleCriticalPathToggled(bool checked);
 
   KDGantt::View* view_ = nullptr;
   std::unique_ptr<ProjectBoardGanttModel> model_;
@@ -89,6 +90,11 @@ class ProjectBoardGanttWidget final : public QWidget {
   // Owned by view_->leftView() (Qt's setItemDelegate() ownership convention) once installed;
   // kept here so HandleCompactToggled() can adjust its row height without re-querying leftView().
   RowHeightDelegate* row_height_delegate_ = nullptr;
+
+  // Whether the critical-path highlight is currently on -- recomputed and reapplied after every
+  // real edit (see EmitDataChanged()) while true, so the highlight doesn't go stale as the user
+  // reschedules tasks or changes dependency links.
+  bool critical_path_enabled_ = false;
 };
 
 }  // namespace cppwiki::gui::project_board::gantt

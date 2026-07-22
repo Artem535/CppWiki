@@ -24,6 +24,7 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
+#include "gui/project_board/gantt/project_board_gantt_critical_path.h"
 #include "gui/project_board/gantt/project_board_gantt_item_delegate.h"
 #include "gui/project_board/gantt/project_board_gantt_model.h"
 
@@ -283,6 +284,15 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
             &ProjectBoardGanttWidget::HandleCompactToggled);
     toolbar_layout->addWidget(compact_toggle);
 
+    auto* critical_path_toggle = new QToolButton(toolbar);
+    critical_path_toggle->setText(tr("Critical path"));
+    critical_path_toggle->setCheckable(true);
+    critical_path_toggle->setToolTip(
+        tr("Highlight the chain of tasks that determines the project's overall duration"));
+    connect(critical_path_toggle, &QToolButton::toggled, this,
+            &ProjectBoardGanttWidget::HandleCriticalPathToggled);
+    toolbar_layout->addWidget(critical_path_toggle);
+
     toolbar_layout->addSpacing(12);
     toolbar_layout->addWidget(MakeLegendSwatch(kTaskColor, tr("Task")));
     toolbar_layout->addWidget(MakeLegendSwatch(kSummaryColor, tr("Summary")));
@@ -323,6 +333,12 @@ void ProjectBoardGanttWidget::LoadFromJson(const QJsonObject& board) {
   // scene a handful of times (once per distinct parent) instead of once per task -- see #119.
   model_->LoadFromJson(board);
   view_->expandAll();
+  // The new model's rows start with no critical-path flag at all (not even "false") -- reapply
+  // the highlight now if the toggle was already on, rather than leaving the newly loaded document
+  // unhighlighted until the next edit or a manual toggle.
+  if (critical_path_enabled_) {
+    model_->SetCriticalPathTaskIds(ComputeCriticalPath(model_->ToJson()).critical_task_ids);
+  }
   loading_ = false;
 }
 
@@ -349,6 +365,13 @@ bool ProjectBoardGanttWidget::eventFilter(QObject* watched, QEvent* event) {
 void ProjectBoardGanttWidget::EmitDataChanged() {
   if (loading_) {
     return;
+  }
+  // Keep the highlight in sync with whatever just changed (a dragged bar, an added/removed
+  // dependency link) instead of freezing it at whatever it was when the toggle was turned on.
+  if (critical_path_enabled_) {
+    loading_ = true;
+    model_->SetCriticalPathTaskIds(ComputeCriticalPath(model_->ToJson()).critical_task_ids);
+    loading_ = false;
   }
   emit DataChanged(model_->ToJson());
 }
@@ -427,6 +450,14 @@ void ProjectBoardGanttWidget::ExportToPdf() {
   printer.setOutputFileName(path);
   printer.setPageOrientation(QPageLayout::Landscape);
   view_->print(&printer);
+}
+
+void ProjectBoardGanttWidget::HandleCriticalPathToggled(bool checked) {
+  critical_path_enabled_ = checked;
+  loading_ = true;
+  model_->SetCriticalPathTaskIds(checked ? ComputeCriticalPath(model_->ToJson()).critical_task_ids
+                                         : QSet<QString>());
+  loading_ = false;
 }
 
 }  // namespace cppwiki::gui::project_board::gantt

@@ -327,6 +327,19 @@ auto ProjectBoardGanttModel::ConstraintModel() const -> KDGantt::ConstraintModel
   return constraint_model_.get();
 }
 
+void ProjectBoardGanttModel::SetCriticalPathTaskIds(const QSet<QString>& critical_task_ids) {
+  std::function<void(QStandardItem*)> visit = [&](QStandardItem* item) {
+    const auto id = item->data(kTaskIdRole).toString();
+    item->setData(critical_task_ids.contains(id), kTaskCriticalPathRole);
+    for (int row = 0; row < item->rowCount(); ++row) {
+      visit(item->child(row));
+    }
+  };
+  for (int row = 0; row < rowCount(); ++row) {
+    visit(item(row));
+  }
+}
+
 auto ProjectBoardGanttModel::TaskIdForIndex(const QModelIndex& index) -> QString {
   if (!index.isValid()) {
     return {};
