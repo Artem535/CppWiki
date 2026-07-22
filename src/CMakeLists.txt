@@ -230,6 +230,12 @@ if (CPPWIKI_BUILD_ADMIN_CLI)
     cppwiki_apply_common_options(cppwiki_admin_cli)
 endif ()
 
+# Standalone native Kanban board (Project board document kind, issue #113/#114 follow-up) — its
+# own isolated target, not yet linked into cppwiki_app. See gui/project_board/kanban/CMakeLists.txt.
+if (CPPWIKI_BUILD_DESKTOP_APP)
+    add_subdirectory(gui/project_board/kanban)
+endif ()
+
 if (CPPWIKI_BUILD_SERVER)
     find_package(absl CONFIG REQUIRED)
     string(TOUPPER "${CMAKE_BUILD_TYPE}" CPPWIKI_BUILD_TYPE_UPPER)
