@@ -21,6 +21,14 @@ class ProjectStatusPillDelegate : public QStyledItemDelegate {
   [[nodiscard]] QSize sizeHint(const QStyleOptionViewItem& option,
                                const QModelIndex& index) const override;
 
+ protected:
+  // QStyledItemDelegate::paint() re-derives option->text from the model via initStyleOption()
+  // regardless of what paint()'s own local QStyleOptionViewItem copy contains -- clearing text
+  // on a copy passed into QStyledItemDelegate::paint() does NOT suppress the default text draw.
+  // Overriding initStyleOption() is the actual interception point.
+  void initStyleOption(QStyleOptionViewItem* option, const QModelIndex& index) const override;
+
+ public:
   [[nodiscard]] QWidget* createEditor(QWidget* parent, const QStyleOptionViewItem& option,
                                       const QModelIndex& index) const override;
   void setEditorData(QWidget* editor, const QModelIndex& index) const override;

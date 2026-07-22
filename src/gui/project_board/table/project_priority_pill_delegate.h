@@ -21,6 +21,12 @@ class ProjectPriorityPillDelegate : public QStyledItemDelegate {
   [[nodiscard]] QSize sizeHint(const QStyleOptionViewItem& option,
                                const QModelIndex& index) const override;
 
+ protected:
+  // See ProjectStatusPillDelegate::initStyleOption() for why this override (not clearing
+  // option.text on a local copy passed into QStyledItemDelegate::paint()) is the fix.
+  void initStyleOption(QStyleOptionViewItem* option, const QModelIndex& index) const override;
+
+ public:
   [[nodiscard]] QWidget* createEditor(QWidget* parent, const QStyleOptionViewItem& option,
                                       const QModelIndex& index) const override;
   void setEditorData(QWidget* editor, const QModelIndex& index) const override;

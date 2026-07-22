@@ -45,6 +45,14 @@ ProjectTaskTableWidget::ProjectTaskTableWidget(QWidget* parent)
       ProjectTaskTableModel::kProgressColumn,
       new ProjectNumericSpinDelegate(0, kMaxProgressPercent, QStringLiteral("%"), view_));
 
+  // Duration/Progress have no delegate-driven natural width and Qt's default column width is
+  // narrower than their header text (e.g. "Duration (days)" truncates to "uration (day:" at the
+  // default width) -- size every column to its header/content once up front. setDocument() below
+  // is what actually populates rows, so this runs against whatever's in the model at construction
+  // time (typically empty); resizeColumnsToContents() is called again at the end of setDocument()
+  // once real data exists.
+  view_->resizeColumnsToContents();
+
   connect(model_, &ProjectTaskTableModel::dataChanged, this,
           &ProjectTaskTableWidget::documentEdited);
 
@@ -57,6 +65,7 @@ void ProjectTaskTableWidget::setDocument(const ProjectBoardDocument& document) {
   links_ = document.links;
   model_->setBoardColumns(document.columns);
   model_->setTasks(document.tasks);
+  view_->resizeColumnsToContents();
 }
 
 ProjectBoardDocument ProjectTaskTableWidget::document() const {

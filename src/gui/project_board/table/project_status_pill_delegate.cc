@@ -5,7 +5,6 @@
 #include <QComboBox>
 #include <QPainter>
 #include <QStyleOptionViewItem>
-#include <algorithm>
 #include <iterator>
 
 #include "gui/project_board/table/project_pill_paint.h"
@@ -51,9 +50,7 @@ ProjectStatusPillDelegate::ProjectStatusPillDelegate(QObject* parent)
 
 void ProjectStatusPillDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
                                       const QModelIndex& index) const {
-  QStyleOptionViewItem plain_option(option);
-  plain_option.text.clear();
-  QStyledItemDelegate::paint(painter, plain_option, index);
+  QStyledItemDelegate::paint(painter, option, index);
 
   const QString label = index.data(ProjectTaskTableModel::kPillLabelRole).toString();
   const int tone = index.data(ProjectTaskTableModel::kToneRole).toInt();
@@ -61,11 +58,16 @@ void ProjectStatusPillDelegate::paint(QPainter* painter, const QStyleOptionViewI
   PaintPill(painter, option.rect, label, colors.background, colors.foreground);
 }
 
+void ProjectStatusPillDelegate::initStyleOption(QStyleOptionViewItem* option,
+                                                const QModelIndex& index) const {
+  QStyledItemDelegate::initStyleOption(option, index);
+  option->text.clear();
+}
+
 QSize ProjectStatusPillDelegate::sizeHint(const QStyleOptionViewItem& option,
                                           const QModelIndex& index) const {
-  QSize hint = QStyledItemDelegate::sizeHint(option, index);
-  hint.setHeight(std::max(hint.height(), 30));
-  return hint;
+  const QString label = index.data(ProjectTaskTableModel::kPillLabelRole).toString();
+  return PillSizeHint(option.fontMetrics, label);
 }
 
 QWidget* ProjectStatusPillDelegate::createEditor(QWidget* parent,

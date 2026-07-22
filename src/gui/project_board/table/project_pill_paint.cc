@@ -8,6 +8,8 @@
 #include <QString>
 #include <algorithm>
 
+// QSize is included via the header (project_pill_paint.h).
+
 namespace cppwiki::gui::project_board {
 
 namespace {
@@ -16,6 +18,14 @@ constexpr int kHorizontalPadding = 10;
 constexpr int kPillHeight = 22;
 
 }  // namespace
+
+QSize PillSizeHint(const QFontMetrics& metrics, const QString& label) {
+  if (label.isEmpty()) {
+    return QSize(0, kPillHeight + 8);
+  }
+  const int text_width = metrics.horizontalAdvance(label);
+  return QSize(text_width + 2 * kHorizontalPadding + 4, kPillHeight + 8);
+}
 
 void PaintPill(QPainter* painter, const QRect& cell_rect, const QString& label,
                const QColor& background, const QColor& foreground) {
