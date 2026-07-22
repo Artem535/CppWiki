@@ -61,6 +61,8 @@ class ProjectBoardGanttWidget final : public QWidget {
   // obvious way to pan the timeline without grabbing the thin scrollbar handle directly.
   bool eventFilter(QObject* watched, QEvent* event) override;
 
+  void HandleCriticalPathToggled(bool checked);
+
   KDGantt::View* view_ = nullptr;
   std::unique_ptr<ProjectBoardGanttModel> model_;
   // KDGantt::SummaryHandlingProxyModel (used internally by KDGantt::View) recomputes summary-row
@@ -69,6 +71,11 @@ class ProjectBoardGanttWidget final : public QWidget {
   // like a user edit. Set for the duration of LoadFromJson() so EmitDataChanged() can ignore
   // those incidental writes and keep DataChanged meaning "the user changed something".
   bool loading_ = false;
+
+  // Whether the critical-path highlight is currently on -- recomputed and reapplied after every
+  // real edit (see EmitDataChanged()) while true, so the highlight doesn't go stale as the user
+  // reschedules tasks or changes dependency links.
+  bool critical_path_enabled_ = false;
 };
 
 }  // namespace cppwiki::gui::project_board::gantt

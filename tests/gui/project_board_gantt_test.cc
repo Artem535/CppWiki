@@ -9,11 +9,13 @@
 #include <cstdlib>
 #include <iostream>
 
+#include "gui/project_board/gantt/project_board_gantt_critical_path.h"
 #include "gui/project_board/gantt/project_board_gantt_model.h"
 #include "gui/project_board/gantt/project_board_gantt_widget.h"
 
 namespace {
 
+using cppwiki::gui::project_board::gantt::ComputeCriticalPath;
 using cppwiki::gui::project_board::gantt::ProjectBoardGanttModel;
 using cppwiki::gui::project_board::gantt::ProjectBoardGanttWidget;
 
@@ -207,6 +209,61 @@ void TestAddingADependencyLinkEmitsDataChanged() {
   Require(links.size() == 2, "expected 2 links after adding a new one");
 }
 
+QJsonObject MakeTask(const QString& id, int duration) {
+  QJsonObject task;
+  task.insert("id", id);
+  task.insert("text", id);
+  task.insert("duration", duration);
+  task.insert("column", "todo");
+  task.insert("type", "task");
+  return task;
+}
+
+QJsonObject MakeLink(const QString& id, const QString& source, const QString& target) {
+  QJsonObject link;
+  link.insert("id", id);
+  link.insert("type", "e2s");
+  link.insert("source", source);
+  link.insert("target", target);
+  return link;
+}
+
+void TestCriticalPathFollowsLongestChain() {
+  // Chain A->B->C totals 9 days; the independent D->E chain totals only 2 -- the critical path
+  // should be exactly the longer chain, and the shorter one should have slack (not critical).
+  QJsonObject board;
+  board.insert("tasks", QJsonArray{MakeTask("a", 3), MakeTask("b", 2), MakeTask("c", 4),
+                                   MakeTask("d", 1), MakeTask("e", 1)});
+  board.insert("links", QJsonArray{MakeLink("l1", "a", "b"), MakeLink("l2", "b", "c"),
+                                   MakeLink("l3", "d", "e")});
+
+  const auto result = ComputeCriticalPath(board);
+  Require(result.critical_task_ids == QSet<QString>({"a", "b", "c"}),
+          "critical path should be exactly the longer a->b->c chain");
+  Require(result.critical_link_ids == QSet<QString>({"l1", "l2"}),
+          "critical links should be exactly the two links on the longer chain");
+}
+
+void TestCriticalPathEmptyOnCycle() {
+  QJsonObject board;
+  board.insert("tasks", QJsonArray{MakeTask("a", 1), MakeTask("b", 1)});
+  board.insert("links", QJsonArray{MakeLink("l1", "a", "b"), MakeLink("l2", "b", "a")});
+
+  const auto result = ComputeCriticalPath(board);
+  Require(result.critical_task_ids.isEmpty() && result.critical_link_ids.isEmpty(),
+          "a cycle makes CPM undefined -- expect no highlighting rather than a wrong answer");
+}
+
+void TestCriticalPathWithNoLinksPicksLongestTask() {
+  QJsonObject board;
+  board.insert("tasks", QJsonArray{MakeTask("short", 2), MakeTask("long", 5)});
+  board.insert("links", QJsonArray{});
+
+  const auto result = ComputeCriticalPath(board);
+  Require(result.critical_task_ids == QSet<QString>({"long"}),
+          "with no dependencies, only the single longest task should be critical");
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -218,6 +275,9 @@ int main(int argc, char* argv[]) {
   TestLoadFromJsonDoesNotEmitDataChanged();
   TestDraggingATaskBarEmitsDataChangedWithUpdatedTask();
   TestAddingADependencyLinkEmitsDataChanged();
+  TestCriticalPathFollowsLongestChain();
+  TestCriticalPathEmptyOnCycle();
+  TestCriticalPathWithNoLinksPicksLongestTask();
 
   return EXIT_SUCCESS;
 }

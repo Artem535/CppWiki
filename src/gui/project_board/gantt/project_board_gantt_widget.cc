@@ -8,11 +8,14 @@
 #include <KDGanttView>
 #include <QEvent>
 #include <QGraphicsView>
+#include <QHBoxLayout>
 #include <QScrollBar>
 #include <QSplitter>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
+#include "gui/project_board/gantt/project_board_gantt_critical_path.h"
 #include "gui/project_board/gantt/project_board_gantt_item_delegate.h"
 #include "gui/project_board/gantt/project_board_gantt_model.h"
 
@@ -34,6 +37,26 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
       model_(std::make_unique<ProjectBoardGanttModel>()) {
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
+
+  // --- Toolbar: critical path -----------------------------------------------
+  {
+    auto* toolbar = new QWidget(this);
+    auto* toolbar_layout = new QHBoxLayout(toolbar);
+    toolbar_layout->setContentsMargins(4, 4, 4, 4);
+
+    auto* critical_path_toggle = new QToolButton(toolbar);
+    critical_path_toggle->setText(tr("Critical path"));
+    critical_path_toggle->setCheckable(true);
+    critical_path_toggle->setToolTip(
+        tr("Highlight the chain of tasks that determines the project's overall duration"));
+    connect(critical_path_toggle, &QToolButton::toggled, this,
+            &ProjectBoardGanttWidget::HandleCriticalPathToggled);
+    toolbar_layout->addWidget(critical_path_toggle);
+    toolbar_layout->addStretch(1);
+
+    layout->addWidget(toolbar);
+  }
+
   layout->addWidget(view_);
 
   // --- Rendering performance --------------------------------------------------
@@ -131,10 +154,11 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
   // invisible against this app's dark theme, whose chart-area background comes from the ordinary
   // (dark) QPalette::Base rather than anything KDGantt paints itself. It also draws every bar as a
   // plain sharp-cornered rectangle (summaries as a pointed bracket), with no shadow -- noticeably
-  // flatter than the web Project board's Gantt tab (frontend/editor/src/project/ProjectBoardView.tsx's
-  // SVAR react-gantt, `WillowDark` theme), which uses rounded 3px bars with a soft drop shadow.
-  // ProjectBoardGanttItemDelegate (see its header) carries the shape the rest of the way; colors
-  // are still set here via the same setDefaultBrush()/setDefaultPen() API, lifted directly from
+  // flatter than the web Project board's Gantt tab
+  // (frontend/editor/src/project/ProjectBoardView.tsx's SVAR react-gantt, `WillowDark` theme),
+  // which uses rounded 3px bars with a soft drop shadow. ProjectBoardGanttItemDelegate (see its
+  // header) carries the shape the rest of the way; colors are still set here via the same
+  // setDefaultBrush()/setDefaultPen() API, lifted directly from
   // @svar-ui/react-gantt/dist/index.css's `.wx-willow-dark-theme` custom-property block.
   auto* delegate = new ProjectBoardGanttItemDelegate(view_);
   view_->setItemDelegate(delegate);
@@ -179,6 +203,12 @@ void ProjectBoardGanttWidget::LoadFromJson(const QJsonObject& board) {
   // scene a handful of times (once per distinct parent) instead of once per task -- see #119.
   model_->LoadFromJson(board);
   view_->expandAll();
+  // The new model's rows start with no critical-path flag at all (not even "false") -- reapply
+  // the highlight now if the toggle was already on, rather than leaving the newly loaded document
+  // unhighlighted until the next edit or a manual toggle.
+  if (critical_path_enabled_) {
+    model_->SetCriticalPathTaskIds(ComputeCriticalPath(model_->ToJson()).critical_task_ids);
+  }
   loading_ = false;
 }
 
@@ -206,7 +236,22 @@ void ProjectBoardGanttWidget::EmitDataChanged() {
   if (loading_) {
     return;
   }
+  // Keep the highlight in sync with whatever just changed (a dragged bar, an added/removed
+  // dependency link) instead of freezing it at whatever it was when the toggle was turned on.
+  if (critical_path_enabled_) {
+    loading_ = true;
+    model_->SetCriticalPathTaskIds(ComputeCriticalPath(model_->ToJson()).critical_task_ids);
+    loading_ = false;
+  }
   emit DataChanged(model_->ToJson());
+}
+
+void ProjectBoardGanttWidget::HandleCriticalPathToggled(bool checked) {
+  critical_path_enabled_ = checked;
+  loading_ = true;
+  model_->SetCriticalPathTaskIds(checked ? ComputeCriticalPath(model_->ToJson()).critical_task_ids
+                                         : QSet<QString>());
+  loading_ = false;
 }
 
 }  // namespace cppwiki::gui::project_board::gantt
