@@ -13,6 +13,7 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
+#include "gui/project_board/gantt/project_board_gantt_item_delegate.h"
 #include "gui/project_board/gantt/project_board_gantt_model.h"
 
 namespace cppwiki::gui::project_board::gantt {
@@ -128,12 +129,16 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
   // KDGantt::ItemDelegate (kdganttitemdelegate.cpp) hardcodes Qt::black for the outline pen of
   // every bar type *and* reuses that same pen to draw the task-name label text beside each bar --
   // invisible against this app's dark theme, whose chart-area background comes from the ordinary
-  // (dark) QPalette::Base rather than anything KDGantt paints itself. Re-themed here to match the
-  // web Project board's Gantt tab (frontend/editor/src/project/ProjectBoardView.tsx's SVAR
-  // react-gantt, `WillowDark` theme) instead of an unrelated palette, so the native replacement
-  // reads as "the same Gantt", just native -- colors lifted directly from
+  // (dark) QPalette::Base rather than anything KDGantt paints itself. It also draws every bar as a
+  // plain sharp-cornered rectangle (summaries as a pointed bracket), with no shadow -- noticeably
+  // flatter than the web Project board's Gantt tab (frontend/editor/src/project/ProjectBoardView.tsx's
+  // SVAR react-gantt, `WillowDark` theme), which uses rounded 3px bars with a soft drop shadow.
+  // ProjectBoardGanttItemDelegate (see its header) carries the shape the rest of the way; colors
+  // are still set here via the same setDefaultBrush()/setDefaultPen() API, lifted directly from
   // @svar-ui/react-gantt/dist/index.css's `.wx-willow-dark-theme` custom-property block.
-  if (auto* delegate = view_->itemDelegate()) {
+  auto* delegate = new ProjectBoardGanttItemDelegate(view_);
+  view_->setItemDelegate(delegate);
+  {
     const QColor kLightText(0xff, 0xff, 0xff, 0xe5);  // --wx-gantt-task/summary-font-color
     const QPen text_pen(kLightText, 1.);
     delegate->setDefaultPen(KDGantt::TypeTask, text_pen);
