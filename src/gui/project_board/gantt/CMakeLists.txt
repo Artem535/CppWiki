@@ -5,6 +5,8 @@
 # the actual target definitions here minimizes line-level merge conflicts between the three PRs.
 
 add_library(cppwiki_project_board_gantt STATIC
+        project_board_gantt_item_delegate.cc
+        project_board_gantt_item_delegate.h
         project_board_gantt_model.cc
         project_board_gantt_model.h
         project_board_gantt_widget.cc

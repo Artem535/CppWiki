@@ -5,6 +5,8 @@
 #include <QWidget>
 #include <memory>
 
+class QEvent;
+
 namespace KDGantt {
 class View;
 }  // namespace KDGantt
@@ -52,6 +54,12 @@ class ProjectBoardGanttWidget final : public QWidget {
 
  private:
   void EmitDataChanged();
+  // Redirects plain (unmodified) mouse-wheel scrolling on the chart area to the horizontal
+  // scrollbar instead of the vertical one: KDGantt::View always shows a horizontal scrollbar
+  // (kdganttview.cpp sets Qt::ScrollBarAlwaysOn) since the timeline is usually wider than the
+  // viewport, but a plain wheel only drives Qt's default *vertical* scrollbar, so users had no
+  // obvious way to pan the timeline without grabbing the thin scrollbar handle directly.
+  bool eventFilter(QObject* watched, QEvent* event) override;
 
   KDGantt::View* view_ = nullptr;
   std::unique_ptr<ProjectBoardGanttModel> model_;

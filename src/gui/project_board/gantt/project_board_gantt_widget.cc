@@ -3,12 +3,17 @@
 #include <KDGanttConstraintModel>
 #include <KDGanttDateTimeGrid>
 #include <KDGanttGraphicsView>
+#include <KDGanttItemDelegate>
 #include <KDGanttProxyModel>
 #include <KDGanttView>
+#include <QEvent>
 #include <QGraphicsView>
+#include <QScrollBar>
 #include <QSplitter>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
+#include "gui/project_board/gantt/project_board_gantt_item_delegate.h"
 #include "gui/project_board/gantt/project_board_gantt_model.h"
 
 namespace cppwiki::gui::project_board::gantt {
@@ -119,6 +124,41 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
     sp->setOpaqueResize(false);
   }
 
+  // --- Visual theme -----------------------------------------------------------
+  //
+  // KDGantt::ItemDelegate (kdganttitemdelegate.cpp) hardcodes Qt::black for the outline pen of
+  // every bar type *and* reuses that same pen to draw the task-name label text beside each bar --
+  // invisible against this app's dark theme, whose chart-area background comes from the ordinary
+  // (dark) QPalette::Base rather than anything KDGantt paints itself. It also draws every bar as a
+  // plain sharp-cornered rectangle (summaries as a pointed bracket), with no shadow -- noticeably
+  // flatter than the web Project board's Gantt tab (frontend/editor/src/project/ProjectBoardView.tsx's
+  // SVAR react-gantt, `WillowDark` theme), which uses rounded 3px bars with a soft drop shadow.
+  // ProjectBoardGanttItemDelegate (see its header) carries the shape the rest of the way; colors
+  // are still set here via the same setDefaultBrush()/setDefaultPen() API, lifted directly from
+  // @svar-ui/react-gantt/dist/index.css's `.wx-willow-dark-theme` custom-property block.
+  auto* delegate = new ProjectBoardGanttItemDelegate(view_);
+  view_->setItemDelegate(delegate);
+  {
+    const QColor kLightText(0xff, 0xff, 0xff, 0xe5);  // --wx-gantt-task/summary-font-color
+    const QPen text_pen(kLightText, 1.);
+    delegate->setDefaultPen(KDGantt::TypeTask, text_pen);
+    delegate->setDefaultPen(KDGantt::TypeSummary, text_pen);
+    delegate->setDefaultPen(KDGantt::TypeEvent, text_pen);
+
+    delegate->setDefaultBrush(KDGantt::TypeTask,
+                              QColor(0x09, 0x8c, 0xdc));  // --wx-gantt-task-fill-color
+    delegate->setDefaultBrush(KDGantt::TypeSummary,
+                              QColor(0x09, 0x9f, 0x81));  // --wx-gantt-summary-fill-color
+    delegate->setDefaultBrush(KDGantt::TypeEvent,
+                              QColor(0xad, 0x44, 0xab));  // --wx-gantt-milestone-color
+  }
+
+  // Plain wheel scrolling normally drives Qt's default vertical scrollbar only; redirect it to
+  // the chart's horizontal scrollbar instead, since panning the timeline left/right is the far
+  // more common gesture for a Gantt chart than scrolling through rows (a Shift+wheel or the
+  // scrollbar itself still reaches the vertical axis for boards with enough rows to overflow).
+  view_->graphicsView()->viewport()->installEventFilter(this);
+
   // Deliberately not connected to modelReset: LoadFromJson() resets the model, and DataChanged
   // is documented (and should be treated by callers) as "the user edited something", not "a
   // document was loaded" — those are different signals for a future integration layer.
@@ -148,6 +188,18 @@ auto ProjectBoardGanttWidget::ToJson() const -> QJsonObject {
 
 auto ProjectBoardGanttWidget::Model() const -> ProjectBoardGanttModel* {
   return model_.get();
+}
+
+bool ProjectBoardGanttWidget::eventFilter(QObject* watched, QEvent* event) {
+  if (event->type() == QEvent::Wheel && watched == view_->graphicsView()->viewport()) {
+    auto* wheel_event = static_cast<QWheelEvent*>(event);
+    if (!(wheel_event->modifiers() & Qt::ShiftModifier)) {
+      auto* horizontal_scrollbar = view_->graphicsView()->horizontalScrollBar();
+      horizontal_scrollbar->setValue(horizontal_scrollbar->value() - wheel_event->angleDelta().y());
+      return true;
+    }
+  }
+  return QWidget::eventFilter(watched, event);
 }
 
 void ProjectBoardGanttWidget::EmitDataChanged() {
