@@ -336,3 +336,12 @@ if (CPPWIKI_BUILD_SERVER)
 
     cppwiki_apply_common_options(cppwiki_server)
 endif ()
+
+# Native QTableView Table view for the Project board document kind (issue #117, part of the #113
+# umbrella). Standalone/not yet linked into cppwiki_app — see
+# gui/project_board/table/CMakeLists.txt. Kept as its own add_subdirectory() block, isolated from
+# the rest of this file, so the parallel KDGantt (Gantt) and QML (Kanban) pieces of #113 can each
+# add their own equivalent block without touching these lines.
+if (CPPWIKI_BUILD_DESKTOP_APP)
+    add_subdirectory(gui/project_board/table)
+endif ()

@@ -372,6 +372,29 @@ add_test(
   COMMAND cppwiki_conflict_merge_resolution_tests
 )
 
+# Project board Table view (issue #117, part of the #113 umbrella) — kept as its own block
+# linking against the cppwiki_project_board_table library target (see
+# ../src/gui/project_board/table/CMakeLists.txt) instead of relisting its sources here, so the
+# parallel KDGantt/QML pieces of #113 can add their own equivalent test blocks without touching
+# these lines.
+if (CPPWIKI_BUILD_DESKTOP_APP)
+  add_executable(cppwiki_project_board_table_tests
+    gui/project_board_table_model_test.cc
+  )
+
+  target_link_libraries(cppwiki_project_board_table_tests
+    PRIVATE
+      cppwiki_project_board_table
+  )
+
+  cppwiki_apply_common_options(cppwiki_project_board_table_tests)
+
+  add_test(
+    NAME cppwiki_project_board_table_tests
+    COMMAND cppwiki_project_board_table_tests
+  )
+endif ()
+
 if(CPPWIKI_ENABLE_CBLITE_STORAGE)
   add_executable(cppwiki_cblite_repository_tests
     storage/cblite_repository_test.cc
