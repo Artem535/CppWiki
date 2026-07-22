@@ -102,6 +102,29 @@ if (CPPWIKI_BUILD_DESKTOP_APP)
     FetchContent_MakeAvailable(qtkeychain)
 endif ()
 
+if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
+    # KDGantt (issue #113/#119): a native Qt model/view Gantt widget, meant to replace the
+    # web-based (SVAR react-gantt) Gantt tab in the Project board document kind. KDGantt hasn't
+    # shipped as its own repo since ~2016 (github.com/KDE/kdgantt2 is stale and Qt5-only); the
+    # actively maintained, Qt6-capable source lives inside KDAB's KDChart repo under src/KDGantt,
+    # built into the same `kdchart` library target as the charting code. Verified by reading the
+    # actual SPDX headers in the fetched source (e.g. src/KDGantt/kdganttglobal.h) rather than
+    # trusting the historical "KDGantt is LGPL" assumption: as of KDChart 3.0.0 the whole repo,
+    # KDGantt included, is MIT-licensed (see the fetched LICENSES/MIT.txt).
+    set(KDChart_QT6 ON CACHE BOOL "Build KDChart/KDGantt against Qt6" FORCE)
+    set(KDChart_STATIC OFF CACHE BOOL "Build KDChart/KDGantt as a shared library" FORCE)
+    set(KDChart_TESTS OFF CACHE BOOL "Disable KDChart/KDGantt's own test suite" FORCE)
+    set(KDChart_EXAMPLES OFF CACHE BOOL "Disable KDChart/KDGantt's own examples" FORCE)
+    set(KDChart_DOCS OFF CACHE BOOL "Disable KDChart/KDGantt API docs" FORCE)
+    FetchContent_Declare(
+            kdchart
+            GIT_REPOSITORY https://github.com/KDAB/KDChart.git
+            GIT_TAG kdchart-3.0.0
+            GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(kdchart)
+endif ()
+
 if (CPPWIKI_BUILD_SERVER)
     find_package(CLI11 CONFIG REQUIRED)
     find_package(OpenSSL REQUIRED)
