@@ -110,13 +110,20 @@ auto DurationInDays(const QDateTime& start, const QDateTime& end) -> int {
 }  // namespace
 
 ProjectBoardGanttModel::ProjectBoardGanttModel(QObject* parent)
-    : QStandardItemModel(parent), constraint_model_(std::make_unique<KDGantt::ConstraintModel>()) {}
+    : QStandardItemModel(parent), constraint_model_(std::make_unique<KDGantt::ConstraintModel>()) {
+  setHorizontalHeaderLabels({QStringLiteral("Task")});
+}
 
 ProjectBoardGanttModel::~ProjectBoardGanttModel() = default;
 
 void ProjectBoardGanttModel::LoadFromJson(const QJsonObject& board) {
   constraint_model_->clear();
+  // QStandardItemModel::clear() wipes header labels along with every item, so the column-0
+  // header set in the constructor has to be re-applied here too -- otherwise the left tree
+  // panel's header falls back to QStandardItemModel::headerData()'s default of "section + 1"
+  // ("1" for the only column), which is what happened before this fix.
   clear();
+  setHorizontalHeaderLabels({QStringLiteral("Task")});
 
   columns_ = board.value(QStringLiteral("columns")).toArray();
   const auto tasks = board.value(QStringLiteral("tasks")).toArray();
