@@ -8,6 +8,8 @@ class QRect;
 class QString;
 class QColor;
 class QFontMetrics;
+class QWidget;
+class QStyleOptionViewItem;
 
 namespace cppwiki::gui::project_board {
 
@@ -25,6 +27,15 @@ void PaintPill(QPainter* painter, const QRect& cell_rect, const QString& label,
 // and both delegates clear option.text in initStyleOption() so the base implementation would
 // otherwise measure an empty string and undersize the column).
 QSize PillSizeHint(const QFontMetrics& metrics, const QString& label);
+
+// Both pill delegates' updateEditorGeometry() used to set the combo-box editor's geometry to
+// exactly `option.rect` -- the CELL rect, which PillSizeHint() above sizes to fit only the pill's
+// own short label. A QComboBox needs noticeably more room than that (item text plus the dropdown
+// arrow plus internal margins), so the combo ended up squeezed into a box narrower than its own
+// contents and elided its text to "...". This grows the editor to its sizeHint() width (never
+// shrinking below the cell) and clamps the right edge to stay inside the parent viewport, so the
+// editor stays fully on-screen even for the last column.
+void SizeComboEditorToContents(QWidget* editor, const QStyleOptionViewItem& option);
 
 }  // namespace cppwiki::gui::project_board
 
