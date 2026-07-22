@@ -1,0 +1,133 @@
+diff --git a/src/KDGantt/kdganttgraphicsitem.cpp b/src/KDGantt/kdganttgraphicsitem.cpp
+index 1e82256..48fb9fe 100644
+--- a/src/KDGantt/kdganttgraphicsitem.cpp
++++ b/src/KDGantt/kdganttgraphicsitem.cpp
+@@ -83,11 +83,16 @@ GraphicsItem::~GraphicsItem()
+ 
+ void GraphicsItem::init()
+ {
+-    setCacheMode(QGraphicsItem::DeviceCoordinateCache);
++    // NOTE: DeviceCoordinateCache was removed because it gets invalidated on
++    // every update() call during a drag (setRect → update), thrashing the
++    // cache with zero benefit.  With BoundingRectViewportUpdate on the view
++    // the item is repainted only when its bounding rect actually changes,
++    // which is cheap enough without a cache.  See CppWiki issue #119.
+     setFlags(ItemIsMovable | ItemIsSelectable | ItemIsFocusable);
+     setAcceptHoverEvents(true);
+     setHandlesChildEvents(true);
+     setZValue(100.);
++    m_istate = 0;
+     m_dragline = nullptr;
+ }
+ 
+@@ -158,7 +163,14 @@ void GraphicsItem::setRect(const QRectF &r)
+ 
+     prepareGeometryChange();
+     m_rect = r;
+-    updateConstraintItems();
++    // Defer constraint-arrow updates during an active drag so each mouse-
++    // move frame doesn't cascade into updateConstraintItems() →
++    // prepareGeometryChange() + update() on every attached constraint.
++    // The arrows are snapped to their final position in mouseReleaseEvent
++    // once the drag finishes.  See CppWiki issue #119.
++    if (m_istate == 0) {
++        updateConstraintItems();
++    }
+     update();
+ }
+ 
+@@ -290,6 +302,12 @@ void GraphicsItem::updateItem(const Span &rowGeometry, const QPersistentModelInd
+         hide();
+         return;
+     }
++    // CppWiki patch (see third_party/kdchart-visibility-fix.patch, issue #119): this function
++    // hides the item above for an invalid index or TypeMulti, but never shows it again once the
++    // index becomes valid/non-multi (e.g. a task added right after a bulk load, or a row whose
++    // type changes at runtime) -- it would stay invisible forever. Explicit show() restores the
++    // normal case.
++    show();
+ 
+     /* Use explicit type cast to avoid ambiguity */
+     const Span s = scene()->grid()->mapToChart(static_cast<const QModelIndex &>(idx));
+@@ -493,12 +511,19 @@ void GraphicsItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
+             // protect against that
+             m_presspos = QPointF();
+             updateModel();
++            // Now that the drag is finished, snap constraint arrows to
++            // the item's final position (deferred during drag for FPS,
++            // see setRect).  Must happen before resetting m_istate so
++            // the guard in setRect still works.
++            updateConstraintItems();
++            update();
+             // without this command we sometimes get a white area at the left side of a task item
+             // after we moved that item right-ways into a grey weekend section of the scene:
+             scene()->update();
+         }
+     }
+ 
++    m_istate = 0;
+     m_presspos = QPointF();
+     BASE::mouseReleaseEvent(event);
+ }
+diff --git a/src/KDGantt/kdganttgraphicsview.cpp b/src/KDGantt/kdganttgraphicsview.cpp
+index 10d7d2d..6f6b927 100644
+--- a/src/KDGantt/kdganttgraphicsview.cpp
++++ b/src/KDGantt/kdganttgraphicsview.cpp
+@@ -657,8 +657,18 @@ void GraphicsView::updateSceneRect()
+     /* We have to update here to adjust for any rows with no
+      * information because they are painted with a different
+      * background brush
++     *
++     * NOTE: This invalidate is deliberately commented out — it
++     * clears the entire background cache on every scene-rect
++     * recalculation (which fires on resize, scroll, and model
++     * changes), forcing DateTimeGrid::paintGrid to re-draw
++     * every row and day column from scratch.  Qt's own background
++     * caching (QGraphicsView::CacheBackground) already handles
++     * invalidation when the viewport resizes or scrolls, so this
++     * explicit invalidate is both redundant and the cause of the
++     * "laggy FPS on splitter resize" feedback in CppWiki #119.
+      */
+-    d->scene.invalidate(QRectF(), QGraphicsScene::BackgroundLayer);
++    // d->scene.invalidate(QRectF(), QGraphicsScene::BackgroundLayer);
+ }
+ 
+ /*! \internal
+diff --git a/src/KDGantt/kdgantttreeviewrowcontroller.cpp b/src/KDGantt/kdgantttreeviewrowcontroller.cpp
+index 3203f68..d82d476 100644
+--- a/src/KDGantt/kdgantttreeviewrowcontroller.cpp
++++ b/src/KDGantt/kdgantttreeviewrowcontroller.cpp
+@@ -58,10 +58,14 @@ int TreeViewRowController::totalHeight() const
+ 
+ bool TreeViewRowController::isRowVisible(const QModelIndex &_idx) const
+ {
+-    // qDebug() << _idx.model()<<d->proxy << d->treeview->model();
+-    const QModelIndex idx = d->proxy->mapToSource(_idx);
+-    assert(idx.isValid() ? (idx.model() == d->treeview->model()) : (true));
+-    return d->treeview->visualRect(idx).isValid();
++    // Original: return d->treeview->visualRect(idx).isValid();
++    // visualRect() returns empty when the widget hasn't been laid out yet
++    // (e.g. LoadFromJson called before show()), which prevents KDGantt from
++    // creating GraphicsItems for child rows.
++    // isExpanded() also fails because modelReset fires before expandAll.
++    // Just return true — the scene only iterates rows that exist in the model.
++    Q_UNUSED(_idx);
++    return true;
+ }
+ 
+ bool TreeViewRowController::isRowExpanded(const QModelIndex &_idx) const
+diff --git a/src/KDGantt/kdganttview.cpp b/src/KDGantt/kdganttview.cpp
+index d4bdeb4..8c8fe7c 100644
+--- a/src/KDGantt/kdganttview.cpp
++++ b/src/KDGantt/kdganttview.cpp
+@@ -526,7 +526,9 @@ void View::ensureVisible(const QModelIndex &index)
+     const QModelIndex pidx = d->ganttProxyModel.mapFromSource(index);
+     const QModelIndex idx = model->mapFromSource(pidx);
+     QGraphicsItem *item = scene->findItem(idx);
+-    view->ensureVisible(item);
++    if (item) {
++        view->ensureVisible(item);
++    }
+ }
+ 
+ void View::resizeEvent(QResizeEvent *ev)

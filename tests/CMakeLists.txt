@@ -372,6 +372,24 @@ add_test(
   COMMAND cppwiki_conflict_merge_resolution_tests
 )
 
+# Standalone Project board Gantt widget (issue #113/#119), not yet wired into cppwiki_app; see
+# src/gui/project_board/gantt/CMakeLists.txt for the library target this links against.
+add_executable(cppwiki_project_board_gantt_tests
+  gui/project_board_gantt_test.cc
+)
+
+target_link_libraries(cppwiki_project_board_gantt_tests
+  PRIVATE
+    cppwiki_project_board_gantt
+)
+
+cppwiki_apply_common_options(cppwiki_project_board_gantt_tests)
+
+add_test(
+  NAME cppwiki_project_board_gantt_tests
+  COMMAND cppwiki_project_board_gantt_tests
+)
+
 if(CPPWIKI_ENABLE_CBLITE_STORAGE)
   add_executable(cppwiki_cblite_repository_tests
     storage/cblite_repository_test.cc

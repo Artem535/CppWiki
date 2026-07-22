@@ -102,6 +102,68 @@ if (CPPWIKI_BUILD_DESKTOP_APP)
     FetchContent_MakeAvailable(qtkeychain)
 endif ()
 
+if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
+    # KDGantt (issue #113/#119): a native Qt model/view Gantt widget, meant to replace the
+    # web-based (SVAR react-gantt) Gantt tab in the Project board document kind. KDGantt hasn't
+    # shipped as its own repo since ~2016 (github.com/KDE/kdgantt2 is stale and Qt5-only); the
+    # actively maintained, Qt6-capable source lives inside KDAB's KDChart repo under src/KDGantt,
+    # built into the same `kdchart` library target as the charting code. Verified by reading the
+    # actual SPDX headers in the fetched source (e.g. src/KDGantt/kdganttglobal.h) rather than
+    # trusting the historical "KDGantt is LGPL" assumption: as of KDChart 3.0.0 the whole repo,
+    # KDGantt included, is MIT-licensed (see the fetched LICENSES/MIT.txt).
+    #
+    # Vendored as a git submodule under third_party/KDChart (pinned to the real upstream
+    # kdchart-3.0.0 tag, same as third_party/qlementine) so we can patch/rebase locally and trace
+    # through the KDGantt source when debugging rendering issues (see #119).
+    #
+    # third_party/kdchart-cppwiki-fixes.patch carries local fixes for real defects found in
+    # upstream KDGantt while investigating #119's "laggy"/"couldn't find the tasks" reports:
+    #   - GraphicsItem::updateItem() hides an item for an invalid/TypeMulti index but never
+    #     shows it again once the index becomes valid -- a task could stay invisible forever.
+    #   - TreeViewRowController::isRowVisible() relied on QTreeView::visualRect(), which is
+    #     empty until the tree has actually been laid out (e.g. LoadFromJson() called before
+    #     the widget is shown); GraphicsView::updateScene()'s row-walk loop stops at the first
+    #     row isRowVisible() reports as invisible, so most/all tasks silently never got a
+    #     GraphicsItem at all.
+    #   - GraphicsView::updateSceneRect() unconditionally invalidated the whole background
+    #     layer on every call (including on every splitter-resize event), forcing a full
+    #     background repaint mid-drag -- the panel-resize stutter reported on #119.
+    #   - Minor: drop DeviceCoordinateCache thrashing and defer constraint-arrow updates until
+    #     drag release, and a null check in View::ensureVisible().
+    # Kept as a plain patch file (same convention as ../cblite-compatibility.patch) rather than
+    # a submodule-local commit, since the submodule tracks the real KDAB/KDChart remote and a
+    # local-only commit there wouldn't be fetchable by other clones.
+    find_package(Git REQUIRED)
+    execute_process(
+            COMMAND ${GIT_EXECUTABLE} apply --check --reverse
+                    ${CMAKE_SOURCE_DIR}/third_party/kdchart-cppwiki-fixes.patch
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/third_party/KDChart
+            RESULT_VARIABLE CPPWIKI_KDCHART_PATCH_ALREADY_APPLIED
+            OUTPUT_QUIET
+            ERROR_QUIET
+    )
+    if (NOT CPPWIKI_KDCHART_PATCH_ALREADY_APPLIED EQUAL 0)
+        message(STATUS "Applying local KDChart/KDGantt fixes (third_party/kdchart-cppwiki-fixes.patch)")
+        execute_process(
+                COMMAND ${GIT_EXECUTABLE} apply
+                        ${CMAKE_SOURCE_DIR}/third_party/kdchart-cppwiki-fixes.patch
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/third_party/KDChart
+                RESULT_VARIABLE CPPWIKI_KDCHART_PATCH_RESULT
+        )
+        if (NOT CPPWIKI_KDCHART_PATCH_RESULT EQUAL 0)
+            message(FATAL_ERROR
+                    "Failed to apply third_party/kdchart-cppwiki-fixes.patch to third_party/KDChart")
+        endif ()
+    endif ()
+
+    set(KDChart_QT6 ON CACHE BOOL "Build KDChart/KDGantt against Qt6" FORCE)
+    set(KDChart_STATIC OFF CACHE BOOL "Build KDChart/KDGantt as a shared library" FORCE)
+    set(KDChart_TESTS OFF CACHE BOOL "Disable KDChart/KDGantt's own test suite" FORCE)
+    set(KDChart_EXAMPLES OFF CACHE BOOL "Disable KDChart/KDGantt's own examples" FORCE)
+    set(KDChart_DOCS OFF CACHE BOOL "Disable KDChart/KDGantt API docs" FORCE)
+    add_subdirectory(third_party/KDChart)
+endif ()
+
 if (CPPWIKI_BUILD_SERVER)
     find_package(CLI11 CONFIG REQUIRED)
     find_package(OpenSSL REQUIRED)
@@ -144,4 +206,8 @@ add_subdirectory(src)
 
 if (CPPWIKI_BUILD_TESTS)
     add_subdirectory(tests)
+endif ()
+
+if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
+    add_subdirectory(benchmarks)
 endif ()
