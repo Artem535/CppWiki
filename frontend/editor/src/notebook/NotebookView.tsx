@@ -111,21 +111,34 @@ function CellView({
 
   const showRendered = isMarkdown && isRendered;
 
+  // Cell chrome (border/background/toolbar, issue #115): real JupyterLab shows a rendered
+  // (non-editing) markdown cell as plain flowing document text with no visible cell boundary —
+  // the box only reappears once you click into it to edit the raw source (showRendered flips to
+  // false, see the click handler below). Code cells have no rendered mode at all (isMarkdown is
+  // false for them), so showChrome is always true for them — this only ever hides chrome for
+  // markdown cells, and only while they're rendered.
+  const showChrome = !showRendered;
+
   return (
-    <div className="notebook-cell" data-cell-type={cell.cell_type}>
-      <div className="notebook-cell-toolbar">
-        <div className="notebook-cell-kind">{isCode ? "Code" : cell.cell_type}</div>
-        {editable ? (
-          <button
-            type="button"
-            className="notebook-cell-delete"
-            onClick={() => onDeleteCell(index)}
-            aria-label="Delete cell"
-          >
-            Delete cell
-          </button>
-        ) : null}
-      </div>
+    <div
+      className={showChrome ? "notebook-cell" : "notebook-cell notebook-cell--chromeless"}
+      data-cell-type={cell.cell_type}
+    >
+      {showChrome ? (
+        <div className="notebook-cell-toolbar">
+          <div className="notebook-cell-kind">{isCode ? "Code" : cell.cell_type}</div>
+          {editable ? (
+            <button
+              type="button"
+              className="notebook-cell-delete"
+              onClick={() => onDeleteCell(index)}
+              aria-label="Delete cell"
+            >
+              Delete cell
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {isCode ? (
         // Syntax-highlighted, still-editable source for code cells (issue #88) — language comes
         // from the notebook-level kernelspec/language_info (nbformat has no per-cell language),

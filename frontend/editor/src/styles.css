@@ -151,6 +151,17 @@ button {
   overflow-y: auto;
 }
 
+/* Rendered (non-editing) markdown cells (issue #115): matches real JupyterLab, where a rendered
+   markdown cell reads as plain flowing document text with no visible cell boundary — the box
+   above only applies while a markdown cell is in raw-source edit mode, or to code cells (which
+   never get this modifier — see showChrome in NotebookView.tsx). */
+.notebook-cell--chromeless {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
 /* Deliberately NOT .empty-state (position: absolute; inset: 0) — this sits inline inside
    .notebook-view's flex column, above the AddCellToolbar rendered after it; an absolutely
    positioned message would escape the flex flow and paint over the toolbar instead. */
@@ -249,6 +260,18 @@ button {
 
 .notebook-cell-markdown-rendered:hover {
   background: var(--app-surface-active);
+}
+
+/* Chromeless rendered markdown cells (issue #115): the outer box's background is already gone via
+   .notebook-cell--chromeless above; drop this inner surface too (rest and hover) and its padding
+   so the cell reads as plain page text, not a highlighted box. */
+.notebook-cell--chromeless .notebook-cell-markdown-rendered {
+  padding: 0;
+  background: transparent;
+}
+
+.notebook-cell--chromeless .notebook-cell-markdown-rendered:hover {
+  background: transparent;
 }
 
 .notebook-cell-markdown-rendered > :first-child {
