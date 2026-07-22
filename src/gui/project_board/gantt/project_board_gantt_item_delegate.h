@@ -33,6 +33,16 @@ class ProjectBoardGanttItemDelegate : public KDGantt::ItemDelegate {
   void paintGanttItem(QPainter* painter, const KDGantt::StyleOptionGanttItem& opt,
                       const QModelIndex& idx) override;
   [[nodiscard]] auto toolTip(const QModelIndex& idx) const -> QString override;
+
+  // KDGantt::GraphicsItem::updateItemFromMouse() moves a dragged item purely via setPos()
+  // (translation) -- it never recomputes boundingRect() mid-drag, so whatever itemBoundingSpan()
+  // returned at load time is what Qt uses to invalidate/redraw both the old and new position on
+  // every frame of the drag. The connector dots painted in paintGanttItem() stick out past the
+  // plain bar rect the base implementation accounts for; without widening the span here, the
+  // dots' overflow at each historical drag position never gets invalidated, leaving a trail of
+  // un-erased dot fragments behind as the bar moves (see the issue this was fixed under).
+  [[nodiscard]] auto itemBoundingSpan(const KDGantt::StyleOptionGanttItem& opt,
+                                      const QModelIndex& idx) const -> KDGantt::Span override;
 };
 
 }  // namespace cppwiki::gui::project_board::gantt
