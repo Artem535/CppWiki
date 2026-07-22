@@ -6,11 +6,8 @@
 #include <KDGanttItemDelegate>
 #include <KDGanttProxyModel>
 #include <KDGanttView>
-#include <QApplication>
 #include <QEvent>
-#include <QFontMetrics>
 #include <QGraphicsView>
-#include <QLinearGradient>
 #include <QScrollBar>
 #include <QSplitter>
 #include <QVBoxLayout>
@@ -130,34 +127,25 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
   //
   // KDGantt::ItemDelegate (kdganttitemdelegate.cpp) hardcodes Qt::black for the outline pen of
   // every bar type *and* reuses that same pen to draw the task-name label text beside each bar --
-  // invisible against this app's dark qlementine theme, whose chart-area background comes from
-  // the ordinary (dark) QPalette::Base rather than anything KDGantt paints itself. Re-themed here
-  // to colors lifted from third_party/qlementine/showcase/resources/themes/dark.json so labels
-  // stay legible and bars read as "this app" rather than KDGantt's default green/blue/red demo
-  // gradients (also addresses the general "dated" look of the default KDGantt styling).
+  // invisible against this app's dark theme, whose chart-area background comes from the ordinary
+  // (dark) QPalette::Base rather than anything KDGantt paints itself. Re-themed here to match the
+  // web Project board's Gantt tab (frontend/editor/src/project/ProjectBoardView.tsx's SVAR
+  // react-gantt, `WillowDark` theme) instead of an unrelated palette, so the native replacement
+  // reads as "the same Gantt", just native -- colors lifted directly from
+  // @svar-ui/react-gantt/dist/index.css's `.wx-willow-dark-theme` custom-property block.
   if (auto* delegate = view_->itemDelegate()) {
-    const QColor kLightText(0xe8, 0xea, 0xf0);
+    const QColor kLightText(0xff, 0xff, 0xff, 0xe5);  // --wx-gantt-task/summary-font-color
     const QPen text_pen(kLightText, 1.);
     delegate->setDefaultPen(KDGantt::TypeTask, text_pen);
     delegate->setDefaultPen(KDGantt::TypeSummary, text_pen);
     delegate->setDefaultPen(KDGantt::TypeEvent, text_pen);
 
-    const qreal gradient_height = QFontMetrics(QApplication::font()).height();
-
-    QLinearGradient task_gradient(0., 0., 0., gradient_height);
-    task_gradient.setColorAt(0., QColor(0x64, 0x94, 0xff));  // primaryColorHovered
-    task_gradient.setColorAt(1., QColor(0x31, 0x61, 0xf8));  // primaryAlternativeColor
-    delegate->setDefaultBrush(KDGantt::TypeTask, task_gradient);
-
-    QLinearGradient summary_gradient(0., 0., 0., gradient_height);
-    summary_gradient.setColorAt(0., QColor(0x53, 0x5c, 0x78));  // neutralColorHovered
-    summary_gradient.setColorAt(1., QColor(0x4c, 0x53, 0x68));  // neutralColor
-    delegate->setDefaultBrush(KDGantt::TypeSummary, summary_gradient);
-
-    QLinearGradient milestone_gradient(0., 0., 0., gradient_height);
-    milestone_gradient.setColorAt(0., QColor(0xff, 0xcf, 0x6c));  // statusColorWarningHovered
-    milestone_gradient.setColorAt(1., QColor(0xfb, 0xc0, 0x64));  // statusColorWarning
-    delegate->setDefaultBrush(KDGantt::TypeEvent, milestone_gradient);
+    delegate->setDefaultBrush(KDGantt::TypeTask,
+                              QColor(0x09, 0x8c, 0xdc));  // --wx-gantt-task-fill-color
+    delegate->setDefaultBrush(KDGantt::TypeSummary,
+                              QColor(0x09, 0x9f, 0x81));  // --wx-gantt-summary-fill-color
+    delegate->setDefaultBrush(KDGantt::TypeEvent,
+                              QColor(0xad, 0x44, 0xab));  // --wx-gantt-milestone-color
   }
 
   // Plain wheel scrolling normally drives Qt's default vertical scrollbar only; redirect it to
