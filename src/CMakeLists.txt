@@ -185,6 +185,13 @@ install(TARGETS cppwiki_app
 )
 endif ()
 
+if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
+    # Standalone KDGantt-backed Project board Gantt widget (issue #113/#119) — not yet wired into
+    # cppwiki_app/MainWindow; see src/gui/project_board/gantt/CMakeLists.txt for its own narrow
+    # target(s) and demo executable.
+    add_subdirectory(gui/project_board/gantt)
+endif ()
+
 if (CPPWIKI_BUILD_ADMIN_CLI)
     add_executable(cppwiki_admin_cli
             admin/admin_client.cc
@@ -221,6 +228,12 @@ if (CPPWIKI_BUILD_ADMIN_CLI)
     )
 
     cppwiki_apply_common_options(cppwiki_admin_cli)
+endif ()
+
+# Standalone native Kanban board (Project board document kind, issue #113/#114 follow-up) — its
+# own isolated target, not yet linked into cppwiki_app. See gui/project_board/kanban/CMakeLists.txt.
+if (CPPWIKI_BUILD_DESKTOP_APP)
+    add_subdirectory(gui/project_board/kanban)
 endif ()
 
 if (CPPWIKI_BUILD_SERVER)

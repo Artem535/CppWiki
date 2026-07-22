@@ -1,0 +1,1 @@
+add_subdirectory(kdgantt_benchmark)
