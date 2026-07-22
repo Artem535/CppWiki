@@ -125,6 +125,33 @@ QPushButton#fileActionButton:pressed {
   background-color: rgba(255, 255, 255, 0.06);
 }
 
+/* Native Kanban board's Add column/Add task toolbar (issue #131) -- a framed strip instead of
+   two bare buttons floating directly against the tab's edge, same visual language as
+   fileActionButton above. */
+QFrame#kanbanToolbar {
+  background-color: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+QPushButton#kanbanToolbarButton {
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: palette(text);
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+QPushButton#kanbanToolbarButton:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+QPushButton#kanbanToolbarButton:pressed {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
 QWidget#pageContentHost {
   background-color: palette(base);
 }

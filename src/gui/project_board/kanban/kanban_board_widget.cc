@@ -1,5 +1,6 @@
 #include "gui/project_board/kanban/kanban_board_widget.h"
 
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QLineEdit>
@@ -17,13 +18,27 @@ namespace cppwiki::gui::kanban {
 
 KanbanBoardWidget::KanbanBoardWidget(QWidget* parent)
     : QWidget(parent), model_(new KanbanBoardModel(this)) {
-  auto* add_column_button = new QPushButton(QStringLiteral("Add column"), this);
-  auto* add_task_button = new QPushButton(QStringLiteral("Add task"), this);
+  // Framed strip (object names styled in cppwiki.qss) instead of two bare QPushButtons floating
+  // directly against the tab's edge -- gives the toolbar its own visually-grounded band, matching
+  // how the rest of the app (e.g. the collaboration panel's Import/Export controls) frames native
+  // action buttons rather than leaving them loose on the surrounding widget's background.
+  auto* toolbar = new QFrame(this);
+  toolbar->setObjectName(QStringLiteral("kanbanToolbar"));
+  toolbar->setAttribute(Qt::WA_StyledBackground, true);
+
+  auto* add_column_button = new QPushButton(QStringLiteral("Add column"), toolbar);
+  auto* add_task_button = new QPushButton(QStringLiteral("Add task"), toolbar);
+  add_column_button->setObjectName(QStringLiteral("kanbanToolbarButton"));
+  add_task_button->setObjectName(QStringLiteral("kanbanToolbarButton"));
+  add_column_button->setCursor(Qt::PointingHandCursor);
+  add_task_button->setCursor(Qt::PointingHandCursor);
   connect(add_column_button, &QPushButton::clicked, this,
           &KanbanBoardWidget::HandleAddColumnClicked);
   connect(add_task_button, &QPushButton::clicked, this, &KanbanBoardWidget::HandleAddTaskClicked);
 
-  auto* toolbar_layout = new QHBoxLayout();
+  auto* toolbar_layout = new QHBoxLayout(toolbar);
+  toolbar_layout->setContentsMargins(12, 8, 12, 8);
+  toolbar_layout->setSpacing(8);
   toolbar_layout->addWidget(add_column_button);
   toolbar_layout->addWidget(add_task_button);
   toolbar_layout->addStretch(1);
@@ -35,7 +50,8 @@ KanbanBoardWidget::KanbanBoardWidget(QWidget* parent)
 
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
-  layout->addLayout(toolbar_layout);
+  layout->setSpacing(0);
+  layout->addWidget(toolbar);
   layout->addWidget(quick_widget_, 1);
 
   connect(model_, &KanbanBoardModel::editTaskRequested, this,
