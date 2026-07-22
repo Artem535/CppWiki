@@ -105,7 +105,7 @@ void ProjectStatusPillDelegate::setModelData(QWidget* editor, QAbstractItemModel
 void ProjectStatusPillDelegate::updateEditorGeometry(QWidget* editor,
                                                      const QStyleOptionViewItem& option,
                                                      const QModelIndex& /*index*/) const {
-  editor->setGeometry(option.rect);
+  SizeComboEditorToContents(editor, option);
 }
 
 }  // namespace cppwiki::gui::project_board

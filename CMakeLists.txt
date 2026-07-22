@@ -193,6 +193,37 @@ if (CPPWIKI_ENABLE_CBLITE_STORAGE)
 endif ()
 
 if (CPPWIKI_BUILD_DESKTOP_APP)
+    # third_party/qlementine-cppwiki-fixes.patch (same apply-if-needed convention as
+    # kdchart-cppwiki-fixes.patch above): ComboboxItemViewFilter::eventFilter()'s ChildAdded
+    # handler called _comboBox->view() to check which child was just added -- but view() lazily
+    # constructs the QComboBox's popup container on first access, and calling it *from within* the
+    # ChildAdded event fired by that very construction (before QComboBoxPrivate has cached the new
+    # container) makes it construct another one, which fires ChildAdded again, recursing until the
+    # stack overflows (SIGSEGV; hit in practice via a QComboBox created as a QTableView cell
+    # editor -- see the Project board Table view's Status/Priority columns).
+    find_package(Git REQUIRED)
+    execute_process(
+            COMMAND ${GIT_EXECUTABLE} apply --check --reverse
+                    ${CMAKE_SOURCE_DIR}/third_party/qlementine-cppwiki-fixes.patch
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/third_party/qlementine
+            RESULT_VARIABLE CPPWIKI_QLEMENTINE_PATCH_ALREADY_APPLIED
+            OUTPUT_QUIET
+            ERROR_QUIET
+    )
+    if (NOT CPPWIKI_QLEMENTINE_PATCH_ALREADY_APPLIED EQUAL 0)
+        message(STATUS "Applying local qlementine fixes (third_party/qlementine-cppwiki-fixes.patch)")
+        execute_process(
+                COMMAND ${GIT_EXECUTABLE} apply
+                        ${CMAKE_SOURCE_DIR}/third_party/qlementine-cppwiki-fixes.patch
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/third_party/qlementine
+                RESULT_VARIABLE CPPWIKI_QLEMENTINE_PATCH_RESULT
+        )
+        if (NOT CPPWIKI_QLEMENTINE_PATCH_RESULT EQUAL 0)
+            message(FATAL_ERROR
+                    "Failed to apply third_party/qlementine-cppwiki-fixes.patch to third_party/qlementine")
+        endif ()
+    endif ()
+
     set(QLEMENTINE_SANDBOX OFF CACHE BOOL "Build qlementine sandbox" FORCE)
     set(QLEMENTINE_SHOWCASE OFF CACHE BOOL "Build qlementine showcase" FORCE)
     add_subdirectory(third_party/qlementine)

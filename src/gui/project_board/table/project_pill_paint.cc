@@ -6,6 +6,8 @@
 #include <QPainterPath>
 #include <QRect>
 #include <QString>
+#include <QStyleOptionViewItem>
+#include <QWidget>
 #include <algorithm>
 
 // QSize is included via the header (project_pill_paint.h).
@@ -59,6 +61,21 @@ void PaintPill(QPainter* painter, const QRect& cell_rect, const QString& label,
   painter->drawText(pill_rect, Qt::AlignCenter, label);
 
   painter->restore();
+}
+
+void SizeComboEditorToContents(QWidget* editor, const QStyleOptionViewItem& option) {
+  QRect rect = option.rect;
+  const int preferred_width = editor->sizeHint().width();
+  if (preferred_width > rect.width()) {
+    rect.setWidth(preferred_width);
+  }
+  if (const QWidget* parent = editor->parentWidget()) {
+    const int max_right = parent->rect().right();
+    if (rect.right() > max_right) {
+      rect.moveRight(max_right);
+    }
+  }
+  editor->setGeometry(rect);
 }
 
 }  // namespace cppwiki::gui::project_board

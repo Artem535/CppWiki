@@ -1,0 +1,18 @@
+diff --git a/lib/src/style/eventFilters/ComboboxItemViewFilter.hpp b/lib/src/style/eventFilters/ComboboxItemViewFilter.hpp
+index 0c8278b..057fc48 100644
+--- a/lib/src/style/eventFilters/ComboboxItemViewFilter.hpp
++++ b/lib/src/style/eventFilters/ComboboxItemViewFilter.hpp
+@@ -56,7 +56,12 @@ protected:
+         if (watchedObject == _comboBox) {
+           const auto* childEvent = static_cast<QChildEvent*>(evt);
+           const auto* child = childEvent->child();
+-          if (child == _comboBox->view()) {
++          // Compare against the popup container (this filter's own _view's parent) instead of
++          // calling _comboBox->view(): that call lazily constructs the view container on first
++          // access, and calling it *from within* the ChildAdded event fired by that very
++          // construction (before QComboBoxPrivate caches the new container) makes it construct
++          // another one, which fires ChildAdded again, recursing until the stack overflows.
++          if (_view && child == _view->parentWidget()) {
+             if (auto* qlementine = qobject_cast<QlementineStyle*>(_comboBox->style())) {
+               if (isDefaultItemDelegate(_comboBox->itemDelegate())) {
+                 _comboBox->setItemDelegate(new ComboBoxDelegate(_comboBox, *qlementine));
