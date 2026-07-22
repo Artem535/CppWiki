@@ -6,7 +6,6 @@
 
 #include <QApplication>
 #include <QDateTime>
-#include <QDebug>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
@@ -96,11 +95,9 @@ int main(int argc, char** argv) {
   widget.resize(1000, 500);
   widget.LoadFromJson(MakeSampleBoard());
 
-  QObject::connect(
-      &widget, &cppwiki::gui::project_board::gantt::ProjectBoardGanttWidget::DataChanged,
-      [](const QJsonObject& board) {
-        qInfo() << "Board edited, task count:" << board.value("tasks").toArray().size();
-      });
+  QObject::connect(&widget,
+                   &cppwiki::gui::project_board::gantt::ProjectBoardGanttWidget::DataChanged,
+                   [](const QJsonObject& board) { Q_UNUSED(board); });
 
   widget.show();
   return QApplication::exec();

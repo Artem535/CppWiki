@@ -8,6 +8,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QList>
 #include <QStringList>
 #include <QVariant>
 #include <QtGlobal>
@@ -169,8 +170,16 @@ void ProjectBoardGanttModel::LoadFromJson(const QJsonObject& board) {
     parent_by_id.insert(id, task.value(QStringLiteral("parent")).toString());
   }
 
-  // Pass 2: attach each item to its parent row (or the invisible root if it has none / its
-  // parent wasn't found), preserving each task's relative order within its sibling group.
+  // Pass 2: group each item under its resolved parent (or the invisible root, keyed by
+  // nullptr), preserving each task's relative order within its sibling group, then attach each
+  // group in a single batched appendRows() call. KDGantt::GraphicsView rebuilds its entire scene
+  // (clears every item, re-walks every row) on every rowsInserted signal it receives while
+  // attached to a model (kdganttgraphicsview.cpp's slotRowsInserted() calls updateScene(),
+  // tagged upstream with "TODO: This might be optimised"), so calling appendRow() once per task
+  // made loading N tasks O(n^2) and was the dominant cause of the reported load-time lag (see
+  // #119). Batching by parent means the already-attached view only rebuilds once per distinct
+  // parent instead of once per task.
+  QHash<QStandardItem*, QList<QStandardItem*>> children_by_parent;
   for (const auto& entry : tasks) {
     if (!entry.isObject()) {
       continue;
@@ -183,12 +192,20 @@ void ProjectBoardGanttModel::LoadFromJson(const QJsonObject& board) {
 
     const auto parent_id = parent_by_id.value(id);
     auto* parent_item = parent_id.isEmpty() ? nullptr : items_by_id.value(parent_id);
-    if (parent_item != nullptr) {
-      parent_item->appendRow(item);
-    } else {
-      appendRow(item);
+    children_by_parent[parent_item].push_back(item);
+  }
+  // Attach every non-root group first: each parent item is still floating (not yet part of the
+  // model), so QStandardItem::appendRows() here doesn't touch the model and emits no signal at
+  // all. Only the final invisibleRootItem()->appendRows() call below actually inserts anything
+  // into the model -- and since the top-level items already have their whole descendant
+  // subtrees built by that point, it brings the entire hierarchy in with exactly one
+  // rowsInserted, regardless of how many distinct parents/levels exist.
+  for (auto it = children_by_parent.constBegin(); it != children_by_parent.constEnd(); ++it) {
+    if (it.key() != nullptr) {
+      it.key()->appendRows(it.value());
     }
   }
+  invisibleRootItem()->appendRows(children_by_parent.value(nullptr));
 
   const auto links = board.value(QStringLiteral("links")).toArray();
   for (const auto& entry : links) {
