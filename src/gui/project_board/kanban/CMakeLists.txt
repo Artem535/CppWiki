@@ -34,6 +34,7 @@ target_link_libraries(cppwiki_kanban_board
 
 qt_add_resources(cppwiki_kanban_board cppwiki_kanban_qml_resources
         PREFIX "/cppwiki/kanban"
+        BASE qml
         FILES
         qml/KanbanBoard.qml
         qml/KanbanColumnCell.qml
