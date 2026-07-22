@@ -7,6 +7,15 @@
 
 namespace cppwiki::gui::kanban {
 
+// Kanban's priority levels (see frontend/editor/src/project/projectBoard.ts's `priority` field) —
+// 1 = Low, 2 = Medium, 3 = High; 0/unset means no priority.
+constexpr int kPriorityLow = 1;
+constexpr int kPriorityMedium = 2;
+constexpr int kPriorityHigh = 3;
+
+// Human label for one of the three priority levels above; empty for anything else (including 0).
+[[nodiscard]] auto PriorityLabel(int priority) -> QString;
+
 // Mirrors the `ProjectTask` shape defined in frontend/editor/src/project/projectBoard.ts — the
 // schema shared by all three Project board views (Gantt/Kanban/Table). This native Kanban MVP
 // only renders/edits a subset of these fields (text, column, parent/epic, priority, progress);

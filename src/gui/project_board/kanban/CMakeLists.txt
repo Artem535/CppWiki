@@ -15,6 +15,8 @@ add_library(cppwiki_kanban_board STATIC
         kanban_column.h
         kanban_task.cc
         kanban_task.h
+        kanban_task_dialog.cc
+        kanban_task_dialog.h
 )
 
 target_include_directories(cppwiki_kanban_board
