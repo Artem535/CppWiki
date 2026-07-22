@@ -8,8 +8,10 @@
 #include <KDGanttView>
 #include <QEvent>
 #include <QGraphicsView>
+#include <QHeaderView>
 #include <QScrollBar>
 #include <QSplitter>
+#include <QTreeView>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
@@ -124,6 +126,14 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
     sp->setOpaqueResize(false);
   }
 
+  // The left panel's tree view has exactly one column ("Task"); left at QHeaderView's default,
+  // that column keeps whatever width it was given (or its content-derived size), leaving a strip
+  // of dead space to the right of task names whenever the panel is wider than the longest name.
+  // Stretching the (only, so also last) section makes it fill the panel instead.
+  if (auto* tree_view = qobject_cast<QTreeView*>(view_->leftView())) {
+    tree_view->header()->setStretchLastSection(true);
+  }
+
   // --- Visual theme -----------------------------------------------------------
   //
   // KDGantt::ItemDelegate (kdganttitemdelegate.cpp) hardcodes Qt::black for the outline pen of
@@ -131,10 +141,11 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
   // invisible against this app's dark theme, whose chart-area background comes from the ordinary
   // (dark) QPalette::Base rather than anything KDGantt paints itself. It also draws every bar as a
   // plain sharp-cornered rectangle (summaries as a pointed bracket), with no shadow -- noticeably
-  // flatter than the web Project board's Gantt tab (frontend/editor/src/project/ProjectBoardView.tsx's
-  // SVAR react-gantt, `WillowDark` theme), which uses rounded 3px bars with a soft drop shadow.
-  // ProjectBoardGanttItemDelegate (see its header) carries the shape the rest of the way; colors
-  // are still set here via the same setDefaultBrush()/setDefaultPen() API, lifted directly from
+  // flatter than the web Project board's Gantt tab
+  // (frontend/editor/src/project/ProjectBoardView.tsx's SVAR react-gantt, `WillowDark` theme),
+  // which uses rounded 3px bars with a soft drop shadow. ProjectBoardGanttItemDelegate (see its
+  // header) carries the shape the rest of the way; colors are still set here via the same
+  // setDefaultBrush()/setDefaultPen() API, lifted directly from
   // @svar-ui/react-gantt/dist/index.css's `.wx-willow-dark-theme` custom-property block.
   auto* delegate = new ProjectBoardGanttItemDelegate(view_);
   view_->setItemDelegate(delegate);
