@@ -3,6 +3,7 @@
 #include <KDGanttConstraintModel>
 #include <KDGanttDateTimeGrid>
 #include <KDGanttGraphicsView>
+#include <KDGanttProxyModel>
 #include <KDGanttView>
 #include <QGraphicsView>
 #include <QSplitter>
@@ -79,6 +80,25 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
     if (auto* grid = qobject_cast<KDGantt::DateTimeGrid*>(view_->grid())) {
       grid->setScale(KDGantt::DateTimeGrid::ScaleDay);
       grid->setDayWidth(kDayWidth);
+    }
+  }
+
+  // KDGantt::View's internal ProxyModel defaults to reading each Gantt role (ItemTypeRole,
+  // StartTimeRole, etc.) from a *different column* of the source model (column 1, 2, 3, ...) --
+  // a layout meant for a source model that dedicates one column per piece of Gantt data. Our
+  // model is a single-column tree (see ProjectBoardGanttModel::LoadFromJson()): every role is
+  // set directly on each task's column-0 item. Left at its defaults, every single lookup the
+  // proxy makes reads a nonexistent column and returns an invalid QVariant -- which is why every
+  // row was painted with the "no information" hatch pattern, and why task bars never had valid
+  // geometry to render with (dates/type/completion all read as invalid). Remapping every role
+  // onto column 0, read directly (no role indirection), fixes both.
+  if (auto* proxy = qobject_cast<KDGantt::ProxyModel*>(view_->ganttProxyModel())) {
+    for (int role :
+         {static_cast<int>(KDGantt::ItemTypeRole), static_cast<int>(KDGantt::StartTimeRole),
+          static_cast<int>(KDGantt::EndTimeRole), static_cast<int>(KDGantt::TaskCompletionRole),
+          static_cast<int>(KDGantt::LegendRole)}) {
+      proxy->setColumn(role, 0);
+      proxy->setRole(role, role);
     }
   }
 
