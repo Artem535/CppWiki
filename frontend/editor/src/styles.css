@@ -172,10 +172,15 @@ button {
 /* OpenAPI spec document kind (issue #107): read-only swagger-ui-react viewer. It's mounted inside
    .editor-surface, which already establishes the real (non-vh) height: 100% chain documented
    above, so this just needs to fill that box and let swagger-ui-react's own internal layout
-   (which brings its own CSS via swagger-ui-react/swagger-ui.css) scroll within it. */
+   (which brings its own CSS via swagger-ui-react/swagger-ui.css) scroll within it.
+   `background: var(--app-bg)` (not `var(--app-text)`, which was a copy/paste bug here — that
+   variable is this app's *text* color, i.e. white, and using it as a background painted this
+   whole box solid white) — see the big swagger-ui override block at the bottom of this file
+   (issue #120) for why a plain dark background here alone wasn't enough to fix the "half white,
+   half gray" report against this. */
 .openapi-spec-view {
   height: 100%;
-  background: var(--app-text);
+  background: var(--app-bg);
 }
 
 .notebook-cell-toolbar {
@@ -987,3 +992,228 @@ button {
   outline: none;
   border-color: var(--app-surface-hover);
 }
+
+/* OpenAPI spec document kind (issue #107, follow-up issue #120): swagger-ui-react's own bundled
+   CSS (swagger-ui-react/swagger-ui.css, imported by OpenApiSpecView.tsx) assumes a plain white
+   page and exposes no theming hook of its own (no CSS custom properties, unlike SVAR's WillowDark
+   theme remapped via .project-board-view .wx-willow-dark-theme above) -- just plain, un-hashed
+   classes. Left alone against this app's dark theme, that produced exactly the "half white, half
+   gray" patchwork the #120 bug report described: most of the surface staying swagger-ui's native
+   white/light-gray, with a few of its own dark elements (the topbar, disabled inputs, etc.) poking
+   through as darker patches.
+
+   Conveniently, swagger-ui-react already ships its own comprehensive dark theme, gated behind an
+   `html.dark-mode` class it expects on the page's <html> element (see its bundled CSS -- every
+   rule below has an `html.dark-mode .swagger-ui ...` counterpart there). Rather than wiring up
+   that global, page-level class from React (a real code path this app would then own the
+   lifecycle of, and one that reaches outside this document kind's own wrapper), every rule below
+   is that same dark theme transplanted verbatim, scoped instead under .openapi-spec-view so it
+   can never leak into any other view, with swagger-ui-react's own generic dark hex values
+   remapped onto this app's real --app-* palette (mirrors the WillowDark remap's spirit even though
+   the mechanism has to be plain class overrides here, not custom properties). Per-HTTP-method
+   accent colors (opblock-get/post/put/delete/... backgrounds, method badges, tab underlines) and
+   other semantically meaningful colors (required-field markers, validation errors, the schema
+   viewer's type badges) are deliberately left close to swagger-ui's own choices -- those are
+   information, not decoration, same reasoning PR #111 gave for keeping this view close to
+   swagger-ui's defaults in the first place. Every selector here has one more class than its
+   swagger-ui.css counterpart (the .openapi-spec-view prefix), so it always wins on specificity
+   regardless of which CSS file the bundler happens to emit first. */
+.openapi-spec-view .swagger-ui{background:var(--app-bg);color:var(--app-text)}
+/* Not covered by swagger-ui-react's own bundled dark-mode theme (transplanted above) at all —
+   confirmed by grepping its source CSS, this one has no `html.dark-mode` counterpart, so it's a
+   real gap in swagger-ui-react's own dark theme, not something dropped in translation here. Shown
+   for a spec missing a recognizable `openapi`/`swagger` version field (e.g. a malformed or
+   pre-Swagger-2.0 document) — found by feeding this view a bare `{}` spec during manual testing. */
+.openapi-spec-view .swagger-ui .version-pragma__message code{background-color:var(--app-surface-muted);color:var(--app-text)}
+.openapi-spec-view .swagger-ui .authorization__btn svg,.openapi-spec-view .swagger-ui .expand-operation svg,.openapi-spec-view .swagger-ui .opblock-control-arrow svg{fill:var(--app-text-muted);opacity:1}
+.openapi-spec-view .swagger-ui .markdown li,.openapi-spec-view .swagger-ui .markdown p,.openapi-spec-view .swagger-ui .markdown pre,.openapi-spec-view .swagger-ui .renderedMarkdown li,.openapi-spec-view .swagger-ui .renderedMarkdown p,.openapi-spec-view .swagger-ui .renderedMarkdown pre,.openapi-spec-view .swagger-ui section h3,.openapi-spec-view .swagger-ui table thead tr td,.openapi-spec-view .swagger-ui table thead tr th{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .markdown code,.openapi-spec-view .swagger-ui .renderedMarkdown code{background:var(--app-surface);color:#b68ae1}
+/* `background`/`color` need `!important` here specifically: swagger-ui-react's own (light-theme)
+   base rule targets `.swagger-ui input[type=email],input[type=file],input[type=password],
+   input[type=search],input[type=text]` — the `[type=...]` attribute gives it the exact same
+   specificity as this plain `.openapi-spec-view .swagger-ui input` selector (one extra class here,
+   one extra attribute there), so without `!important` it was a coin flip decided by CSS bundling
+   order, not visual intent — confirmed via a real headless-browser render where parameter input
+   boxes stayed swagger-ui's native white regardless of this rule. */
+.openapi-spec-view .swagger-ui input{background:var(--app-bg)!important;border-color:var(--app-border)!important;color:var(--app-text)!important}
+.openapi-spec-view .swagger-ui input:focus:not(.download-url-input){border-color:var(--app-surface-hover)!important;box-shadow:none;outline:none}
+.openapi-spec-view .swagger-ui textarea{background:var(--app-bg);border:1px solid var(--app-bg);color:var(--app-text)}
+.openapi-spec-view .swagger-ui textarea:focus{border-color:var(--app-surface-hover)}
+.openapi-spec-view .swagger-ui textarea[disabled]{background-color:var(--app-surface);border-color:var(--app-surface);color:var(--app-text-muted)}
+.openapi-spec-view .swagger-ui select{background:var(--app-bg) url("data:image/svg+xml;charset=utf-8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 20\"><path fill=\"%2367718D\" d=\"M13.418 7.859a.695.695 0 0 1 .978 0 .68.68 0 0 1 0 .969l-3.908 3.83a.697.697 0 0 1-.979 0l-3.908-3.83a.68.68 0 0 1 0-.969.695.695 0 0 1 .978 0L10 11z\"/></svg>") right 10px center no-repeat;border-color:var(--app-border);box-shadow:none;color:var(--app-text);outline:none}
+.openapi-spec-view .swagger-ui select[multiple]{background:var(--app-bg)}
+.openapi-spec-view .swagger-ui select:focus{border-color:var(--app-surface-hover)}
+.openapi-spec-view .swagger-ui input::-moz-placeholder,.openapi-spec-view .swagger-ui textarea::-moz-placeholder{color:var(--app-text);opacity:.5}
+.openapi-spec-view .swagger-ui input::placeholder,.openapi-spec-view .swagger-ui textarea::placeholder{color:var(--app-text);opacity:.5}
+.openapi-spec-view .swagger-ui input.invalid,.openapi-spec-view .swagger-ui select.invalid,.openapi-spec-view .swagger-ui textarea.invalid{background:var(--app-bg);border-color:#ff6b6b}
+/* Top bar (rarely mounted with this app's default BaseLayout, but harmless/defensive to cover). */
+.openapi-spec-view .swagger-ui .topbar{background:var(--app-surface)}
+.openapi-spec-view .swagger-ui .topbar .download-url-wrapper .download-url-button{background:#1d632e;color:var(--app-text)}
+.openapi-spec-view .swagger-ui .topbar .download-url-wrapper .download-url-input{border-color:#1d632e}
+.openapi-spec-view .swagger-ui .topbar .download-url-wrapper .download-url-input.failed{color:#ff6b6b}
+/* "Authorize" dialog and its loading spinner. */
+.openapi-spec-view .swagger-ui .dialog-ux .modal-ux{background-color:var(--app-surface);border:none;color:var(--app-text)}
+.openapi-spec-view .swagger-ui .dialog-ux .modal-ux-header{border-color:var(--app-border)}
+.openapi-spec-view .swagger-ui .dialog-ux .modal-ux-header .close-modal svg{fill:var(--app-text)}
+.openapi-spec-view .swagger-ui .dialog-ux .modal-ux h2,.openapi-spec-view .swagger-ui .dialog-ux .modal-ux h3,.openapi-spec-view .swagger-ui .dialog-ux .modal-ux h4,.openapi-spec-view .swagger-ui .dialog-ux .modal-ux h5,.openapi-spec-view .swagger-ui .dialog-ux .modal-ux label,.openapi-spec-view .swagger-ui .dialog-ux .modal-ux p{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .dialog-ux .modal-ux .scopes a{color:var(--app-surface-hover)}
+.openapi-spec-view .swagger-ui .dialog-ux .modal-ux .btn.modal-btn{border-color:#3ece90;color:#3ece90}
+.openapi-spec-view .swagger-ui .dialog-ux .modal-ux .btn.modal-btn.btn-done{border-color:var(--app-text);color:var(--app-text)}
+.openapi-spec-view .swagger-ui .dialog-ux .modal-ux .auth-container{border-color:var(--app-border)}
+.openapi-spec-view .swagger-ui .dialog-ux .modal-ux .checkbox input[type=checkbox]+label>.item{background:var(--app-surface-hover);box-shadow:none;color:var(--app-text)!important}
+.openapi-spec-view .swagger-ui .dialog-ux .modal-ux .checkbox input[type=checkbox]:checked+label>.item{background:var(--app-surface-hover) url("data:image/svg+xml;charset=utf-8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"8\" viewBox=\"3 7 10 8\"><path fill=\"%23FFFFFF\" fill-rule=\"evenodd\" d=\"M6.333 15 3 11.667l1.333-1.334 2 2L11.667 7 13 8.333z\"/></svg>") 50% no-repeat}
+.openapi-spec-view .swagger-ui .loading-container .loading:before{border-color:var(--app-text) var(--app-surface-hover) var(--app-surface-hover)}
+.openapi-spec-view .swagger-ui .loading-container .loading:after{color:var(--app-text)}
+/* Servers/scheme selector bar, above the operation list. */
+.openapi-spec-view .swagger-ui .scheme-container{background:var(--app-bg);box-shadow:none;border-bottom:1px solid var(--app-border)}
+.openapi-spec-view .swagger-ui .scheme-container .schemes>.schemes-server-container>label{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .scheme-container .btn.authorize{border-color:#3ece90;color:#3ece90}
+.openapi-spec-view .swagger-ui .scheme-container .btn.authorize svg{fill:#3ece90}
+/* Info section: title, description, base URL, contact/license links. */
+.openapi-spec-view .swagger-ui .info .title,.openapi-spec-view .swagger-ui .info h1,.openapi-spec-view .swagger-ui .info h2,.openapi-spec-view .swagger-ui .info h3,.openapi-spec-view .swagger-ui .info h4,.openapi-spec-view .swagger-ui .info h5{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .info .base-url,.openapi-spec-view .swagger-ui .info li,.openapi-spec-view .swagger-ui .info p,.openapi-spec-view .swagger-ui .info table{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .info a{color:var(--app-surface-hover)}
+.openapi-spec-view .swagger-ui .info .title small{background:var(--app-surface-muted)}
+.openapi-spec-view .swagger-ui .info .title small.version-stamp{background:#1d632e}
+.openapi-spec-view .swagger-ui .info .errors-wrapper{background:var(--app-surface-muted);border-color:#ff6b6b}
+.openapi-spec-view .swagger-ui .info .errors-wrapper h4,.openapi-spec-view .swagger-ui .info .errors-wrapper span{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .info .errors-wrapper .btn.errors__clear-btn{border-color:var(--app-text);color:var(--app-text)}
+/* Copy-to-clipboard / download-contents floating buttons on code blocks. */
+.openapi-spec-view .swagger-ui .copy-to-clipboard,.openapi-spec-view .swagger-ui .download-contents{background:var(--app-surface-hover);color:var(--app-text)}
+.openapi-spec-view .swagger-ui .copy-to-clipboard button,.openapi-spec-view .swagger-ui .download-contents button{background:url("data:image/svg+xml;charset=utf-8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"15\" aria-hidden=\"true\"><path fill=\"%23FFFFFF\" fill-rule=\"evenodd\" d=\"M4 12h4v1H4zm5-6H4v1h5zm2 3V7l-3 3 3 3v-2h5V9zM6.5 8H4v1h2.5zM4 11h2.5v-1H4zm9 1h1v2c-.02.28-.11.52-.3.7s-.42.28-.7.3H3c-.55 0-1-.45-1-1V3c0-.55.45-1 1-1h3c0-1.11.89-2 2-2s2 .89 2 2h3c.55 0 1 .45 1 1v5h-1V5H3v9h10zM4 4h8c0-.55-.45-1-1-1h-1c-.55 0-1-.45-1-1s-.45-1-1-1-1 .45-1 1-.45 1-1 1H5c-.55 0-1 .45-1 1\"/></svg>") 50% no-repeat}
+/* Endpoint group headings ("Tags" in the spec). */
+.openapi-spec-view .swagger-ui .opblock-tag{border-bottom-color:var(--app-border);color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock-tag small{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock-tag a.link{color:var(--app-surface-hover)}
+/* Each endpoint's expandable panel ("opblock"), one block per HTTP method — background/
+   border/section-header/tab-underline/method-badge tint. These per-method accent colors are
+   kept close to swagger-ui's own values (verb color-coding is meaningful, not decorative) —
+   only the neutral chrome around them (text, generic borders) is remapped onto the app
+   palette, same as everywhere else in this block. */
+.openapi-spec-view .swagger-ui .opblock.opblock-post{background:#112929;border-color:#104834}
+.openapi-spec-view .swagger-ui .opblock.opblock-post thead tr td,.openapi-spec-view .swagger-ui .opblock.opblock-post thead tr th{border-color:#104834;opacity:1}
+.openapi-spec-view .swagger-ui .opblock.opblock-post .opblock-section-header{background:#14392c;border-bottom:1px solid #104834;border-top:1px solid #104834}
+.openapi-spec-view .swagger-ui .opblock.opblock-post .opblock-section-header .tab-header .tab-item .opblock-title span:after{background:#00b572}
+.openapi-spec-view .swagger-ui .opblock.opblock-post .opblock-summary{border-bottom:none;border-color:#104834}
+.openapi-spec-view .swagger-ui .opblock.opblock-post .opblock-summary-control:focus{outline:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-post .opblock-summary-method{background:#00b572;color:var(--app-surface);text-shadow:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-post .opblock-body>.opblock-description-wrapper,.openapi-spec-view .swagger-ui .opblock.opblock-post .opblock-body>.opblock-title_normal{border-top:1px solid #104834}
+.openapi-spec-view .swagger-ui .opblock.opblock-deprecated{background:#272c34;border-color:#495361}
+.openapi-spec-view .swagger-ui .opblock.opblock-deprecated thead tr td,.openapi-spec-view .swagger-ui .opblock.opblock-deprecated thead tr th{border-color:#495361;opacity:1}
+.openapi-spec-view .swagger-ui .opblock.opblock-deprecated .opblock-section-header{background:#262e36;border-bottom:1px solid #495361;border-top:1px solid #495361}
+.openapi-spec-view .swagger-ui .opblock.opblock-deprecated .opblock-section-header .tab-header .tab-item .opblock-title span:after{background:#6a6a6a}
+.openapi-spec-view .swagger-ui .opblock.opblock-deprecated .opblock-summary{border-bottom:none;border-color:#495361}
+.openapi-spec-view .swagger-ui .opblock.opblock-deprecated .opblock-summary-control:focus{outline:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-deprecated .opblock-summary-method{background:#6a6a6a;color:var(--app-surface);text-shadow:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-deprecated .opblock-body>.opblock-description-wrapper,.openapi-spec-view .swagger-ui .opblock.opblock-deprecated .opblock-body>.opblock-title_normal{border-top:1px solid #495361}
+.openapi-spec-view .swagger-ui .opblock.opblock-put{background:#27201e;border-color:#523524}
+.openapi-spec-view .swagger-ui .opblock.opblock-put thead tr td,.openapi-spec-view .swagger-ui .opblock.opblock-put thead tr th{border-color:#523524;opacity:1}
+.openapi-spec-view .swagger-ui .opblock.opblock-put .opblock-section-header{background:#9a5b3e;border-bottom:1px solid #523524;border-top:1px solid #523524}
+.openapi-spec-view .swagger-ui .opblock.opblock-put .opblock-section-header .tab-header .tab-item .opblock-title span:after{background:#ff7d35}
+.openapi-spec-view .swagger-ui .opblock.opblock-put .opblock-summary{border-bottom:none;border-color:#523524}
+.openapi-spec-view .swagger-ui .opblock.opblock-put .opblock-summary-control:focus{outline:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-put .opblock-summary-method{background:#ff7d35;color:var(--app-surface);text-shadow:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-put .opblock-body>.opblock-description-wrapper,.openapi-spec-view .swagger-ui .opblock.opblock-put .opblock-body>.opblock-title_normal{border-top:1px solid #523524}
+.openapi-spec-view .swagger-ui .opblock.opblock-get{background:#182536;border-color:#294262}
+.openapi-spec-view .swagger-ui .opblock.opblock-get thead tr td,.openapi-spec-view .swagger-ui .opblock.opblock-get thead tr th{border-color:#294262;opacity:1}
+.openapi-spec-view .swagger-ui .opblock.opblock-get .opblock-section-header{background:#1c3043;border-bottom:1px solid #294262;border-top:1px solid #294262}
+.openapi-spec-view .swagger-ui .opblock.opblock-get .opblock-section-header .tab-header .tab-item .opblock-title span:after{background:#55a1ff}
+.openapi-spec-view .swagger-ui .opblock.opblock-get .opblock-summary{border-bottom:none;border-color:#294262}
+.openapi-spec-view .swagger-ui .opblock.opblock-get .opblock-summary-control:focus{outline:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-get .opblock-summary-method{background:#55a1ff;color:var(--app-surface);text-shadow:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-get .opblock-body>.opblock-description-wrapper,.openapi-spec-view .swagger-ui .opblock.opblock-get .opblock-body>.opblock-title_normal{border-top:1px solid #294262}
+.openapi-spec-view .swagger-ui .opblock.opblock-delete{background:#241a20;border-color:#4b2420}
+.openapi-spec-view .swagger-ui .opblock.opblock-delete thead tr td,.openapi-spec-view .swagger-ui .opblock.opblock-delete thead tr th{border-color:#4b2420;opacity:1}
+.openapi-spec-view .swagger-ui .opblock.opblock-delete .opblock-section-header{background:#2f2020;border-bottom:1px solid #4b2420;border-top:1px solid #4b2420}
+.openapi-spec-view .swagger-ui .opblock.opblock-delete .opblock-section-header .tab-header .tab-item .opblock-title span:after{background:#eb6156}
+.openapi-spec-view .swagger-ui .opblock.opblock-delete .opblock-summary{border-bottom:none;border-color:#4b2420}
+.openapi-spec-view .swagger-ui .opblock.opblock-delete .opblock-summary-control:focus{outline:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-delete .opblock-summary-method{background:#eb6156;color:var(--app-surface);text-shadow:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-delete .opblock-body>.opblock-description-wrapper,.openapi-spec-view .swagger-ui .opblock.opblock-delete .opblock-body>.opblock-title_normal{border-top:1px solid #4b2420}
+.openapi-spec-view .swagger-ui .opblock.opblock-patch{background:#11282f;border-color:#16494b}
+.openapi-spec-view .swagger-ui .opblock.opblock-patch thead tr td,.openapi-spec-view .swagger-ui .opblock.opblock-patch thead tr th{border-color:#16494b;opacity:1}
+.openapi-spec-view .swagger-ui .opblock.opblock-patch .opblock-section-header{background:#113239;border-bottom:1px solid #16494b;border-top:1px solid #16494b}
+.openapi-spec-view .swagger-ui .opblock.opblock-patch .opblock-section-header .tab-header .tab-item .opblock-title span:after{background:#03b7bf}
+.openapi-spec-view .swagger-ui .opblock.opblock-patch .opblock-summary{border-bottom:none;border-color:#16494b}
+.openapi-spec-view .swagger-ui .opblock.opblock-patch .opblock-summary-control:focus{outline:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-patch .opblock-summary-method{background:#03b7bf;color:var(--app-surface);text-shadow:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-patch .opblock-body>.opblock-description-wrapper,.openapi-spec-view .swagger-ui .opblock.opblock-patch .opblock-body>.opblock-title_normal{border-top:1px solid #16494b}
+.openapi-spec-view .swagger-ui .opblock.opblock-head{background:#282231;border-color:#44336a}
+.openapi-spec-view .swagger-ui .opblock.opblock-head thead tr td,.openapi-spec-view .swagger-ui .opblock.opblock-head thead tr th{border-color:#44336a;opacity:1}
+.openapi-spec-view .swagger-ui .opblock.opblock-head .opblock-section-header{background:#352c45;border-bottom:1px solid #44336a;border-top:1px solid #44336a}
+.openapi-spec-view .swagger-ui .opblock.opblock-head .opblock-section-header .tab-header .tab-item .opblock-title span:after{background:#b889ff}
+.openapi-spec-view .swagger-ui .opblock.opblock-head .opblock-summary{border-bottom:none;border-color:#44336a}
+.openapi-spec-view .swagger-ui .opblock.opblock-head .opblock-summary-control:focus{outline:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-head .opblock-summary-method{background:#b889ff;color:var(--app-surface);text-shadow:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-head .opblock-body>.opblock-description-wrapper,.openapi-spec-view .swagger-ui .opblock.opblock-head .opblock-body>.opblock-title_normal{border-top:1px solid #44336a}
+.openapi-spec-view .swagger-ui .opblock.opblock-options{background:#202c3c;border-color:#33465e}
+.openapi-spec-view .swagger-ui .opblock.opblock-options thead tr td,.openapi-spec-view .swagger-ui .opblock.opblock-options thead tr th{border-color:#33465e;opacity:1}
+.openapi-spec-view .swagger-ui .opblock.opblock-options .opblock-section-header{background:#314558;border-bottom:1px solid #33465e;border-top:1px solid #33465e}
+.openapi-spec-view .swagger-ui .opblock.opblock-options .opblock-section-header .tab-header .tab-item .opblock-title span:after{background:#6895c8}
+.openapi-spec-view .swagger-ui .opblock.opblock-options .opblock-summary{border-bottom:none;border-color:#33465e}
+.openapi-spec-view .swagger-ui .opblock.opblock-options .opblock-summary-control:focus{outline:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-options .opblock-summary-method{background:#6895c8;color:var(--app-surface);text-shadow:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-options .opblock-body>.opblock-description-wrapper,.openapi-spec-view .swagger-ui .opblock.opblock-options .opblock-body>.opblock-title_normal{border-top:1px solid #33465e}
+.openapi-spec-view .swagger-ui .opblock.opblock-query{background:#2a1a28;border-color:#4a2848}
+.openapi-spec-view .swagger-ui .opblock.opblock-query thead tr td,.openapi-spec-view .swagger-ui .opblock.opblock-query thead tr th{border-color:#4a2848;opacity:1}
+.openapi-spec-view .swagger-ui .opblock.opblock-query .opblock-section-header{background:#3a2238;border-bottom:1px solid #4a2848;border-top:1px solid #4a2848}
+.openapi-spec-view .swagger-ui .opblock.opblock-query .opblock-section-header .tab-header .tab-item .opblock-title span:after{background:#d977c6}
+.openapi-spec-view .swagger-ui .opblock.opblock-query .opblock-summary{border-bottom:none;border-color:#4a2848}
+.openapi-spec-view .swagger-ui .opblock.opblock-query .opblock-summary-control:focus{outline:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-query .opblock-summary-method{background:#d977c6;color:var(--app-surface);text-shadow:none}
+.openapi-spec-view .swagger-ui .opblock.opblock-query .opblock-body>.opblock-description-wrapper,.openapi-spec-view .swagger-ui .opblock.opblock-query .opblock-body>.opblock-title_normal{border-top:1px solid #4a2848}
+/* Shared opblock chrome: section header, buttons, code/curl blocks, model/response text. */
+.openapi-spec-view .swagger-ui .opblock .opblock-section-header{box-shadow:none}
+.openapi-spec-view .swagger-ui .opblock .opblock-section-header h4,.openapi-spec-view .swagger-ui .opblock .opblock-section-header label{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock .opblock-section-header .try-out__btn{border-color:var(--app-border);box-shadow:none;color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock .opblock-section-header .try-out__btn.cancel{border-color:#ff6b6b;color:#ff6b6b}
+.openapi-spec-view .swagger-ui .opblock .btn.json-schema-form-item-add,.openapi-spec-view .swagger-ui .opblock .btn.json-schema-form-item-remove{border-color:var(--app-text);color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock .validation-errors.errors-wrapper{background:var(--app-surface-muted);border-color:#ff6b6b;color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock .body-param-options label span,.openapi-spec-view .swagger-ui .opblock .opblock-description-wrapper i,.openapi-spec-view .swagger-ui .opblock .opblock-description-wrapper p,.openapi-spec-view .swagger-ui .opblock .opblock-external-docs-wrapper,.openapi-spec-view .swagger-ui .opblock .opblock-summary-description,.openapi-spec-view .swagger-ui .opblock .opblock-summary-operation-id,.openapi-spec-view .swagger-ui .opblock .opblock-summary-path,.openapi-spec-view .swagger-ui .opblock .opblock-summary-path__deprecated,.openapi-spec-view .swagger-ui .opblock .opblock-title_normal,.openapi-spec-view .swagger-ui .opblock .parameter__in,.openapi-spec-view .swagger-ui .opblock .parameter__name,.openapi-spec-view .swagger-ui .opblock .parameter__type,.openapi-spec-view .swagger-ui .opblock .parameter__type .prop-format,.openapi-spec-view .swagger-ui .opblock .response-col_links,.openapi-spec-view .swagger-ui .opblock .response-col_status,.openapi-spec-view .swagger-ui .opblock .response-col_undocumented{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock .opblock-external-docs a.link{color:var(--app-surface-hover)}
+.openapi-spec-view .swagger-ui .opblock .parameter__name.required span,.openapi-spec-view .swagger-ui .opblock .parameter__name.required:after{color:#ff6b6b}
+.openapi-spec-view .swagger-ui .opblock .parameter__empty_value_toggle{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock .btn.execute{background:var(--app-surface-hover);border-color:var(--app-surface-hover);color:var(--app-surface)}
+.openapi-spec-view .swagger-ui .opblock .btn.btn-clear{border-color:var(--app-text);color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock .highlight-code pre.microlight{background:var(--app-surface)!important;color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock .curl-command .btn{background:var(--app-surface-muted)!important;border-color:var(--app-surface)!important;color:#ebebeb!important}
+.openapi-spec-view .swagger-ui .opblock .curl-command .btn.active{background:var(--app-surface)!important;color:var(--app-text)!important}
+.openapi-spec-view .swagger-ui .opblock pre.microlight{background:var(--app-surface)!important;color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock .model-example .tab button{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock .model-example .tabitem:after{background:#6b757a}
+.openapi-spec-view .swagger-ui .opblock .responses-inner h4,.openapi-spec-view .swagger-ui .opblock .responses-inner h5{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .opblock .response-control-media-type--accept-controller select.content-type{border-color:#4ac966}
+.openapi-spec-view .swagger-ui .opblock .response-control-media-type--accept-controller .response-control-media-type__accept-message{color:#4ac966}
+/* Model/schema toggle, property list, and the boxed model viewer. */
+.openapi-spec-view .swagger-ui .model-toggle:after{background:url("data:image/svg+xml;charset=utf-8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\"><path fill=\"%23FFFFFF\" d=\"M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z\"/></svg>") 50% no-repeat;background-size:100%}
+.openapi-spec-view .swagger-ui .model .prop-type{color:#b68ae1}
+.openapi-spec-view .swagger-ui .model .brace-close,.openapi-spec-view .swagger-ui .model .brace-open,.openapi-spec-view .swagger-ui .model .description,.openapi-spec-view .swagger-ui .model .prop-format,.openapi-spec-view .swagger-ui .model .property,.openapi-spec-view .swagger-ui .model .property-row{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .model .property-row.required .star{color:#ff6b6b}
+.openapi-spec-view .swagger-ui .model-box{background:var(--app-surface)}
+.openapi-spec-view .swagger-ui .model-box .model,.openapi-spec-view .swagger-ui .model-box .model-title{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .model-box-control:focus{outline:none}
+.openapi-spec-view .swagger-ui .model-box-control:not(.prop){color:var(--app-text)}
+/* Newer OpenAPI 3.1 ("json-schema-2020-12") schema viewer, used for JSON Schema-flavored specs. */
+.openapi-spec-view .swagger-ui .json-schema-2020-12,.openapi-spec-view .swagger-ui .json-schema-2020-12 button{background:var(--app-surface)}
+.openapi-spec-view .swagger-ui .json-schema-2020-12 button svg{fill:var(--app-text)}
+.openapi-spec-view .swagger-ui .json-schema-2020-12 a{color:var(--app-surface-hover)}
+.openapi-spec-view .swagger-ui .json-schema-2020-12__title{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .json-schema-2020-12-property--required>.json-schema-2020-12:first-of-type>.json-schema-2020-12-head .json-schema-2020-12__title:after{color:#ff6b6b}
+.openapi-spec-view .swagger-ui .json-schema-2020-12-expand-deep-button{color:var(--app-text-muted)}
+.openapi-spec-view .swagger-ui .json-schema-2020-12-body{border-color:var(--app-border)}
+.openapi-spec-view .swagger-ui .json-schema-2020-12-keyword__name--primary{color:var(--app-text)}
+.openapi-spec-view .swagger-ui .json-schema-2020-12-keyword__name--secondary,.openapi-spec-view .swagger-ui .json-schema-2020-12-keyword__value--secondary{color:var(--app-text-muted)}
+.openapi-spec-view .swagger-ui .json-schema-2020-12-keyword__value--warning{border-color:#ff6b6b;color:#ff6b6b}
+.openapi-spec-view .swagger-ui .json-schema-2020-12-keyword--\$vocabulary ul{border-color:var(--app-border)}
+.openapi-spec-view .swagger-ui .json-schema-2020-12-keyword--patternProperties .json-schema-2020-12__title:after,.openapi-spec-view .swagger-ui .json-schema-2020-12-keyword--patternProperties .json-schema-2020-12__title:before,.openapi-spec-view .swagger-ui .json-schema-2020-12__attribute--primary{color:#9898ff}
+.openapi-spec-view .swagger-ui .json-schema-2020-12__attribute--muted{color:var(--app-text-muted)}
+.openapi-spec-view .swagger-ui .json-schema-2020-12__attribute--warning{color:#ff6b6b}
+.openapi-spec-view .swagger-ui .json-schema-2020-12-json-viewer__name--secondary,.openapi-spec-view .swagger-ui .json-schema-2020-12-json-viewer__value--secondary{color:var(--app-text-muted)}
+.openapi-spec-view .swagger-ui .json-schema-2020-12__constraint{background:#9898ff;color:var(--app-surface)}
+.openapi-spec-view .swagger-ui .json-schema-2020-12__constraint--string{background:#d4aa53}
+/* "Schemas" section at the bottom of the page (the models list). */
+.openapi-spec-view .swagger-ui section.models,.openapi-spec-view .swagger-ui section.models h4{border-color:var(--app-border)}
+.openapi-spec-view .swagger-ui section.models h4 span{color:var(--app-text)}
+.openapi-spec-view .swagger-ui section.models .model-container{background:var(--app-surface)}
+.openapi-spec-view .swagger-ui section.models .models-control:focus{outline:none}
+.openapi-spec-view .swagger-ui section.models .models-control svg{fill:var(--app-text-muted)}
