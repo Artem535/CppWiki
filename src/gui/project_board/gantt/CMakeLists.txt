@@ -23,6 +23,7 @@ target_link_libraries(cppwiki_project_board_gantt
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets
+        Qt6::PrintSupport
         KDAB::kdchart
 )
 
