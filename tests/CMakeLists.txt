@@ -413,6 +413,24 @@ add_test(
   COMMAND cppwiki_project_board_gantt_tests
 )
 
+# Standalone Project board Kanban widget (issue #113/#114), not yet wired into cppwiki_app; see
+# src/gui/project_board/kanban/CMakeLists.txt for the library target this links against.
+add_executable(cppwiki_kanban_board_tests
+  gui/kanban_board_model_test.cc
+)
+
+target_link_libraries(cppwiki_kanban_board_tests
+  PRIVATE
+    cppwiki_kanban_board
+)
+
+cppwiki_apply_common_options(cppwiki_kanban_board_tests)
+
+add_test(
+  NAME cppwiki_kanban_board_tests
+  COMMAND cppwiki_kanban_board_tests
+)
+
 if(CPPWIKI_ENABLE_CBLITE_STORAGE)
   add_executable(cppwiki_cblite_repository_tests
     storage/cblite_repository_test.cc

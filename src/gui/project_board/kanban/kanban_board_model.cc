@@ -1,6 +1,7 @@
 #include "gui/project_board/kanban/kanban_board_model.h"
 
 #include <QSet>
+#include <QUuid>
 #include <QVariantMap>
 #include <QVector>
 #include <utility>
@@ -13,6 +14,10 @@ struct SwimlaneInfo {
   QString id;
   QString label;
 };
+
+QString FreshId(const QString& prefix) {
+  return prefix + QUuid::createUuid().toString(QUuid::WithoutBraces);
+}
 
 }  // namespace
 
@@ -114,6 +119,58 @@ auto KanbanBoardModel::IsKnownEpicId(const QString& task_id) const -> bool {
     }
   }
   return false;
+}
+
+void KanbanBoardModel::requestEditTask(const QString& task_id) {
+  emit editTaskRequested(task_id);
+}
+
+void KanbanBoardModel::addColumn(const QString& label) {
+  KanbanColumn column;
+  column.id = FreshId(QStringLiteral("column-"));
+  column.label = label;
+  document_.columns.append(column);
+  emit boardChanged();
+}
+
+void KanbanBoardModel::addTask(const QString& text, const QString& column_id, int priority,
+                               int progress) {
+  KanbanTask task;
+  task.id = FreshId(QStringLiteral("task-"));
+  task.text = text;
+  task.column = column_id;
+  task.priority = priority;
+  task.progress = progress;
+  document_.tasks.append(task);
+  emit boardChanged();
+}
+
+void KanbanBoardModel::updateTask(const QString& task_id, const QString& text,
+                                  const QString& column_id, int priority, int progress) {
+  for (auto& task : document_.tasks) {
+    if (task.id != task_id) {
+      continue;
+    }
+    task.text = text;
+    task.column = column_id;
+    task.priority = priority;
+    task.progress = progress;
+    emit boardChanged();
+    return;
+  }
+}
+
+auto KanbanBoardModel::FindTask(const QString& task_id) const -> std::optional<KanbanTask> {
+  for (const auto& task : document_.tasks) {
+    if (task.id == task_id) {
+      return task;
+    }
+  }
+  return std::nullopt;
+}
+
+auto KanbanBoardModel::FirstColumnId() const -> QString {
+  return document_.columns.isEmpty() ? QString() : document_.columns.first().id;
 }
 
 }  // namespace cppwiki::gui::kanban

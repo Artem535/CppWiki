@@ -8,7 +8,10 @@ import QtQuick.Controls 2.15
 // drag gesture (see KanbanCard.qml / KanbanColumnCell.qml).
 Rectangle {
     id: root
-    color: "#fafbfc"
+    // Colors lifted from third_party/qlementine/showcase/resources/themes/dark.json (this app's
+    // only theme) -- the board used to hardcode a light Material-ish palette that looked jarring
+    // next to the rest of the (dark) app.
+    color: "#1f2127" // backgroundColorMain1
 
     readonly property int columnWidth: 220
     readonly property int columnSpacing: 10
@@ -38,11 +41,11 @@ Rectangle {
                         width: root.columnWidth
                         height: 30
                         radius: 4
-                        color: "#37474f"
+                        color: "#333848" // backgroundColorMain3
                         Text {
                             anchors.centerIn: parent
                             text: modelData.label
-                            color: "#ffffff"
+                            color: "#ffffff" // secondaryColor
                             font.bold: true
                             font.pixelSize: 12
                         }
@@ -66,7 +69,7 @@ Rectangle {
                               : "◆ " + swimlaneRow.rowData.swimlaneLabel
                         font.bold: true
                         font.pixelSize: 13
-                        color: "#455a64"
+                        color: "#e8eaf0" // light text -- readable against the dark background
                     }
 
                     Row {

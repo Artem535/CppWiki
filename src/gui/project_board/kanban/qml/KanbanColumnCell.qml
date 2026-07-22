@@ -16,9 +16,10 @@ Rectangle {
 
     readonly property int cardHeight: 78
 
-    color: dropArea.containsDrag ? "#e3f2fd" : "#f7f8fa"
+    // Colors from third_party/qlementine/showcase/resources/themes/dark.json.
+    color: dropArea.containsDrag ? "#2c3448" : "#282b33" // primaryColorDisabled / backgroundColorMain2
     border.width: 1
-    border.color: dropArea.containsDrag ? "#63b3ff" : "#e0e5ea"
+    border.color: dropArea.containsDrag ? "#5086ff" : "#40485a" // primaryColor / borderColor
     radius: 4
     height: Math.max(56, cards.length * cardHeight + 12)
 

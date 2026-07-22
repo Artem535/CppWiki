@@ -4,8 +4,10 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <optional>
 
 #include "gui/project_board/kanban/kanban_board_document.h"
+#include "gui/project_board/kanban/kanban_task.h"
 
 namespace cppwiki::gui::kanban {
 
@@ -43,8 +45,29 @@ class KanbanBoardModel final : public QObject {
   Q_INVOKABLE void moveCard(const QString& task_id, const QString& column_id,
                             const QString& swimlane_id);
 
+  // Called from KanbanCard.qml's double-click gesture; just re-emits editTaskRequested so
+  // KanbanBoardWidget (C++) can open a native edit dialog — QML has no business owning dialog UI.
+  Q_INVOKABLE void requestEditTask(const QString& task_id);
+
+  // Appends a new status column with a fresh, board-unique id derived from `label`.
+  void addColumn(const QString& label);
+
+  // Appends a new, unparented (no epic) task with a fresh id into `column_id`.
+  void addTask(const QString& text, const QString& column_id, int priority, int progress);
+
+  // Updates an existing task's Kanban-editable fields in place; a no-op if `task_id` doesn't
+  // match any task currently on the board.
+  void updateTask(const QString& task_id, const QString& text, const QString& column_id,
+                  int priority, int progress);
+
+  [[nodiscard]] auto FindTask(const QString& task_id) const -> std::optional<KanbanTask>;
+  // The board's first status column id, or an empty string if the board has none — used to give
+  // a newly-created task a sensible default status.
+  [[nodiscard]] auto FirstColumnId() const -> QString;
+
  signals:
   void boardChanged();
+  void editTaskRequested(const QString& task_id);
 
  private:
   [[nodiscard]] auto IsKnownEpicId(const QString& task_id) const -> bool;

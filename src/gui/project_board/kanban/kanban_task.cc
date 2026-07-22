@@ -30,6 +30,19 @@ auto FromStringList(const QStringList& values) -> QJsonArray {
 
 }  // namespace
 
+auto PriorityLabel(int priority) -> QString {
+  switch (priority) {
+    case kPriorityLow:
+      return QStringLiteral("Low");
+    case kPriorityMedium:
+      return QStringLiteral("Medium");
+    case kPriorityHigh:
+      return QStringLiteral("High");
+    default:
+      return QString();
+  }
+}
+
 auto KanbanTask::FromJson(const QJsonObject& obj) -> KanbanTask {
   KanbanTask task;
   task.id = obj.value(QLatin1String("id")).toString();

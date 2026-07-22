@@ -26,9 +26,10 @@ Rectangle {
     y: visualIndex * cellHeight
     z: dragArea.drag.active ? 1000 : 1
     radius: 6
-    color: dragArea.drag.active ? "#eef5ff" : "#ffffff"
+    // Colors from third_party/qlementine/showcase/resources/themes/dark.json.
+    color: dragArea.drag.active ? "#333848" : "#282b33" // backgroundColorMain3 / backgroundColorMain2
     border.width: dragArea.drag.active ? 2 : 1
-    border.color: dragArea.drag.active ? "#63b3ff" : "#d7dce1"
+    border.color: dragArea.drag.active ? "#5086ff" : "#40485a" // primaryColor / borderColor
 
     Drag.active: dragArea.drag.active
     Drag.hotSpot.x: width / 2
@@ -36,10 +37,10 @@ Rectangle {
     Drag.source: card
 
     function priorityColor(priority) {
-        if (priority === 3) return "#e53935"
-        if (priority === 2) return "#fb8c00"
-        if (priority === 1) return "#43a047"
-        return "#b0bec5"
+        if (priority === 3) return "#e96b72" // statusColorError
+        if (priority === 2) return "#fbc064" // statusColorWarning
+        if (priority === 1) return "#2bb5a0" // statusColorSuccess
+        return "#4c5368" // neutralColor
     }
 
     Rectangle {
@@ -65,7 +66,7 @@ Rectangle {
         elide: Text.ElideRight
         maximumLineCount: 2
         font.pixelSize: 12
-        color: "#263238"
+        color: "#e8eaf0" // light text, readable against the dark card background
     }
 
     Rectangle {
@@ -76,7 +77,7 @@ Rectangle {
         anchors.margins: 8
         height: 4
         radius: 2
-        color: "#e0e5ea"
+        color: "#40485a" // borderColor
 
         Rectangle {
             anchors.left: parent.left
@@ -84,7 +85,7 @@ Rectangle {
             anchors.bottom: parent.bottom
             width: parent.width * Math.max(0, Math.min(100, card.taskData.progress)) / 100
             radius: 2
-            color: "#4caf50"
+            color: "#2bb5a0" // statusColorSuccess
         }
     }
 
@@ -93,6 +94,7 @@ Rectangle {
         anchors.fill: parent
         drag.target: card
         cursorShape: Qt.OpenHandCursor
+        onDoubleClicked: kanbanModel.requestEditTask(card.taskId)
 
         property Item homeParent: null
         property real homeX: 0
