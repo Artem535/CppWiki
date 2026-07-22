@@ -52,13 +52,20 @@ class KanbanBoardModel final : public QObject {
   // Appends a new status column with a fresh, board-unique id derived from `label`.
   void addColumn(const QString& label);
 
-  // Appends a new, unparented (no epic) task with a fresh id into `column_id`.
-  void addTask(const QString& text, const QString& column_id, int priority, int progress);
+  // Appends a new, unparented task with a fresh id into `column_id`. `is_epic` sets the task's
+  // type to "summary" (see KanbanTask::IsEpic()), turning it into its own swimlane instead of a
+  // regular card -- the native "Add epic" entry point (see KanbanBoardWidget) funnels here with
+  // is_epic == true, "Add task" with is_epic == false; both share this one method since an epic
+  // is just a task with a different type, not a different model.
+  void addTask(const QString& text, const QString& column_id, int priority, int progress,
+               bool is_epic, const QString& description, const QStringList& tags,
+               const QStringList& users);
 
   // Updates an existing task's Kanban-editable fields in place; a no-op if `task_id` doesn't
   // match any task currently on the board.
   void updateTask(const QString& task_id, const QString& text, const QString& column_id,
-                  int priority, int progress);
+                  int priority, int progress, bool is_epic, const QString& description,
+                  const QStringList& tags, const QStringList& users);
 
   [[nodiscard]] auto FindTask(const QString& task_id) const -> std::optional<KanbanTask>;
   // The board's first status column id, or an empty string if the board has none — used to give

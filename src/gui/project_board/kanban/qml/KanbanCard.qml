@@ -15,13 +15,16 @@ Rectangle {
     property var taskData
     readonly property string taskId: taskData.id
     property int visualIndex: 0
-    readonly property int cellHeight: 78
+    // Taller than a bare priority+progress card to leave room for the tags row below the title
+    // (see #131 follow-up: tags/assignee were dropped from the native card compared to the web
+    // Kanban's cards). Kept in sync with KanbanColumnCell.qml's cardHeight.
+    readonly property int cellHeight: 92
     // Top-level Item to reparent into while dragging, so the card paints above every swimlane
     // row rather than just above its own siblings. Passed down from KanbanBoard.qml.
     property Item dragOverlay: null
 
     width: 208
-    height: 70
+    height: 84
     x: 0
     y: visualIndex * cellHeight
     z: dragArea.drag.active ? 1000 : 1
@@ -54,12 +57,36 @@ Rectangle {
         color: card.priorityColor(card.taskData.priority)
     }
 
-    Text {
-        anchors.left: priorityDot.right
+    // First assignee's initial as a small round badge, mirroring the priority dot on the other
+    // corner -- a compact stand-in for the web card's assignee avatar (see #131 follow-up).
+    Rectangle {
+        id: assigneeBadge
+        visible: card.taskData.users !== undefined && card.taskData.users.length > 0
+        width: 18
+        height: 18
+        radius: 9
         anchors.right: parent.right
         anchors.top: parent.top
+        anchors.margins: 8
+        color: "#40485a" // borderColor
+
+        Text {
+            anchors.centerIn: parent
+            text: visible && card.taskData.users.length > 0
+                  ? card.taskData.users[0].charAt(0).toUpperCase() : ""
+            font.pixelSize: 9
+            font.bold: true
+            color: "#e8eaf0"
+        }
+    }
+
+    Text {
+        id: taskText
+        anchors.left: priorityDot.right
+        anchors.right: assigneeBadge.left
+        anchors.top: parent.top
         anchors.leftMargin: 6
-        anchors.rightMargin: 8
+        anchors.rightMargin: 6
         anchors.topMargin: 6
         text: card.taskData.text
         wrapMode: Text.WordWrap
@@ -67,6 +94,39 @@ Rectangle {
         maximumLineCount: 2
         font.pixelSize: 12
         color: "#e8eaf0" // light text, readable against the dark card background
+    }
+
+    // Tag chips, mirroring the web card's tag pills (see #131 follow-up).
+    Row {
+        id: tagsRow
+        visible: card.taskData.tags !== undefined && card.taskData.tags.length > 0
+        anchors.left: parent.left
+        anchors.leftMargin: 8
+        anchors.top: taskText.bottom
+        anchors.topMargin: 4
+        spacing: 4
+        clip: true
+        width: parent.width - 16
+
+        Repeater {
+            model: visible ? card.taskData.tags : []
+            delegate: Rectangle {
+                radius: 3
+                height: 16
+                width: tagLabel.width + 10
+                color: "#333848" // backgroundColorMain3
+                border.width: 1
+                border.color: "#40485a" // borderColor
+
+                Text {
+                    id: tagLabel
+                    anchors.centerIn: parent
+                    text: modelData
+                    font.pixelSize: 9
+                    color: "#c7cad6"
+                }
+            }
+        }
     }
 
     Rectangle {

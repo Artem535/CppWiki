@@ -35,9 +35,12 @@ constexpr auto kSampleBoardJson = R"JSON(
       "start": "2026-07-01", "duration": 1, "progress": 10, "column": "todo" },
 
     { "id": "task-1", "text": "Wire OIDC login button", "parent": "epic-auth",
-      "start": "2026-07-05", "duration": 3, "progress": 100, "column": "done", "priority": 2 },
+      "start": "2026-07-05", "duration": 3, "progress": 100, "column": "done", "priority": 2,
+      "users": ["artem"], "tags": ["auth"] },
     { "id": "task-2", "text": "Token refresh edge cases", "parent": "epic-auth",
-      "start": "2026-07-08", "duration": 2, "progress": 50, "column": "inProgress", "priority": 3 },
+      "start": "2026-07-08", "duration": 2, "progress": 50, "column": "inProgress", "priority": 3,
+      "users": ["artem"], "tags": ["auth", "security"],
+      "description": "Refresh must survive a clock skew of a few minutes." },
     { "id": "task-3", "text": "Keychain storage on Windows", "parent": "epic-auth",
       "start": "2026-07-10", "duration": 2, "progress": 0, "column": "todo", "priority": 1 },
 

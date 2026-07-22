@@ -14,7 +14,10 @@ Rectangle {
     // dragged (see KanbanCard.qml).
     property Item dragOverlay: null
 
-    readonly property int cardHeight: 78
+    // Kept in sync with KanbanCard.qml's own cellHeight -- taller than a bare priority+progress
+    // card to leave room for the tag chips row (see #131 follow-up: native cards had dropped the
+    // tags/assignee affordances the web Kanban cards had).
+    readonly property int cardHeight: 92
 
     // Colors from third_party/qlementine/showcase/resources/themes/dark.json.
     color: dropArea.containsDrag ? "#2c3448" : "#282b33" // primaryColorDisabled / backgroundColorMain2

@@ -12,7 +12,7 @@ namespace cppwiki::gui::kanban {
 
 // Embeds the native Kanban board (KanbanBoard.qml) into a QWidget-based UI via QQuickWidget --
 // this app is otherwise QWidgets-based, so this is the seam between the two. Wraps the QQuickWidget
-// with a thin native toolbar (Add column/Add task) and a task-edit dialog (see
+// with a thin native toolbar (Add column/Add task/Add epic) and a task-edit dialog (see
 // kanban_task_dialog.h), since QML has no business owning dialog UI or the app's dark-theme
 // widget chrome -- those stay native, only the drag/drop card grid itself is QML.
 class KanbanBoardWidget final : public QWidget {
@@ -33,6 +33,7 @@ class KanbanBoardWidget final : public QWidget {
  private:
   void HandleAddColumnClicked();
   void HandleAddTaskClicked();
+  void HandleAddEpicClicked();
   void HandleEditTaskRequested(const QString& task_id);
 
   KanbanBoardModel* model_;

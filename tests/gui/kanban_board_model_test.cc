@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QObject>
+#include <QStringList>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -66,7 +67,8 @@ void TestAddTaskAppendsUnparentedTask() {
   LoadSampleDocument(&model);
 
   const int emit_count = CountBoardChanged(model, [&model]() {
-    model.addTask(QStringLiteral("Bravo"), QStringLiteral("done"), kPriorityHigh, 25);
+    model.addTask(QStringLiteral("Bravo"), QStringLiteral("done"), kPriorityHigh, 25,
+                  /*is_epic=*/false, QString(), QStringList(), QStringList());
   });
 
   const auto document = model.ExportDocument();
@@ -77,9 +79,26 @@ void TestAddTaskAppendsUnparentedTask() {
   Require(added.priority == kPriorityHigh, "new task should have the requested priority");
   Require(added.progress == 25, "new task should have the requested progress");
   Require(added.parent.isEmpty(), "a task created via the toolbar has no epic/parent");
+  Require(!added.IsEpic(), "is_epic == false should not set type to summary");
   Require(!added.id.isEmpty(), "new task should get a non-empty id");
   Require(added.id != document.tasks.first().id, "new task's id should not collide");
   Require(emit_count == 1, "addTask should emit boardChanged");
+}
+
+void TestAddTaskCreatesEpicWithTagsDescriptionAndUsers() {
+  KanbanBoardModel model;
+  LoadSampleDocument(&model);
+
+  model.addTask(QStringLiteral("Launch"), QStringLiteral("todo"), 0, 0, /*is_epic=*/true,
+                QStringLiteral("Ship the thing"), QStringList{QStringLiteral("design")},
+                QStringList{QStringLiteral("artem")});
+
+  const auto document = model.ExportDocument();
+  const auto& added = document.tasks.last();
+  Require(added.IsEpic(), "is_epic == true should set type to summary");
+  Require(added.description == QStringLiteral("Ship the thing"), "description should round-trip");
+  Require(added.tags == QStringList{QStringLiteral("design")}, "tags should round-trip");
+  Require(added.users == QStringList{QStringLiteral("artem")}, "users should round-trip");
 }
 
 void TestUpdateTaskEditsInPlace() {
@@ -88,7 +107,9 @@ void TestUpdateTaskEditsInPlace() {
 
   const int emit_count = CountBoardChanged(model, [&model]() {
     model.updateTask(QStringLiteral("t1"), QStringLiteral("Alpha (renamed)"),
-                     QStringLiteral("done"), kPriorityHigh, 80);
+                     QStringLiteral("done"), kPriorityHigh, 80, /*is_epic=*/true,
+                     QStringLiteral("Notes"), QStringList{QStringLiteral("urgent")},
+                     QStringList{QStringLiteral("artem")});
   });
 
   const auto document = model.ExportDocument();
@@ -97,6 +118,10 @@ void TestUpdateTaskEditsInPlace() {
   Require(document.tasks.first().column == QStringLiteral("done"), "column edit stuck");
   Require(document.tasks.first().priority == kPriorityHigh, "priority edit stuck");
   Require(document.tasks.first().progress == 80, "progress edit stuck");
+  Require(document.tasks.first().IsEpic(), "is_epic edit stuck");
+  Require(document.tasks.first().description == QStringLiteral("Notes"), "description edit stuck");
+  Require(document.tasks.first().tags == QStringList{QStringLiteral("urgent")}, "tags edit stuck");
+  Require(document.tasks.first().users == QStringList{QStringLiteral("artem")}, "users edit stuck");
   Require(emit_count == 1, "updateTask should emit boardChanged");
 }
 
@@ -106,7 +131,7 @@ void TestUpdateTaskIsNoOpForUnknownId() {
 
   const int emit_count = CountBoardChanged(model, [&model]() {
     model.updateTask(QStringLiteral("does-not-exist"), QStringLiteral("x"), QStringLiteral("todo"),
-                     0, 0);
+                     0, 0, /*is_epic=*/false, QString(), QStringList(), QStringList());
   });
 
   Require(model.ExportDocument().tasks.first().text == QStringLiteral("Alpha"),
@@ -136,6 +161,7 @@ int main(int argc, char* argv[]) {
 
   TestAddColumnAppendsWithFreshId();
   TestAddTaskAppendsUnparentedTask();
+  TestAddTaskCreatesEpicWithTagsDescriptionAndUsers();
   TestUpdateTaskEditsInPlace();
   TestUpdateTaskIsNoOpForUnknownId();
   TestFindTaskAndFirstColumnId();

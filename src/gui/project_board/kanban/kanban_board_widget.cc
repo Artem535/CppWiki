@@ -28,19 +28,24 @@ KanbanBoardWidget::KanbanBoardWidget(QWidget* parent)
 
   auto* add_column_button = new QPushButton(QStringLiteral("Add column"), toolbar);
   auto* add_task_button = new QPushButton(QStringLiteral("Add task"), toolbar);
+  auto* add_epic_button = new QPushButton(QStringLiteral("Add epic"), toolbar);
   add_column_button->setObjectName(QStringLiteral("kanbanToolbarButton"));
   add_task_button->setObjectName(QStringLiteral("kanbanToolbarButton"));
+  add_epic_button->setObjectName(QStringLiteral("kanbanToolbarButton"));
   add_column_button->setCursor(Qt::PointingHandCursor);
   add_task_button->setCursor(Qt::PointingHandCursor);
+  add_epic_button->setCursor(Qt::PointingHandCursor);
   connect(add_column_button, &QPushButton::clicked, this,
           &KanbanBoardWidget::HandleAddColumnClicked);
   connect(add_task_button, &QPushButton::clicked, this, &KanbanBoardWidget::HandleAddTaskClicked);
+  connect(add_epic_button, &QPushButton::clicked, this, &KanbanBoardWidget::HandleAddEpicClicked);
 
   auto* toolbar_layout = new QHBoxLayout(toolbar);
   toolbar_layout->setContentsMargins(12, 8, 12, 8);
   toolbar_layout->setSpacing(8);
   toolbar_layout->addWidget(add_column_button);
   toolbar_layout->addWidget(add_task_button);
+  toolbar_layout->addWidget(add_epic_button);
   toolbar_layout->addStretch(1);
 
   quick_widget_ = new QQuickWidget(this);
@@ -90,7 +95,18 @@ void KanbanBoardWidget::HandleAddTaskClicked() {
   if (!result.has_value()) {
     return;
   }
-  model_->addTask(result->text, result->column_id, result->priority, result->progress);
+  model_->addTask(result->text, result->column_id, result->priority, result->progress,
+                  result->is_epic, result->description, result->tags, result->users);
+}
+
+void KanbanBoardWidget::HandleAddEpicClicked() {
+  const auto result = KanbanTaskDialog::RequestNewTask(this, model_->ExportDocument().columns,
+                                                       /*default_is_epic=*/true);
+  if (!result.has_value()) {
+    return;
+  }
+  model_->addTask(result->text, result->column_id, result->priority, result->progress,
+                  result->is_epic, result->description, result->tags, result->users);
 }
 
 void KanbanBoardWidget::HandleEditTaskRequested(const QString& task_id) {
@@ -103,7 +119,8 @@ void KanbanBoardWidget::HandleEditTaskRequested(const QString& task_id) {
   if (!result.has_value()) {
     return;
   }
-  model_->updateTask(task_id, result->text, result->column_id, result->priority, result->progress);
+  model_->updateTask(task_id, result->text, result->column_id, result->priority, result->progress,
+                     result->is_epic, result->description, result->tags, result->users);
 }
 
 }  // namespace cppwiki::gui::kanban

@@ -78,6 +78,8 @@ auto KanbanBoardModel::rows() const -> QVariantList {
         card.insert(QStringLiteral("progress"), task.progress);
         card.insert(QStringLiteral("column"), task.column);
         card.insert(QStringLiteral("parent"), task.parent);
+        card.insert(QStringLiteral("tags"), task.tags);
+        card.insert(QStringLiteral("users"), task.users);
         cards.append(card);
       }
       QVariantMap column_entry;
@@ -134,19 +136,26 @@ void KanbanBoardModel::addColumn(const QString& label) {
 }
 
 void KanbanBoardModel::addTask(const QString& text, const QString& column_id, int priority,
-                               int progress) {
+                               int progress, bool is_epic, const QString& description,
+                               const QStringList& tags, const QStringList& users) {
   KanbanTask task;
   task.id = FreshId(QStringLiteral("task-"));
   task.text = text;
   task.column = column_id;
   task.priority = priority;
   task.progress = progress;
+  task.type = is_epic ? QStringLiteral("summary") : QString();
+  task.description = description;
+  task.tags = tags;
+  task.users = users;
   document_.tasks.append(task);
   emit boardChanged();
 }
 
 void KanbanBoardModel::updateTask(const QString& task_id, const QString& text,
-                                  const QString& column_id, int priority, int progress) {
+                                  const QString& column_id, int priority, int progress,
+                                  bool is_epic, const QString& description, const QStringList& tags,
+                                  const QStringList& users) {
   for (auto& task : document_.tasks) {
     if (task.id != task_id) {
       continue;
@@ -155,6 +164,10 @@ void KanbanBoardModel::updateTask(const QString& task_id, const QString& text,
     task.column = column_id;
     task.priority = priority;
     task.progress = progress;
+    task.type = is_epic ? QStringLiteral("summary") : QString();
+    task.description = description;
+    task.tags = tags;
+    task.users = users;
     emit boardChanged();
     return;
   }
