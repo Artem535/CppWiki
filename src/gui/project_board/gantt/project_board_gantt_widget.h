@@ -48,6 +48,13 @@ class ProjectBoardGanttWidget final : public QWidget {
   // (e.g. syncing selection with the Kanban/Table views over the same document).
   [[nodiscard]] auto Model() const -> ProjectBoardGanttModel*;
 
+  // Non-owning access to the underlying KDGantt::View, exposed the same way Model() is: mainly
+  // for tests that need to drive KDGantt::GraphicsView::addConstraint() the same way an
+  // interactive drag-to-link gesture does (KDGantt maintains a *separate*, internally-mapped
+  // ConstraintModel for rendering/interaction -- see View::setConstraintModel() -- that
+  // Model()->ConstraintModel() does not give access to).
+  [[nodiscard]] auto View() const -> KDGantt::View*;
+
  signals:
   // Emitted whenever the user edits a task (drags/resizes a bar, edits inline via the left tree)
   // or a dependency link (drawn/deleted in the Gantt view). Carries the full board as JSON via

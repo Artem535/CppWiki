@@ -20,6 +20,7 @@
 #include <QScrollBar>
 #include <QSplitter>
 #include <QStyledItemDelegate>
+#include <QTimer>
 #include <QToolButton>
 #include <QTreeView>
 #include <QVBoxLayout>
@@ -337,6 +338,57 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
           &ProjectBoardGanttWidget::EmitDataChanged);
   connect(model_->ConstraintModel(), &KDGantt::ConstraintModel::constraintRemoved, this,
           &ProjectBoardGanttWidget::EmitDataChanged);
+  // ProjectBoardGanttModel::LoadFromJson() themes every link it loads from a document (white
+  // pen, see LinkPen()/InvalidLinkPen()) -- but a link the user creates interactively (dragging
+  // from one bar's connector dot to another) is added straight to the ConstraintModel by
+  // KDGantt's own mouse handling, as a bare Constraint with no pen data at all, so it falls back
+  // to KDGantt::ItemDelegate's hardcoded black/red. Apply the same themed pen here so a
+  // freshly-drawn link looks the same as one that survived a save/reload round trip instead of
+  // only matching after the document is saved and the app restarted.
+  connect(model_->ConstraintModel(), &KDGantt::ConstraintModel::constraintAdded, this,
+          [this](const KDGantt::Constraint& constraint) {
+            if (constraint.data(KDGantt::Constraint::ValidConstraintPen).isValid()) {
+              return;
+            }
+            // Deferred to the next event-loop iteration rather than done here, reentrant, inside
+            // this very constraintAdded dispatch: KDGantt::View keeps a *separate*, internally
+            // address-mapped ConstraintModel for rendering (see View::setConstraintModel()), and
+            // the relay that mirrors an edit here back onto that mapped model runs synchronously,
+            // nested inside this same signal dispatch. KDGantt::GraphicsScene's own listener for
+            // the *same original* constraintAdded is connected after this lambda's -- Qt still
+            // has to invoke it once dispatch reaches that point, and by then it creates its own
+            // untamed ConstraintGraphicsItem for the same pair, unaware this lambda's nested
+            // remove/add already swapped in a themed one earlier in the SAME dispatch. Two
+            // overlapping items result (one white, one black on top), and which one paints varies
+            // frame to frame. Running the swap only after the current dispatch (and GraphicsScene's
+            // own listener) has fully unwound avoids that reentrant double-creation.
+            const KDGantt::Constraint captured = constraint;
+            QTimer::singleShot(0, this, [this, captured]() {
+              for (const auto& current : model_->ConstraintModel()->constraints()) {
+                if (!current.compareIndexes(captured)) {
+                  continue;
+                }
+                if (current.data(KDGantt::Constraint::ValidConstraintPen).isValid()) {
+                  return;  // already themed (e.g. by a reload that happened in the meantime)
+                }
+                KDGantt::Constraint themed = current;
+                themed.setData(KDGantt::Constraint::ValidConstraintPen,
+                               QVariant::fromValue(model_->LinkPen()));
+                themed.setData(KDGantt::Constraint::InvalidConstraintPen,
+                               QVariant::fromValue(model_->LinkPen()));
+                // Guard with loading_ (the same flag LoadFromJson() and the critical-path
+                // recompute use) so this bookkeeping swap -- not itself a second user edit --
+                // doesn't double-count as an extra DataChanged emission.
+                loading_ = true;
+                model_->ConstraintModel()->removeConstraint(current);
+                model_->ConstraintModel()->addConstraint(themed);
+                loading_ = false;
+                return;
+              }
+              // No match: the link was removed (e.g. toggled off again) before this callback got
+              // a chance to run -- nothing to theme.
+            });
+          });
 }
 
 ProjectBoardGanttWidget::~ProjectBoardGanttWidget() = default;
@@ -363,6 +415,10 @@ auto ProjectBoardGanttWidget::ToJson() const -> QJsonObject {
 
 auto ProjectBoardGanttWidget::Model() const -> ProjectBoardGanttModel* {
   return model_.get();
+}
+
+auto ProjectBoardGanttWidget::View() const -> KDGantt::View* {
+  return view_;
 }
 
 bool ProjectBoardGanttWidget::eventFilter(QObject* watched, QEvent* event) {

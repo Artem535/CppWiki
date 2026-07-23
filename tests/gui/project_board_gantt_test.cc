@@ -1,10 +1,14 @@
 #include <KDGanttConstraint>
 #include <KDGanttConstraintModel>
 #include <KDGanttGlobal>
+#include <KDGanttGraphicsView>
+#include <KDGanttView>
+#include <QAbstractProxyModel>
 #include <QApplication>
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QPen>
 #include <QString>
 #include <cstdlib>
 #include <iostream>
@@ -207,6 +211,80 @@ void TestAddingADependencyLinkEmitsDataChanged() {
   Require(emit_count == 1, "adding a dependency link should emit DataChanged exactly once");
   const auto links = widget.ToJson().value("links").toArray();
   Require(links.size() == 2, "expected 2 links after adding a new one");
+
+  // The widget's constraintAdded handler defers its re-theming to the next event-loop iteration
+  // (see project_board_gantt_widget.cc for why) rather than acting reentrant inside this same
+  // signal dispatch, so give it a chance to run before checking the pen.
+  QCoreApplication::processEvents();
+
+  // A link added this way (bare Constraint, no pen data) is exactly what KDGantt's own internal
+  // mouse handling does when the user drags a new dependency link interactively -- without the
+  // widget's constraintAdded handler re-theming it, this would fall back to KDGantt::ItemDelegate's
+  // hardcoded black/red pen instead of matching the white pen LoadFromJson() applies on load.
+  bool found_new_link = false;
+  for (const auto& constraint : model->ConstraintModel()->constraints()) {
+    if (constraint.startIndex() != design_index || constraint.endIndex() != milestone_index) {
+      continue;
+    }
+    found_new_link = true;
+    Require(constraint.data(KDGantt::Constraint::ValidConstraintPen).value<QPen>() ==
+                ProjectBoardGanttModel::LinkPen(),
+            "an interactively-created link should get the themed pen, not KDGantt's default");
+  }
+  Require(found_new_link, "the newly-added constraint should be found in the constraint model");
+}
+
+// Unlike TestAddingADependencyLinkEmitsDataChanged (which adds directly to
+// Model()->ConstraintModel()), this drives KDGantt::GraphicsView::addConstraint() -- the exact
+// method GraphicsItem::mouseReleaseEvent() calls for a real interactive drag-to-link gesture.
+// KDGantt::View keeps a *separate*, internally address-mapped ConstraintModel for rendering/
+// interaction (see kdganttview.cpp's mappedConstraintModel/ConstraintProxy) that
+// Model()->ConstraintModel() does not expose -- this checks whether that separate model ends up
+// with duplicate/mis-themed ConstraintGraphicsItems for the same link.
+void TestInteractivelyCreatedLinkGetsThemedWithoutDuplicates() {
+  ProjectBoardGanttWidget widget;
+  widget.LoadFromJson(SampleBoard());
+
+  auto* model = widget.Model();
+  const auto design_index = model->IndexForTaskId("task-design");
+  const auto milestone_index = model->IndexForTaskId("milestone-review");
+  Require(design_index.isValid() && milestone_index.isValid(),
+          "both endpoints of the new link should be found by id");
+
+  // GraphicsItem::mouseReleaseEvent() maps only from the scene's own model (summaryHandlingModel)
+  // down to View::ganttProxyModel()'s index space before calling GraphicsView::addConstraint() --
+  // NOT all the way back to Model()'s indices. Passing raw Model() indices instead crashes
+  // ForwardingProxyModel::mapToSource() downstream (Q_ASSERT(proxyIndex.model() == this)), so
+  // mimic that one level of mapping here too.
+  auto* gantt_proxy = widget.View()->ganttProxyModel();
+  widget.View()->graphicsView()->addConstraint(gantt_proxy->mapFromSource(design_index),
+                                               gantt_proxy->mapFromSource(milestone_index),
+                                               Qt::NoModifier);
+  // The widget's constraintAdded handler defers its re-theming to the next event-loop iteration
+  // (see project_board_gantt_widget.cc for why) -- give it a chance to run.
+  QCoreApplication::processEvents();
+
+  auto* rendered_model = widget.View()->graphicsView()->constraintModel();
+  int matching_count = 0;
+  int themed_count = 0;
+  for (const auto& constraint : rendered_model->constraints()) {
+    // The rendered/mapped model's indices are proxy-mapped, not equal to design_index/
+    // milestone_index directly -- match structurally instead (top-level rows 0 and 1, the only
+    // pair that can be design->milestone in this 3-task board).
+    if (constraint.startIndex().row() != 0 || constraint.startIndex().parent().isValid() ||
+        constraint.endIndex().row() != 1 || constraint.endIndex().parent().isValid()) {
+      continue;
+    }
+    ++matching_count;
+    if (constraint.data(KDGantt::Constraint::ValidConstraintPen).isValid()) {
+      ++themed_count;
+    }
+  }
+  Require(matching_count == 1,
+          "exactly one rendered constraint should exist for the new link -- more than one means a "
+          "stale/duplicate item is overlapping the themed one");
+  Require(themed_count == matching_count,
+          "the rendered link should carry the themed pen, not KDGantt's black/red default");
 }
 
 QJsonObject MakeTask(const QString& id, int duration) {
@@ -226,6 +304,95 @@ QJsonObject MakeLink(const QString& id, const QString& source, const QString& ta
   link.insert("source", source);
   link.insert("target", target);
   return link;
+}
+
+void TestTwoSequentialInteractivelyCreatedLinksBothGetThemed() {
+  QJsonObject board;
+  board.insert("tasks",
+               QJsonArray{MakeTask("a", 1), MakeTask("b", 1), MakeTask("c", 1), MakeTask("d", 1)});
+  board.insert("links", QJsonArray{});
+
+  ProjectBoardGanttWidget widget;
+  widget.LoadFromJson(board);
+
+  auto* model = widget.Model();
+  const auto a_index = model->IndexForTaskId("a");
+  const auto b_index = model->IndexForTaskId("b");
+  const auto c_index = model->IndexForTaskId("c");
+  const auto d_index = model->IndexForTaskId("d");
+  Require(a_index.isValid() && b_index.isValid() && c_index.isValid() && d_index.isValid(),
+          "all four tasks should be found by id");
+
+  auto* gantt_proxy = widget.View()->ganttProxyModel();
+  auto* graphics_view = widget.View()->graphicsView();
+  graphics_view->addConstraint(gantt_proxy->mapFromSource(a_index),
+                               gantt_proxy->mapFromSource(b_index), Qt::NoModifier);
+  graphics_view->addConstraint(gantt_proxy->mapFromSource(c_index),
+                               gantt_proxy->mapFromSource(d_index), Qt::NoModifier);
+  // The widget's constraintAdded handler defers its re-theming to the next event-loop iteration
+  // (see project_board_gantt_widget.cc for why) -- give it a chance to run for both links.
+  QCoreApplication::processEvents();
+
+  auto IsThemed = [&](int start_row, int end_row) {
+    for (const auto& constraint : graphics_view->constraintModel()->constraints()) {
+      if (constraint.startIndex().row() != start_row ||
+          constraint.startIndex().parent().isValid() || constraint.endIndex().row() != end_row ||
+          constraint.endIndex().parent().isValid()) {
+        continue;
+      }
+      return constraint.data(KDGantt::Constraint::ValidConstraintPen).isValid();
+    }
+    return false;
+  };
+  Require(IsThemed(0, 1), "the first interactively-created link (a->b) should be themed");
+  Require(IsThemed(2, 3), "the second interactively-created link (c->d) should be themed");
+}
+
+// Unlike the two prior interactive-creation tests (both endpoints top-level, or one endpoint a
+// summary with no nested-child involvement), this link's SOURCE endpoint is a *child* row nested
+// under a summary (task-wireframes, nested under task-design) -- SampleBoard() already has one
+// pre-existing link with exactly this shape (task-wireframes -> milestone-review) loaded via
+// LoadFromJson(), so this adds a SECOND, freshly interactive one between the same kind of nested
+// child and a different top-level target, to see whether nesting specifically breaks theming.
+void TestInteractivelyCreatedLinkFromNestedChildGetsThemed() {
+  ProjectBoardGanttWidget widget;
+  widget.LoadFromJson(SampleBoard());
+
+  auto* model = widget.Model();
+  const auto wireframes_index = model->IndexForTaskId("task-wireframes");
+  const auto milestone_index = model->IndexForTaskId("milestone-review");
+  Require(wireframes_index.isValid() && milestone_index.isValid(),
+          "task-wireframes (nested child) and milestone-review should be found by id");
+  Require(wireframes_index.parent().isValid(), "task-wireframes should indeed be a nested child");
+
+  auto* gantt_proxy = widget.View()->ganttProxyModel();
+  auto* graphics_view = widget.View()->graphicsView();
+  // SampleBoard() already links task-wireframes -> milestone-review, so hasConstraint() would
+  // just toggle that one off -- link task-design (the nested child's *parent*, not itself nested)
+  // to milestone-review instead, still exercising a not-purely-top-level source endpoint without
+  // colliding with the pre-existing link.
+  const auto design_index = model->IndexForTaskId("task-design");
+  graphics_view->addConstraint(gantt_proxy->mapFromSource(wireframes_index),
+                               gantt_proxy->mapFromSource(design_index), Qt::NoModifier);
+  // The widget's constraintAdded handler defers its re-theming to the next event-loop iteration
+  // (see project_board_gantt_widget.cc for why) -- give it a chance to run.
+  QCoreApplication::processEvents();
+
+  // task-design is top-level row 0; milestone-review is top-level row 1 -- match end row 0 to
+  // isolate this test's new wireframes->design link from SampleBoard()'s pre-existing
+  // wireframes->milestone-review one (end row 1), which was already themed by LoadFromJson().
+  bool found = false;
+  bool themed = false;
+  for (const auto& constraint : graphics_view->constraintModel()->constraints()) {
+    if (!constraint.startIndex().parent().isValid() || constraint.endIndex().parent().isValid() ||
+        constraint.endIndex().row() != 0) {
+      continue;
+    }
+    found = true;
+    themed = themed || constraint.data(KDGantt::Constraint::ValidConstraintPen).isValid();
+  }
+  Require(found, "the new nested-child-sourced constraint (wireframes->design) should exist");
+  Require(themed, "the interactively-created link from a nested child should be themed");
 }
 
 void TestCriticalPathFollowsLongestChain() {
@@ -275,6 +442,9 @@ int main(int argc, char* argv[]) {
   TestLoadFromJsonDoesNotEmitDataChanged();
   TestDraggingATaskBarEmitsDataChangedWithUpdatedTask();
   TestAddingADependencyLinkEmitsDataChanged();
+  TestInteractivelyCreatedLinkGetsThemedWithoutDuplicates();
+  TestTwoSequentialInteractivelyCreatedLinksBothGetThemed();
+  TestInteractivelyCreatedLinkFromNestedChildGetsThemed();
   TestCriticalPathFollowsLongestChain();
   TestCriticalPathEmptyOnCycle();
   TestCriticalPathWithNoLinksPicksLongestTask();
