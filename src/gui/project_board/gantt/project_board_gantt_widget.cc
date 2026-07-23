@@ -17,6 +17,7 @@
 #include <QPageLayout>
 #include <QPrinter>
 #include <QPushButton>
+#include <QScreen>
 #include <QScrollBar>
 #include <QSplitter>
 #include <QStyledItemDelegate>
@@ -279,6 +280,11 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
     connect(scale_combo_, &QComboBox::currentIndexChanged, this,
             &ProjectBoardGanttWidget::HandleScaleChanged);
     toolbar_layout->addWidget(scale_combo_);
+    // See eventFilter()'s QEvent::Show case for why: scale_combo_'s effective style() ends up a
+    // QStyleSheetStyle wrapping the real qlementine style (an ancestor -- MainWindow's
+    // current_content_widget_ -- gets cppwiki.qss applied for its own background rule), which
+    // silently disables qlementine's own popup-geometry fix-up, so it has to be redone here.
+    scale_combo_->view()->window()->installEventFilter(this);
 
     auto* zoom_out = new QToolButton(toolbar);
     zoom_out->setText(QStringLiteral("−"));  // U+2212 MINUS SIGN
@@ -422,6 +428,45 @@ auto ProjectBoardGanttWidget::View() const -> KDGantt::View* {
 }
 
 bool ProjectBoardGanttWidget::eventFilter(QObject* watched, QEvent* event) {
+  if (event->type() == QEvent::Show && watched == scale_combo_->view()->window()) {
+    // QComboBox's own popup-height calculation undercounts the room below the popup by the
+    // current screen's own y-offset within the virtual desktop, on any screen that isn't
+    // anchored at global y=0 (e.g. a second monitor placed below/right of another) -- it
+    // collapses the popup to a sliver of only a couple of rows, with the rest hidden behind a
+    // scroll affordance, even though there's plenty of actual room below it on that screen.
+    // qlementine's own style ships a fix for the equivalent bug in its own popup-geometry
+    // fix-up (ComboboxItemViewFilter::fixViewGeometry()), but that code never runs here: an
+    // ancestor (MainWindow's current_content_widget_) has cppwiki.qss applied to it for an
+    // unrelated background rule, which wraps every descendant's effective style() -- including
+    // scale_combo_'s -- in a QStyleSheetStyle, and that fix-up bails out unless
+    // qobject_cast<QlementineStyle*>(comboBox->style()) succeeds. Recomputing the correct
+    // available height here and growing the popup back out (only up to what's actually needed
+    // and actually available) works regardless of which style ends up wrapping it.
+    auto* view = scale_combo_->view();
+    // Width: the same fix-up that's bypassed above also normally widens the popup to fit its
+    // widest item (view->sizeHintForColumn(0)) -- without it, the popup stays exactly as narrow
+    // as the closed combo box itself (just enough for the checkmark indicator), which pushes
+    // every item's label completely outside the visible rect instead of merely truncating it.
+    const auto needed_width = view->sizeHintForColumn(0);
+    if (needed_width > view->width()) {
+      view->setFixedWidth(needed_width);
+    }
+    if (auto* screen = view->screen()) {
+      const auto view_global_y = view->mapToGlobal(QPoint(0, 0)).y();
+      const auto available_height = screen->geometry().y() + screen->geometry().height() - 24 - view_global_y;
+      int needed_height = 0;
+      for (int row = 0; row < scale_combo_->count(); ++row) {
+        needed_height += view->sizeHintForRow(row);
+      }
+      const auto wanted_height = needed_height < view->height() ? view->height() : needed_height;
+      const auto corrected_height =
+          wanted_height < available_height ? wanted_height : available_height;
+      if (corrected_height > view->height()) {
+        view->setFixedHeight(corrected_height);
+      }
+    }
+    view->window()->adjustSize();
+  }
   if (event->type() == QEvent::Wheel && watched == view_->graphicsView()->viewport()) {
     auto* wheel_event = static_cast<QWheelEvent*>(event);
     if (!(wheel_event->modifiers() & Qt::ShiftModifier)) {
