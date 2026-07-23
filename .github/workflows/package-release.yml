@@ -18,8 +18,10 @@ permissions:
 
 env:
   VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-  CPPWIKI_QT_VERSION: "6.5.3"
-  CPPWIKI_QT_MODULES: "qtwebengine qtwebchannel qtdeclarative qtnetworkauth"
+  CPPWIKI_QT_VERSION: "6.8.3"
+  # qtdeclarative (Qml/Quick) is part of Qt6's essential/base desktop kit, not an aqt add-on module --
+  # requesting it via --modules fails with "not found while parsing XML of package information".
+  CPPWIKI_QT_MODULES: "qtwebengine qtwebchannel qtnetworkauth"
 
 jobs:
   package-linux:
