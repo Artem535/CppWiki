@@ -44,6 +44,7 @@ jobs:
             libxkbcommon-dev \
             libxkbcommon-x11-0 \
             libglib2.0-0 \
+            libsecret-1-dev \
             libnss3 \
             libnspr4 \
             libxcomposite1 \
