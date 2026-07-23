@@ -1,6 +1,6 @@
 [submodule "third_party/qlementine"]
 	path = third_party/qlementine
-	url = git@github.com:oclero/qlementine.git
+	url = git@github.com:Artem535/qlementine-flat.git
 [submodule "third_party/KDChart"]
 	path = third_party/KDChart
 	url = https://github.com/KDAB/KDChart.git
