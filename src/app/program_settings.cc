@@ -1,6 +1,8 @@
 #include "app/program_settings.h"
 
+#include <QCoreApplication>
 #include <QDir>
+#include <QFileInfo>
 #include <QSettings>
 #include <QStandardPaths>
 #include <string_view>
@@ -12,6 +14,20 @@
 namespace cppwiki {
 
 namespace {
+
+// A packaged install co-locates the built editor bundle next to the executable (see src/
+// CMakeLists.txt's install(DIRECTORY frontend/editor/dist ...) rule) under this name, on every
+// platform (AppImage, Windows installer, macOS .app/Contents/MacOS) -- unlike CPPWIKI_EDITOR_DIST_DIR
+// below, which is an absolute path into the build machine's own source tree and can never resolve
+// on an end user's machine.
+auto ResolveDefaultEditorDistDirectory() -> QString {
+  const auto packaged_candidate =
+      QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("editor-dist"));
+  if (QFileInfo(packaged_candidate).exists()) {
+    return packaged_candidate;
+  }
+  return QStringLiteral(CPPWIKI_EDITOR_DIST_DIR);
+}
 
 auto DefaultAppDataDirectory() -> QString {
   auto directory = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
@@ -92,9 +108,8 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
   const auto database_directory = SettingsValueOrDefault(
       settings, constants::kSettingsDatabaseDirectoryKey, default_database_directory);
 
-  const auto editor_dist_directory =
-      SettingsValueOrDefault(settings, constants::kSettingsEditorDistDirectoryKey,
-                             QStringLiteral(CPPWIKI_EDITOR_DIST_DIR));
+  const auto editor_dist_directory = SettingsValueOrDefault(
+      settings, constants::kSettingsEditorDistDirectoryKey, ResolveDefaultEditorDistDirectory());
 
   const auto backend_base_url = SettingsValueOrDefault(
       settings, constants::kSettingsBackendBaseUrlKey, DefaultBackendBaseUrl());

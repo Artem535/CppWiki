@@ -185,6 +185,38 @@ install(TARGETS cppwiki_app
         RUNTIME DESTINATION bin
         BUNDLE DESTINATION .
 )
+
+# kdchart and qt6keychain build as real shared libraries (KDChart_STATIC OFF above; qtkeychain
+# defaults to shared) but ship with no install() rules of their own -- without this, a packaged
+# app is silently missing a required runtime library. Co-locate them next to the executable: on
+# Windows/Linux, "same directory as the exe" is where the default DLL/SO search already looks (no
+# extra RPATH plumbing needed), and this puts them where linuxdeploy/macdeployqt will find and
+# re-house them in the staged tree those tools actually scan, rather than depending on a
+# leftover build-tree RPATH that only happens to still be valid within the same CI job.
+if (APPLE)
+    install(TARGETS kdchart qt6keychain
+            LIBRARY DESTINATION cppwiki.app/Contents/MacOS
+    )
+else ()
+    install(TARGETS kdchart qt6keychain
+            RUNTIME DESTINATION bin
+            LIBRARY DESTINATION bin
+    )
+endif ()
+
+if (CPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP)
+    # See ResolveDefaultEditorDistDirectory() in app/program_settings.cc: a packaged install looks
+    # for the built editor bundle next to the executable under this exact name.
+    if (APPLE)
+        install(DIRECTORY ${CMAKE_SOURCE_DIR}/frontend/editor/dist/
+                DESTINATION cppwiki.app/Contents/MacOS/editor-dist
+        )
+    else ()
+        install(DIRECTORY ${CMAKE_SOURCE_DIR}/frontend/editor/dist/
+                DESTINATION bin/editor-dist
+        )
+    endif ()
+endif ()
 endif ()
 
 if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)

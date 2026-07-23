@@ -83,7 +83,7 @@ jobs:
             vcpkg-binarycache-release-${{ runner.os }}-
 
       - name: Configure (release preset, server disabled)
-        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF
+        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON
 
       - name: Build
         run: cmake --build --preset release
@@ -174,7 +174,7 @@ jobs:
 
       - name: Configure (release preset, server disabled)
         shell: pwsh
-        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF
+        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON
 
       - name: Build
         shell: pwsh
@@ -261,7 +261,7 @@ jobs:
             vcpkg-binarycache-release-${{ runner.os }}-
 
       - name: Configure (release preset, server disabled)
-        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF
+        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON
 
       - name: Build
         run: cmake --build --preset release
