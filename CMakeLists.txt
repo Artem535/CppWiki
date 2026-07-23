@@ -93,6 +93,11 @@ if (CPPWIKI_BUILD_DESKTOP_APP)
     set(BUILD_TEST_APPLICATION OFF CACHE BOOL "Disable qtkeychain test app" FORCE)
     set(BUILD_TRANSLATIONS OFF CACHE BOOL "Disable qtkeychain translations" FORCE)
     set(LIBSECRET_SUPPORT ON CACHE BOOL "Enable qtkeychain libsecret backend" FORCE)
+    # qtkeychain's own autotest (gated on the generic BUILD_TESTING, not a dedicated option)
+    # exercises a real OS keychain/D-Bus Secret Service, which doesn't exist on a bare CI
+    # runner -- it fails there (and would sweep into our own ctest run, since enable_testing()
+    # is global) regardless of anything CPPWIKI_BUILD_TESTS controls.
+    set(BUILD_TESTING OFF CACHE BOOL "Disable qtkeychain's own autotest" FORCE)
     FetchContent_Declare(
             qtkeychain
             GIT_REPOSITORY https://github.com/frankosterfeld/qtkeychain.git
