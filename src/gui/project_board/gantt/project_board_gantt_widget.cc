@@ -113,7 +113,13 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
       model_(std::make_unique<ProjectBoardGanttModel>()) {
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
-  layout->addWidget(view_);
+  // Stretch factor 1: with the toolbar inserted below (stretch 0, see the "Toolbar" block), both
+  // would otherwise have equal (0) stretch -- QVBoxLayout then splits leftover space between
+  // Preferred-policy widgets roughly evenly rather than leaving it unclaimed, which is what grew
+  // the toolbar to half the window's height instead of just its one row of controls. Giving only
+  // view_ a nonzero stretch makes it the sole claimant of all space beyond each widget's own
+  // size hint.
+  layout->addWidget(view_, 1);
 
   // --- Rendering performance --------------------------------------------------
   //
