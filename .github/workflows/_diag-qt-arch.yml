@@ -1,6 +1,8 @@
 name: Diag Qt Arch
 on:
-  workflow_dispatch: {}
+  push:
+    branches:
+      - ci/fix-package-release-workflow
 jobs:
   diag:
     runs-on: windows-latest
