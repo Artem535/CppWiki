@@ -21,7 +21,9 @@ env:
   CPPWIKI_QT_VERSION: "6.8.3"
   # qtdeclarative (Qml/Quick) is part of Qt6's essential/base desktop kit, not an aqt add-on module --
   # requesting it via --modules fails with "not found while parsing XML of package information".
-  CPPWIKI_QT_MODULES: "qtwebengine qtwebchannel qtnetworkauth"
+  # qtpositioning is required: as of 6.8, Qt6WebEngineCore's own CMake config hard-depends on
+  # Qt6Positioning, so without it find_package(Qt6 ... WebEngineWidgets) fails to configure.
+  CPPWIKI_QT_MODULES: "qtwebengine qtwebchannel qtnetworkauth qtpositioning"
 
 jobs:
   package-linux:
@@ -145,7 +147,10 @@ jobs:
         with:
           version: ${{ env.CPPWIKI_QT_VERSION }}
           modules: ${{ env.CPPWIKI_QT_MODULES }}
-          arch: win64_msvc2019_64
+          # Qt dropped the MSVC2019 kit by 6.8 (aqt reports even qt_base missing for
+          # win64_msvc2019_64 at 6.8.3) -- MSVC2022 is the only x64 desktop kit left, and it
+          # matches what windows-latest/ilammy/msvc-dev-cmd actually provide anyway.
+          arch: win64_msvc2022_64
           cache: true
 
       - name: Setup MSVC environment
