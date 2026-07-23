@@ -96,7 +96,8 @@ void KanbanBoardWidget::HandleAddTaskClicked() {
     return;
   }
   model_->addTask(result->text, result->column_id, result->priority, result->progress,
-                  result->is_epic, result->description, result->tags, result->users);
+                  result->is_epic, result->description, result->tags, result->users,
+                  result->start, result->duration);
 }
 
 void KanbanBoardWidget::HandleAddEpicClicked() {
@@ -106,7 +107,8 @@ void KanbanBoardWidget::HandleAddEpicClicked() {
     return;
   }
   model_->addTask(result->text, result->column_id, result->priority, result->progress,
-                  result->is_epic, result->description, result->tags, result->users);
+                  result->is_epic, result->description, result->tags, result->users,
+                  result->start, result->duration);
 }
 
 void KanbanBoardWidget::HandleEditTaskRequested(const QString& task_id) {
@@ -120,7 +122,8 @@ void KanbanBoardWidget::HandleEditTaskRequested(const QString& task_id) {
     return;
   }
   model_->updateTask(task_id, result->text, result->column_id, result->priority, result->progress,
-                     result->is_epic, result->description, result->tags, result->users);
+                     result->is_epic, result->description, result->tags, result->users,
+                     result->start, result->duration);
 }
 
 }  // namespace cppwiki::gui::kanban

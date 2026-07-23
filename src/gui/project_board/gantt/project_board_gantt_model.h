@@ -3,6 +3,8 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QPen>
+#include <QSet>
 #include <QStandardItem>
 #include <QStandardItemModel>
 #include <QString>
@@ -36,6 +38,10 @@ class ProjectBoardGanttModel final : public QStandardItemModel {
     kTaskPriorityRole,
     kTaskDescriptionRole,
     kTaskDeadlineRole,
+    // Transient, view-only: whether this task is on the critical path per the most recent
+    // ComputeCriticalPath() call. Never round-tripped by ToJson() -- it's derived from the
+    // current tasks/links each time the caller asks for it, not saved document state.
+    kTaskCriticalPathRole,
   };
 
   explicit ProjectBoardGanttModel(QObject* parent = nullptr);
@@ -59,6 +65,21 @@ class ProjectBoardGanttModel final : public QStandardItemModel {
   // Exposed (rather than kept private) for tests and for future integration code that needs to
   // map an id from elsewhere (e.g. the Kanban/Table views, over the same document) to a row here.
   [[nodiscard]] auto IndexForTaskId(const QString& task_id) const -> QModelIndex;
+
+  // Marks exactly the tasks in `critical_task_ids` with kTaskCriticalPathRole = true (every task
+  // not in the set gets false), so ProjectBoardGanttItemDelegate can look the role up per bar.
+  // Walks every row recursively (tasks can be nested under summary rows) each call rather than
+  // only the previously/newly critical ones, since clearing a stale highlight is just as
+  // important as setting a new one and the model has no cheap way to know which rows were
+  // critical last time without keeping that bookkeeping itself.
+  void SetCriticalPathTaskIds(const QSet<QString>& critical_task_ids);
+
+  // The themed pen LoadFromJson() applies to every link's ValidConstraintPen/InvalidConstraintPen
+  // data role (see the .cc for why both roles get the same pen). Public so callers that add a
+  // constraint through some path other than LoadFromJson() -- e.g. a link the user just drew
+  // interactively -- can apply the exact same theming instead of falling back to KDGantt's
+  // hardcoded black/red.
+  [[nodiscard]] static auto LinkPen() -> QPen;
 
  private:
   [[nodiscard]] static auto TaskIdForIndex(const QModelIndex& index) -> QString;

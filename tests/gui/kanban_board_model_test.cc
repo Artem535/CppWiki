@@ -68,7 +68,8 @@ void TestAddTaskAppendsUnparentedTask() {
 
   const int emit_count = CountBoardChanged(model, [&model]() {
     model.addTask(QStringLiteral("Bravo"), QStringLiteral("done"), kPriorityHigh, 25,
-                  /*is_epic=*/false, QString(), QStringList(), QStringList());
+                  /*is_epic=*/false, QString(), QStringList(), QStringList(),
+                  QStringLiteral("2026-02-01T00:00:00.000Z"), 3);
   });
 
   const auto document = model.ExportDocument();
@@ -82,6 +83,9 @@ void TestAddTaskAppendsUnparentedTask() {
   Require(!added.IsEpic(), "is_epic == false should not set type to summary");
   Require(!added.id.isEmpty(), "new task should get a non-empty id");
   Require(added.id != document.tasks.first().id, "new task's id should not collide");
+  Require(added.start == QStringLiteral("2026-02-01T00:00:00.000Z"),
+          "new task should have the requested start date");
+  Require(added.duration == 3, "new task should have the requested duration");
   Require(emit_count == 1, "addTask should emit boardChanged");
 }
 
@@ -91,7 +95,7 @@ void TestAddTaskCreatesEpicWithTagsDescriptionAndUsers() {
 
   model.addTask(QStringLiteral("Launch"), QStringLiteral("todo"), 0, 0, /*is_epic=*/true,
                 QStringLiteral("Ship the thing"), QStringList{QStringLiteral("design")},
-                QStringList{QStringLiteral("artem")});
+                QStringList{QStringLiteral("artem")}, QString(), 1);
 
   const auto document = model.ExportDocument();
   const auto& added = document.tasks.last();
@@ -109,7 +113,8 @@ void TestUpdateTaskEditsInPlace() {
     model.updateTask(QStringLiteral("t1"), QStringLiteral("Alpha (renamed)"),
                      QStringLiteral("done"), kPriorityHigh, 80, /*is_epic=*/true,
                      QStringLiteral("Notes"), QStringList{QStringLiteral("urgent")},
-                     QStringList{QStringLiteral("artem")});
+                     QStringList{QStringLiteral("artem")},
+                     QStringLiteral("2026-03-01T00:00:00.000Z"), 5);
   });
 
   const auto document = model.ExportDocument();
@@ -122,6 +127,9 @@ void TestUpdateTaskEditsInPlace() {
   Require(document.tasks.first().description == QStringLiteral("Notes"), "description edit stuck");
   Require(document.tasks.first().tags == QStringList{QStringLiteral("urgent")}, "tags edit stuck");
   Require(document.tasks.first().users == QStringList{QStringLiteral("artem")}, "users edit stuck");
+  Require(document.tasks.first().start == QStringLiteral("2026-03-01T00:00:00.000Z"),
+          "start edit stuck");
+  Require(document.tasks.first().duration == 5, "duration edit stuck");
   Require(emit_count == 1, "updateTask should emit boardChanged");
 }
 
@@ -131,7 +139,8 @@ void TestUpdateTaskIsNoOpForUnknownId() {
 
   const int emit_count = CountBoardChanged(model, [&model]() {
     model.updateTask(QStringLiteral("does-not-exist"), QStringLiteral("x"), QStringLiteral("todo"),
-                     0, 0, /*is_epic=*/false, QString(), QStringList(), QStringList());
+                     0, 0, /*is_epic=*/false, QString(), QStringList(), QStringList(), QString(),
+                     1);
   });
 
   Require(model.ExportDocument().tasks.first().text == QStringLiteral("Alpha"),

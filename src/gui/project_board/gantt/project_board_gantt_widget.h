@@ -6,6 +6,7 @@
 #include <memory>
 
 class QEvent;
+class QComboBox;
 
 namespace KDGantt {
 class View;
@@ -14,6 +15,7 @@ class View;
 namespace cppwiki::gui::project_board::gantt {
 
 class ProjectBoardGanttModel;
+class RowHeightDelegate;
 
 // Standalone native-Qt replacement for the Project board document kind's web-based (SVAR
 // react-gantt, see frontend/editor/src/project/ProjectBoardView.tsx) Gantt tab — see issue #113.
@@ -46,6 +48,13 @@ class ProjectBoardGanttWidget final : public QWidget {
   // (e.g. syncing selection with the Kanban/Table views over the same document).
   [[nodiscard]] auto Model() const -> ProjectBoardGanttModel*;
 
+  // Non-owning access to the underlying KDGantt::View, exposed the same way Model() is: mainly
+  // for tests that need to drive KDGantt::GraphicsView::addConstraint() the same way an
+  // interactive drag-to-link gesture does (KDGantt maintains a *separate*, internally-mapped
+  // ConstraintModel for rendering/interaction -- see View::setConstraintModel() -- that
+  // Model()->ConstraintModel() does not give access to).
+  [[nodiscard]] auto View() const -> KDGantt::View*;
+
  signals:
   // Emitted whenever the user edits a task (drags/resizes a bar, edits inline via the left tree)
   // or a dependency link (drawn/deleted in the Gantt view). Carries the full board as JSON via
@@ -61,6 +70,14 @@ class ProjectBoardGanttWidget final : public QWidget {
   // obvious way to pan the timeline without grabbing the thin scrollbar handle directly.
   bool eventFilter(QObject* watched, QEvent* event) override;
 
+  void HandleScaleChanged(int index);
+  void HandleZoomIn();
+  void HandleZoomOut();
+  void ApplyDayWidth(qreal day_width);
+  void HandleCompactToggled(bool checked);
+  void ExportToPdf();
+  void HandleCriticalPathToggled(bool checked);
+
   KDGantt::View* view_ = nullptr;
   std::unique_ptr<ProjectBoardGanttModel> model_;
   // KDGantt::SummaryHandlingProxyModel (used internally by KDGantt::View) recomputes summary-row
@@ -69,6 +86,22 @@ class ProjectBoardGanttWidget final : public QWidget {
   // like a user edit. Set for the duration of LoadFromJson() so EmitDataChanged() can ignore
   // those incidental writes and keep DataChanged meaning "the user changed something".
   bool loading_ = false;
+
+  QComboBox* scale_combo_ = nullptr;
+  // Current scene units per day; the authoritative horizontal zoom level. Reset to the base
+  // width for the newly selected entry whenever the scale combo changes (hour/week/month need
+  // very different base widths for their columns to stay readable), and scaled in place by the
+  // zoom in/out buttons within the current scale.
+  qreal day_width_ = 0.0;
+
+  // Owned by view_->leftView() (Qt's setItemDelegate() ownership convention) once installed;
+  // kept here so HandleCompactToggled() can adjust its row height without re-querying leftView().
+  RowHeightDelegate* row_height_delegate_ = nullptr;
+
+  // Whether the critical-path highlight is currently on -- recomputed and reapplied after every
+  // real edit (see EmitDataChanged()) while true, so the highlight doesn't go stale as the user
+  // reschedules tasks or changes dependency links.
+  bool critical_path_enabled_ = false;
 };
 
 }  // namespace cppwiki::gui::project_board::gantt

@@ -1,6 +1,6 @@
 // Standalone demo for ProjectBoardGanttWidget (issue #113/#119) — not part of cppwiki_app.
-// Loads a small sample board (a "Design" summary task with two subtasks, a milestone, and a
-// finish-to-start dependency link) and shows the widget so the KDGantt-backed rendering,
+// Loads a small sample board (a "Design" summary task with two subtasks, a milestone, and two
+// chained finish-to-start dependency links) and shows the widget so the KDGantt-backed rendering,
 // drag/resize editing, and dependency-link drawing can be exercised by hand. See the PR/issue
 // comments for how to run it and what to look for.
 
@@ -76,7 +76,14 @@ auto MakeSampleBoard() -> QJsonObject {
   link.insert("type", "e2s");
   link.insert("source", "task-mockups");
   link.insert("target", "milestone-review");
-  QJsonArray links{link};
+
+  QJsonObject link2;
+  link2.insert("id", "link-wireframes-mockups");
+  link2.insert("type", "e2s");
+  link2.insert("source", "task-wireframes");
+  link2.insert("target", "task-mockups");
+
+  QJsonArray links{link, link2};
 
   QJsonObject board;
   board.insert("tasks", tasks);

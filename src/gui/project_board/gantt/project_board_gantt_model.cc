@@ -3,12 +3,14 @@
 #include <KDGanttConstraint>
 #include <KDGanttConstraintModel>
 #include <KDGanttGlobal>
+#include <QColor>
 #include <QDateTime>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QList>
+#include <QPen>
 #include <QStringList>
 #include <QVariant>
 #include <QtGlobal>
@@ -146,7 +148,15 @@ void ProjectBoardGanttModel::LoadFromJson(const QJsonObject& board) {
     auto* item = new QStandardItem(task.value(QStringLiteral("text")).toString());
     item->setEditable(true);
 
-    const auto start = ParseIsoDateTime(task.value(QStringLiteral("start")).toString());
+    auto start = ParseIsoDateTime(task.value(QStringLiteral("start")).toString());
+    if (!start.isValid()) {
+      // Tasks created from the Kanban view (KanbanBoardModel::addTask()) never set
+      // start/end/duration at all -- a Kanban card doesn't need dates, but without a fallback
+      // here the Gantt view would compute an invalid start/end and draw no bar whatsoever (see
+      // paintGanttItem()'s `if (item_rect.isValid())` guard), silently hiding the task instead of
+      // giving the user something visible and draggable to set a real schedule on.
+      start = QDateTime::currentDateTimeUtc();
+    }
     const auto has_explicit_end = task.contains(QStringLiteral("end"));
     const auto end = has_explicit_end
                          ? ParseIsoDateTime(task.value(QStringLiteral("end")).toString())
@@ -233,6 +243,10 @@ void ProjectBoardGanttModel::LoadFromJson(const QJsonObject& board) {
     if (link.contains(QStringLiteral("lag"))) {
       constraint.setData(kLinkLagDataRole, link.value(QStringLiteral("lag")).toInt());
     }
+    constraint.setData(KDGantt::Constraint::ValidConstraintPen,
+                       QVariant::fromValue(ProjectBoardGanttModel::LinkPen()));
+    constraint.setData(KDGantt::Constraint::InvalidConstraintPen,
+                       QVariant::fromValue(ProjectBoardGanttModel::LinkPen()));
     constraint_model_->addConstraint(constraint);
   }
 }
@@ -325,6 +339,25 @@ auto ProjectBoardGanttModel::ToJson() const -> QJsonObject {
 
 auto ProjectBoardGanttModel::ConstraintModel() const -> KDGantt::ConstraintModel* {
   return constraint_model_.get();
+}
+
+auto ProjectBoardGanttModel::LinkPen() -> QPen {
+  QPen pen(QColor(0xff, 0xff, 0xff, 0xe5));
+  pen.setWidthF(2.0);
+  return pen;
+}
+
+void ProjectBoardGanttModel::SetCriticalPathTaskIds(const QSet<QString>& critical_task_ids) {
+  std::function<void(QStandardItem*)> visit = [&](QStandardItem* item) {
+    const auto id = item->data(kTaskIdRole).toString();
+    item->setData(critical_task_ids.contains(id), kTaskCriticalPathRole);
+    for (int row = 0; row < item->rowCount(); ++row) {
+      visit(item->child(row));
+    }
+  };
+  for (int row = 0; row < rowCount(); ++row) {
+    visit(item(row));
+  }
 }
 
 auto ProjectBoardGanttModel::TaskIdForIndex(const QModelIndex& index) -> QString {

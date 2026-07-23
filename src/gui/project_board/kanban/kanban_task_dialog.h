@@ -12,6 +12,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QDateEdit;
 class QLineEdit;
 class QPlainTextEdit;
 class QSpinBox;
@@ -38,6 +39,11 @@ class KanbanTaskDialog final : public QDialog {
     QString description;
     QStringList tags;
     QStringList users;
+    // ISO 8601 UTC date-time string (see KanbanTask::start) and duration in days -- matches the
+    // Table view's own Start/Duration editing (ProjectDateEditDelegate / numeric spin delegate),
+    // rather than an explicit end date, since a task's end is normally derived from these two.
+    QString start;
+    double duration = 1;
   };
 
   // Shows a modal dialog seeded with empty/default fields (status defaults to `columns`' first
@@ -63,6 +69,8 @@ class KanbanTaskDialog final : public QDialog {
   QComboBox* column_combo_ = nullptr;
   QComboBox* priority_combo_ = nullptr;
   QSpinBox* progress_spin_ = nullptr;
+  QDateEdit* start_edit_ = nullptr;
+  QSpinBox* duration_spin_ = nullptr;
   QLineEdit* tags_edit_ = nullptr;
   QLineEdit* users_edit_ = nullptr;
   QPlainTextEdit* description_edit_ = nullptr;

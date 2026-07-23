@@ -56,16 +56,19 @@ class KanbanBoardModel final : public QObject {
   // type to "summary" (see KanbanTask::IsEpic()), turning it into its own swimlane instead of a
   // regular card -- the native "Add epic" entry point (see KanbanBoardWidget) funnels here with
   // is_epic == true, "Add task" with is_epic == false; both share this one method since an epic
-  // is just a task with a different type, not a different model.
+  // is just a task with a different type, not a different model. `start`/`duration` are the same
+  // fields the Table view edits (KanbanTask::start/duration) -- without them, a task created here
+  // has no schedule at all, which used to leave it with no visible bar in the Gantt view.
   void addTask(const QString& text, const QString& column_id, int priority, int progress,
                bool is_epic, const QString& description, const QStringList& tags,
-               const QStringList& users);
+               const QStringList& users, const QString& start, double duration);
 
   // Updates an existing task's Kanban-editable fields in place; a no-op if `task_id` doesn't
   // match any task currently on the board.
   void updateTask(const QString& task_id, const QString& text, const QString& column_id,
                   int priority, int progress, bool is_epic, const QString& description,
-                  const QStringList& tags, const QStringList& users);
+                  const QStringList& tags, const QStringList& users, const QString& start,
+                  double duration);
 
   [[nodiscard]] auto FindTask(const QString& task_id) const -> std::optional<KanbanTask>;
   // The board's first status column id, or an empty string if the board has none — used to give

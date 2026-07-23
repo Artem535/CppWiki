@@ -5,6 +5,8 @@
 # the actual target definitions here minimizes line-level merge conflicts between the three PRs.
 
 add_library(cppwiki_project_board_gantt STATIC
+        project_board_gantt_critical_path.cc
+        project_board_gantt_critical_path.h
         project_board_gantt_item_delegate.cc
         project_board_gantt_item_delegate.h
         project_board_gantt_model.cc
@@ -23,6 +25,7 @@ target_link_libraries(cppwiki_project_board_gantt
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets
+        Qt6::PrintSupport
         KDAB::kdchart
 )
 

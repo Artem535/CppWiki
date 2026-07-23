@@ -2,16 +2,41 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDateEdit>
+#include <QDateTime>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QSpinBox>
+#include <QTimeZone>
 #include <QVBoxLayout>
 
 namespace cppwiki::gui::kanban {
 
 namespace {
+
+// Mirrors project_task.cc's ParseIsoDate()/FormatIsoDate() (Table view's own Start column
+// editing) so a date entered here round-trips through KanbanTask::start identically to one
+// entered via the Table view, rather than introducing a second date string convention.
+auto ParseIsoDate(const QString& value) -> QDate {
+  if (value.isEmpty()) {
+    return QDate();
+  }
+  QDateTime date_time = QDateTime::fromString(value, Qt::ISODateWithMs);
+  if (!date_time.isValid()) {
+    date_time = QDateTime::fromString(value, Qt::ISODate);
+  }
+  if (date_time.isValid()) {
+    return date_time.date();
+  }
+  return QDate::fromString(value.left(10), Qt::ISODate);
+}
+
+auto FormatIsoDate(const QDate& date) -> QString {
+  const QDateTime date_time(date, QTime(0, 0, 0), QTimeZone::utc());
+  return date_time.toString(Qt::ISODateWithMs);
+}
 
 // Tags/assignees are edited as a single comma-separated line rather than a dedicated multi-value
 // widget -- this is a small internal form, not a general-purpose tag picker, and a plain QLineEdit
@@ -54,6 +79,18 @@ KanbanTaskDialog::KanbanTaskDialog(QWidget* parent, const QVector<KanbanColumn>&
   progress_spin_->setRange(0, 100);
   progress_spin_->setSuffix(QStringLiteral("%"));
 
+  // Start/duration, not start/end: matches the Table view's own editing of these same fields
+  // (ProjectDateEditDelegate + a numeric spin delegate for duration) rather than introducing a
+  // second convention for editing an end date directly.
+  start_edit_ = new QDateEdit(this);
+  start_edit_->setCalendarPopup(true);
+  start_edit_->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
+  start_edit_->setDate(QDate::currentDate());
+
+  duration_spin_ = new QSpinBox(this);
+  duration_spin_->setRange(1, 3650);
+  duration_spin_->setSuffix(QStringLiteral(" day(s)"));
+
   tags_edit_ = new QLineEdit(this);
   tags_edit_->setPlaceholderText(QStringLiteral("comma-separated, e.g. design, backend"));
 
@@ -69,6 +106,8 @@ KanbanTaskDialog::KanbanTaskDialog(QWidget* parent, const QVector<KanbanColumn>&
   form_layout->addRow(QStringLiteral("Status"), column_combo_);
   form_layout->addRow(QStringLiteral("Priority"), priority_combo_);
   form_layout->addRow(QStringLiteral("Progress"), progress_spin_);
+  form_layout->addRow(QStringLiteral("Start"), start_edit_);
+  form_layout->addRow(QStringLiteral("Duration"), duration_spin_);
   form_layout->addRow(QStringLiteral("Tags"), tags_edit_);
   form_layout->addRow(QStringLiteral("Assignees"), users_edit_);
   form_layout->addRow(QStringLiteral("Description"), description_edit_);
@@ -90,6 +129,9 @@ void KanbanTaskDialog::SetInitialValues(const KanbanTask& task) {
   const int priority_position = priority_combo_->findData(task.priority);
   priority_combo_->setCurrentIndex(priority_position >= 0 ? priority_position : 0);
   progress_spin_->setValue(static_cast<int>(task.progress));
+  const QDate parsed_start = ParseIsoDate(task.start);
+  start_edit_->setDate(parsed_start.isValid() ? parsed_start : QDate::currentDate());
+  duration_spin_->setValue(task.duration > 0 ? static_cast<int>(task.duration) : 1);
   tags_edit_->setText(task.tags.join(QStringLiteral(", ")));
   users_edit_->setText(task.users.join(QStringLiteral(", ")));
   description_edit_->setPlainText(task.description);
@@ -102,6 +144,8 @@ auto KanbanTaskDialog::ToResult() const -> Result {
   result.column_id = column_combo_->currentData().toString();
   result.priority = priority_combo_->currentData().toInt();
   result.progress = progress_spin_->value();
+  result.start = FormatIsoDate(start_edit_->date());
+  result.duration = duration_spin_->value();
   result.tags = SplitCommaList(tags_edit_->text());
   result.users = SplitCommaList(users_edit_->text());
   result.description = description_edit_->toPlainText().trimmed();
