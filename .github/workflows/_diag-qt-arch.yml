@@ -1,0 +1,12 @@
+name: Diag Qt Arch
+on:
+  workflow_dispatch: {}
+jobs:
+  diag:
+    runs-on: windows-latest
+    steps:
+      - name: List available Windows archs for Qt 6.11.1
+        shell: pwsh
+        run: |
+          pip install aqtinstall
+          aqt list-qt windows desktop --arch 6.11.1
