@@ -137,7 +137,8 @@ void KanbanBoardModel::addColumn(const QString& label) {
 
 void KanbanBoardModel::addTask(const QString& text, const QString& column_id, int priority,
                                int progress, bool is_epic, const QString& description,
-                               const QStringList& tags, const QStringList& users) {
+                               const QStringList& tags, const QStringList& users,
+                               const QString& start, double duration) {
   KanbanTask task;
   task.id = FreshId(QStringLiteral("task-"));
   task.text = text;
@@ -148,6 +149,8 @@ void KanbanBoardModel::addTask(const QString& text, const QString& column_id, in
   task.description = description;
   task.tags = tags;
   task.users = users;
+  task.start = start;
+  task.duration = duration;
   document_.tasks.append(task);
   emit boardChanged();
 }
@@ -155,7 +158,8 @@ void KanbanBoardModel::addTask(const QString& text, const QString& column_id, in
 void KanbanBoardModel::updateTask(const QString& task_id, const QString& text,
                                   const QString& column_id, int priority, int progress,
                                   bool is_epic, const QString& description, const QStringList& tags,
-                                  const QStringList& users) {
+                                  const QStringList& users, const QString& start,
+                                  double duration) {
   for (auto& task : document_.tasks) {
     if (task.id != task_id) {
       continue;
@@ -168,6 +172,8 @@ void KanbanBoardModel::updateTask(const QString& task_id, const QString& text,
     task.description = description;
     task.tags = tags;
     task.users = users;
+    task.start = start;
+    task.duration = duration;
     emit boardChanged();
     return;
   }
