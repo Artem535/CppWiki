@@ -149,24 +149,26 @@ ProjectBoardGanttWidget::ProjectBoardGanttWidget(QWidget* parent)
   //     the grid background, and header labels) is preserved from the previous
   //     frame.  This is the single biggest FPS win.
   //
-  //  2. CacheBackground — the DateTimeGrid's row-colour background (weekends,
-  //     free days, "no information" fill) is painted to a cached pixmap and
-  //     re-used across frames instead of being re-drawn on every paint.  The
-  //     cache is invalidated automatically on scroll/resize.
-  //
-  //  3. DontSavePainterState / DontAdjustForAntialiasing — skip per-frame
+  //  2. DontSavePainterState / DontAdjustForAntialiasing — skip per-frame
   //     painter overhead that QGraphicsView normally adds for correctness.
   //
-  //  4. ScaleDay — forces day-level Gantt headers so setDayWidth() is the
+  //  3. ScaleDay — forces day-level Gantt headers so setDayWidth() is the
   //     authoritative horizontal zoom, not overridden by ScaleAuto heuristics.
   //
-  //  5. kDayWidth — widens the Gantt timeline so task bars and their text
+  //  4. kDayWidth — widens the Gantt timeline so task bars and their text
   //     labels are readable without zooming in.  At 80 px/day a 5-day task bar
   //     is 400 px wide — clearly visible at any window size > ~600 px.
+  //
+  // NOT enabled: QGraphicsView::CacheBackground. It caches the DateTimeGrid's row-colour
+  // background (weekends, free days) as a pixmap and blits/scrolls that cache across frames
+  // instead of repainting it -- but confirmed live (doesn't reproduce headless/offscreen) that
+  // for a task whose bar spans far enough from the timeline's start to require scrolling many
+  // screen-widths away, that blit-and-patch approach accumulates a visible moire/banding pattern
+  // over the weekend shading well before reaching the task itself. The FPS win wasn't worth
+  // that, so this one optimization from Qt's own suggested list is deliberately skipped.
   {
     auto* gv = view_->graphicsView();
     gv->setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
-    gv->setCacheMode(QGraphicsView::CacheBackground);
     gv->setOptimizationFlag(QGraphicsView::DontSavePainterState);
     gv->setOptimizationFlag(QGraphicsView::DontAdjustForAntialiasing);
     if (auto* grid = qobject_cast<KDGantt::DateTimeGrid*>(view_->grid())) {
