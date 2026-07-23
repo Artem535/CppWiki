@@ -18,6 +18,11 @@ permissions:
 
 env:
   VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+  # The BlockNote editor bundle (mermaid/katex/cytoscape and per-language chunks) is large enough
+  # that Vite/Rollup's chunk-rendering step can exceed V8's default old-space heap ceiling
+  # (~2GB) during `npm run build` -- observed as a Node "JavaScript heap out of memory" crash on
+  # the macOS job specifically (lower default RAM than the Linux/Windows runners).
+  NODE_OPTIONS: "--max-old-space-size=4096"
   CPPWIKI_QT_VERSION: "6.8.3"
   # qtdeclarative (Qml/Quick) is part of Qt6's essential/base desktop kit, not an aqt add-on module --
   # requesting it via --modules fails with "not found while parsing XML of package information".
