@@ -227,7 +227,12 @@ jobs:
 
   package-macos:
     name: Package macOS (DMG)
-    runs-on: macos-latest
+    # Not macos-latest: its SDK (macOS 26.x, Xcode 26.x per actions/runner-images) dropped
+    # AGL.framework, which Qt6Gui's own exported CMake config still links against on Apple
+    # platforms (legacy/unused, but the linker still needs the framework to exist) -- KDChart's
+    # link against Qt6::Gui fails with "ld: framework 'AGL' not found". macos-15's default Xcode
+    # (16.4) targets an older SDK generation that still ships it.
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
