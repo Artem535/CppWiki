@@ -148,7 +148,15 @@ void ProjectBoardGanttModel::LoadFromJson(const QJsonObject& board) {
     auto* item = new QStandardItem(task.value(QStringLiteral("text")).toString());
     item->setEditable(true);
 
-    const auto start = ParseIsoDateTime(task.value(QStringLiteral("start")).toString());
+    auto start = ParseIsoDateTime(task.value(QStringLiteral("start")).toString());
+    if (!start.isValid()) {
+      // Tasks created from the Kanban view (KanbanBoardModel::addTask()) never set
+      // start/end/duration at all -- a Kanban card doesn't need dates, but without a fallback
+      // here the Gantt view would compute an invalid start/end and draw no bar whatsoever (see
+      // paintGanttItem()'s `if (item_rect.isValid())` guard), silently hiding the task instead of
+      // giving the user something visible and draggable to set a real schedule on.
+      start = QDateTime::currentDateTimeUtc();
+    }
     const auto has_explicit_end = task.contains(QStringLiteral("end"));
     const auto end = has_explicit_end
                          ? ParseIsoDateTime(task.value(QStringLiteral("end")).toString())

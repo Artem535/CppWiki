@@ -118,6 +118,36 @@ void TestLoadFromJsonRoundTripsTasksColumnsAndLinks() {
   Require(link.value("target").toString() == "milestone-review", "link target should round-trip");
 }
 
+// KanbanBoardModel::addTask() (kanban_board_model.cc) creates a task with no start/end/duration
+// at all -- fine for a Kanban card, but the same document is shared with this Gantt view, and
+// without a fallback here LoadFromJson() would leave StartTimeRole/EndTimeRole invalid, which
+// ProjectBoardGanttItemDelegate::paintGanttItem() (item_rect.isValid() guard) then draws as no
+// bar whatsoever -- the task silently disappears from the Gantt view instead of being visible
+// and draggable.
+void TestLoadFromJsonDefaultsStartDateForTaskWithNoSchedule() {
+  QJsonObject kanban_task;
+  kanban_task.insert("id", "task-from-kanban");
+  kanban_task.insert("text", "From Kanban");
+  kanban_task.insert("column", "todo");
+
+  QJsonObject board;
+  board.insert("tasks", QJsonArray{kanban_task});
+  board.insert("columns", QJsonArray{QJsonObject{{"id", "todo"}, {"label", "To do"}}});
+  board.insert("links", QJsonArray{});
+
+  ProjectBoardGanttModel model;
+  model.LoadFromJson(board);
+
+  const auto index = model.IndexForTaskId("task-from-kanban");
+  Require(index.isValid(), "task-from-kanban should be found by id");
+
+  const auto start = model.data(index, KDGantt::StartTimeRole).toDateTime();
+  const auto end = model.data(index, KDGantt::EndTimeRole).toDateTime();
+  Require(start.isValid(), "a task with no start/end/duration should still get a valid start date");
+  Require(end.isValid(), "a task with no start/end/duration should still get a valid end date");
+  Require(end > start, "the defaulted end date should be after the defaulted start date");
+}
+
 void TestLoadFromJsonBuildsSummaryHierarchyForKdGantt() {
   ProjectBoardGanttModel model;
   model.LoadFromJson(SampleBoard());
@@ -438,6 +468,7 @@ int main(int argc, char* argv[]) {
   QApplication application(argc, argv);
 
   TestLoadFromJsonRoundTripsTasksColumnsAndLinks();
+  TestLoadFromJsonDefaultsStartDateForTaskWithNoSchedule();
   TestLoadFromJsonBuildsSummaryHierarchyForKdGantt();
   TestLoadFromJsonDoesNotEmitDataChanged();
   TestDraggingATaskBarEmitsDataChangedWithUpdatedTask();
