@@ -136,6 +136,21 @@ qt_add_resources(cppwiki_app cppwiki_icon_resources
         gui/assets/icons/document-project-board.svg
 )
 
+# Embedded as a Qt resource (not a filesystem path guessed relative to CWD/applicationDirPath())
+# because kQlementineDarkThemePath used to point at
+# third_party/qlementine/showcase/resources/themes/dark.json -- a vendored submodule *demo*
+# resource, resolvable only by accident when the working directory or build-output depth happened
+# to line up with ResolveThemePath()'s relative-path guesses. It was never installed/packaged, so
+# every packaged build (AppImage/DMG/installer) silently fell back to QlementineStyle's default
+# (light) theme with no error. QFile (which Theme::fromJsonPath() uses) supports ":/" resource
+# paths natively, so embedding it here fixes every context at once.
+qt_add_resources(cppwiki_app cppwiki_theme_resources
+        PREFIX "/cppwiki/themes"
+        BASE app/themes
+        FILES
+        app/themes/dark.json
+)
+
 if (CPPWIKI_ENABLE_CBLITE_STORAGE)
     target_compile_definitions(cppwiki_app
             PRIVATE
