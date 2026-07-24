@@ -3,7 +3,6 @@
 #include <oclero/qlementine.hpp>
 
 #include <QCoreApplication>
-#include <QDir>
 #include <QFileInfo>
 #include <QSettings>
 #include <optional>
@@ -40,22 +39,13 @@ QString g_applied_theme_path;
 std::optional<AccentColor> g_applied_accent_color;
 
 auto ResolveThemePath() -> QString {
-  const auto theme_path = constants::kQlementineDarkThemePath;
-
-  const auto candidates = {
-      QDir::current().filePath(ToQString(theme_path)),
-      QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../../") +
-                                                           ToQString(theme_path)),
-      QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../../../") +
-                                                           ToQString(theme_path)),
-  };
-
-  for (const auto& candidate : candidates) {
-    if (QFileInfo(candidate).exists()) {
-      return candidate;
-    }
-  }
-  return {};
+  // A Qt resource path (":/...", see constants::kQlementineDarkThemePath) is embedded in the
+  // binary itself, so it resolves the same way regardless of CWD or install layout -- no
+  // candidate-path guessing needed (unlike ResolveEditorFallbackHtmlPath()/
+  // ResolveDefaultEditorDistDirectory(), which guess because their targets are real filesystem
+  // trees that can't be embedded as Qt resources).
+  const auto theme_path = ToQString(constants::kQlementineDarkThemePath);
+  return QFileInfo(theme_path).exists() ? theme_path : QString{};
 }
 
 }  // namespace

@@ -47,8 +47,9 @@ inline constexpr std::string_view kNewDocumentTitle = "Untitled note";
 inline constexpr std::string_view kNewDocumentActionTitle = "New note";
 inline constexpr std::string_view kAddChildActionId = "cppwiki-add-child-action";
 inline constexpr std::string_view kNewDocumentActionId = "cppwiki-new-document-action";
-inline constexpr std::string_view kQlementineDarkThemePath =
-    "third_party/qlementine/showcase/resources/themes/dark.json";
+// Embedded via qt_add_resources() in src/CMakeLists.txt from src/app/themes/dark.json -- see the
+// comment there for why this is a Qt resource path rather than a filesystem path.
+inline constexpr std::string_view kQlementineDarkThemePath = ":/cppwiki/themes/dark.json";
 inline constexpr std::string_view kApplicationQssPath = "src/app/cppwiki.qss";
 inline constexpr std::string_view kEditorFallbackHtmlPath = "src/app/editor_fallback.html";
 inline constexpr int kServerApiVersion = 1;
