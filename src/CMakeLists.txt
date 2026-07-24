@@ -207,15 +207,34 @@ endif ()
 if (CPPWIKI_ENABLE_CBLITE_STORAGE)
     # CBLite::cblite is a prebuilt binary imported from CPPWIKI_CBLITE_ROOT (see
     # cmake/FindCBLite.cmake), not a target this project builds, so there's no install(TARGETS)
-    # to hook -- install its actual runtime file (resolved via the generator expression so this
-    # works whether the target came from Couchbase's own exported config or the FindCBLite.cmake
-    # fallback) co-located with the executable, same rationale as kdchart/qt6keychain above.
+    # to hook. Installing just $<TARGET_FILE:CBLite::cblite> (a single resolved file) is not
+    # enough on Linux: the executable's NEEDED entry references the SONAME symlink
+    # (e.g. libcblite.so.4), while TARGET_FILE resolves to the fully-versioned real file
+    # (libcblite.so.4.0.3) -- linuxdeploy then fails with "Could not find dependency:
+    # libcblite.so.4" because that exact name was never installed. Copy the whole runtime
+    # directory instead, so the SONAME symlink(s) ship alongside the real file exactly as
+    # Couchbase's own release archive lays them out.
     if (APPLE)
-        install(FILES $<TARGET_FILE:CBLite::cblite>
+        install(DIRECTORY "${CPPWIKI_CBLITE_ROOT}/lib/"
                 DESTINATION cppwiki.app/Contents/MacOS
+                FILES_MATCHING PATTERN "libcblite*"
+        )
+    elseif (WIN32)
+        install(DIRECTORY "${CPPWIKI_CBLITE_ROOT}/bin/"
+                DESTINATION bin
+                FILES_MATCHING PATTERN "*.dll"
         )
     else ()
-        install(FILES $<TARGET_FILE:CBLite::cblite>
+        # Unlike macOS's flat lib/ layout, Couchbase's Linux release nests the actual .so files
+        # under a Debian/Ubuntu multiarch triplet subdirectory (lib/x86_64-linux-gnu/), which
+        # install(DIRECTORY ... FILES_MATCHING) would preserve as a nested subfolder rather than
+        # flattening next to the executable -- glob for the files directly instead so their
+        # destination is flat regardless of how deep Couchbase happens to nest them.
+        file(GLOB_RECURSE CBLITE_LINUX_RUNTIME_FILES "${CPPWIKI_CBLITE_ROOT}/lib/libcblite.so*")
+        if (NOT CBLITE_LINUX_RUNTIME_FILES)
+            message(FATAL_ERROR "No libcblite.so* files found under ${CPPWIKI_CBLITE_ROOT}/lib")
+        endif ()
+        install(FILES ${CBLITE_LINUX_RUNTIME_FILES}
                 DESTINATION bin
         )
     endif ()
