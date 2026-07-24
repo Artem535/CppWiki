@@ -23,12 +23,18 @@ env:
   # (~2GB) during `npm run build` -- observed as a Node "JavaScript heap out of memory" crash on
   # the macOS job specifically (lower default RAM than the Linux/Windows runners).
   NODE_OPTIONS: "--max-old-space-size=4096"
-  # src/auth/auth_session_manager.cc uses QtNetworkAuth APIs (refreshTokens(), setCallbackHost(),
-  # idToken()/idTokenChanged(), etc.) that don't exist before Qt 6.11 -- 6.8.3 fails to compile.
-  # 6.11.0 (not .1): aqt couldn't locate Windows package data for 6.11.1 specifically ("Failed to
-  # locate XML data for Qt version '6.11.1'") -- patch releases don't change public API, and an
-  # initial minor release is far less likely to have incomplete per-platform binary coverage.
-  CPPWIKI_QT_VERSION: "6.11.0"
+  # src/auth/auth_session_manager.cc uses QtNetworkAuth APIs (refreshTokens(), idToken()/
+  # idTokenChanged(), accessTokenAboutToExpire(), serverReportedErrorOccurred(),
+  # setAutoRefresh(), setRefreshLeadTime(), setRequestedScopeTokens()) -- per Qt's own docs
+  # (doc.qt.io/qt-6/qabstractoauth2.html) every one of these was introduced in Qt 6.9, not 6.11
+  # as originally assumed. 6.11.0/6.11.1 both compile fine on Linux/macOS, but aqt cannot
+  # install ANY Windows-desktop package data for the whole 6.11.x branch on this runner --
+  # `aqt list-qt windows desktop --arch 6.11.0` fails to fetch Updates.xml even against the
+  # official download.qt.io host directly (--base), while the same query for 6.10.2 succeeds
+  # and lists win64_msvc2022_64 as a valid arch. This looks like a genuine gap in Qt's
+  # published Windows package metadata for 6.11.x, not a mirror/network issue. 6.10.3 (latest
+  # 6.10.x) satisfies the real >=6.9 requirement and has known-good Windows package data.
+  CPPWIKI_QT_VERSION: "6.10.3"
   # qtdeclarative (Qml/Quick) is part of Qt6's essential/base desktop kit, not an aqt add-on module --
   # requesting it via --modules fails with "not found while parsing XML of package information".
   # qtpositioning is required: as of 6.8, Qt6WebEngineCore's own CMake config hard-depends on
@@ -150,28 +156,14 @@ jobs:
 
   package-windows:
     name: Package Windows (installer)
-    # Not windows-latest: aqt fails to locate Windows package data for Qt 6.11.0/6.11.1 on it
-    # ("Failed to locate XML data for Qt version"). windows-2022 is what a separately-confirmed
-    # working workflow (another project, same jurplel/install-qt-action + win64_msvc2022_64 +
-    # Qt 6.10.2) pins instead of windows-latest.
+    # Not windows-latest: matches windows-2022 from a separately-confirmed working workflow
+    # (another project, same jurplel/install-qt-action + win64_msvc2022_64).
     runs-on: windows-2022
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      # TEMPORARY diagnostic: aqt fails to install Qt 6.11.0 windows desktop with
-      # "Failed to locate XML data" even against the official download.qt.io host explicitly
-      # (--base), which rules out a bad-mirror theory. Query aqt directly, on this runner, for
-      # what it actually thinks is available before spending 40+ min on the rest of the job.
-      # Remove once the real cause is confirmed and fixed.
-      - name: Diagnose Qt6 availability
-        run: |
-          python -m pip install "aqtinstall==3.3.*"
-          python -m aqt list-qt windows desktop
-          python -m aqt list-qt windows desktop --arch 6.11.0
-          python -m aqt list-qt windows desktop --arch 6.10.2
 
       - name: Install Qt6
         uses: jurplel/install-qt-action@v4
@@ -186,13 +178,6 @@ jobs:
           # matches what windows-latest/ilammy/msvc-dev-cmd actually provide anyway.
           arch: win64_msvc2022_64
           cache: true
-          # aqt auto-selects a mirror for Updates.xml/checksum lookups, and that random pick
-          # has repeatedly failed for 6.11.0 on this Windows runner ("Failed to download
-          # checksum ... This may happen on unofficial mirrors."). install-qt-action has no
-          # dedicated "mirror" input (an earlier attempt using one was silently ignored, with
-          # only an "Unexpected input(s)" warning) -- aqt's own `-b/--base` flag has to go
-          # through the action's `extra` passthrough instead.
-          extra: "--base https://download.qt.io"
 
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
