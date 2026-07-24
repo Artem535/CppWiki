@@ -150,7 +150,11 @@ jobs:
 
   package-windows:
     name: Package Windows (installer)
-    runs-on: windows-latest
+    # Not windows-latest: aqt fails to locate Windows package data for Qt 6.11.0/6.11.1 on it
+    # ("Failed to locate XML data for Qt version"). windows-2022 is what a separately-confirmed
+    # working workflow (another project, same jurplel/install-qt-action + win64_msvc2022_64 +
+    # Qt 6.10.2) pins instead of windows-latest.
+    runs-on: windows-2022
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -160,6 +164,9 @@ jobs:
       - name: Install Qt6
         uses: jurplel/install-qt-action@v4
         with:
+          # Same known-working pin as the reference workflow, rather than whatever
+          # install-qt-action's own default resolves to.
+          aqtversion: "==3.3.*"
           version: ${{ env.CPPWIKI_QT_VERSION }}
           modules: ${{ env.CPPWIKI_QT_MODULES }}
           # Qt dropped the MSVC2019 kit by 6.8 (aqt reports even qt_base missing for
