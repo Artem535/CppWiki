@@ -103,8 +103,17 @@ jobs:
           restore-keys: |
             vcpkg-binarycache-release-${{ runner.os }}-
 
+      - name: Cache Couchbase Lite archive
+        uses: actions/cache@v4
+        with:
+          path: .deps/cache/couchbase-lite
+          key: cblite-archive-${{ runner.os }}-${{ hashFiles('third_party/couchbase-lite.version') }}
+
+      - name: Bootstrap Couchbase Lite
+        run: scripts/bootstrap-cblite.sh linux-x86_64
+
       - name: Configure (release preset, server disabled)
-        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON -DCPPWIKI_BUILD_ADMIN_CLI=OFF
+        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON -DCPPWIKI_BUILD_ADMIN_CLI=OFF -DCPPWIKI_ENABLE_CBLITE_STORAGE=ON -DCPPWIKI_CBLITE_ROOT=${{ github.workspace }}/.deps/couchbase-lite/linux-x86_64
 
       - name: Build
         run: cmake --build --preset release
@@ -198,9 +207,26 @@ jobs:
           restore-keys: |
             vcpkg-binarycache-release-${{ runner.os }}-
 
+      - name: Cache Couchbase Lite archive
+        uses: actions/cache@v4
+        with:
+          path: .deps/cache/couchbase-lite
+          key: cblite-archive-${{ runner.os }}-${{ hashFiles('third_party/couchbase-lite.version') }}
+
+      # scripts/bootstrap-cblite.sh is POSIX sh; runs fine on windows-2022's bundled Git Bash via
+      # `shell: bash`, except its .zip extraction needs `unzip`, which this runner image doesn't
+      # ship (only 7-Zip's own 7z.exe) -- installed via choco first.
+      - name: Install unzip (for Couchbase Lite bootstrap script)
+        shell: pwsh
+        run: choco install unzip --no-progress -y
+
+      - name: Bootstrap Couchbase Lite
+        shell: bash
+        run: scripts/bootstrap-cblite.sh windows-x86_64
+
       - name: Configure (release preset, server disabled)
         shell: pwsh
-        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON -DCPPWIKI_BUILD_ADMIN_CLI=OFF
+        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON -DCPPWIKI_BUILD_ADMIN_CLI=OFF -DCPPWIKI_ENABLE_CBLITE_STORAGE=ON "-DCPPWIKI_CBLITE_ROOT=${{ github.workspace }}\.deps\couchbase-lite\windows-x86_64"
 
       - name: Build
         shell: pwsh
@@ -291,8 +317,17 @@ jobs:
           restore-keys: |
             vcpkg-binarycache-release-${{ runner.os }}-
 
+      - name: Cache Couchbase Lite archive
+        uses: actions/cache@v4
+        with:
+          path: .deps/cache/couchbase-lite
+          key: cblite-archive-${{ runner.os }}-${{ hashFiles('third_party/couchbase-lite.version') }}
+
+      - name: Bootstrap Couchbase Lite
+        run: scripts/bootstrap-cblite.sh macos-arm64
+
       - name: Configure (release preset, server disabled)
-        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON -DCPPWIKI_BUILD_ADMIN_CLI=OFF
+        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON -DCPPWIKI_BUILD_ADMIN_CLI=OFF -DCPPWIKI_ENABLE_CBLITE_STORAGE=ON -DCPPWIKI_CBLITE_ROOT=${{ github.workspace }}/.deps/couchbase-lite/macos-arm64
 
       - name: Build
         run: cmake --build --preset release

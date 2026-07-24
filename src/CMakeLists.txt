@@ -204,6 +204,23 @@ else ()
     )
 endif ()
 
+if (CPPWIKI_ENABLE_CBLITE_STORAGE)
+    # CBLite::cblite is a prebuilt binary imported from CPPWIKI_CBLITE_ROOT (see
+    # cmake/FindCBLite.cmake), not a target this project builds, so there's no install(TARGETS)
+    # to hook -- install its actual runtime file (resolved via the generator expression so this
+    # works whether the target came from Couchbase's own exported config or the FindCBLite.cmake
+    # fallback) co-located with the executable, same rationale as kdchart/qt6keychain above.
+    if (APPLE)
+        install(FILES $<TARGET_FILE:CBLite::cblite>
+                DESTINATION cppwiki.app/Contents/MacOS
+        )
+    else ()
+        install(FILES $<TARGET_FILE:CBLite::cblite>
+                DESTINATION bin
+        )
+    endif ()
+endif ()
+
 if (CPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP)
     # See ResolveDefaultEditorDistDirectory() in app/program_settings.cc: a packaged install looks
     # for the built editor bundle next to the executable under this exact name.
