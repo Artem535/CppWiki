@@ -174,6 +174,11 @@ jobs:
           # matches what windows-latest/ilammy/msvc-dev-cmd actually provide anyway.
           arch: win64_msvc2022_64
           cache: true
+          # aqt auto-selects a mirror for Updates.xml/checksum lookups, and that random pick
+          # has repeatedly failed for 6.11.0 on this Windows runner ("Failed to download
+          # checksum ... This may happen on unofficial mirrors."). Pin the official Qt host
+          # directly to remove mirror flakiness from the equation.
+          mirror: "https://download.qt.io"
 
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
