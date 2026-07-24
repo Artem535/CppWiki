@@ -25,12 +25,19 @@ env:
   NODE_OPTIONS: "--max-old-space-size=4096"
   # src/auth/auth_session_manager.cc uses QtNetworkAuth APIs (refreshTokens(), setCallbackHost(),
   # idToken()/idTokenChanged(), etc.) that don't exist before Qt 6.11 -- 6.8.3 fails to compile.
-  CPPWIKI_QT_VERSION: "6.11.1"
+  # 6.11.0 (not .1): aqt couldn't locate Windows package data for 6.11.1 specifically ("Failed to
+  # locate XML data for Qt version '6.11.1'") -- patch releases don't change public API, and an
+  # initial minor release is far less likely to have incomplete per-platform binary coverage.
+  CPPWIKI_QT_VERSION: "6.11.0"
   # qtdeclarative (Qml/Quick) is part of Qt6's essential/base desktop kit, not an aqt add-on module --
   # requesting it via --modules fails with "not found while parsing XML of package information".
   # qtpositioning is required: as of 6.8, Qt6WebEngineCore's own CMake config hard-depends on
   # Qt6Positioning, so without it find_package(Qt6 ... WebEngineWidgets) fails to configure.
-  CPPWIKI_QT_MODULES: "qtwebengine qtwebchannel qtnetworkauth qtpositioning"
+  # qtserialport: Qt6Positioning ships a serial-NMEA geolocation backend plugin that links
+  # against it, so linuxdeploy-plugin-qt (which bundles every plugin it finds) fails with
+  # "Could not find dependency: libQt6SerialPort.so.6" unless it's installed too, even though
+  # the app itself never uses serial ports.
+  CPPWIKI_QT_MODULES: "qtwebengine qtwebchannel qtnetworkauth qtpositioning qtserialport"
 
 jobs:
   package-linux:
