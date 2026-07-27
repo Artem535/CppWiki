@@ -6,9 +6,11 @@ import "./styles.css";
 import {
   BlockNoteSchema,
   createBlockNoteExtension,
+  createCodeBlockSpec,
   defaultBlockSpecs,
   filterSuggestionItems,
 } from "@blocknote/core";
+import { codeBlockOptions } from "@blocknote/code-block";
 import { en as coreEnDictionary } from "@blocknote/core/locales";
 import { BlockNoteView } from "@blocknote/mantine";
 import {
@@ -46,11 +48,14 @@ import { createInlineSuggestionExtension } from "./extensions/inlineSuggestionEx
 import { NotebookView } from "./notebook/NotebookView";
 import { OpenApiSpecView } from "./openapi/OpenApiSpecView";
 
-// BlockNote's default schema plus the Mermaid diagram block (ADR-017, issue #50). Built once at
-// module scope, not per-render, since it doesn't depend on any component state.
+// BlockNote's default schema plus the Mermaid diagram block (ADR-017, issue #50) and real
+// syntax-highlighted code blocks (issue #51, via @blocknote/code-block's shiki-based highlighter
+// instead of the core default's plain, unhighlighted codeBlock). Built once at module scope, not
+// per-render, since it doesn't depend on any component state.
 const editorSchema = BlockNoteSchema.create({
   blockSpecs: {
     ...defaultBlockSpecs,
+    codeBlock: createCodeBlockSpec(codeBlockOptions),
     // createReactBlockSpec() returns an options factory, not a BlockSpec itself — call it with
     // no options to get the actual spec, same as how @blocknote/core builds defaultBlockSpecs.
     mermaid: MermaidBlock(),
