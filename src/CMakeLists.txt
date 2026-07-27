@@ -185,6 +185,74 @@ install(TARGETS cppwiki_app
         RUNTIME DESTINATION bin
         BUNDLE DESTINATION .
 )
+
+# kdchart and qt6keychain build as real shared libraries (KDChart_STATIC OFF above; qtkeychain
+# defaults to shared) but ship with no install() rules of their own -- without this, a packaged
+# app is silently missing a required runtime library. Co-locate them next to the executable: on
+# Windows/Linux, "same directory as the exe" is where the default DLL/SO search already looks (no
+# extra RPATH plumbing needed), and this puts them where linuxdeploy/macdeployqt will find and
+# re-house them in the staged tree those tools actually scan, rather than depending on a
+# leftover build-tree RPATH that only happens to still be valid within the same CI job.
+if (APPLE)
+    install(TARGETS kdchart qt6keychain
+            LIBRARY DESTINATION cppwiki.app/Contents/MacOS
+    )
+else ()
+    install(TARGETS kdchart qt6keychain
+            RUNTIME DESTINATION bin
+            LIBRARY DESTINATION bin
+    )
+endif ()
+
+if (CPPWIKI_ENABLE_CBLITE_STORAGE)
+    # CBLite::cblite is a prebuilt binary imported from CPPWIKI_CBLITE_ROOT (see
+    # cmake/FindCBLite.cmake), not a target this project builds, so there's no install(TARGETS)
+    # to hook. Installing just $<TARGET_FILE:CBLite::cblite> (a single resolved file) is not
+    # enough on Linux: the executable's NEEDED entry references the SONAME symlink
+    # (e.g. libcblite.so.4), while TARGET_FILE resolves to the fully-versioned real file
+    # (libcblite.so.4.0.3) -- linuxdeploy then fails with "Could not find dependency:
+    # libcblite.so.4" because that exact name was never installed. Copy the whole runtime
+    # directory instead, so the SONAME symlink(s) ship alongside the real file exactly as
+    # Couchbase's own release archive lays them out.
+    if (APPLE)
+        install(DIRECTORY "${CPPWIKI_CBLITE_ROOT}/lib/"
+                DESTINATION cppwiki.app/Contents/MacOS
+                FILES_MATCHING PATTERN "libcblite*"
+        )
+    elseif (WIN32)
+        install(DIRECTORY "${CPPWIKI_CBLITE_ROOT}/bin/"
+                DESTINATION bin
+                FILES_MATCHING PATTERN "*.dll"
+        )
+    else ()
+        # Unlike macOS's flat lib/ layout, Couchbase's Linux release nests the actual .so files
+        # under a Debian/Ubuntu multiarch triplet subdirectory (lib/x86_64-linux-gnu/), which
+        # install(DIRECTORY ... FILES_MATCHING) would preserve as a nested subfolder rather than
+        # flattening next to the executable -- glob for the files directly instead so their
+        # destination is flat regardless of how deep Couchbase happens to nest them.
+        file(GLOB_RECURSE CBLITE_LINUX_RUNTIME_FILES "${CPPWIKI_CBLITE_ROOT}/lib/libcblite.so*")
+        if (NOT CBLITE_LINUX_RUNTIME_FILES)
+            message(FATAL_ERROR "No libcblite.so* files found under ${CPPWIKI_CBLITE_ROOT}/lib")
+        endif ()
+        install(FILES ${CBLITE_LINUX_RUNTIME_FILES}
+                DESTINATION bin
+        )
+    endif ()
+endif ()
+
+if (CPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP)
+    # See ResolveDefaultEditorDistDirectory() in app/program_settings.cc: a packaged install looks
+    # for the built editor bundle next to the executable under this exact name.
+    if (APPLE)
+        install(DIRECTORY ${CMAKE_SOURCE_DIR}/frontend/editor/dist/
+                DESTINATION cppwiki.app/Contents/MacOS/editor-dist
+        )
+    else ()
+        install(DIRECTORY ${CMAKE_SOURCE_DIR}/frontend/editor/dist/
+                DESTINATION bin/editor-dist
+        )
+    endif ()
+endif ()
 endif ()
 
 if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)

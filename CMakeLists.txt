@@ -100,6 +100,18 @@ if (CPPWIKI_BUILD_DESKTOP_APP)
             GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(qtkeychain)
+
+    if (WIN32)
+        # windeployqt's own isQtModule() heuristic (qtbase src/tools/windeployqt/main.cpp)
+        # treats any DLL name starting with "Qt" + a digit equal to QT_VERSION_MAJOR as a
+        # genuine Qt-shipped module, and only looks for it inside the Qt SDK's own bin
+        # directory. qt6keychain.dll accidentally matches "Qt6*", so windeployqt misclassifies
+        # it and fails with "Unable to find dependent libraries ... Cannot open
+        # '$QT_ROOT_DIR/bin/qt6keychain.dll'" even though the real file sits right next to the
+        # exe. Rename the build output only (not the CMake target name -- target_link_libraries()
+        # elsewhere still refers to the `qt6keychain` target) to sidestep the collision.
+        set_target_properties(qt6keychain PROPERTIES OUTPUT_NAME "cppwiki-qtkeychain")
+    endif ()
 endif ()
 
 if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)

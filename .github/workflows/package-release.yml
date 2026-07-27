@@ -18,8 +18,32 @@ permissions:
 
 env:
   VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-  CPPWIKI_QT_VERSION: "6.5.3"
-  CPPWIKI_QT_MODULES: "qtwebengine qtwebchannel qtdeclarative qtnetworkauth"
+  # The BlockNote editor bundle (mermaid/katex/cytoscape and per-language chunks) is large enough
+  # that Vite/Rollup's chunk-rendering step can exceed V8's default old-space heap ceiling
+  # (~2GB) during `npm run build` -- observed as a Node "JavaScript heap out of memory" crash on
+  # the macOS job specifically (lower default RAM than the Linux/Windows runners).
+  NODE_OPTIONS: "--max-old-space-size=4096"
+  # src/auth/auth_session_manager.cc uses QtNetworkAuth APIs (refreshTokens(), idToken()/
+  # idTokenChanged(), accessTokenAboutToExpire(), serverReportedErrorOccurred(),
+  # setAutoRefresh(), setRefreshLeadTime(), setRequestedScopeTokens()) -- per Qt's own docs
+  # (doc.qt.io/qt-6/qabstractoauth2.html) every one of these was introduced in Qt 6.9, not 6.11
+  # as originally assumed. 6.11.0/6.11.1 both compile fine on Linux/macOS, but aqt cannot
+  # install ANY Windows-desktop package data for the whole 6.11.x branch on this runner --
+  # `aqt list-qt windows desktop --arch 6.11.0` fails to fetch Updates.xml even against the
+  # official download.qt.io host directly (--base), while the same query for 6.10.2 succeeds
+  # and lists win64_msvc2022_64 as a valid arch. This looks like a genuine gap in Qt's
+  # published Windows package metadata for 6.11.x, not a mirror/network issue. 6.10.3 (latest
+  # 6.10.x) satisfies the real >=6.9 requirement and has known-good Windows package data.
+  CPPWIKI_QT_VERSION: "6.10.3"
+  # qtdeclarative (Qml/Quick) is part of Qt6's essential/base desktop kit, not an aqt add-on module --
+  # requesting it via --modules fails with "not found while parsing XML of package information".
+  # qtpositioning is required: as of 6.8, Qt6WebEngineCore's own CMake config hard-depends on
+  # Qt6Positioning, so without it find_package(Qt6 ... WebEngineWidgets) fails to configure.
+  # qtserialport: Qt6Positioning ships a serial-NMEA geolocation backend plugin that links
+  # against it, so linuxdeploy-plugin-qt (which bundles every plugin it finds) fails with
+  # "Could not find dependency: libQt6SerialPort.so.6" unless it's installed too, even though
+  # the app itself never uses serial ports.
+  CPPWIKI_QT_MODULES: "qtwebengine qtwebchannel qtnetworkauth qtpositioning qtserialport"
 
 jobs:
   package-linux:
@@ -40,6 +64,7 @@ jobs:
             libxkbcommon-dev \
             libxkbcommon-x11-0 \
             libglib2.0-0 \
+            libsecret-1-dev \
             libnss3 \
             libnspr4 \
             libxcomposite1 \
@@ -78,8 +103,17 @@ jobs:
           restore-keys: |
             vcpkg-binarycache-release-${{ runner.os }}-
 
+      - name: Cache Couchbase Lite archive
+        uses: actions/cache@v4
+        with:
+          path: .deps/cache/couchbase-lite
+          key: cblite-archive-${{ runner.os }}-${{ hashFiles('third_party/couchbase-lite.version') }}
+
+      - name: Bootstrap Couchbase Lite
+        run: scripts/bootstrap-cblite.sh linux-x86_64
+
       - name: Configure (release preset, server disabled)
-        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF
+        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON -DCPPWIKI_BUILD_ADMIN_CLI=OFF -DCPPWIKI_ENABLE_CBLITE_STORAGE=ON -DCPPWIKI_CBLITE_ROOT=${{ github.workspace }}/.deps/couchbase-lite/linux-x86_64
 
       - name: Build
         run: cmake --build --preset release
@@ -131,7 +165,9 @@ jobs:
 
   package-windows:
     name: Package Windows (installer)
-    runs-on: windows-latest
+    # Not windows-latest: matches windows-2022 from a separately-confirmed working workflow
+    # (another project, same jurplel/install-qt-action + win64_msvc2022_64).
+    runs-on: windows-2022
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -141,9 +177,15 @@ jobs:
       - name: Install Qt6
         uses: jurplel/install-qt-action@v4
         with:
+          # Same known-working pin as the reference workflow, rather than whatever
+          # install-qt-action's own default resolves to.
+          aqtversion: "==3.3.*"
           version: ${{ env.CPPWIKI_QT_VERSION }}
           modules: ${{ env.CPPWIKI_QT_MODULES }}
-          arch: win64_msvc2019_64
+          # Qt dropped the MSVC2019 kit by 6.8 (aqt reports even qt_base missing for
+          # win64_msvc2019_64 at 6.8.3) -- MSVC2022 is the only x64 desktop kit left, and it
+          # matches what windows-latest/ilammy/msvc-dev-cmd actually provide anyway.
+          arch: win64_msvc2022_64
           cache: true
 
       - name: Setup MSVC environment
@@ -165,9 +207,26 @@ jobs:
           restore-keys: |
             vcpkg-binarycache-release-${{ runner.os }}-
 
+      - name: Cache Couchbase Lite archive
+        uses: actions/cache@v4
+        with:
+          path: .deps/cache/couchbase-lite
+          key: cblite-archive-${{ runner.os }}-${{ hashFiles('third_party/couchbase-lite.version') }}
+
+      # scripts/bootstrap-cblite.sh is POSIX sh; runs fine on windows-2022's bundled Git Bash via
+      # `shell: bash`, except its .zip extraction needs `unzip`, which this runner image doesn't
+      # ship (only 7-Zip's own 7z.exe) -- installed via choco first.
+      - name: Install unzip (for Couchbase Lite bootstrap script)
+        shell: pwsh
+        run: choco install unzip --no-progress -y
+
+      - name: Bootstrap Couchbase Lite
+        shell: bash
+        run: scripts/bootstrap-cblite.sh windows-x86_64
+
       - name: Configure (release preset, server disabled)
         shell: pwsh
-        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF
+        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON -DCPPWIKI_BUILD_ADMIN_CLI=OFF -DCPPWIKI_ENABLE_CBLITE_STORAGE=ON "-DCPPWIKI_CBLITE_ROOT=${{ github.workspace }}\.deps\couchbase-lite\windows-x86_64"
 
       - name: Build
         shell: pwsh
@@ -219,7 +278,12 @@ jobs:
 
   package-macos:
     name: Package macOS (DMG)
-    runs-on: macos-latest
+    # Not macos-latest: its SDK (macOS 26.x, Xcode 26.x per actions/runner-images) dropped
+    # AGL.framework, which Qt6Gui's own exported CMake config still links against on Apple
+    # platforms (legacy/unused, but the linker still needs the framework to exist) -- KDChart's
+    # link against Qt6::Gui fails with "ld: framework 'AGL' not found". macos-15's default Xcode
+    # (16.4) targets an older SDK generation that still ships it.
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -253,8 +317,17 @@ jobs:
           restore-keys: |
             vcpkg-binarycache-release-${{ runner.os }}-
 
+      - name: Cache Couchbase Lite archive
+        uses: actions/cache@v4
+        with:
+          path: .deps/cache/couchbase-lite
+          key: cblite-archive-${{ runner.os }}-${{ hashFiles('third_party/couchbase-lite.version') }}
+
+      - name: Bootstrap Couchbase Lite
+        run: scripts/bootstrap-cblite.sh macos-arm64
+
       - name: Configure (release preset, server disabled)
-        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF
+        run: cmake --preset release -DCPPWIKI_BUILD_SERVER=OFF -DCPPWIKI_BUILD_TESTS=OFF -DCPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON -DCPPWIKI_BUILD_ADMIN_CLI=OFF -DCPPWIKI_ENABLE_CBLITE_STORAGE=ON -DCPPWIKI_CBLITE_ROOT=${{ github.workspace }}/.deps/couchbase-lite/macos-arm64
 
       - name: Build
         run: cmake --build --preset release

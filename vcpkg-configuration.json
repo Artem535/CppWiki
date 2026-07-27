@@ -1,0 +1,6 @@
+{
+  "$comment": "overlay-ports/benchmark works around a vcpkg-side bug: its portfile passes -Werror=old-style-cast as a raw cmake CLI arg instead of a compiler flag, which any cmake that validates -Werror=<category> (e.g. a recent Homebrew cmake, used on arm64 hosts where vcpkg falls back to system binaries) rejects outright. See vcpkg-overlays/ports/benchmark/portfile.cmake.",
+  "overlay-ports": [
+    "./vcpkg-overlays/ports"
+  ]
+}
