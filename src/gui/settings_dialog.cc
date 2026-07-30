@@ -5,11 +5,16 @@
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
+#include <QFile>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QJsonDocument>
+#include <QJsonParseError>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStackedWidget>
@@ -23,11 +28,11 @@
 #include <oclero/qlementine/widgets/LineEdit.hpp>
 #include <oclero/qlementine/widgets/SegmentedControl.hpp>
 
+#include "app/accent_color.h"
+#include "app/application.h"
 #include "auth/ai_api_key_store.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
-#include "app/accent_color.h"
-#include "app/application.h"
 
 namespace cppwiki::gui {
 
@@ -54,15 +59,14 @@ auto MakeAccentSwatchButton(AccentColor accent_color, QWidget* parent) -> QToolB
   button->setProperty("accentColorKey", ToAccentColorKey(accent_color));
 
   const auto base_color = AccentColorBaseColor(accent_color);
-  button->setStyleSheet(QStringLiteral(
-                            "QToolButton {"
-                            "  background-color: %1;"
-                            "  border: 2px solid transparent;"
-                            "  border-radius: 14px;"
-                            "}"
-                            "QToolButton:checked {"
-                            "  border: 2px solid palette(text);"
-                            "}")
+  button->setStyleSheet(QStringLiteral("QToolButton {"
+                                       "  background-color: %1;"
+                                       "  border: 2px solid transparent;"
+                                       "  border-radius: 14px;"
+                                       "}"
+                                       "QToolButton:checked {"
+                                       "  border: 2px solid palette(text);"
+                                       "}")
                             .arg(base_color.name()));
   return button;
 }
@@ -359,24 +363,103 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
   section_stack_->setCurrentIndex(0);
 
   auto* buttons = new QDialogButtonBox(this);
+  // Export/Import (issue #157): ActionRole, not Accept/Reject -- these read/write a settings
+  // file on disk and don't by themselves decide whether the dialog closes. Export never touches
+  // dialog/app state; a successful Import repopulates the widgets above and then goes through
+  // AcceptAndSave() itself, same as clicking Save.
+  auto* export_button =
+      buttons->addButton(QStringLiteral("Export..."), QDialogButtonBox::ActionRole);
+  auto* import_button =
+      buttons->addButton(QStringLiteral("Import..."), QDialogButtonBox::ActionRole);
   auto* cancel_button = buttons->addButton(QDialogButtonBox::Cancel);
   auto* save_button = buttons->addButton(QDialogButtonBox::Save);
   save_button->setDefault(true);
 
   connect(cancel_button, &QPushButton::clicked, this, &QDialog::reject);
-  connect(save_button, &QPushButton::clicked, this, [this]() {
-    const auto api_key = ai_local_api_key_edit_->text().trimmed();
-    if (api_key.isEmpty()) {
-      ai_api_key_store_->Clear();
-    } else {
-      ai_api_key_store_->Save(api_key);
+  connect(save_button, &QPushButton::clicked, this, &SettingsDialog::AcceptAndSave);
+
+  connect(export_button, &QPushButton::clicked, this, [this]() {
+    const auto file_path = QFileDialog::getSaveFileName(this, QStringLiteral("Export Settings"),
+                                                        QStringLiteral("cppwiki-settings.json"),
+                                                        QStringLiteral("JSON files (*.json)"));
+    if (file_path.isEmpty()) {
+      return;
     }
-    accept();
+    QFile file(file_path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+      QMessageBox::warning(this, QStringLiteral("Export Settings"),
+                           QStringLiteral("Could not write to %1.").arg(file_path));
+      return;
+    }
+    file.write(QJsonDocument(BuildProgramSettings().ToJson()).toJson(QJsonDocument::Indented));
   });
+
+  connect(import_button, &QPushButton::clicked, this, [this]() {
+    const auto file_path = QFileDialog::getOpenFileName(
+        this, QStringLiteral("Import Settings"), QString{}, QStringLiteral("JSON files (*.json)"));
+    if (file_path.isEmpty()) {
+      return;
+    }
+    QFile file(file_path);
+    if (!file.open(QIODevice::ReadOnly)) {
+      QMessageBox::warning(this, QStringLiteral("Import Settings"),
+                           QStringLiteral("Could not read %1.").arg(file_path));
+      return;
+    }
+    QJsonParseError parse_error;
+    const auto doc = QJsonDocument::fromJson(file.readAll(), &parse_error);
+    if (parse_error.error != QJsonParseError::NoError || !doc.isObject()) {
+      QMessageBox::warning(this, QStringLiteral("Import Settings"),
+                           QStringLiteral("%1 is not a valid settings file.").arg(file_path));
+      return;
+    }
+    // BuildProgramSettings() (not current_settings_) is the merge base, so path fields reflect
+    // this dialog's own current state (unaffected by import either way) rather than reverting any
+    // in-progress edit to them.
+    ApplySettingsToWidgets(ProgramSettings::FromJson(doc.object(), BuildProgramSettings()));
+    AcceptAndSave();
+  });
+
   root_layout->addWidget(buttons);
 }
 
 SettingsDialog::~SettingsDialog() = default;
+
+void SettingsDialog::AcceptAndSave() {
+  const auto api_key = ai_local_api_key_edit_->text().trimmed();
+  if (api_key.isEmpty()) {
+    ai_api_key_store_->Clear();
+  } else {
+    ai_api_key_store_->Save(api_key);
+  }
+  accept();
+}
+
+void SettingsDialog::ApplySettingsToWidgets(const ProgramSettings& settings) {
+  font_size_spinbox_->setValue(settings.ApplicationFontPointSize());
+
+  const auto accent_color = AccentColorFromKey(settings.AccentColorKey());
+  for (auto* button : accent_color_group_->buttons()) {
+    if (button->property("accentColorKey").toString() == ToAccentColorKey(accent_color)) {
+      button->setChecked(true);
+      break;
+    }
+  }
+
+  backend_enabled_checkbox_->setChecked(settings.BackendEnabled());
+  backend_base_url_edit_->setText(settings.BackendBaseUrl());
+  auth_enabled_checkbox_->setChecked(settings.AuthEnabled());
+  auth_authorization_url_edit_->setText(settings.AuthAuthorizationUrl());
+  auth_token_url_edit_->setText(settings.AuthTokenUrl());
+  auth_client_id_edit_->setText(settings.AuthClientId());
+  auth_redirect_uri_edit_->setText(settings.AuthRedirectUri());
+  demo_collaboration_enabled_checkbox_->setChecked(settings.DemoCollaborationEnabled());
+  demo_collaboration_user_id_edit_->setText(settings.DemoCollaborationUserId());
+  sync_enabled_checkbox_->setChecked(settings.SyncEnabled());
+  ai_features_enabled_checkbox_->setChecked(settings.AiFeaturesEnabled());
+  ai_autocomplete_enabled_checkbox_->setChecked(settings.AiAutocompleteEnabled());
+  ai_inline_suggestions_enabled_checkbox_->setChecked(settings.AiInlineSuggestionsEnabled());
+}
 
 auto SettingsDialog::BuildProgramSettings() const -> ProgramSettings {
   const auto backend_base_url = backend_base_url_edit_->text().trimmed().isEmpty()

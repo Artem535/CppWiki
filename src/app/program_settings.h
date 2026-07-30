@@ -1,6 +1,7 @@
 #ifndef CPPWIKI_SRC_APP_PROGRAM_SETTINGS_H_
 #define CPPWIKI_SRC_APP_PROGRAM_SETTINGS_H_
 
+#include <QJsonObject>
 #include <QString>
 
 class QSettings;
@@ -22,6 +23,20 @@ class ProgramSettings final {
   [[nodiscard]] static auto FromDefaults() -> ProgramSettings;
   [[nodiscard]] static auto FromSettings(const QSettings& settings) -> ProgramSettings;
   void SaveToSettings(QSettings& settings) const;
+
+  // Settings export/import (issue #157). Covers every user-facing preference except
+  // ApplicationName/Version/OrganizationName (build-time constants) and the three path fields
+  // (AppDataDirectory/DatabaseDirectory/EditorDistDirectory), which are machine/install-specific
+  // and would be actively harmful to carry into an import on a different machine. Never includes
+  // the local AI provider API key -- that lives in the OS keychain (AiApiKeyStore), not
+  // ProgramSettings, and stays there.
+  [[nodiscard]] auto ToJson() const -> QJsonObject;
+  // Returns a copy of `base` with every field ToJson() covers overridden by `json` (falling back
+  // to `base`'s current value for any field missing or type-mismatched in `json`, so an older or
+  // hand-edited export file degrades gracefully instead of resetting those fields to defaults).
+  // AppName/Version/Org and the three path fields always come from `base`, never from `json`.
+  [[nodiscard]] static auto FromJson(const QJsonObject& json, const ProgramSettings& base)
+      -> ProgramSettings;
 
   [[nodiscard]] auto ApplicationName() const -> const QString&;
   [[nodiscard]] auto ApplicationVersion() const -> const QString&;
