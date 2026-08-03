@@ -4,6 +4,8 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -143,8 +145,7 @@ auto TestFileRepositoryRoundTripsDocumentKind() -> void {
     Require(!save_result.error, "file repository should save a document of any kind");
 
     const auto load_result = repository.LoadDocument(document.metadata.id);
-    Require(load_result.document.has_value(),
-            "file repository should load a document of any kind");
+    Require(load_result.document.has_value(), "file repository should load a document of any kind");
     Require(load_result.document->metadata.kind == kind,
             "file repository should round-trip the saved DocumentKind exactly");
   }
@@ -167,9 +168,9 @@ auto TestFileRepositoryRoundTripsNonWikiPageRawSnapshotContent() -> void {
   cppwiki::storage::FileDocumentRepository repository(
       cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
 
-  const auto notebook_json = std::string(
-      R"({"cells":[{"cell_type":"markdown","source":["Hi"],"metadata":{}}],)"
-      R"("metadata":{},"nbformat":4,"nbformat_minor":5})");
+  const auto notebook_json =
+      std::string(R"({"cells":[{"cell_type":"markdown","source":["Hi"],"metadata":{}}],)"
+                  R"("metadata":{},"nbformat":4,"nbformat_minor":5})");
   auto notebook_document = MakeDocument();
   notebook_document.metadata.id = "notebook-content-test";
   notebook_document.metadata.kind = cppwiki::document::DocumentKind::kJupyterNotebook;
@@ -200,10 +201,10 @@ auto TestFileRepositoryRoundTripsNonWikiPageRawSnapshotContent() -> void {
   // Issue #95: Mermaid source is saved as a normal BlockNote inline-content snapshot. Keep a
   // multi-line source in this real file-repository round trip so Enter-created newlines cannot
   // be lost through JSON-in-JSON serialization or a later load from disk.
-  const auto mermaid_snapshot = std::string(
-      R"([{"id":"mermaid-1","type":"mermaid","props":{},"content":[)"
-      R"({"type":"text","text":"graph TD\n  A[Start] --> B[Finish]","styles":{}}],)"
-      R"("children":[]}])");
+  const auto mermaid_snapshot =
+      std::string(R"([{"id":"mermaid-1","type":"mermaid","props":{},"content":[)"
+                  R"({"type":"text","text":"graph TD\n  A[Start] --> B[Finish]","styles":{}}],)"
+                  R"("children":[]}])");
   auto mermaid_document = MakeDocument();
   mermaid_document.metadata.id = "mermaid-content-test";
   mermaid_document.raw_snapshot_json = mermaid_snapshot;
@@ -217,12 +218,129 @@ auto TestFileRepositoryRoundTripsNonWikiPageRawSnapshotContent() -> void {
   std::filesystem::remove_all(storage_directory);
 }
 
+// Issue #162: simulate a crash between WriteFileAtomically()'s two rename steps -- the previous
+// content has already been renamed to `<page>.json.backup`, and the new content is fully written
+// to `<page>.json.tmp`, but the final rename that swaps it into place never ran. Opening the
+// repository (constructing FileDocumentRepository, not just calling SaveDocument/LoadDocument)
+// must recover by completing that swap, so the in-flight edit isn't silently lost.
+auto TestFileRepositoryCompletesInterruptedWriteFromTempFile() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-crash-tmp-test";
+  std::filesystem::remove_all(storage_directory);
+  std::filesystem::create_directories(storage_directory / "pages");
+
+  const auto page_path = storage_directory / "pages" / "page-1.json";
+  const auto old_content = std::string(R"({"id":"page-1","title":"Old"})");
+  const auto new_content = std::string(R"({"id":"page-1","title":"New"})");
+
+  {
+    std::ofstream backup_file(page_path.string() + ".backup", std::ios::binary);
+    backup_file << old_content;
+  }
+  {
+    std::ofstream temp_file(page_path.string() + ".tmp", std::ios::binary);
+    temp_file << new_content;
+  }
+  Require(!std::filesystem::exists(page_path),
+          "test setup should leave the target file itself missing, matching the crash window");
+
+  cppwiki::storage::FileDocumentRepository repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+
+  Require(std::filesystem::exists(page_path),
+          "opening the repository should complete the interrupted write");
+  Require(!std::filesystem::exists(page_path.string() + ".tmp"),
+          "the temp file should be consumed by the recovery");
+  Require(!std::filesystem::exists(page_path.string() + ".backup"),
+          "the stale backup should be removed once the newer content is in place");
+
+  std::ifstream recovered(page_path, std::ios::binary);
+  const auto recovered_content =
+      std::string(std::istreambuf_iterator<char>(recovered), std::istreambuf_iterator<char>());
+  Require(recovered_content == new_content,
+          "recovery should keep the newer (fully-written) content, not the older backup");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
+// Crash right after WriteFileAtomically() renamed the target to `.backup`, with no `.tmp` file to
+// recover (e.g. the temp write step itself never reached disk before the kill). The only
+// recoverable content is the backup -- restore it rather than leaving the page missing entirely.
+auto TestFileRepositoryRestoresFromBackupWhenNoTempFileExists() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-crash-backup-test";
+  std::filesystem::remove_all(storage_directory);
+  std::filesystem::create_directories(storage_directory / "pages");
+
+  const auto page_path = storage_directory / "pages" / "page-1.json";
+  const auto backed_up_content = std::string(R"({"id":"page-1","title":"Backed Up"})");
+  {
+    std::ofstream backup_file(page_path.string() + ".backup", std::ios::binary);
+    backup_file << backed_up_content;
+  }
+
+  cppwiki::storage::FileDocumentRepository repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+
+  Require(std::filesystem::exists(page_path),
+          "opening the repository should restore the page from its backup");
+  Require(!std::filesystem::exists(page_path.string() + ".backup"),
+          "the backup should be consumed by the restore");
+
+  std::ifstream recovered(page_path, std::ios::binary);
+  const auto recovered_content =
+      std::string(std::istreambuf_iterator<char>(recovered), std::istreambuf_iterator<char>());
+  Require(recovered_content == backed_up_content,
+          "recovery should restore exactly the backed-up content");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
+// Crash after the final rename completed but before WriteFileAtomically() removed the now-stale
+// backup: the target already holds the newest content, so recovery must only clean up the leftover
+// backup, never restore it (which would silently revert the page to its older content).
+auto TestFileRepositoryCleansUpStaleBackupWithoutOverwritingNewerTarget() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-crash-cleanup-test";
+  std::filesystem::remove_all(storage_directory);
+  std::filesystem::create_directories(storage_directory / "pages");
+
+  const auto page_path = storage_directory / "pages" / "page-1.json";
+  const auto current_content = std::string(R"({"id":"page-1","title":"Current"})");
+  const auto stale_backup_content = std::string(R"({"id":"page-1","title":"Stale"})");
+  {
+    std::ofstream target_file(page_path, std::ios::binary);
+    target_file << current_content;
+  }
+  {
+    std::ofstream backup_file(page_path.string() + ".backup", std::ios::binary);
+    backup_file << stale_backup_content;
+  }
+
+  cppwiki::storage::FileDocumentRepository repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+
+  Require(!std::filesystem::exists(page_path.string() + ".backup"),
+          "the stale backup should be cleaned up");
+
+  std::ifstream target(page_path, std::ios::binary);
+  const auto target_content =
+      std::string(std::istreambuf_iterator<char>(target), std::istreambuf_iterator<char>());
+  Require(target_content == current_content,
+          "the already-current target must not be overwritten by a stale backup");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
 }  // namespace
 
 auto main() -> int {
   TestFileRepositoryPersistsDocumentsAndConflicts();
   TestFileRepositoryRoundTripsDocumentKind();
   TestFileRepositoryRoundTripsNonWikiPageRawSnapshotContent();
+  TestFileRepositoryCompletesInterruptedWriteFromTempFile();
+  TestFileRepositoryRestoresFromBackupWhenNoTempFileExists();
+  TestFileRepositoryCleansUpStaleBackupWithoutOverwritingNewerTarget();
   spdlog::info("cppwiki_file_document_repository_tests passed");
   return EXIT_SUCCESS;
 }
