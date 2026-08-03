@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -332,6 +333,60 @@ auto TestFileRepositoryCleansUpStaleBackupWithoutOverwritingNewerTarget() -> voi
   std::filesystem::remove_all(storage_directory);
 }
 
+// Issue #167: a page file that exists but fails to parse (corrupted/unparseable JSON) must not
+// take down ListDocuments() for the rest of the workspace, and must not just silently vanish
+// either -- it should come back as a placeholder DocumentSummary the caller can recognize and
+// show as an error in the tree, instead of the page disappearing with no trace.
+auto TestFileRepositoryReportsCorruptedDocumentAsPlaceholderInsteadOfHidingIt() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-corrupted-test";
+  std::filesystem::remove_all(storage_directory);
+
+  cppwiki::storage::FileDocumentRepository repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+
+  auto healthy_document = MakeDocument();
+  healthy_document.metadata.id = "healthy-page";
+  Require(!repository.SaveDocument(healthy_document).error,
+          "file repository should save the healthy document");
+
+  // Write the corrupted page directly to disk (not through SaveDocument/WriteFileAtomically),
+  // simulating disk-level corruption rather than an interrupted write.
+  const auto corrupted_page_path = storage_directory / "pages" / "corrupted-page.json";
+  {
+    std::ofstream corrupted_file(corrupted_page_path, std::ios::binary);
+    corrupted_file << "{not valid json";
+  }
+
+  const auto list_result = repository.ListDocuments();
+  Require(!list_result.error, "listing documents should still succeed with a corrupted entry");
+  Require(list_result.documents.size() == 2,
+          "the healthy document and a placeholder for the corrupted one should both be listed");
+
+  const auto healthy_summary = std::ranges::find_if(
+      list_result.documents, [](const auto& doc) { return doc.id == "healthy-page"; });
+  Require(healthy_summary != list_result.documents.end(),
+          "the healthy document should still be listed");
+  Require(!healthy_summary->is_corrupted, "the healthy document should not be marked corrupted");
+
+  const auto corrupted_summary = std::ranges::find_if(
+      list_result.documents, [](const auto& doc) { return doc.id == "corrupted-page"; });
+  Require(corrupted_summary != list_result.documents.end(),
+          "the corrupted document should appear as a placeholder, not be silently dropped");
+  Require(corrupted_summary->is_corrupted,
+          "the corrupted document's placeholder should be flagged as corrupted");
+  Require(corrupted_summary->load_error.has_value(),
+          "the corrupted document's placeholder should carry the underlying load error");
+
+  const auto load_result = repository.LoadDocument("corrupted-page");
+  Require(!load_result.document.has_value(),
+          "loading the corrupted document directly should still fail");
+  Require(load_result.error.has_value(),
+          "loading the corrupted document directly should still report the error");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -341,6 +396,7 @@ auto main() -> int {
   TestFileRepositoryCompletesInterruptedWriteFromTempFile();
   TestFileRepositoryRestoresFromBackupWhenNoTempFileExists();
   TestFileRepositoryCleansUpStaleBackupWithoutOverwritingNewerTarget();
+  TestFileRepositoryReportsCorruptedDocumentAsPlaceholderInsteadOfHidingIt();
   spdlog::info("cppwiki_file_document_repository_tests passed");
   return EXIT_SUCCESS;
 }
