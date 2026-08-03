@@ -1,209 +1,276 @@
 = Current Roadmap
 
 *Product:* CppWiki / Wiki Platform v9 -- Block Document Edition +
-*Status:* Draft +
-*Date:* 2026-06-16 +
-*Related docs:* `doc/PRD_v9_Block_Document_Edition.md`, xref:architecture/Architecture_Baseline_Libraries_and_Approaches.adoc[], xref:architecture/Project_Structure_and_Style.adoc[]
+*Status:* Active +
+*Date:* 2026-08-03 +
+*Related docs:* xref:PRD_v9_Block_Document_Edition.adoc[], xref:architecture/Architecture_Baseline_Libraries_and_Approaches.adoc[], xref:architecture/Project_Structure_and_Style.adoc[]
 
-== 1. Current Baseline
+This document replaces the previous 2026-06-16 draft, which described an early-stage skeleton
+(single-page shell, no server, no auth/sync). Almost everything that draft treated as a future
+milestone has since shipped. This revision reflects the codebase as it stands today and refocuses
+on what's actually still open.
 
-The project currently has:
+The near-term plan (section 3) is now also tracked as five GitHub milestones --
+`0.1 -- Local Wiki Foundation` through `1.0 -- CppWiki Local` -- reprioritizing around a
+complete, reliable local-only wiki release before AI agent modes, realtime collaboration or
+further Project Board work. Those milestones are the authoritative day-to-day backlog; this
+document is the narrative/architecture view of the same plan.
 
-* Qt/C++ project skeleton with CMake presets.
-* vcpkg manifest for `reflectcpp`, `spdlog` and `cli11`.
-* Qt is resolved from the system or external Qt installation, not from vcpkg.
-* `cppwiki::Application` and `cppwiki::MainWindow`.
-* Qlementine wired as the desktop Qt style.
-* `QWebEngineView` wired as the editor host.
-* Vite/React editor bundle under `frontend/editor`.
-* BlockNote installed and rendered in the startup editor page.
-* QWebChannel bridge with versioned `{ apiVersion, ok, result/error }` envelope.
-* Reflect-cpp BlockNote snapshot DTOs and validation before persistence.
-* Local document repository boundary with file-backed storage and optional Couchbase Lite adapter.
-* Minimal page list navigation in the editor bundle while the native shell is still being developed.
-* Default `Welcome to CppWiki` page bootstrap when the local repository is empty.
-* UUID helper for generated document IDs.
-* Native Qt navigation tree with add-child affordance, context menu actions, delete, move up/down and drag-and-drop reordering.
-* Dedicated popup widget for document row actions instead of `QMenu`.
-* Server scaffold now exists under `src/server/{app,components,config,handlers,middleware,service,dto}`, with userver, reflect-cpp YAML runtime config, generated userver static config, CLI11 parsing, structured logging and a health endpoint with CORS preflight.
-* Observability is being laid in as an OpenTelemetry-ready boundary on top of the current logging layer.
-* Architecture and project-structure documentation.
+== 1. Current Baseline [[1-current-baseline]]
 
-The current UI is a minimal working shell, not the final native product shell. The navigation surface is moving from the temporary list view toward the native tree view and row actions.
+=== Desktop shell and document kinds
 
-== 2. Near-Term Milestones
+* Native Qt/C++20 shell (`cppwiki_app`): `Application`, `MainWindow`, Qlementine styling with
+  dark/light theme switching and a configurable accent color (ADR-016).
+* Workspace rail navigation with full-mode tabs (ADR-014, `gui/workspace_rail_widget.*`) --
+  the desktop shell is no longer a single editor page; it's rail-based, with dedicated icons
+  already in place for the Documents, AI Chat and Code rail entries (the latter two are UI
+  scaffolding ahead of the mode implementations -- see <<4-future-agent-modes>>).
+* Native document tree (add-child, context menu, delete, move, drag-and-drop reorder) with a
+  dedicated row-action popup.
+* `QWebEngineView`-hosted BlockNote/React editor bundle (`frontend/editor`), bridged to C++
+  via `EditorBridge`/QWebChannel with a versioned `{ apiVersion, ok, result/error }` envelope.
+* Multiple document kinds beyond plain wiki pages (ADR-017): Jupyter notebooks, Excalidraw
+  canvases, Mermaid diagrams and real syntax-highlighted code blocks, and OpenAPI spec viewer
+  pages, alongside the original BlockNote/Djot-first wiki page (ADR-001, ADR-007).
+* Project board document kind with native Qt/QML rendering -- Gantt via KDGantt, Kanban via
+  QML, Table via `QTableView` (issue #113, closed as delivered, commit `f28bd30`); a native
+  Calendar view (issue #137) is the one remaining board view, deliberately deferred to the
+  `1.0 -- CppWiki Local` milestone rather than scoped now -- see <<3-near-term-plan>>.
+* Native file import/export (issue #82): `QFileDialog`-backed save/open for a document kind's
+  raw content (nbformat JSON, Excalidraw scene JSON, etc.), kept kind-agnostic on the bridge.
+* Conflict-resolution UI (`gui/merge/`: `ConflictMergeDialog`/`Model`/`Resolution`) wired to the
+  editability gate so a conflicted document can't be edited out from under a pending merge
+  (ADR-013).
+* AI writing assistance already shipped through the editor bridge (ADR-010, ADR-012): toolbar
+  rewrite/improve-selection, slash-menu autocomplete, and opt-in inline ghost-text suggestions
+  (issue #59), each independently toggleable in settings. ADR-011 records the AGPL-licensing
+  tradeoff accepted for the underlying BlockNote AI integration. This is distinct from the
+  planned AI Chat mode (issue #30) -- see <<4-future-agent-modes>>.
+* File attachments are specced in the PRD but not implemented yet (issue #148, milestone
+  `0.3 -- Complete Content`) -- the one editor-facing gap left in the near-term backlog.
+* Settings export/import (issue #157, PR #158): carries appearance/backend/auth/sync/AI
+  preferences between machines or reinstalls, deliberately excluding the three machine-specific
+  path settings and never touching the AI provider API key (stays in the OS keychain).
 
-=== Milestone 1: Editor Host Spike
+=== Storage, sync and auth
 
-Goal: prove that Qt WebEngine can reliably load the local BlockNote bundle.
+* `LocalDocumentRepository` boundary with two implementations selected via
+  `RepositoryFactory`: `FileDocumentRepository` (plain filesystem) and
+  `CbliteDocumentRepository` (Couchbase Lite, gated by `CPPWIKI_ENABLE_CBLITE_STORAGE`).
+* `DocumentSyncService`/`SyncService` push/pull documents against the backend and detect
+  conflicts; `sync_bootstrap` wires this into app startup.
+* Full OIDC auth spike delivered (previously "Milestone 7"): Authentik Authorization Code
+  Flow + PKCE via the system browser, token persistence through qtkeychain
+  (`AuthSessionManager`/`AuthTokenStore`), refresh/logout, and backend JWT validation
+  middleware (`AuthCheckerImpl`). The editor still never gets raw token access -- everything
+  crosses the `EditorBridge` trust boundary.
+* Sync spike delivered (previously "Milestone 8"): Couchbase Sync Gateway environment
+  (`dev/sync-gateway`), authenticated replication, and role/group -> channel mapping
+  (`config/server.yaml`).
+* Lock and presence are real, not stubs: `LockService` tracks owner + heartbeat + lease
+  expiry and rejects acquisition by a non-owner while a lock is live; `PresenceService`
+  backs the presence strip widget. The previous roadmap's "make lock ownership
+  authoritative" action item is done.
 
-Scope:
+=== Server
 
-* load `frontend/editor/dist/index.html` from `QWebEngineView`;
-* keep fallback HTML when the bundle is not built;
-* verify keyboard input, focus, scrolling and window resize;
-* define how the frontend bundle is built in local and CI workflows.
+* `cppwiki_server`, built on userver v3.0 (ADR-009), with `RuntimeConfig`
+  (`config/server.yaml`) generating the userver static config.
+* Handlers: `admin`, `health`, `lock`, `presence`, `sync_config`, `workspace`, `ai` (backs the
+  AI writing-assistance features above), `openapi`/`swagger_ui`, `protected_page`, `options`
+  (CORS).
+* Services: `LockService`, `PresenceService`, `SyncGatewayAdapter`, `AiChatService`.
+* reflect-cpp DTOs + `response_envelope.h` for a consistent response shape across handlers.
+* Structured logging (spdlog + userver span tags). OpenTelemetry wiring is still just a stated
+  intent, not implemented -- unchanged from the previous roadmap, see <<6-open-decisions>>.
 
-Exit criteria:
+=== Packaging and CI
 
-* `npm run build` succeeds in `frontend/editor`;
-* Qt application loads the built BlockNote page from disk;
-* startup page remains usable when opened from a file URL.
+* Cross-platform packaging pipeline (`.github/workflows/package-release.yml`, issue #150,
+  merged) builds all three platforms in the same run: Linux AppImage, Windows installer
+  (Inno Setup, fixed windeployqt/qt6keychain.dll collision), macOS DMG -- each with Qt 6.10.3
+  and Couchbase Lite storage enabled end-to-end (`scripts/bootstrap-cblite.sh` +
+  `CPPWIKI_ENABLE_CBLITE_STORAGE`).
+* **Known gap:** the macOS DMG builds and passes its own CI `codesign --verify --deep --strict`
+  check, but the resulting `.app` fails Gatekeeper on a real Apple Silicon Mac after download
+  ("is damaged and can't be opened") -- the packaging job only ad-hoc-signs
+  (`codesign --sign -`, no Apple Developer ID, no notarization), which Gatekeeper treats more
+  strictly on arm64 than the older "unidentified developer" case. Root cause not yet fully
+  confirmed (diagnostics in progress); fix path is either real notarization (needs a paid Apple
+  Developer Program membership) or documenting a `xattr -cr` workaround as a stopgap. Tracked as
+  part of the `0.1 -- Local Wiki Foundation` packaging work, not yet a standalone issue pending
+  that confirmation.
+* Dark theme now survives packaging: it's embedded as a Qt resource (`:/cppwiki/themes/dark.json`)
+  instead of a filesystem path that only resolved by accident in a dev build tree (issue #152,
+  merged via PR #153).
+* Real syntax highlighting for code blocks (`@blocknote/code-block`, issue #51, merged via
+  PR #151), replacing BlockNote's built-in code block.
+* Project README with screenshots (`README.md`, `doc/pic/`) documenting the product for
+  newcomers.
+* Test suite: one CMake target per area under `tests/CMakeLists.txt`
+  (`cppwiki_document_validator_tests`, `cppwiki_document_sync_service_tests`,
+  `cppwiki_server_config_tests`, `cppwiki_conflict_merge_model_tests`, etc.), run via `ctest`.
+  Wiring `ctest` + the frontend build into GitHub Actions as a required PR check (issue #12,
+  PR #17) is still in progress; a follow-up (issue #159, milestone `0.1`) extends this to a
+  packaged-launch smoke test, since CI today proves the artifacts *build*, not that they launch
+  to a working wiki -- the macOS gap above is exactly the kind of regression that check would
+  have caught before it reached a real user.
+* A separate Docker server-image workflow (`server-image.yml`) builds `cppwiki_server` on every
+  PR regardless of which files changed -- occasionally flakes on GitHub's cache-export step,
+  unrelated to the code being tested.
 
-=== Milestone 2: QWebChannel Contract
+The plugin runtime (Wasmtime) and Confluence import/export, previously "Milestone 9/10"
+spikes, have not been started -- see <<6-open-decisions>>.
 
-Goal: define a typed bridge between the editor and C++ core.
+== 2. In-Flight Work [[2-in-flight-work]]
 
-Scope:
+These already have an issue and/or open PR; the work is to land them, not to scope them.
 
-* introduce an `editor_bridge` C++ module;
-* expose `wiki.documents.*` through QWebChannel;
-* define request/response/error envelope;
-* send editor document changes to C++;
-* load initial document JSON from C++ into BlockNote.
-
-Exit criteria:
-
-* frontend can call a C++ method through QWebChannel;
-* C++ can provide initial content;
-* editor change events are observable in C++ logs.
-
-=== Milestone 3: Document Model Skeleton
-
-Goal: establish the C++ representation of the block document.
-
-Scope:
-
-* define typed DTOs with reflect-cpp;
-* define document schema version;
-* implement basic validation;
-* map BlockNote content to internal document payload;
-* preserve validated raw BlockNote snapshot JSON for storage;
-* add fixture tests for the supported BlockNote block set.
-
-Exit criteria:
-
-* sample BlockNote document can be serialized/deserialized;
-* invalid payloads are rejected before persistence;
-* fixture tests cover the BlockNote block set used by the editor.
-
-=== Milestone 4: Local Persistence Vertical Slice
-
-Goal: prove offline save/load loop with a minimal multi-page navigation path.
-
-Scope:
-
-* choose Couchbase Lite integration path for C++;
-* persist page metadata and validated document JSON;
-* expose repository operations for listing and loading documents;
-* create a default `Welcome to CppWiki` page when the repository is empty;
-* support selection from a page list view;
-* autosave the selected document;
-* keep save failures visible in logs and bridge errors.
-
-Exit criteria:
-
-* page list loads from the repository;
-* selecting a page loads its stored BlockNote snapshot;
-* edit -> autosave -> restart -> load works locally;
-* failed save does not destroy previous valid document;
-* persistence errors are surfaced through the bridge and logs.
-
-=== Milestone 5: Product Shell
-
-Goal: move the temporary web-owned workspace chrome toward a minimal Qt-owned wiki shell.
-
-Scope:
-
-* page list/tree widget in Qt;
-* document title area in Qt;
-* sync/status area in Qt;
-* editor host;
-* settings/action placeholders;
-* stable layout for desktop screen sizes.
-
-Exit criteria:
-
-* user can distinguish workspace navigation from document editing;
-* editor is the primary screen, not a landing page;
-* UI layout remains stable during resize.
-
-Server work starts after this milestone, with only small Phase 3.5 shell fixes allowed in parallel.
-
-== 3. Medium-Term Milestones
-
-=== Milestone 6: Server Skeleton
-
-* add `userver` application target (`cppwiki_server`).
-* health endpoint and CORS preflight.
-* runtime config -> userver static-config generation.
-* public/protected route split and JWT-ready auth boundary.
-* lock and presence API stubs.
-* typed DTO/handler/service baseline for future page APIs.
-* structured logging with spdlog and userver span tags; configurable log level.
-* Swagger/OpenAPI page for manual protected-route verification.
-
-=== Milestone 7: Auth Spike
-
-* Authentik OIDC Authorization Code Flow with PKCE.
-* system browser login.
-* token storage in system keyring.
-* refresh/logout flow.
-* backend JWT validation middleware.
-* editor never gets token access.
-* protected backend routes verified with real Authentik access tokens.
-* desktop shell shows authenticated user identity and handles token expiry without restart.
-
-=== Milestone 8: Sync Spike
-
-* Couchbase Sync Gateway environment.
-* channel mapping proof.
-* authenticated replication.
-* basic conflict snapshot behavior.
-
-=== Milestone 9: Plugin Runtime Spike
-
-* decide Wasmtime provisioning path.
-* define C++ Plugin SDK boundary.
-* run one demo WASM renderer.
-* enforce timeout and fallback rendering.
-
-=== Milestone 10: Confluence Import/Export Spike
-
-* Confluence API client skeleton.
-* supported block fixture set.
-* unsupported macro placeholder.
-* no silent lossy conversion.
-
-== 4. Technical Gates
-
-[cols="1,2"]
+[cols="1,2,2"]
 |===
-|Gate |Required Evidence
+|Issue/PR |What |Status
+
+|#157 / PR #158
+|Settings export/import (appearance, backend/auth/sync, AI toggles) in the Settings dialog.
+|PR open against `main`; tests passing.
+
+|#12 / PR #17 (draft)
+|Wire `ctest` and the `frontend/editor` build into GitHub Actions as a PR check.
+|Draft PR.
+
+|#156
+|OpenAPI spec viewer: a `$ref` that can't be resolved locally falls back to an external fetch
+against the page's own URL and fails loudly (`Could not resolve reference: ... index.html#/...`).
+|Reported, not yet reproduced on demand; root cause hypothesized (`swagger-ui-react` given
+`spec` without `url`), not confirmed.
+
+|#29
+|Shared OpenAI-compatible tool-use agent engine (ADR-015) backing both future AI Chat and Code
+modes.
+|In progress -- engine/tool-registry/session-model only, no UI yet. Foundational for
+<<4-future-agent-modes>>.
+|===
+
+Landed since the previous revision of this document: #150 (packaging pipeline), #152/PR #153
+(dark theme), #51/PR #151 (code block syntax highlighting) -- all merged to `main`. #60 and #113
+closed as superseded/delivered (see below).
+
+== 3. Near-Term Plan: "CppWiki Local" Milestones [[3-near-term-plan]]
+
+The near-term backlog is now tracked as five GitHub milestones, reprioritizing around shipping a
+complete, reliable local-only wiki before AI agent modes, realtime collaboration, or further
+Project Board work:
+
+[cols="1,3"]
+|===
+|Milestone |Scope
+
+|`0.1 -- Local Wiki Foundation`
+|CI reliability (#12), a packaged-launch smoke test so CI proves the artifacts actually run
+(#159, motivated directly by the macOS Gatekeeper gap above), workspace search (#160), keyboard
+navigation for the document tree/editor (#161).
+
+|`0.2 -- Data Safety`
+|Prove the local wiki doesn't lose documents before investing further in sync: a startup sweep
+that recovers stray `.backup` files from an interrupted write (#162; the existing
+per-write atomic-save-with-backup in `FileDocumentRepository` only covers the write itself, not
+recovery from a crash *during* one), a schema migration path past `SchemaVersion::kV1` (#163),
+user-facing whole-workspace backup/restore (#164; distinct from the existing per-file backup),
+recoverable trash for deleted pages (#165), local revision history (#166), graceful handling of
+a corrupted document (#167), and an end-to-end automated test tying all of the above together
+(#168).
+
+|`0.3 -- Complete Content`
+|File attachments (#148) -- the remaining editor-facing PRD gap.
+
+|`0.9 -- Public Beta`
+|First-run onboarding: local-only explainer, data directory choice, sample workspace, backup
+link (#169).
+
+|`1.0 -- CppWiki Local`
+|A reliable local-only wiki with no required backend. Calendar view (#137) is deliberately
+deferred here rather than scoped now -- Project Board (#113) is feature-complete and stable for
+0.x; no new views before the local-wiki release itself is stable.
+|===
+
+Issues #60 ("Package cppwiki_app as an AppImage") and #113 ("Explore native Qt/QML rendering for
+Project board") are closed: both fully superseded/delivered by #150 and the Gantt/Kanban/Table
+work respectively.
+
+== 4. Future Direction: Agent Modes (AI Chat, Code) [[4-future-agent-modes]]
+
+The rail navigation already reserves slots for an *AI Chat* mode and a *Code* mode (rail icons
+exist today), and ADR-015 has already settled the shared design: one C++ agent engine
+(request -> tool call -> execute -> result -> repeat, against an OpenAI-compatible API), with
+a different tool registry per mode. That said, this is intentionally the last thing on this
+roadmap -- it's real design work with an accepted ADR, but building it out is still a distant,
+multi-issue effort, not near-term work:
+
+* *#29 -- Shared agent engine.* In progress (see <<2-in-flight-work>>). Provider-agnostic
+  tool-call loop, pluggable tool registry, session/message data model. No tools registered yet.
+* *#30 -- AI Chat mode.* Document tool registry (read/search/mutate wiki documents only through
+  the existing gated `EditorBridge` methods, inheriting the lock/conflict editability gate) plus
+  the session-list/message-thread UI. Not started; blocked on #29.
+* *#31 -- Code mode.* Native Qt UI (no browser layer) over an arbitrary local folder: file
+  read/write and shell execution tools, gated by a configurable permission mode
+  (ask/allow-for-session/auto-accept), code/diff rendering via `KSyntaxHighlighting`. Not
+  started; blocked on #29.
+* *#32 -- `forkd` sandboxing for Code mode's sub-agent fan-out (Linux only).* Explicit
+  follow-up to #31, ships after Code mode's first, unsandboxed milestone.
+
+No timeline is attached to this section on purpose. Revisit once #29 lands and the near-term
+plan (<<3-near-term-plan>>) and in-flight work (<<2-in-flight-work>>) are clear.
+
+== 5. Technical Gates [[5-technical-gates]]
+
+[cols="1,2,1"]
+|===
+|Gate |Required Evidence |Status
 
 |WebEngine gate
-|local BlockNote bundle loads inside Qt and accepts editing
+|Local BlockNote bundle loads inside Qt and accepts editing
+|Met
 
 |Bridge gate
 |QWebChannel supports typed request/response/error exchange
+|Met
 
 |Document gate
-|reflect-cpp DTOs serialize and validate BlockNote documents
+|reflect-cpp DTOs serialize and validate BlockNote/notebook/canvas documents
+|Met
 
 |Persistence gate
-|local save/load works offline without data loss
+|Local save/load works offline without data loss, with an optional Couchbase Lite backend
+|Met
 
 |Security gate
-|editor has no raw filesystem, token or unrestricted native access
-
-|Plugin gate
-|failed plugin cannot crash the host
+|Editor has no raw filesystem, token or unrestricted native access
+|Met -- holds for the existing BlockNote bridge; re-verify explicitly once Code mode (#31) adds
+real filesystem/shell tools behind its own permission gate
 
 |Sync gate
-|document access is constrained by authenticated channels
+|Document access is constrained by authenticated Sync Gateway channels
+|Met
+
+|Packaging gate
+|App builds and installs as a native artifact (AppImage/installer/DMG) on all three platforms
+with the same feature set (incl. Couchbase Lite) as a dev build, *and launches* on each
+|Partially met -- all three platforms build and pass CI (#150, merged); macOS fails to launch
+for a real user (Gatekeeper, see <<1-current-baseline>>'s Packaging and CI notes). #159
+(packaged-launch smoke test) exists specifically so this class of gap fails CI, not a user.
+
+|Plugin gate
+|Failed plugin cannot crash the host
+|Not started -- Wasmtime provisioning still undecided, see <<6-open-decisions>>
+
+|Agent tool gate
+|An agent-mode tool call (Code mode's filesystem/shell tools, in particular) cannot act outside
+its granted scope/permission mode
+|Not applicable yet -- no tool registry exists (#29 in progress, #30/#31 not started)
 |===
 
-== 5. Open Decisions
+== 6. Open Decisions [[6-open-decisions]]
 
 [cols="1,1,2"]
 |===
@@ -211,50 +278,73 @@ Server work starts after this milestone, with only small Phase 3.5 shell fixes a
 
 |Wasmtime dependency provisioning
 |Open
-|Not in current `vcpkg.json`; needs supported port, overlay port or separate vendoring strategy
+|Unchanged since the previous roadmap. Not in `vcpkg.json`; needs a supported port, overlay
+port or separate vendoring strategy. No plugin work has started against this.
+
+|Confluence import/export
+|Open
+|ADR-006 exists; no client-skeleton work started. Not currently prioritized against packaging,
+attachments or the near-term backlog.
 
 |Couchbase Lite C++ packaging
-|Spike proof added
-|Optional C++ wrapper smoke test and repository save/load/list test run when `CPPWIKI_ENABLE_CBLITE_STORAGE=ON` and `CPPWIKI_CBLITE_ROOT` points to an extracted package
+|Closed
+|Delivered as a pinned prebuilt binary (`scripts/bootstrap-cblite.sh`,
+`cmake/FindCBLite.cmake`'s `CBLite::cblite` target) and now wired into the packaging pipeline
+itself (#150), not just a local dev opt-in.
 
 |Editor bundle packaging
-|Partially decided
-|Current path loads from `frontend/editor/dist`; `editor_bundle` remains explicit by default, with `CPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON` available for linked dev builds. Production packaging may move to Qt resources or installed app data
-
-|QWebChannel schema
-|Phase 3 baseline
-|Versioned `{ apiVersion, ok, result/error }` envelope exists for bridge info, document list, document load and snapshot update. Generated TypeScript/C++ DTOs can still be revisited later
-
-|Frontend package manager
-|Tentative
-|npm is used now; can revisit if workspace tooling changes
-
-|Document hash / dirty check
-|Deferred
-|Not required for current autosave loop. Revisit for Phase 3.5 when adding conflict detection, skip-save optimization or sync
-
-|Page navigation shape
-|Tree migration underway
-|Current UI has native Qt navigation and row actions. Tree view is now the active path; list-only navigation is no longer the target shape
-
-|Server framework migration
-|Closed (Phase 5)
-|`userver` is the chosen backend framework; dependency manifest and server skeleton are now aligned. ADR-009 records the rationale.
-
-|Auth spike
-|Closed (Phase 6)
-|Desktop OIDC login, keyring persistence, refresh flow, server JWT validation and protected-route verification are now working on the dev setup.
+|Closed
+|Loads from `frontend/editor/dist` in dev; packaged builds install the built bundle alongside
+the executable. `CPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP=ON` remains available for linked dev
+builds.
 
 |Observability baseline
-|Active decision
-|OpenTelemetry is the backend observability contract; exporter wiring stays decoupled from business code and editor runtime
+|Open, unchanged
+|OpenTelemetry is still only a stated intent -- no exporter wiring exists in `src/server/` yet.
+Revisit once the `CppWiki Local` milestones (<<3-near-term-plan>>) are clear.
+
+|Server framework migration
+|Closed
+|`userver` is the backend framework; ADR-009 records the rationale.
+
+|Auth spike
+|Closed
+|Desktop OIDC login, keyring persistence, refresh flow, server JWT validation and
+protected-route verification all work against the dev Authentik setup.
+
+|Sync spike
+|Closed
+|Couchbase Sync Gateway environment, channel mapping and authenticated replication all work
+against the dev setup.
+
+|Lock/presence authority
+|Closed
+|`LockService`/`PresenceService` are real (owner + heartbeat + lease expiry), not authenticated
+stubs -- the previous roadmap's top "Immediate Next Action" is done.
+
+|Agent engine trust boundary (Code mode)
+|Decided (ADR-015), not yet implemented
+|Filesystem/shell tools are scoped to a user-opened folder and gated by a configurable
+permission mode; `forkd` is the intended Linux sandboxing mechanism for sub-agent fan-out
+(#32), with `bubblewrap` as the fallback if `forkd` proves impractical.
 |===
 
-== 6. Immediate Next Actions
+== 7. Immediate Next Actions
 
-. Start Phase 7 and make the backend lock owner authoritative instead of treating lock/presence endpoints as authenticated stubs.
-. Wire desktop editing flow to acquire/release locks and send heartbeat while the editor is active.
-. Enforce read-only fallback in the desktop editor bridge when another user owns the lock.
-. Surface lock owner and presence state in the desktop shell using the authenticated identity that now comes from JWT.
-. Add OpenTelemetry request-span and metrics wiring without coupling the editor to the telemetry backend.
-. Keep local editing and local persistence operational when the backend is unavailable.
+. Diagnose and fix the macOS Gatekeeper launch failure (see <<1-current-baseline>>'s Packaging
+  and CI notes) -- decide between real notarization (Apple Developer Program membership) and a
+  documented `xattr -cr` stopgap once root cause is confirmed.
+. Land #159 (packaged-launch smoke test) so a regression like the macOS gap fails CI instead of
+  reaching a user; merge #157/PR #158 (settings export/import) and unblock #17 (CI wiring) if
+  still draft.
+. Work through `0.1 -- Local Wiki Foundation` (#160 search, #161 keyboard nav) and start
+  `0.2 -- Data Safety` (#162-#168) -- data safety has zero prior coverage and blocks trusting the
+  local wiki with real content.
+. Make a storage-path decision for #148 (attachments) before starting implementation; #164
+  (workspace backup/restore) and #168 (end-to-end data-safety test) both depend on it.
+. Look into #156 (OpenAPI spec viewer `$ref` resolution error) when a reproduction turns up.
+. Continue #29 (shared agent engine) as the only active work toward
+  <<4-future-agent-modes>>; do not start #30/#31 until #29 lands, and don't let it compete with
+  the `0.x` milestones above for priority.
+. Observability (OpenTelemetry), the Wasmtime/plugin spike, and Confluence import/export remain
+  explicitly deferred -- no action until the `CppWiki Local` milestones clear.
