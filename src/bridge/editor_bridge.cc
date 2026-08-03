@@ -221,15 +221,28 @@ auto MetadataToVariant(const document::PageMetadata& metadata) -> QVariantMap {
       {QStringLiteral("contentVersion"), static_cast<qlonglong>(metadata.content_version)},
       {QStringLiteral("createdAt"), QString::fromStdString(metadata.created_at)},
       {QStringLiteral("updatedAt"), QString::fromStdString(metadata.updated_at)},
+      {QStringLiteral("trashedAt"), OptionalStringToVariant(metadata.trashed_at)},
   };
 }
 
+// Issue #165: which side of the trash a listing call wants. The normal document tree
+// (kExcludeTrashed) must never show a trashed page; the trash view (kOnlyTrashed) must show
+// nothing else.
+enum class TrashFilter { kExcludeTrashed, kOnlyTrashed };
+
 auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& documents,
-                                const QString& current_workspace_id) -> QVariantList {
+                                const QString& current_workspace_id,
+                                TrashFilter trash_filter = TrashFilter::kExcludeTrashed)
+    -> QVariantList {
   QVariantList result;
   for (const auto& document : documents) {
     const auto workspace_id = QString::fromStdString(EffectiveWorkspaceId(document.workspace_id));
     if (workspace_id != current_workspace_id) {
+      continue;
+    }
+    const bool is_trashed = document.trashed_at.has_value();
+    if ((trash_filter == TrashFilter::kExcludeTrashed && is_trashed) ||
+        (trash_filter == TrashFilter::kOnlyTrashed && !is_trashed)) {
       continue;
     }
 
@@ -246,6 +259,7 @@ auto DocumentSummariesToVariant(const std::vector<storage::DocumentSummary>& doc
         {QStringLiteral("contentVersion"), static_cast<qlonglong>(document.content_version)},
         {QStringLiteral("createdAt"), QString::fromStdString(document.created_at)},
         {QStringLiteral("updatedAt"), QString::fromStdString(document.updated_at)},
+        {QStringLiteral("trashedAt"), OptionalStringToVariant(document.trashed_at)},
     });
   }
   return result;
@@ -460,11 +474,16 @@ auto LoadDocumentRecord(std::shared_ptr<storage::LocalDocumentRepository> reposi
   return std::move(*result.document);
 }
 
-auto DeleteDocumentTree(std::shared_ptr<storage::LocalDocumentRepository> repository,
-                        std::string_view root_id) -> std::optional<storage::RepositoryError> {
+// Issue #165: shared by TrashDocumentTree/RestoreDocumentTree/PermanentlyDeleteDocumentTree below
+// -- each needs the same "root_id plus every descendant" id set (regardless of any document's
+// current trashed_at state, since a page's children must move with it whichever direction the
+// tree is moving), just applying a different per-id operation over the result.
+auto CollectDocumentTreeIds(std::shared_ptr<storage::LocalDocumentRepository> repository,
+                            std::string_view root_id)
+    -> std::variant<std::vector<std::string>, storage::RepositoryError> {
   auto list_result = repository->ListDocuments();
   if (list_result.error) {
-    return list_result.error;
+    return std::move(*list_result.error);
   }
 
   std::multimap<std::string, std::string> children_by_parent;
@@ -475,22 +494,85 @@ auto DeleteDocumentTree(std::shared_ptr<storage::LocalDocumentRepository> reposi
   }
 
   std::queue<std::string> pending;
-  std::vector<std::string> deletion_order;
+  std::vector<std::string> tree_ids;
   pending.push(std::string(root_id));
   while (!pending.empty()) {
     auto current = std::move(pending.front());
     pending.pop();
-    deletion_order.push_back(current);
+    tree_ids.push_back(current);
     auto [it, end] = children_by_parent.equal_range(current);
     for (; it != end; ++it) {
       pending.push(it->second);
     }
   }
+  return tree_ids;
+}
 
-  for (auto it = deletion_order.rbegin(); it != deletion_order.rend(); ++it) {
+auto PermanentlyDeleteDocumentTree(std::shared_ptr<storage::LocalDocumentRepository> repository,
+                                   std::string_view root_id)
+    -> std::optional<storage::RepositoryError> {
+  auto tree_ids_or_error = CollectDocumentTreeIds(repository, root_id);
+  if (std::holds_alternative<storage::RepositoryError>(tree_ids_or_error)) {
+    return std::get<storage::RepositoryError>(std::move(tree_ids_or_error));
+  }
+  const auto& tree_ids = std::get<std::vector<std::string>>(tree_ids_or_error);
+
+  for (auto it = tree_ids.rbegin(); it != tree_ids.rend(); ++it) {
     auto delete_result = repository->DeleteDocument(*it);
     if (delete_result.error) {
       return delete_result.error;
+    }
+  }
+  return std::nullopt;
+}
+
+// Issue #165: soft-delete. Sets trashed_at on root_id and every descendant via
+// LoadDocument+SaveDocument rather than any repository-level trash primitive -- trashed_at is a
+// plain PageMetadata field (see ADR notes on DocumentSummary), so no new storage-layer mechanism
+// is needed. All-or-nothing isn't enforced here (matching the existing hard-delete tree walk's
+// behavior above): a mid-walk error leaves whatever was already trashed, trashed.
+auto TrashDocumentTree(std::shared_ptr<storage::LocalDocumentRepository> repository,
+                      std::string_view root_id, const std::string& trashed_at)
+    -> std::optional<storage::RepositoryError> {
+  auto tree_ids_or_error = CollectDocumentTreeIds(repository, root_id);
+  if (std::holds_alternative<storage::RepositoryError>(tree_ids_or_error)) {
+    return std::get<storage::RepositoryError>(std::move(tree_ids_or_error));
+  }
+  const auto& tree_ids = std::get<std::vector<std::string>>(tree_ids_or_error);
+
+  for (const auto& id : tree_ids) {
+    auto loaded = repository->LoadDocument(id);
+    if (!loaded.document) {
+      continue;
+    }
+    loaded.document->metadata.trashed_at = trashed_at;
+    auto save_result = repository->SaveDocument(*loaded.document);
+    if (save_result.error) {
+      return save_result.error;
+    }
+  }
+  return std::nullopt;
+}
+
+// Issue #165: restore. Only clears trashed_at on ids that currently have it set, so restoring a
+// page whose child was independently trashed at a different time doesn't resurrect that child.
+auto RestoreDocumentTree(std::shared_ptr<storage::LocalDocumentRepository> repository,
+                        std::string_view root_id) -> std::optional<storage::RepositoryError> {
+  auto tree_ids_or_error = CollectDocumentTreeIds(repository, root_id);
+  if (std::holds_alternative<storage::RepositoryError>(tree_ids_or_error)) {
+    return std::get<storage::RepositoryError>(std::move(tree_ids_or_error));
+  }
+  const auto& tree_ids = std::get<std::vector<std::string>>(tree_ids_or_error);
+
+  for (const auto& id : tree_ids) {
+    auto loaded = repository->LoadDocument(id);
+    if (!loaded.document || !loaded.document->metadata.trashed_at) {
+      continue;
+    }
+    loaded.document->metadata.trashed_at = std::nullopt;
+    auto save_result = repository->SaveDocument(*loaded.document);
+    if (save_result.error) {
+      return save_result.error;
     }
   }
   return std::nullopt;
@@ -852,6 +934,9 @@ QVariantMap QEditorBridge::updateDocumentPlacement(const QString& page_id, const
   return SuccessResponse(MetadataToVariant(record.metadata));
 }
 
+// Issue #165: "Delete page" now soft-deletes (moves the page and its descendants to the trash)
+// instead of removing them outright -- see permanentlyDeleteDocument()/emptyTrash() below for
+// the irreversible operation, and restoreDocument()/listTrash() for undoing this.
 QVariantMap QEditorBridge::deleteDocument(const QString& page_id) {
   if (!repository_) {
     return ErrorResponse(QStringLiteral("repository_unavailable"),
@@ -874,12 +959,106 @@ QVariantMap QEditorBridge::deleteDocument(const QString& page_id) {
     return std::get<QVariantMap>(std::move(loaded_or_error));
   }
 
-  if (const auto error = DeleteDocumentTree(repository_, page_id.toStdString())) {
+  if (const auto error =
+          TrashDocumentTree(repository_, page_id.toStdString(), CurrentUtcTimestamp())) {
     return ErrorResponse(QStringLiteral("delete_failed"), QString::fromStdString(error->message));
   }
 
   if (current_page_id_ == page_id) {
     current_page_id_.clear();
+  }
+  return SuccessResponse(QVariant{});
+}
+
+QVariantMap QEditorBridge::restoreDocument(const QString& page_id) {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+  if (page_id.isEmpty()) {
+    return ErrorResponse(QStringLiteral("invalid_document"),
+                         QStringLiteral("Document id is required."));
+  }
+
+  auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
+  if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
+    return std::get<QVariantMap>(std::move(loaded_or_error));
+  }
+
+  if (const auto error = RestoreDocumentTree(repository_, page_id.toStdString())) {
+    return ErrorResponse(QStringLiteral("restore_failed"),
+                         QString::fromStdString(error->message));
+  }
+  return SuccessResponse(QVariant{});
+}
+
+QVariantMap QEditorBridge::permanentlyDeleteDocument(const QString& page_id) {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+  if (page_id.isEmpty()) {
+    return ErrorResponse(QStringLiteral("invalid_document"),
+                         QStringLiteral("Document id is required."));
+  }
+
+  auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
+  if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
+    return std::get<QVariantMap>(std::move(loaded_or_error));
+  }
+
+  if (const auto error = PermanentlyDeleteDocumentTree(repository_, page_id.toStdString())) {
+    return ErrorResponse(QStringLiteral("delete_failed"), QString::fromStdString(error->message));
+  }
+
+  if (current_page_id_ == page_id) {
+    current_page_id_.clear();
+  }
+  return SuccessResponse(QVariant{});
+}
+
+QVariantMap QEditorBridge::listTrash() {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+
+  auto result = repository_->ListDocuments();
+  if (result.error) {
+    return ErrorResponse(QStringLiteral("list_failed"),
+                         QString::fromStdString(result.error->message));
+  }
+
+  return SuccessResponse(DocumentSummariesToVariant(result.documents, current_workspace_id_,
+                                                     TrashFilter::kOnlyTrashed));
+}
+
+QVariantMap QEditorBridge::emptyTrash() {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+
+  auto result = repository_->ListDocuments();
+  if (result.error) {
+    return ErrorResponse(QStringLiteral("list_failed"),
+                         QString::fromStdString(result.error->message));
+  }
+
+  for (const auto& document : result.documents) {
+    const auto workspace_id =
+        QString::fromStdString(EffectiveWorkspaceId(document.workspace_id));
+    if (workspace_id != current_workspace_id_ || !document.trashed_at) {
+      continue;
+    }
+    auto delete_result = repository_->DeleteDocument(document.id);
+    if (delete_result.error) {
+      return ErrorResponse(QStringLiteral("delete_failed"),
+                           QString::fromStdString(delete_result.error->message));
+    }
+    if (current_page_id_.toStdString() == document.id) {
+      current_page_id_.clear();
+    }
   }
   return SuccessResponse(QVariant{});
 }

@@ -52,6 +52,7 @@
 #include "gui/import_destination_dialog.h"
 #include "gui/page_helpers.h"
 #include "gui/project_board/project_board_native_widget.h"
+#include "gui/trash_dialog.h"
 #include "sync/sync_service.h"
 
 namespace cppwiki {
@@ -198,6 +199,14 @@ void Page::BuildUi() {
   settings_button_->setCursor(Qt::PointingHandCursor);
   connect(settings_button_, &QPushButton::clicked, this, &Page::settingsRequested);
   sidebar_footer_layout->addWidget(settings_button_);
+
+  trash_button_ = new QPushButton(QStringLiteral("Trash"), sidebar_footer);
+  trash_button_->setObjectName(QStringLiteral("sidebarTrashButton"));
+  trash_button_->setIcon(QIcon::fromTheme(QStringLiteral("user-trash")));
+  trash_button_->setIconSize(QSize(16, 16));
+  trash_button_->setCursor(Qt::PointingHandCursor);
+  connect(trash_button_, &QPushButton::clicked, this, &Page::ShowTrashDialog);
+  sidebar_footer_layout->addWidget(trash_button_);
 
   auto* profile_card = new QFrame(sidebar_footer);
   profile_card->setObjectName(QStringLiteral("profilePlaceholderCard"));
@@ -730,6 +739,21 @@ void Page::DeleteDocument(const QModelIndex& index) {
   selected_page_id_ = QString::fromStdString(summaries.front().id);
   SelectDocumentById(selected_page_id_);
   OpenDocumentWithAccess(selected_page_id_);
+}
+
+void Page::ShowTrashDialog() {
+  if (editor_bridge_ == nullptr) {
+    return;
+  }
+
+  gui::TrashDialog dialog(editor_bridge_, this);
+  dialog.setModal(true);
+  dialog.exec();
+
+  // A restore may have brought a page back into the visible tree; a permanent delete may have
+  // removed the currently-open document's last remaining copy. Refresh unconditionally rather
+  // than tracking which action (if any) the dialog actually performed.
+  PopulatePageList();
 }
 
 void Page::OpenDocumentWithAccess(const QString& page_id) {

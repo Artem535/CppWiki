@@ -154,6 +154,59 @@ auto TestFileRepositoryRoundTripsDocumentKind() -> void {
   std::filesystem::remove_all(storage_directory);
 }
 
+// Issue #165: trashed_at is a plain metadata field, so it must round-trip through the file
+// repository like any other PageMetadata field, and ListDocuments()'s summaries must reflect it
+// -- both are what let the bridge layer implement soft-delete/restore purely via
+// LoadDocument+SaveDocument, without any repository-level trash-specific storage.
+auto TestFileRepositoryRoundTripsTrashedAt() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-trash-test";
+  std::filesystem::remove_all(storage_directory);
+
+  cppwiki::storage::FileDocumentRepository repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+
+  auto document = MakeDocument();
+  document.metadata.id = "trash-page";
+  Require(!repository.SaveDocument(document).error,
+          "file repository should save a live (untrashed) document");
+
+  const auto live_list = repository.ListDocuments();
+  Require(!live_list.error, "listing a live document should succeed");
+  Require(live_list.documents.size() == 1, "the live document should be listed");
+  Require(!live_list.documents.front().trashed_at.has_value(),
+          "a freshly saved document must not be marked trashed");
+
+  document.metadata.trashed_at = "2026-08-03T12:00:00.000Z";
+  Require(!repository.SaveDocument(document).error,
+          "file repository should save a trashed document");
+
+  const auto trashed_load = repository.LoadDocument("trash-page");
+  Require(trashed_load.document.has_value(), "the trashed document should still load");
+  Require(trashed_load.document->metadata.trashed_at.has_value(),
+          "trashed_at should round-trip through LoadDocument");
+  Require(*trashed_load.document->metadata.trashed_at == "2026-08-03T12:00:00.000Z",
+          "trashed_at should round-trip with its exact timestamp value");
+
+  const auto trashed_list = repository.ListDocuments();
+  Require(!trashed_list.error, "listing a trashed document should still succeed");
+  Require(trashed_list.documents.size() == 1,
+          "ListDocuments() should still report the trashed document (filtering is a bridge/UI "
+          "concern, not a repository one)");
+  Require(trashed_list.documents.front().trashed_at.has_value(),
+          "ListDocuments()'s summary should reflect the trashed state");
+
+  document.metadata.trashed_at = std::nullopt;
+  Require(!repository.SaveDocument(document).error,
+          "file repository should save a restored (un-trashed) document");
+  const auto restored_load = repository.LoadDocument("trash-page");
+  Require(restored_load.document.has_value(), "the restored document should still load");
+  Require(!restored_load.document->metadata.trashed_at.has_value(),
+          "trashed_at should clear back to nullopt after restore");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
 // Reported after #78-#81: newly created Jupyter notebook/Excalidraw canvas documents appeared
 // broken after saving. TestFileRepositoryRoundTripsDocumentKind above only checks the `kind`
 // field round-trips; this checks the actual nbformat/Excalidraw-shaped raw_snapshot_json content
@@ -392,6 +445,7 @@ auto TestFileRepositoryReportsCorruptedDocumentAsPlaceholderInsteadOfHidingIt() 
 auto main() -> int {
   TestFileRepositoryPersistsDocumentsAndConflicts();
   TestFileRepositoryRoundTripsDocumentKind();
+  TestFileRepositoryRoundTripsTrashedAt();
   TestFileRepositoryRoundTripsNonWikiPageRawSnapshotContent();
   TestFileRepositoryCompletesInterruptedWriteFromTempFile();
   TestFileRepositoryRestoresFromBackupWhenNoTempFileExists();

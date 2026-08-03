@@ -40,6 +40,8 @@ struct DocumentSummary {
   // vanishing with no trace. load_error holds RepositoryError::message when set.
   bool is_corrupted{false};
   std::optional<std::string> load_error;
+  // Issue #165: mirrors PageMetadata::trashed_at -- nullopt means live, set means in the trash.
+  std::optional<std::string> trashed_at;
 };
 
 [[nodiscard]] inline auto DocumentSummaryFromMetadata(
@@ -56,6 +58,7 @@ struct DocumentSummary {
       .created_by = metadata.created_by,
       .updated_by = metadata.updated_by,
       .content_version = metadata.content_version,
+      .trashed_at = metadata.trashed_at,
   };
 }
 

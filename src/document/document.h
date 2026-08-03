@@ -74,6 +74,10 @@ struct PageMetadata {
   std::string created_by;
   std::string updated_by;
   std::int64_t content_version{1};
+  // Issue #165: soft-delete state. nullopt means the page is live; set to the UTC timestamp of
+  // the trash action means it's in the trash (still on disk/in storage, hidden from the normal
+  // document tree) until restored (cleared back to nullopt) or permanently deleted.
+  std::optional<std::string> trashed_at;
 };
 
 struct Document {

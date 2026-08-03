@@ -108,6 +108,9 @@ class Page final : public QWidget, public IPage {
                            document::DocumentKind kind = document::DocumentKind::kWikiPage);
   void RenameDocument(const QModelIndex& index);
   void DeleteDocument(const QModelIndex& index);
+  // Issue #165: opens the modal TrashDialog and refreshes the tree afterward, since restoring a
+  // page from it must bring the page back into the visible tree.
+  void ShowTrashDialog();
   void OpenDocumentWithAccess(const QString& page_id);
   void EnterEditMode();
   void ExitEditMode(bool due_to_inactivity = false);
@@ -164,6 +167,7 @@ class Page final : public QWidget, public IPage {
   QStackedWidget* content_stack_ = nullptr;
   gui::project_board::ProjectBoardNativeWidget* project_board_widget_ = nullptr;
   QPushButton* settings_button_ = nullptr;
+  QPushButton* trash_button_ = nullptr;
   QLabel* profile_avatar_label_ = nullptr;
   QLabel* profile_name_label_ = nullptr;
   QLabel* profile_hint_label_ = nullptr;

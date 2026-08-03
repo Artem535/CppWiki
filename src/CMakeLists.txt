@@ -64,6 +64,8 @@ qt_add_executable(cppwiki_app
         gui/presence_strip_widget.h
         gui/settings_dialog.cc
         gui/settings_dialog.h
+        gui/trash_dialog.cc
+        gui/trash_dialog.h
         gui/page.cc
         gui/page.h
         gui/page_helpers.cc
