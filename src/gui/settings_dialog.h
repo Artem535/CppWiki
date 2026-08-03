@@ -35,6 +35,14 @@ class SettingsDialog final : public QDialog {
   [[nodiscard]] auto BuildProgramSettings() const -> ProgramSettings;
 
  private:
+  // Shared by the Save button and by a successful Import: writes the local AI key (or clears it)
+  // and accepts the dialog, so MainWindow::ShowSettingsDialog() persists/applies the result the
+  // same way regardless of which path produced it.
+  void AcceptAndSave();
+  // Repopulates every settings widget from `settings` (used after a successful settings import,
+  // see AcceptAndSave()) -- the inverse of BuildProgramSettings().
+  void ApplySettingsToWidgets(const ProgramSettings& settings);
+
   ProgramSettings current_settings_;
   oclero::qlementine::SegmentedControl* section_control_ = nullptr;
   QStackedWidget* section_stack_ = nullptr;

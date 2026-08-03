@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QJsonValue>
 #include <QSettings>
 #include <QStandardPaths>
 #include <string_view>
@@ -17,9 +18,9 @@ namespace {
 
 // A packaged install co-locates the built editor bundle next to the executable (see src/
 // CMakeLists.txt's install(DIRECTORY frontend/editor/dist ...) rule) under this name, on every
-// platform (AppImage, Windows installer, macOS .app/Contents/MacOS) -- unlike CPPWIKI_EDITOR_DIST_DIR
-// below, which is an absolute path into the build machine's own source tree and can never resolve
-// on an end user's machine.
+// platform (AppImage, Windows installer, macOS .app/Contents/MacOS) -- unlike
+// CPPWIKI_EDITOR_DIST_DIR below, which is an absolute path into the build machine's own source tree
+// and can never resolve on an end user's machine.
 auto ResolveDefaultEditorDistDirectory() -> QString {
   const auto packaged_candidate =
       QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("editor-dist"));
@@ -151,9 +152,8 @@ auto ProgramSettings::FromSettings(const QSettings& settings) -> ProgramSettings
   const auto ai_inline_suggestions_enabled =
       settings.value(ToQString(constants::kSettingsAiInlineSuggestionsEnabledKey), false).toBool();
 
-  const auto accent_color_key =
-      SettingsValueOrDefault(settings, constants::kSettingsAccentColorKey,
-                             ToQString(constants::kDefaultAccentColorKey));
+  const auto accent_color_key = SettingsValueOrDefault(
+      settings, constants::kSettingsAccentColorKey, ToQString(constants::kDefaultAccentColorKey));
 
   return ProgramSettings(
       ToQString(constants::kApplicationName), ToQString(constants::kApplicationVersion),
@@ -273,6 +273,67 @@ auto ProgramSettings::AiInlineSuggestionsEnabled() const -> bool {
 
 auto ProgramSettings::AccentColorKey() const -> const QString& {
   return accent_color_key_;
+}
+
+auto ProgramSettings::ToJson() const -> QJsonObject {
+  QJsonObject json;
+  json[QStringLiteral("accentColorKey")] = accent_color_key_;
+  json[QStringLiteral("applicationFontPointSize")] = application_font_point_size_;
+  json[QStringLiteral("backendEnabled")] = backend_enabled_;
+  json[QStringLiteral("backendBaseUrl")] = backend_base_url_;
+  json[QStringLiteral("authEnabled")] = auth_enabled_;
+  json[QStringLiteral("authAuthorizationUrl")] = auth_authorization_url_;
+  json[QStringLiteral("authTokenUrl")] = auth_token_url_;
+  json[QStringLiteral("authClientId")] = auth_client_id_;
+  json[QStringLiteral("authRedirectUri")] = auth_redirect_uri_;
+  json[QStringLiteral("demoCollaborationEnabled")] = demo_collaboration_enabled_;
+  json[QStringLiteral("demoCollaborationUserId")] = demo_collaboration_user_id_;
+  json[QStringLiteral("syncEnabled")] = sync_enabled_;
+  json[QStringLiteral("aiFeaturesEnabled")] = ai_features_enabled_;
+  json[QStringLiteral("aiAutocompleteEnabled")] = ai_autocomplete_enabled_;
+  json[QStringLiteral("aiInlineSuggestionsEnabled")] = ai_inline_suggestions_enabled_;
+  return json;
+}
+
+namespace {
+
+auto JsonStringOr(const QJsonObject& json, const char* key, const QString& fallback) -> QString {
+  const auto value = json.value(QLatin1String(key));
+  return value.isString() ? value.toString() : fallback;
+}
+
+auto JsonBoolOr(const QJsonObject& json, const char* key, bool fallback) -> bool {
+  const auto value = json.value(QLatin1String(key));
+  return value.isBool() ? value.toBool() : fallback;
+}
+
+auto JsonIntOr(const QJsonObject& json, const char* key, int fallback) -> int {
+  const auto value = json.value(QLatin1String(key));
+  return value.isDouble() ? value.toInt() : fallback;
+}
+
+}  // namespace
+
+auto ProgramSettings::FromJson(const QJsonObject& json, const ProgramSettings& base)
+    -> ProgramSettings {
+  return ProgramSettings(
+      base.ApplicationName(), base.ApplicationVersion(), base.OrganizationName(),
+      base.AppDataDirectory(), base.DatabaseDirectory(), base.EditorDistDirectory(),
+      JsonStringOr(json, "backendBaseUrl", base.BackendBaseUrl()),
+      JsonBoolOr(json, "backendEnabled", base.BackendEnabled()),
+      JsonStringOr(json, "authAuthorizationUrl", base.AuthAuthorizationUrl()),
+      JsonStringOr(json, "authTokenUrl", base.AuthTokenUrl()),
+      JsonStringOr(json, "authClientId", base.AuthClientId()),
+      JsonStringOr(json, "authRedirectUri", base.AuthRedirectUri()),
+      JsonBoolOr(json, "authEnabled", base.AuthEnabled()),
+      JsonBoolOr(json, "demoCollaborationEnabled", base.DemoCollaborationEnabled()),
+      JsonStringOr(json, "demoCollaborationUserId", base.DemoCollaborationUserId()),
+      JsonBoolOr(json, "syncEnabled", base.SyncEnabled()),
+      JsonIntOr(json, "applicationFontPointSize", base.ApplicationFontPointSize()),
+      JsonBoolOr(json, "aiFeaturesEnabled", base.AiFeaturesEnabled()),
+      JsonBoolOr(json, "aiAutocompleteEnabled", base.AiAutocompleteEnabled()),
+      JsonBoolOr(json, "aiInlineSuggestionsEnabled", base.AiInlineSuggestionsEnabled()),
+      JsonStringOr(json, "accentColorKey", base.AccentColorKey()));
 }
 
 }  // namespace cppwiki

@@ -53,9 +53,9 @@ auto TestDefaultSettings() -> void {
   Require(!settings.AuthEnabled(), "auth should be disabled by default");
   Require(!settings.SyncEnabled(), "sync should be disabled by default");
   Require(settings.ApplicationFontPointSize() > 0, "font size should be positive");
-  Require(settings.AccentColorKey() ==
-              cppwiki::ToQString(cppwiki::constants::kDefaultAccentColorKey),
-          "accent color should default to blue (ADR-016)");
+  Require(
+      settings.AccentColorKey() == cppwiki::ToQString(cppwiki::constants::kDefaultAccentColorKey),
+      "accent color should default to blue (ADR-016)");
 }
 
 auto TestSettingsOverrides() -> void {
@@ -189,6 +189,117 @@ auto TestSettingsRoundTrip() -> void {
           "saved accent color should round-trip through QSettings");
 }
 
+// issue #157: ToJson()/FromJson() cover every exportable field but never the three path fields
+// or the app-identity fields, since those are machine/install-specific (paths) or build-time
+// constants (identity), not user preferences to carry between machines.
+auto TestToJsonExcludesPathsAndIdentity() -> void {
+  const cppwiki::ProgramSettings settings(
+      cppwiki::ToQString(cppwiki::constants::kApplicationName),
+      cppwiki::ToQString(cppwiki::constants::kApplicationVersion),
+      cppwiki::ToQString(cppwiki::constants::kOrganizationName), QStringLiteral("/some/app-data"),
+      QStringLiteral("/some/database"), QStringLiteral("/some/editor-dist"),
+      QStringLiteral("https://cppwiki.internal:9443"), true,
+      QStringLiteral("https://auth.internal/o/authorize/"),
+      QStringLiteral("https://auth.internal/o/token/"), QStringLiteral("cppwiki-desktop"),
+      QStringLiteral("http://127.0.0.1:38080/auth/callback"), true, false, QString(), true, 15,
+      true, true, true, QStringLiteral("orange"));
+
+  const auto json = settings.ToJson();
+
+  Require(!json.contains(QStringLiteral("appDataDirectory")),
+          "exported JSON should not contain the app data directory path");
+  Require(!json.contains(QStringLiteral("databaseDirectory")),
+          "exported JSON should not contain the database directory path");
+  Require(!json.contains(QStringLiteral("editorDistDirectory")),
+          "exported JSON should not contain the editor dist directory path");
+  Require(json.value(QStringLiteral("backendBaseUrl")).toString() == settings.BackendBaseUrl(),
+          "exported JSON should contain the backend base url");
+  Require(json.value(QStringLiteral("accentColorKey")).toString() == settings.AccentColorKey(),
+          "exported JSON should contain the accent color key");
+}
+
+// A full export/import round trip (through the same base settings, as SettingsDialog does) should
+// reproduce every exportable field exactly, while path/identity fields keep coming from the base
+// regardless of what's in the JSON.
+auto TestExportImportRoundTrip() -> void {
+  const cppwiki::ProgramSettings original(
+      cppwiki::ToQString(cppwiki::constants::kApplicationName),
+      cppwiki::ToQString(cppwiki::constants::kApplicationVersion),
+      cppwiki::ToQString(cppwiki::constants::kOrganizationName), QStringLiteral("/keep/app-data"),
+      QStringLiteral("/keep/database"), QStringLiteral("/keep/editor-dist"),
+      QStringLiteral("https://cppwiki.internal:9443"), true,
+      QStringLiteral("https://auth.internal/o/authorize/"),
+      QStringLiteral("https://auth.internal/o/token/"), QStringLiteral("cppwiki-desktop"),
+      QStringLiteral("http://127.0.0.1:38080/auth/callback"), true, true,
+      QStringLiteral("demo-alice"), true, 17, true, true, true, QStringLiteral("green"));
+
+  const auto imported = cppwiki::ProgramSettings::FromJson(original.ToJson(), original);
+
+  Require(imported.AppDataDirectory() == original.AppDataDirectory(),
+          "import should keep the base app data directory");
+  Require(imported.DatabaseDirectory() == original.DatabaseDirectory(),
+          "import should keep the base database directory");
+  Require(imported.EditorDistDirectory() == original.EditorDistDirectory(),
+          "import should keep the base editor dist directory");
+  Require(imported.BackendBaseUrl() == original.BackendBaseUrl(),
+          "backend base url should round-trip through export/import");
+  Require(imported.BackendEnabled() == original.BackendEnabled(),
+          "backend enabled flag should round-trip through export/import");
+  Require(imported.AuthAuthorizationUrl() == original.AuthAuthorizationUrl(),
+          "auth authorization url should round-trip through export/import");
+  Require(imported.AuthTokenUrl() == original.AuthTokenUrl(),
+          "auth token url should round-trip through export/import");
+  Require(imported.AuthClientId() == original.AuthClientId(),
+          "auth client id should round-trip through export/import");
+  Require(imported.AuthRedirectUri() == original.AuthRedirectUri(),
+          "auth redirect uri should round-trip through export/import");
+  Require(imported.AuthEnabled() == original.AuthEnabled(),
+          "auth enabled flag should round-trip through export/import");
+  Require(imported.DemoCollaborationEnabled() == original.DemoCollaborationEnabled(),
+          "demo collaboration enabled flag should round-trip through export/import");
+  Require(imported.DemoCollaborationUserId() == original.DemoCollaborationUserId(),
+          "demo collaboration user id should round-trip through export/import");
+  Require(imported.SyncEnabled() == original.SyncEnabled(),
+          "sync enabled flag should round-trip through export/import");
+  Require(imported.ApplicationFontPointSize() == original.ApplicationFontPointSize(),
+          "font size should round-trip through export/import");
+  Require(imported.AiFeaturesEnabled() == original.AiFeaturesEnabled(),
+          "AI features enabled flag should round-trip through export/import");
+  Require(imported.AiAutocompleteEnabled() == original.AiAutocompleteEnabled(),
+          "AI autocomplete enabled flag should round-trip through export/import");
+  Require(imported.AiInlineSuggestionsEnabled() == original.AiInlineSuggestionsEnabled(),
+          "AI inline suggestions enabled flag should round-trip through export/import");
+  Require(imported.AccentColorKey() == original.AccentColorKey(),
+          "accent color should round-trip through export/import");
+}
+
+// A partial/hand-edited import file shouldn't reset fields it doesn't mention -- each missing key
+// should fall back to the base settings' current value rather than a hardcoded default.
+auto TestFromJsonMissingFieldsFallBackToBase() -> void {
+  const cppwiki::ProgramSettings base(
+      cppwiki::ToQString(cppwiki::constants::kApplicationName),
+      cppwiki::ToQString(cppwiki::constants::kApplicationVersion),
+      cppwiki::ToQString(cppwiki::constants::kOrganizationName), QStringLiteral("/base/app-data"),
+      QStringLiteral("/base/database"), QStringLiteral("/base/editor-dist"),
+      QStringLiteral("https://base.example:9443"), true,
+      QStringLiteral("https://base.example/authorize/"),
+      QStringLiteral("https://base.example/token/"), QStringLiteral("base-client"),
+      QStringLiteral("http://127.0.0.1:38080/auth/callback"), true, false, QString(), true, 13,
+      true, true, true, QStringLiteral("violet"));
+
+  const QJsonObject partial{{QStringLiteral("accentColorKey"), QStringLiteral("blue")}};
+  const auto imported = cppwiki::ProgramSettings::FromJson(partial, base);
+
+  Require(imported.AccentColorKey() == QStringLiteral("blue"),
+          "the one field present in the partial import should be applied");
+  Require(imported.BackendBaseUrl() == base.BackendBaseUrl(),
+          "fields missing from a partial import should fall back to the base value");
+  Require(imported.ApplicationFontPointSize() == base.ApplicationFontPointSize(),
+          "font size missing from a partial import should fall back to the base value");
+  Require(imported.AiFeaturesEnabled() == base.AiFeaturesEnabled(),
+          "AI features flag missing from a partial import should fall back to the base value");
+}
+
 }  // namespace
 
 auto main(int argc, char* argv[]) -> int {
@@ -201,6 +312,9 @@ auto main(int argc, char* argv[]) -> int {
   TestDefaultSettings();
   TestSettingsOverrides();
   TestSettingsRoundTrip();
+  TestToJsonExcludesPathsAndIdentity();
+  TestExportImportRoundTrip();
+  TestFromJsonMissingFieldsFallBackToBase();
 
   spdlog::info("cppwiki_program_settings_tests passed");
   return EXIT_SUCCESS;
