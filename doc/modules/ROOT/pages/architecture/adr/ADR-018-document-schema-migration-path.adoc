@@ -1,0 +1,101 @@
+= ADR-018 — Document Schema Migration Path
+
+== Status
+
+Accepted
+
+== Date
+
+2026-08-03
+
+'''
+
+== Context
+
+`src/document/document.h` defines `enum class SchemaVersion : std::int32_t { kV1 = 1 }`. Today
+there is only one version, and `DocumentValidator::ConvertDocument()` rejects any snapshot whose
+`schema_version` isn't `kV1`. That's correct behavior for now, but there is no migration
+mechanism at all: the day a `kV2` is introduced (a breaking change to the BlockNote snapshot
+shape, or to any other kind's stored schema), every existing on-disk `kV1` document becomes
+unreadable until something migrates it forward.
+
+This is issue #163, part of "CppWiki Local" P2 (data safety). The plan's constraint: schema
+changes must never be the reason a user's existing documents become unopenable.
+
+'''
+
+== Decision
+
+=== Immediate change (this issue)
+
+Split the single `kMissingSchemaVersion` validation error into two distinct
+`ValidationErrorCode` values:
+
+* `kMissingSchemaVersion` — the field is absent entirely. This is (and remains) an "invalid
+  document" condition — nothing produced by this app ever omits it.
+* `kUnsupportedSchemaVersion` — the field is present but not a version this app build
+  recognizes. The message tells the user this document needs an app upgrade to open, rather than
+  implying the document itself is corrupt.
+
+This alone doesn't add migration capability — there is nothing to migrate to yet — but it fixes
+the misleading error message today, and gives the UI a code to branch on once a real upgrade
+path exists.
+
+=== Where migration will run
+
+When a `kV2` (or later) is introduced, migration runs in `DocumentValidator`, at the same point
+schema_version is currently checked — i.e. on every read of a snapshot, not on repository/startup
+scan. Rationale: `DocumentValidator` is already the single choke point every snapshot passes
+through regardless of storage backend (`FileDocumentRepository`, `CbliteDocumentRepository`) or
+caller (bridge load, sync pull, conflict resolution) — migrating there means every caller benefits
+without duplicating the logic, and a document that's never opened is never rewritten
+unnecessarily.
+
+=== How migrations compose
+
+A migration is a pure function `kN -> kN+1` operating on the raw parsed JSON (`rfl::Generic` or
+equivalent), not on the typed `Document`/`BlockNoteDocumentSnapshot` structs — this keeps each
+migration decoupled from the current-version struct definitions, which will keep changing.
+`ConvertDocument()` looks up the snapshot's `schema_version`, and if it's older than `kV1`'s
+current value, applies the chain of migrations from that version up to current one at a time
+(`kV1->kV2`, then `kV2->kV3`, ...) before handing the result to the existing validation/conversion
+path. Each migration function lives next to `DocumentValidator` (e.g.
+`document_schema_migrations.{h,cc}`) and is registered in an ordered list keyed by source version
+— not a generic plugin registry, since the chain is strictly linear and small.
+
+=== How failures are surfaced
+
+A migration step can itself fail (e.g. the old shape doesn't actually match what the migration
+expects). That's a distinct condition from "no migration exists for this version" — a version
+newer than anything this app build knows about (the `kUnsupportedSchemaVersion` case above)
+still means "needs an app upgrade," whereas a migration that exists but fails on this specific
+document's content is closer to `kInvalidRoot` (structurally broken document). Both cases return
+a `ValidationError` rather than throwing or silently dropping data; neither ever overwrites the
+on-disk file — a migrated result only gets persisted if the caller explicitly re-saves the
+document (the same as any other edit), so a failed or not-yet-run migration never destroys the
+original bytes.
+
+'''
+
+== Consequences
+
+=== Positive
+
+* The immediate error-message fix (`kUnsupportedSchemaVersion`) is unblocked today without
+  waiting for a real `kV2` to design against speculatively.
+* Choke-pointing migration in `DocumentValidator` means `FileDocumentRepository`,
+  `CbliteDocumentRepository`, sync, and conflict resolution all get forward-compatible reads for
+  free — none of them need their own migration awareness.
+* Migrating on raw JSON rather than typed structs means old-shape data doesn't need to be
+  expressible in the current `Document`/`BlockNoteDocumentSnapshot` types at all, which will
+  matter more the further a document's on-disk version drifts from current.
+
+=== Negative
+
+* No migration exists yet, so this ADR is a design contract for future work, not a working
+  system — `kV1` remains the only readable version until a `kV2` and its migration are actually
+  implemented together, per this issue's explicit scope.
+* Running migration on every read (rather than migrating-in-place on disk once) means an
+  old-version document costs a small amount of repeated migration work each time it's opened,
+  until it happens to be re-saved. Accepted for now since document counts/sizes in this product
+  are small; revisit if that stops being true.

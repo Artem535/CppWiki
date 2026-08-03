@@ -355,6 +355,25 @@ auto TestMissingSchemaVersion() -> void {
 
   const auto result = cppwiki::document::DocumentValidator::ParseAndValidateSnapshot(json);
   RequireError(result, "schema_version", "TestMissingSchemaVersion");
+  Require(result.error->code == cppwiki::document::ValidationErrorCode::kMissingSchemaVersion,
+          "TestMissingSchemaVersion should report kMissingSchemaVersion");
+}
+
+// Issue #163: a schema_version that's present but not recognized (e.g. a document written by a
+// newer CppWiki build than this one) must be reported distinctly from a missing schema_version,
+// so callers/UI can tell "invalid document" apart from "needs an app upgrade to open."
+auto TestUnsupportedSchemaVersion() -> void {
+  const auto json = QByteArray(R"({
+    "id": "page-1",
+    "schema_version": 2,
+    "title": "Getting Started",
+    "blocks": []
+  })");
+
+  const auto result = cppwiki::document::DocumentValidator::ParseAndValidateSnapshot(json);
+  RequireError(result, "not supported", "TestUnsupportedSchemaVersion");
+  Require(result.error->code == cppwiki::document::ValidationErrorCode::kUnsupportedSchemaVersion,
+          "TestUnsupportedSchemaVersion should report kUnsupportedSchemaVersion");
 }
 
 auto TestMissingBlockId() -> void {
@@ -515,6 +534,7 @@ auto main() -> int {
   TestInvalidJson();
   TestInvalidRoot();
   TestMissingSchemaVersion();
+  TestUnsupportedSchemaVersion();
   TestMissingBlockId();
   TestEmptyBlockId();
   TestDuplicateBlockId();

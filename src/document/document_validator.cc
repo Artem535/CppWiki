@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <unordered_set>
 #include <utility>
@@ -252,8 +253,14 @@ auto ConvertDocument(const BlockNoteDocumentSnapshot& snapshot,
                      "Document object is missing schema_version.");
   }
   if (*snapshot.schema_version != static_cast<std::int32_t>(SchemaVersion::kV1)) {
-    return MakeError(ValidationErrorCode::kMissingSchemaVersion,
-                     "Document schema_version is not supported.");
+    // Issue #163: no migration exists yet (SchemaVersion only has kV1 today), so any other
+    // value is unreadable. This is reported distinctly from kMissingSchemaVersion because it
+    // means "this app build is too old to read this document", not "this document is invalid" —
+    // see ADR-018 for the migration mechanism this will route through once a kV2 exists.
+    return MakeError(ValidationErrorCode::kUnsupportedSchemaVersion,
+                     "Document schema_version " + std::to_string(*snapshot.schema_version) +
+                         " is not supported by this version of CppWiki. Please update the app "
+                         "to open this document.");
   }
   if (!snapshot.id || snapshot.id->empty()) {
     return MakeError(ValidationErrorCode::kMissingPageId, "Document object is missing id.");
@@ -283,6 +290,8 @@ auto ToString(ValidationErrorCode code) -> std::string {
       return "invalid_root";
     case ValidationErrorCode::kMissingSchemaVersion:
       return "missing_schema_version";
+    case ValidationErrorCode::kUnsupportedSchemaVersion:
+      return "unsupported_schema_version";
     case ValidationErrorCode::kMissingPageId:
       return "missing_page_id";
     case ValidationErrorCode::kMissingBlockId:
