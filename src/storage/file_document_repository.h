@@ -42,6 +42,13 @@ class FileDocumentRepository final : public LocalDocumentRepository {
       -> UpdateConflictResolutionResult override;
   [[nodiscard]] auto GetSyncStatus() const -> SyncStatus override;
 
+  [[nodiscard]] auto SaveDocumentRevision(const DocumentRevisionRecord& revision)
+      -> SaveDocumentRevisionResult override;
+  [[nodiscard]] auto ListDocumentRevisions(std::string_view document_id)
+      -> ListDocumentRevisionsResult override;
+  [[nodiscard]] auto DeleteDocumentRevision(std::string_view revision_id)
+      -> DeleteDocumentRevisionResult override;
+
  private:
   class Impl;
   std::unique_ptr<Impl> impl_;

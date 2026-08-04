@@ -72,6 +72,8 @@ qt_add_executable(cppwiki_app
         gui/page_helpers.h
         gui/project_board/project_board_native_widget.cc
         gui/project_board/project_board_native_widget.h
+        gui/revision_history_dialog.cc
+        gui/revision_history_dialog.h
         gui/workspace_rail_widget.cc
         gui/workspace_rail_widget.h
 

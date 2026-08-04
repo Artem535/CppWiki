@@ -19,6 +19,7 @@
 #include <QUrl>
 #include <QVariant>
 #include <QWidget>
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -279,6 +280,45 @@ void ApplyDocumentMutationAudit(document::PageMetadata& metadata, const QString&
   }
 }
 
+// Issue #166: count-based cap (simplest retention rule, per the issue's own scope note) so a
+// long-lived, frequently-edited document's revision history doesn't grow local storage
+// unboundedly. Deletes the oldest revisions beyond the cap; ListDocumentRevisions() already
+// returns newest-first, so the tail past kMaxRevisionsPerDocument is exactly what to prune.
+constexpr std::size_t kMaxRevisionsPerDocument = 20;
+
+void PruneOldDocumentRevisions(storage::LocalDocumentRepository& repository,
+                               const std::string& document_id) {
+  auto listed = repository.ListDocumentRevisions(document_id);
+  if (listed.error || listed.revisions.size() <= kMaxRevisionsPerDocument) {
+    return;
+  }
+  for (std::size_t i = kMaxRevisionsPerDocument; i < listed.revisions.size(); ++i) {
+    repository.DeleteDocumentRevision(listed.revisions[i].id);
+  }
+}
+
+// Issue #166: snapshots `document`'s current (about-to-be-overwritten) content as a new
+// revision. Failures are logged but not surfaced as a save error -- losing revision history is
+// far less bad than losing the edit the user just made, and updateSnapshot()/
+// restoreDocumentRevision() have both already committed the new content by the time this runs.
+void RecordDocumentRevision(storage::LocalDocumentRepository& repository,
+                            const storage::DocumentRecord& document) {
+  auto save_result = repository.SaveDocumentRevision(storage::DocumentRevisionRecord{
+      .id = GenerateUuidString(),
+      .document_id = document.metadata.id,
+      .workspace_id = document.metadata.workspace_id,
+      .raw_snapshot_json = document.raw_snapshot_json,
+      .title = document.metadata.title,
+      .saved_at = CurrentUtcTimestamp(),
+  });
+  if (save_result.error) {
+    spdlog::warn("Failed to record document revision for {}: {}", document.metadata.id,
+                 save_result.error->message);
+    return;
+  }
+  PruneOldDocumentRevisions(repository, document.metadata.id);
+}
+
 auto MakeWelcomeRecord(const QString& workspace_id, const QString& author_id)
     -> storage::DocumentRecord {
   const auto id = GenerateUuidString();
@@ -455,6 +495,82 @@ auto ExtractTitle(const document::Document& document, std::string_view fallback_
     }
   }
   return std::string(fallback_title);
+}
+
+// Issue #166: shared by updateSnapshot() (validates JS-authored content) and
+// restoreDocumentRevision() (re-applies a previously-saved, already-once-valid revision) -- both
+// need the same validate -> extract title/blocks -> reserialize -> stamp-audit-fields pipeline,
+// so it lives here once rather than risking the two paths drifting apart.
+struct BuiltDocumentRecord {
+  std::optional<storage::DocumentRecord> record;
+  std::optional<document::ValidationError> error;
+};
+
+auto BuildDocumentRecordFromSnapshot(document::PageMetadata base_metadata,
+                                     document::DocumentKind kind, const QByteArray& snapshot_bytes,
+                                     const QString& author_id) -> BuiltDocumentRecord {
+  const auto validation = document::DocumentValidator::ParseAndValidateSnapshot(snapshot_bytes, kind);
+  if (validation.error) {
+    return BuiltDocumentRecord{.record = std::nullopt, .error = validation.error};
+  }
+
+  storage::DocumentRecord record;
+  record.metadata = std::move(base_metadata);
+  record.metadata.schema_version = document::SchemaVersion::kV1;
+  record.metadata.kind = kind;
+  if (record.metadata.workspace_id.empty()) {
+    record.metadata.workspace_id = "default";
+  }
+  if (record.metadata.created_by.empty()) {
+    record.metadata.created_by = EffectiveAuthorId(author_id);
+  }
+  if (record.metadata.updated_by.empty()) {
+    record.metadata.updated_by = record.metadata.created_by;
+  }
+  if (record.metadata.content_version < 1) {
+    record.metadata.content_version = 1;
+  }
+  if (record.metadata.created_at.empty()) {
+    record.metadata.created_at = CurrentUtcTimestamp();
+  }
+
+  const bool is_wiki_page = kind == document::DocumentKind::kWikiPage;
+  if (is_wiki_page) {
+    auto blocks = ExtractBlocks(snapshot_bytes);
+    if (std::holds_alternative<QString>(blocks)) {
+      return BuiltDocumentRecord{
+          .record = std::nullopt,
+          .error =
+              document::ValidationError{
+                  .code = document::ValidationErrorCode::kInvalidRoot,
+                  .message = std::get<QString>(blocks).toStdString(),
+              },
+      };
+    }
+
+    const auto fallback_title = record.metadata.title.empty()
+                                    ? std::string_view(constants::kNewDocumentTitle)
+                                    : std::string_view(record.metadata.title);
+    record.metadata.title = ExtractTitle(*validation.document, fallback_title);
+    ApplyDocumentMutationAudit(record.metadata, author_id);
+    record.snapshot = *validation.snapshot;
+    record.snapshot.id = record.metadata.id;
+    record.snapshot.schema_version = static_cast<std::int32_t>(document::SchemaVersion::kV1);
+    record.snapshot.title = record.metadata.title;
+
+    const auto raw_snapshot_json = MakeDocumentSnapshotJson(
+        record.metadata.id, record.metadata.title, std::get<QJsonArray>(blocks));
+    record.raw_snapshot_json = std::string(raw_snapshot_json.constData(),
+                                           static_cast<std::size_t>(raw_snapshot_json.size()));
+  } else {
+    if (record.metadata.title.empty()) {
+      record.metadata.title = constants::kNewDocumentTitle;
+    }
+    ApplyDocumentMutationAudit(record.metadata, author_id);
+    record.raw_snapshot_json = validation.raw_snapshot_json;
+  }
+
+  return BuiltDocumentRecord{.record = std::move(record), .error = std::nullopt};
 }
 
 auto LoadDocumentRecord(std::shared_ptr<storage::LocalDocumentRepository> repository,
@@ -1202,64 +1318,25 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& page_id, const QString&
 
   // Save to repository if available
   if (repository_) {
-    storage::DocumentRecord record;
-    if (auto current = repository_->LoadDocument(current_page_id_.toStdString());
-        current.document) {
-      record.metadata = current.document->metadata;
-    }
-    record.metadata.id = current_page_id_.toStdString();
-    record.metadata.schema_version = document::SchemaVersion::kV1;
-    record.metadata.kind = current_page_kind_;
-    if (record.metadata.workspace_id.empty()) {
-      record.metadata.workspace_id = "default";
-    }
-    if (record.metadata.created_by.empty()) {
-      record.metadata.created_by = EffectiveAuthorId(current_author_id_);
-    }
-    if (record.metadata.updated_by.empty()) {
-      record.metadata.updated_by = record.metadata.created_by;
-    }
-    if (record.metadata.content_version < 1) {
-      record.metadata.content_version = 1;
-    }
-    if (record.metadata.created_at.empty()) {
-      record.metadata.created_at = CurrentUtcTimestamp();
-    }
+    // Issue #166: kept so a revision of the pre-edit content can be recorded below, once the
+    // new content has actually saved successfully.
+    auto previous = repository_->LoadDocument(current_page_id_.toStdString());
 
-    if (is_wiki_page) {
-      // BlockNote path (unchanged): the payload is a validated block array/document, so its
-      // title comes from the first-level-1-heading heuristic and the persisted snapshot is
-      // re-serialized as {id, schema_version, title, blocks}.
-      auto blocks = ExtractBlocks(snapshot_bytes);
-      if (std::holds_alternative<QString>(blocks)) {
-        return ErrorResponse(QStringLiteral("invalid_root"), std::get<QString>(blocks));
-      }
-
-      const auto fallback_title = record.metadata.title.empty()
-                                      ? std::string_view(constants::kNewDocumentTitle)
-                                      : std::string_view(record.metadata.title);
-      record.metadata.title = ExtractTitle(*validation.document, fallback_title);
-      ApplyDocumentMutationAudit(record.metadata, current_author_id_);
-      record.snapshot = *validation.snapshot;
-      record.snapshot.id = record.metadata.id;
-      record.snapshot.schema_version = static_cast<std::int32_t>(document::SchemaVersion::kV1);
-      record.snapshot.title = record.metadata.title;
-
-      const auto raw_snapshot_json = MakeDocumentSnapshotJson(
-          record.metadata.id, record.metadata.title, std::get<QJsonArray>(blocks));
-      record.raw_snapshot_json = std::string(raw_snapshot_json.constData(),
-                                             static_cast<std::size_t>(raw_snapshot_json.size()));
-    } else {
-      // Non-wiki-page kinds (nbformat/Excalidraw, #52/#53): DocumentValidator only confirmed
-      // the payload is well-formed JSON above — there's no BlockNote block array to extract a
-      // title from or re-derive raw_snapshot_json from, so persist the caller's JSON verbatim
-      // and keep whatever title is already on the document (set at creation time / rename).
-      if (record.metadata.title.empty()) {
-        record.metadata.title = constants::kNewDocumentTitle;
-      }
-      ApplyDocumentMutationAudit(record.metadata, current_author_id_);
-      record.raw_snapshot_json = validation.raw_snapshot_json;
+    document::PageMetadata base_metadata;
+    if (previous.document) {
+      base_metadata = previous.document->metadata;
     }
+    base_metadata.id = current_page_id_.toStdString();
+
+    auto built = BuildDocumentRecordFromSnapshot(std::move(base_metadata), current_page_kind_,
+                                                 snapshot_bytes, current_author_id_);
+    if (!built.record) {
+      // Validation already passed above, so this can only be the wiki-page ExtractBlocks()
+      // re-check tripping (defensive, should be unreachable in practice).
+      return ErrorResponse(QStringLiteral("invalid_root"),
+                           QString::fromStdString(built.error->message));
+    }
+    auto record = std::move(*built.record);
 
     auto save_result = repository_->SaveDocument(record);
     if (save_result.error) {
@@ -1272,11 +1349,104 @@ QVariantMap QEditorBridge::updateSnapshot(const QString& page_id, const QString&
 
     spdlog::info("Document saved successfully: id={}", record.metadata.id);
     emit saveStatusChanged(current_page_id_, true, QStringLiteral("Saved"));
+
+    // Issue #166: record the content that just got overwritten as a revision, so it can be
+    // recovered later -- but only when it actually changed, so autosave firing with no real
+    // edits doesn't spam identical revisions.
+    if (previous.document && previous.document->raw_snapshot_json != record.raw_snapshot_json) {
+      RecordDocumentRevision(*repository_, *previous.document);
+    }
   } else {
     spdlog::warn("No repository set, skipping save");
   }
 
   return SuccessResponse(QVariant{});
+}
+
+QVariantMap QEditorBridge::listDocumentRevisions(const QString& page_id) {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+  if (page_id.isEmpty()) {
+    return ErrorResponse(QStringLiteral("invalid_document"),
+                         QStringLiteral("Document id is required."));
+  }
+
+  auto result = repository_->ListDocumentRevisions(page_id.toStdString());
+  if (result.error) {
+    return ErrorResponse(QStringLiteral("list_failed"),
+                         QString::fromStdString(result.error->message));
+  }
+
+  QVariantList revisions;
+  for (const auto& revision : result.revisions) {
+    revisions.append(QVariantMap{
+        {QStringLiteral("id"), QString::fromStdString(revision.id)},
+        {QStringLiteral("title"), QString::fromStdString(revision.title)},
+        {QStringLiteral("savedAt"), QString::fromStdString(revision.saved_at)},
+    });
+  }
+  return SuccessResponse(revisions);
+}
+
+QVariantMap QEditorBridge::restoreDocumentRevision(const QString& page_id,
+                                                   const QString& revision_id) {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+  if (page_id.isEmpty() || revision_id.isEmpty()) {
+    return ErrorResponse(QStringLiteral("invalid_document"),
+                         QStringLiteral("Document id and revision id are required."));
+  }
+
+  if (auto lock_error = RejectIfCurrentDocumentLocked(page_id)) {
+    return std::move(*lock_error);
+  }
+  if (auto conflict_error = RejectIfCurrentDocumentConflicted(page_id)) {
+    return std::move(*conflict_error);
+  }
+
+  auto loaded_or_error = LoadDocumentRecord(repository_, page_id, current_workspace_id_);
+  if (std::holds_alternative<QVariantMap>(loaded_or_error)) {
+    return std::get<QVariantMap>(std::move(loaded_or_error));
+  }
+  auto current_document = std::get<storage::DocumentRecord>(std::move(loaded_or_error));
+
+  auto revisions = repository_->ListDocumentRevisions(page_id.toStdString());
+  if (revisions.error) {
+    return ErrorResponse(QStringLiteral("list_failed"),
+                         QString::fromStdString(revisions.error->message));
+  }
+  const auto target_revision_id = revision_id.toStdString();
+  const auto target = std::ranges::find_if(
+      revisions.revisions,
+      [&target_revision_id](const auto& revision) { return revision.id == target_revision_id; });
+  if (target == revisions.revisions.end()) {
+    return ErrorResponse(QStringLiteral("revision_not_found"),
+                         QStringLiteral("The requested revision no longer exists."));
+  }
+
+  // Issue #166: snapshot the current (about-to-be-overwritten) content as a new revision first,
+  // so restoring a revision is itself undoable.
+  RecordDocumentRevision(*repository_, current_document);
+
+  auto built = BuildDocumentRecordFromSnapshot(
+      current_document.metadata, current_document.metadata.kind,
+      QByteArray::fromStdString(target->raw_snapshot_json), current_author_id_);
+  if (!built.record) {
+    return ErrorResponse(QStringLiteral("invalid_revision"),
+                         QString::fromStdString(built.error->message));
+  }
+
+  auto save_result = repository_->SaveDocument(*built.record);
+  if (save_result.error) {
+    return ErrorResponse(QStringLiteral("save_failed"),
+                         QString::fromStdString(save_result.error->message));
+  }
+
+  return SuccessResponse(MetadataToVariant(built.record->metadata));
 }
 
 QVariantMap QEditorBridge::exportTextToFile(const QString& suggested_file_name,

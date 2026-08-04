@@ -165,6 +165,32 @@ struct ListWorkspacesResult {
   std::optional<RepositoryError> error;
 };
 
+// Issue #166: a single prior snapshot of a document's content, kept around so an unwanted edit
+// can be undone without a full version-control system. Deliberately minimal -- no diffs, no
+// naming/tagging, no sync awareness (see the issue's explicit out-of-scope list).
+struct DocumentRevisionRecord {
+  std::string id;
+  std::string document_id;
+  std::string workspace_id;
+  std::string raw_snapshot_json;
+  std::string title;
+  std::string saved_at;
+};
+
+struct SaveDocumentRevisionResult {
+  std::optional<RepositoryError> error;
+};
+
+struct ListDocumentRevisionsResult {
+  // Newest first.
+  std::vector<DocumentRevisionRecord> revisions;
+  std::optional<RepositoryError> error;
+};
+
+struct DeleteDocumentRevisionResult {
+  std::optional<RepositoryError> error;
+};
+
 class LocalDocumentRepository {
  public:
   LocalDocumentRepository() = default;
@@ -251,6 +277,37 @@ class LocalDocumentRepository {
         .error = RepositoryError{
             .code = RepositoryErrorCode::kUnsupported,
             .message = "Repository does not support listing workspaces.",
+        },
+    };
+  }
+
+  // Issue #166: document revision history. Default kUnsupported (mirrors the workspace-root
+  // methods above) for backends that don't implement it yet.
+  [[nodiscard]] virtual auto SaveDocumentRevision(const DocumentRevisionRecord&)
+      -> SaveDocumentRevisionResult {
+    return SaveDocumentRevisionResult{
+        .error = RepositoryError{
+            .code = RepositoryErrorCode::kUnsupported,
+            .message = "Repository does not support document revisions.",
+        },
+    };
+  }
+  [[nodiscard]] virtual auto ListDocumentRevisions(std::string_view)
+      -> ListDocumentRevisionsResult {
+    return ListDocumentRevisionsResult{
+        .revisions = {},
+        .error = RepositoryError{
+            .code = RepositoryErrorCode::kUnsupported,
+            .message = "Repository does not support document revisions.",
+        },
+    };
+  }
+  [[nodiscard]] virtual auto DeleteDocumentRevision(std::string_view)
+      -> DeleteDocumentRevisionResult {
+    return DeleteDocumentRevisionResult{
+        .error = RepositoryError{
+            .code = RepositoryErrorCode::kUnsupported,
+            .message = "Repository does not support document revisions.",
         },
     };
   }

@@ -22,6 +22,8 @@ class DocumentContextMenu final : public QFrame {
     kRenameTitle,
     kMoveUp,
     kMoveDown,
+    // Issue #166: opens the RevisionHistoryDialog for this document.
+    kViewHistory,
     kDeletePage,
   };
   Q_ENUM(Action)

@@ -52,6 +52,7 @@
 #include "gui/import_destination_dialog.h"
 #include "gui/page_helpers.h"
 #include "gui/project_board/project_board_native_widget.h"
+#include "gui/revision_history_dialog.h"
 #include "gui/trash_dialog.h"
 #include "sync/sync_service.h"
 
@@ -754,6 +755,33 @@ void Page::ShowTrashDialog() {
   // removed the currently-open document's last remaining copy. Refresh unconditionally rather
   // than tracking which action (if any) the dialog actually performed.
   PopulatePageList();
+}
+
+void Page::ShowRevisionHistoryDialog(const QModelIndex& index) {
+  if (workspace_tree_model_ == nullptr || editor_bridge_ == nullptr) {
+    return;
+  }
+
+  const auto doc_id = workspace_tree_model_->documentId(index);
+  if (!doc_id) {
+    return;
+  }
+
+  const auto workspace_id = WorkspaceIdFromIndex(index);
+  if (!workspace_id.has_value()) {
+    return;
+  }
+
+  ActivateWorkspace(*workspace_id);
+
+  const auto doc_id_string = QString::fromStdString(*doc_id);
+  gui::RevisionHistoryDialog dialog(editor_bridge_, doc_id_string, this);
+  dialog.exec();
+
+  PopulatePageList();
+  if (selected_page_id_ == doc_id_string) {
+    OpenDocumentWithAccess(selected_page_id_);
+  }
 }
 
 void Page::OpenDocumentWithAccess(const QString& page_id) {
@@ -1477,6 +1505,10 @@ void Page::ShowContextMenu(const QPoint& position) {
               case gui::DocumentContextMenu::Action::kMoveDown:
                 spdlog::info("Context menu: move down");
                 MoveDocument(index, 1);
+                break;
+              case gui::DocumentContextMenu::Action::kViewHistory:
+                spdlog::info("Context menu: view history");
+                ShowRevisionHistoryDialog(index);
                 break;
               case gui::DocumentContextMenu::Action::kDeletePage:
                 spdlog::info("Context menu: delete page");

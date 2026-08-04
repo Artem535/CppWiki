@@ -49,6 +49,22 @@ auto MakeConflictFilePath(const std::filesystem::path& storage_dir, std::string_
   return storage_dir / "conflicts" / (sanitized + ".json");
 }
 
+// Issue #166: flat like MakePageFilePath/MakeConflictFilePath above -- one file per revision,
+// keyed by the revision's own id (not nested under its document_id), so DeleteDocumentRevision()
+// only needs a revision id, matching every other single-id delete in this repository.
+auto MakeRevisionFilePath(const std::filesystem::path& storage_dir, std::string_view revision_id)
+    -> std::filesystem::path {
+  std::string sanitized;
+  for (char c : revision_id) {
+    if (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_') {
+      sanitized += c;
+    } else {
+      sanitized += '_';
+    }
+  }
+  return storage_dir / "revisions" / (sanitized + ".json");
+}
+
 auto MakeBackupPath(const std::filesystem::path& page_path) -> std::filesystem::path {
   return page_path.string() + ".backup";
 }
@@ -250,6 +266,15 @@ struct FileConflictRecordDto {
   std::string resolution_state{"pending"};
 };
 
+struct FileDocumentRevisionDto {
+  std::string id;
+  std::string document_id;
+  std::string workspace_id;
+  std::string raw_snapshot_json;
+  std::string title;
+  std::string saved_at;
+};
+
 auto ToDto(const DocumentRecord& document) -> FileDocumentRecordDto {
   return FileDocumentRecordDto{
       .id = document.metadata.id,
@@ -322,6 +347,28 @@ auto FromDto(FileConflictRecordDto dto) -> DocumentConflictRecord {
   };
 }
 
+auto ToDto(const DocumentRevisionRecord& revision) -> FileDocumentRevisionDto {
+  return FileDocumentRevisionDto{
+      .id = revision.id,
+      .document_id = revision.document_id,
+      .workspace_id = revision.workspace_id,
+      .raw_snapshot_json = revision.raw_snapshot_json,
+      .title = revision.title,
+      .saved_at = revision.saved_at,
+  };
+}
+
+auto FromDto(FileDocumentRevisionDto dto) -> DocumentRevisionRecord {
+  return DocumentRevisionRecord{
+      .id = std::move(dto.id),
+      .document_id = std::move(dto.document_id),
+      .workspace_id = std::move(dto.workspace_id),
+      .raw_snapshot_json = std::move(dto.raw_snapshot_json),
+      .title = std::move(dto.title),
+      .saved_at = std::move(dto.saved_at),
+  };
+}
+
 auto IsPendingConflict(const DocumentConflictRecord& conflict) -> bool {
   return conflict.resolution_state == "pending";
 }
@@ -378,6 +425,18 @@ class FileDocumentRepository::Impl {
           if (auto delete_conflict = DeleteConflict(conflict.id); delete_conflict.error) {
             return DeleteDocumentResult{.error = std::move(delete_conflict.error)};
           }
+        }
+      }
+
+      // Issue #166: a permanently-deleted document's revision history is meaningless (nothing
+      // left to restore it onto) and would otherwise leak as orphaned files forever.
+      auto revisions = ListDocumentRevisions(page_id);
+      if (revisions.error) {
+        return DeleteDocumentResult{.error = std::move(revisions.error)};
+      }
+      for (const auto& revision : revisions.revisions) {
+        if (auto delete_revision = DeleteDocumentRevision(revision.id); delete_revision.error) {
+          return DeleteDocumentResult{.error = std::move(delete_revision.error)};
         }
       }
 
@@ -609,6 +668,93 @@ class FileDocumentRepository::Impl {
     }
   }
 
+  [[nodiscard]] auto SaveDocumentRevision(const DocumentRevisionRecord& revision)
+      -> SaveDocumentRevisionResult {
+    try {
+      const auto revision_path = MakeRevisionFilePath(options_.storage_directory, revision.id);
+      const auto json_content = rfl::json::write(ToDto(revision));
+
+      if (!WriteFileAtomically(revision_path, json_content)) {
+        RestoreFromBackup(revision_path);
+        return SaveDocumentRevisionResult{
+            .error = MakeError(RepositoryErrorCode::kWriteFailed, "Failed to write revision file"),
+        };
+      }
+
+      return SaveDocumentRevisionResult{};
+    } catch (const std::exception& e) {
+      return SaveDocumentRevisionResult{
+          .error = MakeError(RepositoryErrorCode::kWriteFailed, e.what()),
+      };
+    }
+  }
+
+  [[nodiscard]] auto ListDocumentRevisions(std::string_view document_id)
+      -> ListDocumentRevisionsResult {
+    try {
+      const auto revisions_directory = options_.storage_directory / "revisions";
+      if (!std::filesystem::exists(revisions_directory)) {
+        return ListDocumentRevisionsResult{};
+      }
+
+      std::vector<DocumentRevisionRecord> revisions;
+      for (const auto& entry : std::filesystem::directory_iterator(revisions_directory)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json") {
+          continue;
+        }
+
+        const auto content = ReadFileToString(entry.path());
+        if (!content) {
+          continue;
+        }
+        auto parsed = rfl::json::read<FileDocumentRevisionDto>(*content);
+        if (!parsed) {
+          continue;
+        }
+
+        auto record = FromDto(std::move(parsed.value()));
+        if (record.document_id != document_id) {
+          continue;
+        }
+        revisions.push_back(std::move(record));
+      }
+
+      // Newest first.
+      std::ranges::sort(revisions,
+                        [](const DocumentRevisionRecord& lhs, const DocumentRevisionRecord& rhs) {
+                          if (lhs.saved_at != rhs.saved_at) {
+                            return lhs.saved_at > rhs.saved_at;
+                          }
+                          return lhs.id > rhs.id;
+                        });
+
+      return ListDocumentRevisionsResult{
+          .revisions = std::move(revisions),
+          .error = std::nullopt,
+      };
+    } catch (const std::exception& e) {
+      return ListDocumentRevisionsResult{
+          .revisions = {},
+          .error = MakeError(RepositoryErrorCode::kReadFailed, e.what()),
+      };
+    }
+  }
+
+  [[nodiscard]] auto DeleteDocumentRevision(std::string_view revision_id)
+      -> DeleteDocumentRevisionResult {
+    try {
+      const auto revision_path = MakeRevisionFilePath(options_.storage_directory, revision_id);
+      if (std::filesystem::exists(revision_path)) {
+        std::filesystem::remove(revision_path);
+      }
+      return DeleteDocumentRevisionResult{};
+    } catch (const std::exception& e) {
+      return DeleteDocumentRevisionResult{
+          .error = MakeError(RepositoryErrorCode::kDeleteFailed, e.what()),
+      };
+    }
+  }
+
   [[nodiscard]] auto GetSyncStatus() -> SyncStatus {
     auto conflicts = ListConflicts();
     if (conflicts.error) {
@@ -736,6 +882,21 @@ auto FileDocumentRepository::DismissConflict(std::string_view conflict_id)
 
 auto FileDocumentRepository::GetSyncStatus() const -> SyncStatus {
   return impl_->GetSyncStatus();
+}
+
+auto FileDocumentRepository::SaveDocumentRevision(const DocumentRevisionRecord& revision)
+    -> SaveDocumentRevisionResult {
+  return impl_->SaveDocumentRevision(revision);
+}
+
+auto FileDocumentRepository::ListDocumentRevisions(std::string_view document_id)
+    -> ListDocumentRevisionsResult {
+  return impl_->ListDocumentRevisions(document_id);
+}
+
+auto FileDocumentRepository::DeleteDocumentRevision(std::string_view revision_id)
+    -> DeleteDocumentRevisionResult {
+  return impl_->DeleteDocumentRevision(revision_id);
 }
 
 }  // namespace cppwiki::storage
