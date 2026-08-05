@@ -33,6 +33,13 @@ struct DocumentSummary {
   std::string created_by;
   std::string updated_by;
   std::int64_t content_version{1};
+  // Issue #167: set when the repository found this document's storage entry but couldn't load
+  // it (e.g. corrupted/unparseable JSON on disk) -- ListDocuments() still reports a placeholder
+  // summary for it (see FileDocumentRepository::ListDocuments()) instead of silently omitting it,
+  // so the workspace tree can show a visible error placeholder rather than the page just
+  // vanishing with no trace. load_error holds RepositoryError::message when set.
+  bool is_corrupted{false};
+  std::optional<std::string> load_error;
 };
 
 [[nodiscard]] inline auto DocumentSummaryFromMetadata(

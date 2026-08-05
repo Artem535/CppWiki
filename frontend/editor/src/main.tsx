@@ -112,6 +112,11 @@ function EditorApp() {
   // (NotebookView's own re-parse effect keys off a *pageId* change; Excalidraw's `initialData`
   // is documented as "only read once at mount").
   const [documentLoadNonce, setDocumentLoadNonce] = useState(0);
+  // Issue #167: onDocumentLoadFailed (below) used to only console.error this — a document that
+  // fails to load (e.g. corrupted/unparseable JSON on disk) left whatever was previously open
+  // rendered with no indication anything went wrong. Non-null shows the same .empty-state
+  // overlay pattern used for "no document selected" instead.
+  const [documentLoadError, setDocumentLoadError] = useState<string | null>(null);
   const [aiFeaturesEnabled, setAiFeaturesEnabled] = useState(false);
   const [aiAutocompleteEnabled, setAiAutocompleteEnabled] = useState(false);
   // Separate opt-in for inline ghost-text suggestions (issue #59); the
@@ -278,11 +283,13 @@ function EditorApp() {
       unsubscribers.push(
         created_bridge.onDocumentOpenRequested((pageId) => {
           setIsLoadingDocument(true);
+          setDocumentLoadError(null);
           void flushAutosave(created_bridge).then(async () => {
             const response = await created_bridge.openDocument(pageId);
             if (!response.ok) {
               console.error("Failed to open document", response.error);
               setIsLoadingDocument(false);
+              setDocumentLoadError(response.error.message);
             }
           });
         }),
@@ -317,6 +324,7 @@ function EditorApp() {
         setDocumentKind(document.kind ?? "wikiPage");
         setDocumentRawContent(document.rawContent);
         setDocumentLoadNonce((nonce) => nonce + 1);
+        setDocumentLoadError(null);
         window.setTimeout(() => {
           replacing_document.current = false;
           setIsLoadingDocument(false);
@@ -333,6 +341,7 @@ function EditorApp() {
         (_pageId, message) => {
           console.error("Failed to load document", message);
           setIsLoadingDocument(false);
+          setDocumentLoadError(message);
         },
       );
       const unsubscribeSelectionCleared =
@@ -343,6 +352,7 @@ function EditorApp() {
           setDocumentKind("wikiPage");
           setDocumentRawContent(undefined);
           setIsLoadingDocument(false);
+          setDocumentLoadError(null);
         });
       const unsubscribeExport = created_bridge.onExportCurrentDocumentRequested(() => {
         window.dispatchEvent(new Event("cppwiki-export-current-document"));
@@ -526,7 +536,12 @@ function EditorApp() {
             </BlockNoteView>
           </div>
         ) : null}
-        {showOverlay ? (
+        {documentLoadError ? (
+          <div className="empty-state" data-testid="document-load-error">
+            <h1>Couldn&apos;t open this document</h1>
+            <p>{documentLoadError}</p>
+          </div>
+        ) : showOverlay ? (
           <div className="empty-state">
             <h1>{emptyStateTitle}</h1>
             <p>{emptyStateMessage}</p>

@@ -433,6 +433,20 @@ class FileDocumentRepository::Impl {
         const auto page_id = entry.path().stem().string();
         auto loaded = LoadDocument(page_id);
         if (!loaded.document) {
+          // Issue #167: a page file exists but couldn't be loaded (corrupted/unparseable JSON --
+          // disk-level corruption, a manual edit, or any other write path this repository
+          // doesn't itself protect against). Report a placeholder summary instead of silently
+          // dropping it, so the document doesn't just vanish from the workspace tree with no
+          // trace: DeleteDocument still resolves it by id, and LoadDocument still returns the
+          // underlying RepositoryError if something tries to open it.
+          spdlog::warn("Skipping corrupted document {}: {}", page_id,
+                       loaded.error ? loaded.error->message : "unknown error");
+          documents.push_back(DocumentSummary{
+              .id = page_id,
+              .title = "(Corrupted document)",
+              .is_corrupted = true,
+              .load_error = loaded.error ? std::make_optional(loaded.error->message) : std::nullopt,
+          });
           continue;
         }
 
