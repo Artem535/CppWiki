@@ -225,6 +225,33 @@ else ()
     )
 endif ()
 
+# vcpkg's default triplets diverge by platform: x64-linux/x64-osx/arm64-osx default to *static*
+# linkage, but x64-windows (used here -- nothing in vcpkg.json/CMakePresets.json/the packaging
+# workflow overrides it) defaults to *dynamic*, i.e. real DLLs. That makes spdlog and its
+# formatting backend fmt build as spdlog.dll/fmt.dll on Windows only. reflect-cpp's own portfile
+# forces itself static-only on Windows (vcpkg_check_linkage(ONLY_STATIC_LIBRARY)), so reflectcpp
+# itself never produces a DLL there -- but its JSON backend yyjson carries no such restriction and
+# still builds as yyjson.dll. Just like kdchart/qt6keychain above, vcpkg's *-config.cmake files for
+# these ports carry no install() rules of their own (they're meant to be consumed from the build
+# tree via find_package(), not redistributed), and windeployqt -- unlike linuxdeploy/macdeployqt,
+# which do a full recursive dependency scan -- only sweeps Qt's own runtime, not arbitrary
+# third-party DLLs. Without this, a packaged Windows installer silently ships a cppwiki.exe that
+# fails to start (STATUS_ENTRYPOINT_NOT_FOUND / c0000135) for want of spdlog.dll/fmt.dll/
+# yyjson.dll. These are vcpkg IMPORTED targets, not targets this project builds, so
+# install(TARGETS) doesn't apply (and would error) -- install(IMPORTED_RUNTIME_ARTIFACTS) is
+# CMake's mechanism for co-locating an imported target's runtime DLL the same way. Guarded with
+# if(TARGET ...) since fmt::fmt/yyjson::yyjson only exist because spdlog/reflectcpp's own configs
+# pull them in transitively (find_dependency()) -- not from an explicit find_package() here.
+if (WIN32)
+    foreach (cppwiki_vcpkg_dll_target IN ITEMS spdlog::spdlog fmt::fmt yyjson::yyjson)
+        if (TARGET ${cppwiki_vcpkg_dll_target})
+            install(IMPORTED_RUNTIME_ARTIFACTS ${cppwiki_vcpkg_dll_target}
+                    RUNTIME DESTINATION bin
+            )
+        endif ()
+    endforeach ()
+endif ()
+
 if (CPPWIKI_ENABLE_CBLITE_STORAGE)
     # CBLite::cblite is a prebuilt binary imported from CPPWIKI_CBLITE_ROOT (see
     # cmake/FindCBLite.cmake), not a target this project builds, so there's no install(TARGETS)
