@@ -15,6 +15,10 @@ enum class ValidationErrorCode : std::uint8_t {
   kInvalidJson,
   kInvalidRoot,
   kMissingSchemaVersion,
+  // Issue #163: schema_version is present but this app build doesn't recognize it (e.g. a
+  // document written by a newer CppWiki version) -- distinct from kMissingSchemaVersion so
+  // callers/UI can tell "invalid document" apart from "needs an app upgrade to open."
+  kUnsupportedSchemaVersion,
   kMissingPageId,
   kMissingBlockId,
   kEmptyBlockId,

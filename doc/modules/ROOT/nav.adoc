@@ -31,6 +31,7 @@
 *** xref:architecture/adr/ADR-015-code-agent-trust-boundary-and-tool-execution.adoc[ADR-015]
 *** xref:architecture/adr/ADR-016-configurable-accent-color-and-navigation-chrome.adoc[ADR-016]
 *** xref:architecture/adr/ADR-017-new-content-types-notebook-canvas-mermaid-code.adoc[ADR-017]
+*** xref:architecture/adr/ADR-018-document-schema-migration-path.adoc[ADR-018]
 ** Spikes
 *** xref:architecture/spikes/Couchbase_Lite_C_Integration.adoc[Couchbase Lite C integration]
 *** xref:architecture/spikes/Couchbase_Sync_Gateway_OIDC_Example.adoc[Couchbase Sync Gateway OIDC example]
