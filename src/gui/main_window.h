@@ -140,6 +140,9 @@ class MainWindow final : public QMainWindow {
   QMenu* file_menu_ = nullptr;
   QAction* import_action_ = nullptr;
   QAction* export_action_ = nullptr;
+  // Issue #164: workspace-level backup/restore, always visible (no open document required).
+  QAction* backup_workspace_action_ = nullptr;
+  QAction* restore_workspace_action_ = nullptr;
   QString save_state_hint_;
   QString collaboration_hint_;
   QString auth_hint_;

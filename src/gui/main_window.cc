@@ -552,6 +552,22 @@ void MainWindow::BuildUi() {
       current_page_->ExportCurrentDocumentToFile();
     }
   });
+  // Issue #164: workspace-level backup/restore, always visible -- unlike document Import/Export,
+  // these operate on the whole active workspace, not the currently open document.
+  backup_workspace_action_ = new QAction(QStringLiteral("Backup Workspace..."), this);
+  backup_workspace_action_->setObjectName(QStringLiteral("backupWorkspaceAction"));
+  connect(backup_workspace_action_, &QAction::triggered, this, [this]() {
+    if (current_page_ != nullptr) {
+      current_page_->BackupCurrentWorkspace();
+    }
+  });
+  restore_workspace_action_ = new QAction(QStringLiteral("Restore Workspace..."), this);
+  restore_workspace_action_->setObjectName(QStringLiteral("restoreWorkspaceAction"));
+  connect(restore_workspace_action_, &QAction::triggered, this, [this]() {
+    if (current_page_ != nullptr) {
+      current_page_->RestoreWorkspaceFromBackup();
+    }
+  });
 
   backend_refresh_button_ = new QToolButton(this);
   backend_refresh_button_->setObjectName(QStringLiteral("statusLineButton"));
@@ -643,6 +659,9 @@ void MainWindow::BuildUi() {
   file_menu_->setObjectName(QStringLiteral("fileMenu"));
   file_menu_->addAction(import_action_);
   file_menu_->addAction(export_action_);
+  file_menu_->addSeparator();
+  file_menu_->addAction(backup_workspace_action_);
+  file_menu_->addAction(restore_workspace_action_);
   file_menu_button_ = new QToolButton(document_tools_toolbar_);
   file_menu_button_->setObjectName(QStringLiteral("fileMenuButton"));
   file_menu_button_->setText(QStringLiteral("File"));

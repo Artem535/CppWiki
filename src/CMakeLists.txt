@@ -90,6 +90,8 @@ qt_add_executable(cppwiki_app
         storage/local_document_repository.h
         storage/repository_factory.cc
         storage/repository_factory.h
+        storage/workspace_archive.cc
+        storage/workspace_archive.h
 )
 
 target_include_directories(cppwiki_app

@@ -4,6 +4,7 @@
 
 #include <QAbstractItemView>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -14,6 +15,7 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSet>
 #include <QSize>
@@ -54,6 +56,7 @@
 #include "gui/project_board/project_board_native_widget.h"
 #include "gui/revision_history_dialog.h"
 #include "gui/trash_dialog.h"
+#include "storage/workspace_archive.h"
 #include "sync/sync_service.h"
 
 namespace cppwiki {
@@ -962,6 +965,63 @@ void Page::ImportDocumentAsNewFile() {
   PopulatePageList();
   SelectDocumentById(new_page_id);
   emit documentStatusChanged(QStringLiteral("Imported %1").arg(file_name), false);
+}
+
+void Page::BackupCurrentWorkspace() {
+  if (context_.document_repository == nullptr) {
+    return;
+  }
+
+  const auto file_path = QFileDialog::getSaveFileName(
+      this, QStringLiteral("Backup Workspace"),
+      QStringLiteral("cppwiki-workspace-%1.json").arg(current_workspace_id_),
+      QStringLiteral("JSON files (*.json)"));
+  if (file_path.isEmpty()) {
+    return;
+  }
+
+  const auto result = storage::ExportWorkspaceToFile(
+      *context_.document_repository, current_workspace_id_.toStdString(), file_path.toStdString());
+  if (result.error) {
+    QMessageBox::warning(
+        this, QStringLiteral("Backup Workspace"),
+        QStringLiteral("Backup failed: %1").arg(QString::fromStdString(result.error->message)));
+    return;
+  }
+
+  emit documentStatusChanged(QStringLiteral("Workspace backed up to %1").arg(file_path), false);
+}
+
+void Page::RestoreWorkspaceFromBackup() {
+  if (context_.document_repository == nullptr) {
+    return;
+  }
+
+  const auto file_path = QFileDialog::getOpenFileName(
+      this, QStringLiteral("Restore Workspace"), QString{}, QStringLiteral("JSON files (*.json)"));
+  if (file_path.isEmpty()) {
+    return;
+  }
+
+  const auto result =
+      storage::ImportWorkspaceFromFile(*context_.document_repository, file_path.toStdString());
+  if (result.error) {
+    QMessageBox::warning(
+        this, QStringLiteral("Restore Workspace"),
+        QStringLiteral("Restore failed: %1").arg(QString::fromStdString(result.error->message)));
+    return;
+  }
+
+  if (result.workspace_id) {
+    const auto restored_workspace_id = QString::fromStdString(*result.workspace_id);
+    if (!available_workspace_ids_.contains(restored_workspace_id)) {
+      available_workspace_ids_.append(restored_workspace_id);
+    }
+    current_workspace_id_ = restored_workspace_id;
+  }
+
+  RebuildWorkspaceTree();
+  emit documentStatusChanged(QStringLiteral("Workspace restored from %1").arg(file_path), false);
 }
 
 void Page::ApplyConflictStateForDocument(const QString& page_id) {
