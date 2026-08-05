@@ -15,7 +15,14 @@
 #include "document/document.h"
 
 namespace cppwiki::storage {
-namespace {
+// Named (not anonymous) so these DTOs have external linkage -- reflect-cpp's JSON introspection
+// (rfl::internal::any's templated conversion operator, used transitively by rfl::json::write()/
+// read()) requires that of any type it's instantiated for. An anonymous namespace here compiled
+// fine with GCC but is a hard error under Apple Clang ("used but not defined in this translation
+// unit, and cannot be defined in any other translation unit because its type does not have
+// linkage") -- matches the existing convention in file_document_repository.cc's named
+// `file_repository` namespace, not an anonymous one.
+namespace workspace_archive_internal {
 
 constexpr std::int32_t kArchiveSchemaVersion = 1;
 
@@ -139,7 +146,9 @@ auto MakeError(RepositoryErrorCode code, std::string message) -> RepositoryError
   return RepositoryError{.code = code, .message = std::move(message)};
 }
 
-}  // namespace
+}  // namespace workspace_archive_internal
+
+using namespace workspace_archive_internal;
 
 auto ExportWorkspaceToFile(LocalDocumentRepository& repository, std::string_view workspace_id,
                            const std::string& destination_path) -> ExportWorkspaceResult {
