@@ -50,7 +50,17 @@ inline constexpr std::string_view kNewDocumentActionId = "cppwiki-new-document-a
 // Embedded via qt_add_resources() in src/CMakeLists.txt from src/app/themes/dark.json -- see the
 // comment there for why this is a Qt resource path rather than a filesystem path.
 inline constexpr std::string_view kQlementineDarkThemePath = ":/cppwiki/themes/dark.json";
-inline constexpr std::string_view kApplicationQssPath = "src/app/cppwiki.qss";
+// Embedded via qt_add_resources() in src/CMakeLists.txt from src/app/cppwiki.qss -- see the
+// comment there (and issue #182) for why this is a Qt resource path rather than a filesystem
+// path: the same "silently missing in every packaged build" bug already fixed for
+// kQlementineDarkThemePath above (issue #152), just for this file.
+inline constexpr std::string_view kApplicationQssPath = ":/cppwiki/app/cppwiki.qss";
+// Embedded via qt_add_resources() in src/CMakeLists.txt from app/fonts/Inter-Variable.ttf (OFL
+// 1.1 licensed, see src/app/fonts/OFL.txt) -- bundled so the app's typography doesn't depend on
+// whatever fonts happen to already be installed on the host system (see issue #182).
+inline constexpr std::string_view kApplicationFontResourcePath =
+    ":/cppwiki/fonts/Inter-Variable.ttf";
+inline constexpr std::string_view kApplicationFontFamily = "Inter";
 inline constexpr std::string_view kEditorFallbackHtmlPath = "src/app/editor_fallback.html";
 inline constexpr int kServerApiVersion = 1;
 inline constexpr std::string_view kServerServiceName = "cppwiki-server";

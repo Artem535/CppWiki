@@ -173,8 +173,11 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
 
   auto* app_data_directory_edit =
       MakeReadOnlyPathLineEdit(current_settings_.AppDataDirectory(), general_page);
+  // Bundled icon, not QIcon::fromTheme() -- see gui/workspace_rail_widget.cc's comment and
+  // issue #182 (freedesktop icon-theme lookups return blank icons on Windows and are
+  // unreliable in a bare AppImage sandbox on Linux).
   auto* open_app_data_folder_action =
-      new QAction(QIcon::fromTheme(QStringLiteral("folder-open")),
+      new QAction(QIcon(QStringLiteral(":/cppwiki/icons/action-folder-open.svg")),
                   QStringLiteral("Open application data folder"), this);
   auto* open_app_data_folder_button = new oclero::qlementine::ActionButton(general_page);
   open_app_data_folder_button->setAction(open_app_data_folder_action);
@@ -226,7 +229,7 @@ SettingsDialog::SettingsDialog(const ProgramSettings& settings, QWidget* parent)
 
   database_directory_edit_ =
       MakeReadOnlyPathLineEdit(current_settings_.DatabaseDirectory(), backend_page);
-  auto* open_folder_action = new QAction(QIcon::fromTheme(QStringLiteral("folder-open")),
+  auto* open_folder_action = new QAction(QIcon(QStringLiteral(":/cppwiki/icons/action-folder-open.svg")),
                                          QStringLiteral("Open database folder"), this);
   auto* open_folder_button = new oclero::qlementine::ActionButton(backend_page);
   open_folder_button->setAction(open_folder_action);

@@ -4,7 +4,10 @@
 
 #include <QCoreApplication>
 #include <QFileInfo>
+#include <QFont>
+#include <QFontDatabase>
 #include <QSettings>
+#include <QStringList>
 #include <optional>
 
 #include "core/constants.h"
@@ -38,6 +41,35 @@ QString g_applied_theme_path;
 // the (main_window-scoped, not app-wide) stylesheet when the accent actually changed.
 std::optional<AccentColor> g_applied_accent_color;
 
+// Loads the bundled Inter font (see constants::kApplicationFontResourcePath) and sets it as the
+// application's default font family, so typography doesn't depend on whatever fonts happen to
+// already be installed on the host system (issue #182) -- unlike ApplyAppearanceFromSettings()'s
+// point-size adjustment below, this only needs to run once, at startup, before QApplication::
+// setStyle()/ApplyAppearanceFromSettings() run. This also happens to fix a second, previously
+// silent gap: Theme::initializeFonts() (third_party/qlementine/lib/src/style/Theme.cpp) already
+// hardcodes QFont("Inter") for its regular/body text whenever a theme (like dark.json) doesn't
+// set useSystemFonts=true -- without "Inter" actually registered with Qt, that request has
+// always silently fallen back to Qt's default font substitution, on every build. Registering it
+// here means qlementine's own font selection resolves to the real thing.
+void LoadApplicationFont() {
+  const auto font_id =
+      QFontDatabase::addApplicationFont(ToQString(constants::kApplicationFontResourcePath));
+  if (font_id < 0) {
+    // Bundled resource failed to load (shouldn't happen -- it's embedded in the binary, not a
+    // filesystem path); fall back to whatever QApplication::font() already resolved to rather
+    // than forcing a family name Qt has no matching font for.
+    return;
+  }
+
+  const auto families = QFontDatabase::applicationFontFamilies(font_id);
+  const auto family = families.isEmpty() ? ToQString(constants::kApplicationFontFamily)
+                                         : families.constFirst();
+
+  auto font = QApplication::font();
+  font.setFamily(family);
+  QApplication::setFont(font);
+}
+
 auto ResolveThemePath() -> QString {
   // A Qt resource path (":/...", see constants::kQlementineDarkThemePath) is embedded in the
   // binary itself, so it resolves the same way regardless of CWD or install layout -- no
@@ -57,6 +89,7 @@ Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   QCoreApplication::setApplicationVersion(ToQString(constants::kApplicationVersion));
   QCoreApplication::setOrganizationName(ToQString(constants::kOrganizationName));
   QApplication::setQuitOnLastWindowClosed(true);
+  LoadApplicationFont();
   auto* qlementine_style = new oclero::qlementine::QlementineStyle(&qt_application_);
   g_qlementine_style = qlementine_style;
   QApplication::setStyle(qlementine_style);

@@ -184,13 +184,14 @@ QVariant DocumentTreeModel::data(const QModelIndex& index, int role) const {
     }
 
     case Qt::DecorationRole:
+      // Bundled icons, not QIcon::fromTheme() -- see gui/workspace_rail_widget.cc's comment
+      // and issue #182 (freedesktop icon-theme lookups return blank icons on Windows and are
+      // unreliable in a bare AppImage sandbox on Linux).
       if (item->isAction()) {
-        return QIcon::fromTheme("document-new");
+        return QIcon(QStringLiteral(":/cppwiki/icons/action-file-plus.svg"));
       }
       if (item->isWorkspace()) {
-        return QIcon::fromTheme(QStringLiteral("folder-remote"),
-                                QIcon::fromTheme(QStringLiteral("folder-network"),
-                                                 QIcon::fromTheme(QStringLiteral("folder"))));
+        return QIcon(QStringLiteral(":/cppwiki/icons/action-folder.svg"));
       }
       // Documents get a bundled monochrome icon distinguishing their DocumentKind
       // (wiki page / Jupyter notebook / Excalidraw canvas) rather than a generic
@@ -199,9 +200,9 @@ QVariant DocumentTreeModel::data(const QModelIndex& index, int role) const {
         return QIcon(DocumentKindIconResourcePath(item->documentKind()));
       }
       if (item->isContainer()) {
-        return QIcon::fromTheme("folder");
+        return QIcon(QStringLiteral(":/cppwiki/icons/action-folder.svg"));
       }
-      return QIcon::fromTheme("text-x-generic");
+      return QIcon(QStringLiteral(":/cppwiki/icons/action-file.svg"));
 
     case DocumentTreeModel::kDocumentKindIconPathRole:
       return item->isDocument() ? DocumentKindIconResourcePath(item->documentKind()) : QVariant();
