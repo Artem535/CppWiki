@@ -203,6 +203,26 @@ qt_add_resources(cppwiki_app cppwiki_font_resources
         app/fonts/Inter-Variable.ttf
 )
 
+# Application icon (issue #182): Qt itself embeds no icon resource, so without these, packaged
+# builds show a generic default executable/bundle icon in the taskbar/Dock/Explorer instead of
+# CppWiki's own logo (doc/pic/icon.png). Windows: cppwiki.rc embeds packaging/windows/cppwiki.ico
+# (a multi-resolution .ico generated from doc/pic/icon.png) as a resource directly in
+# cppwiki.exe -- CppWiki.iss's SetupIconFile covers the installer/uninstaller wizard separately.
+# macOS: MACOSX_BUNDLE_ICON_FILE + MACOSX_PACKAGE_LOCATION "Resources" wires
+# packaging/macos/cppwiki.icns into cppwiki.app's Info.plist/Resources, the CMake-native way to
+# set a bundle icon (see CMake's MACOSX_BUNDLE_ICON_FILE docs). Linux has no equivalent needed
+# here: the AppImage's icon is staged directly from doc/pic/icon.png by
+# .github/workflows/package-release.yml's "Stage desktop file and icon" step.
+if (WIN32)
+    target_sources(cppwiki_app PRIVATE ${CMAKE_SOURCE_DIR}/packaging/windows/cppwiki.rc)
+elseif (APPLE)
+    target_sources(cppwiki_app PRIVATE ${CMAKE_SOURCE_DIR}/packaging/macos/cppwiki.icns)
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/packaging/macos/cppwiki.icns PROPERTIES
+            MACOSX_PACKAGE_LOCATION "Resources"
+    )
+    set_target_properties(cppwiki_app PROPERTIES MACOSX_BUNDLE_ICON_FILE cppwiki.icns)
+endif ()
+
 if (CPPWIKI_ENABLE_CBLITE_STORAGE)
     target_compile_definitions(cppwiki_app
             PRIVATE

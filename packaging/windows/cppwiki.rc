@@ -1,0 +1,7 @@
+// Windows resource script embedding CppWiki's application icon into cppwiki.exe (issue #182):
+// without this, Explorer/the taskbar/Alt-Tab all fall back to Qt's generic default executable
+// icon, since Qt itself does not embed any icon resource on its own. Referenced from
+// src/CMakeLists.txt's cppwiki_app target (WIN32-only) alongside CppWiki.iss's SetupIconFile,
+// which covers the installer/uninstaller wizard separately -- this file only covers the .exe
+// itself. IDI_ICON1 is an arbitrary resource ID; nothing else in this project references it.
+IDI_ICON1 ICON "cppwiki.ico"
