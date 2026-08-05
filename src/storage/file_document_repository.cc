@@ -231,6 +231,9 @@ struct FileDocumentRecordDto {
   std::string created_by;
   std::string updated_by;
   std::int64_t content_version{1};
+  // Issue #165: absent means the record predates trash support (or is simply live) -- FromDto()
+  // maps that to std::nullopt, matching PageMetadata::trashed_at's "not trashed" state.
+  std::optional<std::string> trashed_at;
   std::string raw_snapshot_json;
 };
 
@@ -261,6 +264,7 @@ auto ToDto(const DocumentRecord& document) -> FileDocumentRecordDto {
       .created_by = document.metadata.created_by,
       .updated_by = document.metadata.updated_by,
       .content_version = document.metadata.content_version,
+      .trashed_at = document.metadata.trashed_at,
       .raw_snapshot_json = document.raw_snapshot_json,
   };
 }
@@ -281,6 +285,7 @@ auto FromDto(FileDocumentRecordDto dto) -> DocumentRecord {
               .created_by = std::move(dto.created_by),
               .updated_by = std::move(dto.updated_by),
               .content_version = dto.content_version,
+              .trashed_at = std::move(dto.trashed_at),
           },
       .snapshot = document::BlockNoteDocumentSnapshot{},
       .raw_snapshot_json = std::move(dto.raw_snapshot_json),

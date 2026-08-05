@@ -324,6 +324,11 @@ class CbliteDocumentRepository::Impl {
       doc.set("updated_by", Slice(document.metadata.updated_by));
       doc.set("content_version", document.metadata.content_version);
       doc.set("kind", Slice(document::ToDocumentKindKey(document.metadata.kind)));
+      if (document.metadata.trashed_at) {
+        doc.set("trashed_at", Slice(*document.metadata.trashed_at));
+      } else {
+        doc.properties().remove("trashed_at");
+      }
       doc.set("raw_snapshot", Slice(document.raw_snapshot_json));
 
       coll.saveDocument(doc);
@@ -417,6 +422,9 @@ class CbliteDocumentRepository::Impl {
         record.metadata.content_version = 1;
       }
       record.metadata.kind = document::DocumentKindFromKey(std::string(props["kind"].asString()));
+      if (const auto trashed_at = props["trashed_at"]; trashed_at) {
+        record.metadata.trashed_at = std::string(trashed_at.asString());
+      }
       record.raw_snapshot_json = std::string(props["raw_snapshot"].asString());
 
       try {

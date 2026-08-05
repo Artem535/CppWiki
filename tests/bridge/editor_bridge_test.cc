@@ -407,6 +407,121 @@ auto TestDeleteDocumentRemovesItFromList() -> void {
   Require(pages.size() == 1, "after deleting only note, welcome page should be bootstrapped again");
 }
 
+// Issue #165: "deleteDocument" now soft-deletes -- the page must disappear from listDocuments()
+// (covered above) but reappear in listTrash(), still fully intact, until it's restored or
+// permanently deleted.
+auto TestDeleteDocumentMovesItToTrashInsteadOfErasingIt() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed_before = bridge.listDocuments();
+  RequireSuccessEnvelope(listed_before);
+  const auto page_id = listed_before.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
+
+  RequireSuccessEnvelope(bridge.deleteDocument(page_id));
+
+  const auto trash = bridge.listTrash();
+  RequireSuccessEnvelope(trash);
+  const auto trashed_pages = trash.value(QStringLiteral("result")).toList();
+  Require(trashed_pages.size() == 1, "the deleted page should appear in listTrash");
+  const auto trashed_page = trashed_pages.front().toMap();
+  Require(trashed_page.value(QStringLiteral("id")).toString() == page_id,
+          "listTrash should report the deleted page's own id");
+  Require(!trashed_page.value(QStringLiteral("trashedAt")).toString().isEmpty(),
+          "listTrash should report a non-empty trashedAt timestamp");
+}
+
+auto TestRestoreDocumentBringsItBackToTheNormalList() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed_before = bridge.listDocuments();
+  RequireSuccessEnvelope(listed_before);
+  const auto page_id = listed_before.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
+
+  RequireSuccessEnvelope(bridge.deleteDocument(page_id));
+  RequireSuccessEnvelope(bridge.restoreDocument(page_id));
+
+  const auto listed_after = bridge.listDocuments();
+  RequireSuccessEnvelope(listed_after);
+  Require(listed_after.value(QStringLiteral("result")).toList().size() == 1,
+          "the restored page should be back in listDocuments");
+
+  const auto trash_after = bridge.listTrash();
+  RequireSuccessEnvelope(trash_after);
+  Require(trash_after.value(QStringLiteral("result")).toList().isEmpty(),
+          "the restored page should no longer appear in listTrash");
+}
+
+auto TestPermanentlyDeleteDocumentRemovesItForGood() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto listed_before = bridge.listDocuments();
+  RequireSuccessEnvelope(listed_before);
+  const auto page_id = listed_before.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
+
+  RequireSuccessEnvelope(bridge.deleteDocument(page_id));
+  RequireSuccessEnvelope(bridge.permanentlyDeleteDocument(page_id));
+
+  const auto trash_after = bridge.listTrash();
+  RequireSuccessEnvelope(trash_after);
+  Require(trash_after.value(QStringLiteral("result")).toList().isEmpty(),
+          "the permanently-deleted page should no longer appear in listTrash");
+
+  const auto loaded = bridge.loadDocument(page_id);
+  Require(!loaded.value(QStringLiteral("ok")).toBool(),
+          "loading a permanently-deleted page should fail");
+}
+
+auto TestEmptyTrashRemovesAllCurrentlyTrashedDocuments() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto first = bridge.createDocument();
+  RequireSuccessEnvelope(first);
+  const auto first_id =
+      first.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+  const auto second = bridge.createDocument();
+  RequireSuccessEnvelope(second);
+  const auto second_id =
+      second.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+
+  RequireSuccessEnvelope(bridge.deleteDocument(first_id));
+  RequireSuccessEnvelope(bridge.deleteDocument(second_id));
+
+  const auto trash_before = bridge.listTrash();
+  RequireSuccessEnvelope(trash_before);
+  Require(trash_before.value(QStringLiteral("result")).toList().size() == 2,
+          "both deleted pages should be in the trash before emptying it");
+
+  RequireSuccessEnvelope(bridge.emptyTrash());
+
+  const auto trash_after = bridge.listTrash();
+  RequireSuccessEnvelope(trash_after);
+  Require(trash_after.value(QStringLiteral("result")).toList().isEmpty(),
+          "the trash should be empty after emptyTrash");
+}
+
 auto TestCreateJupyterNotebookProducesLoadableNbformatContent() -> void {
   auto repository = std::make_shared<FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
@@ -1061,6 +1176,10 @@ auto main() -> int {
   TestUpdateDocumentPlacementRejectedWhenCurrentDocumentLocked();
   TestUpdateDocumentPlacementSucceedsWhenCurrentDocumentEditable();
   TestDeleteDocumentRemovesItFromList();
+  TestDeleteDocumentMovesItToTrashInsteadOfErasingIt();
+  TestRestoreDocumentBringsItBackToTheNormalList();
+  TestPermanentlyDeleteDocumentRemovesItForGood();
+  TestEmptyTrashRemovesAllCurrentlyTrashedDocuments();
   TestDeleteDocumentRejectedWhenCurrentDocumentLocked();
   TestDeleteDocumentSucceedsWhenCurrentDocumentEditable();
   TestRenameDocumentRejectedWhenCurrentDocumentConflicted();

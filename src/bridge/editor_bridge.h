@@ -99,7 +99,13 @@ class QEditorBridge final : public QObject {
   Q_INVOKABLE QVariantMap renameDocument(const QString& page_id, const QString& title);
   QVariantMap updateDocumentPlacement(const QString& page_id, const QString& parent_id,
                                       bool has_parent_id, int sort_order);
+  // Issue #165: soft-delete (moves page_id and its descendants to the trash) -- see
+  // restoreDocument()/permanentlyDeleteDocument()/listTrash()/emptyTrash() below.
   QVariantMap deleteDocument(const QString& page_id);
+  QVariantMap restoreDocument(const QString& page_id);
+  QVariantMap permanentlyDeleteDocument(const QString& page_id);
+  QVariantMap listTrash();
+  QVariantMap emptyTrash();
   Q_INVOKABLE QVariantMap loadDocument(const QString& page_id);
   Q_INVOKABLE QVariantMap openDocument(const QString& page_id);
   // `page_id` must match the currently open document (current_page_id_); a mismatch is
