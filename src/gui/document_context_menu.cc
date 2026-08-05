@@ -49,6 +49,8 @@ DocumentContextMenu::DocumentContextMenu(const Options& options, QWidget* parent
             options.can_move_up);
   AddButton(Action::kMoveDown, QStringLiteral("Move down"),
             style()->standardIcon(QStyle::SP_ArrowDown), options.can_move_down);
+  AddButton(Action::kViewHistory, QStringLiteral("Version history"),
+            QIcon::fromTheme(QStringLiteral("document-open-recent")), true);
 
   auto* separator = new QFrame(this);
   separator->setFrameShape(QFrame::HLine);

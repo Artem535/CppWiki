@@ -111,6 +111,8 @@ class Page final : public QWidget, public IPage {
   // Issue #165: opens the modal TrashDialog and refreshes the tree afterward, since restoring a
   // page from it must bring the page back into the visible tree.
   void ShowTrashDialog();
+  // Issue #166: opens the modal RevisionHistoryDialog for the document at `index`.
+  void ShowRevisionHistoryDialog(const QModelIndex& index);
   void OpenDocumentWithAccess(const QString& page_id);
   void EnterEditMode();
   void ExitEditMode(bool due_to_inactivity = false);

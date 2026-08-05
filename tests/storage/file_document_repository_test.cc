@@ -440,6 +440,94 @@ auto TestFileRepositoryReportsCorruptedDocumentAsPlaceholderInsteadOfHidingIt() 
   std::filesystem::remove_all(storage_directory);
 }
 
+// Issue #166: a revision is a standalone record keyed by its own id (not nested under its
+// document), round-tripping through the file repository like any other stored record, and
+// ListDocumentRevisions() must return only the requested document's revisions, newest first.
+auto TestFileRepositoryRevisionLifecycle() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-revision-test";
+  std::filesystem::remove_all(storage_directory);
+
+  cppwiki::storage::FileDocumentRepository repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+
+  const auto MakeRevision = [](std::string id, std::string document_id, std::string saved_at) {
+    return cppwiki::storage::DocumentRevisionRecord{
+        .id = std::move(id),
+        .document_id = std::move(document_id),
+        .workspace_id = "engineering",
+        .raw_snapshot_json = R"({"id":"page-1","schema_version":1,"blocks":[]})",
+        .title = "Old title",
+        .saved_at = std::move(saved_at),
+    };
+  };
+
+  Require(!repository.SaveDocumentRevision(MakeRevision("rev-1", "page-1", "2026-08-01T10:00:00Z"))
+               .error,
+          "file repository should save a revision");
+  Require(!repository.SaveDocumentRevision(MakeRevision("rev-2", "page-1", "2026-08-02T10:00:00Z"))
+               .error,
+          "file repository should save a second revision for the same document");
+  Require(!repository.SaveDocumentRevision(MakeRevision("rev-other", "page-2", "2026-08-01T10:00:00Z"))
+               .error,
+          "file repository should save a revision for a different document");
+
+  const auto listed = repository.ListDocumentRevisions("page-1");
+  Require(!listed.error, "listing revisions should succeed");
+  Require(listed.revisions.size() == 2,
+          "only page-1's revisions should be returned, not page-2's");
+  Require(listed.revisions.front().id == "rev-2",
+          "revisions should be sorted newest first by saved_at");
+  Require(listed.revisions.front().title == "Old title",
+          "revision fields should round-trip through disk");
+
+  Require(!repository.DeleteDocumentRevision("rev-1").error,
+          "file repository should delete a revision");
+  const auto listed_after_delete = repository.ListDocumentRevisions("page-1");
+  Require(!listed_after_delete.error, "listing revisions after a delete should succeed");
+  Require(listed_after_delete.revisions.size() == 1,
+          "the deleted revision should no longer be listed");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
+// Issue #166: permanently deleting a document (not soft-deleting it via trash) must also clean
+// up its revision history -- otherwise revision files leak forever with nothing left to restore
+// them onto.
+auto TestFileRepositoryDeleteDocumentCleansUpItsRevisions() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-revision-cleanup-test";
+  std::filesystem::remove_all(storage_directory);
+
+  cppwiki::storage::FileDocumentRepository repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+
+  auto document = MakeDocument();
+  Require(!repository.SaveDocument(document).error, "file repository should save the document");
+  Require(!repository
+               .SaveDocumentRevision(cppwiki::storage::DocumentRevisionRecord{
+                   .id = "rev-1",
+                   .document_id = "page-1",
+                   .workspace_id = "engineering",
+                   .raw_snapshot_json = document.raw_snapshot_json,
+                   .title = "File Repo Page",
+                   .saved_at = "2026-08-01T10:00:00Z",
+               })
+               .error,
+          "file repository should save a revision for the document");
+
+  Require(!repository.DeleteDocument("page-1").error,
+          "file repository should permanently delete the document");
+
+  const auto revisions_after_delete = repository.ListDocumentRevisions("page-1");
+  Require(!revisions_after_delete.error,
+          "listing revisions for a deleted document should still succeed");
+  Require(revisions_after_delete.revisions.empty(),
+          "deleting a document should also delete its revisions");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -451,6 +539,8 @@ auto main() -> int {
   TestFileRepositoryRestoresFromBackupWhenNoTempFileExists();
   TestFileRepositoryCleansUpStaleBackupWithoutOverwritingNewerTarget();
   TestFileRepositoryReportsCorruptedDocumentAsPlaceholderInsteadOfHidingIt();
+  TestFileRepositoryRevisionLifecycle();
+  TestFileRepositoryDeleteDocumentCleansUpItsRevisions();
   spdlog::info("cppwiki_file_document_repository_tests passed");
   return EXIT_SUCCESS;
 }

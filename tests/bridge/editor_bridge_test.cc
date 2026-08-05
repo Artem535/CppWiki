@@ -6,6 +6,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QVariant>
+#include <algorithm>
 #include <cstdlib>
 #include <map>
 #include <memory>
@@ -141,8 +142,35 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     return true;
   }
 
+  [[nodiscard]] auto SaveDocumentRevision(const cppwiki::storage::DocumentRevisionRecord& revision)
+      -> cppwiki::storage::SaveDocumentRevisionResult override {
+    revisions_[revision.id] = revision;
+    return {};
+  }
+
+  [[nodiscard]] auto ListDocumentRevisions(std::string_view document_id)
+      -> cppwiki::storage::ListDocumentRevisionsResult override {
+    cppwiki::storage::ListDocumentRevisionsResult result;
+    for (const auto& [id, revision] : revisions_) {
+      if (revision.document_id == document_id) {
+        result.revisions.push_back(revision);
+      }
+    }
+    std::ranges::sort(result.revisions, [](const auto& lhs, const auto& rhs) {
+      return lhs.saved_at > rhs.saved_at;
+    });
+    return result;
+  }
+
+  [[nodiscard]] auto DeleteDocumentRevision(std::string_view revision_id)
+      -> cppwiki::storage::DeleteDocumentRevisionResult override {
+    revisions_.erase(std::string(revision_id));
+    return {};
+  }
+
  private:
   std::map<std::string, cppwiki::storage::DocumentRecord> documents_;
+  std::map<std::string, cppwiki::storage::DocumentRevisionRecord> revisions_;
 };
 
 auto TestBridgeInfo() -> void {
@@ -826,6 +854,79 @@ auto TestValidSnapshot() -> void {
   RequireSuccessEnvelope(response);
 }
 
+auto HeadingSnapshot(const QString& heading_text) -> QString {
+  return QStringLiteral(R"([
+    {
+      "id": "heading-1",
+      "type": "heading",
+      "props": { "level": 1 },
+      "content": [ { "type": "text", "text": "%1", "styles": {} } ],
+      "children": []
+    }
+  ])")
+      .arg(heading_text);
+}
+
+// Issue #166: each successful save that actually changes content should record the content it's
+// about to overwrite as a revision -- so after two edits, the pre-edit-1 and pre-edit-2 states
+// should both be recoverable, distinguishable by title (each edit sets a distinct h1 heading).
+auto TestUpdateSnapshotRecordsRevisionsAndRestoreBringsBackOldContent() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto list_response = bridge.listDocuments();
+  RequireSuccessEnvelope(list_response);
+  const auto page_id = list_response.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
+
+  RequireSuccessEnvelope(bridge.loadDocument(page_id));
+  RequireSuccessEnvelope(bridge.updateSnapshot(page_id, HeadingSnapshot(QStringLiteral("Edit One"))));
+  RequireSuccessEnvelope(bridge.updateSnapshot(page_id, HeadingSnapshot(QStringLiteral("Edit Two"))));
+
+  const auto revisions_after_two_edits = bridge.listDocumentRevisions(page_id);
+  RequireSuccessEnvelope(revisions_after_two_edits);
+  const auto revisions_list = revisions_after_two_edits.value(QStringLiteral("result")).toList();
+  Require(revisions_list.size() == 2,
+          "two content-changing saves should have recorded two revisions (the welcome page's "
+          "original content, then Edit One's content)");
+
+  QString edit_one_revision_id;
+  for (const auto& revision_variant : revisions_list) {
+    const auto revision = revision_variant.toMap();
+    if (revision.value(QStringLiteral("title")).toString() == QStringLiteral("Edit One")) {
+      edit_one_revision_id = revision.value(QStringLiteral("id")).toString();
+    }
+  }
+  Require(!edit_one_revision_id.isEmpty(),
+          "the revision recorded just before Edit Two should carry Edit One's title");
+
+  const auto restored = bridge.restoreDocumentRevision(page_id, edit_one_revision_id);
+  RequireSuccessEnvelope(restored);
+  Require(
+      restored.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
+          QStringLiteral("Edit One"),
+      "restoring a revision should return the restored document's metadata");
+
+  const auto reloaded = bridge.loadDocument(page_id);
+  RequireSuccessEnvelope(reloaded);
+  Require(reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
+              QStringLiteral("Edit One"),
+          "the document's live content should be Edit One's content again after restore");
+
+  // Restoring must itself be undoable: it should have recorded Edit Two's content (the state it
+  // just overwrote) as a new revision, on top of the two already there.
+  const auto revisions_after_restore = bridge.listDocumentRevisions(page_id);
+  RequireSuccessEnvelope(revisions_after_restore);
+  Require(revisions_after_restore.value(QStringLiteral("result")).toList().size() == 3,
+          "restoring a revision should record the just-overwritten content as a new revision, "
+          "not delete the revision it restored from");
+}
+
 auto TestInvalidJsonSnapshot() -> void {
   auto repository = std::make_shared<FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
@@ -1199,6 +1300,7 @@ auto main() -> int {
   TestWorkspaceMismatchBlocksCrossWorkspaceLoad();
   TestSessionContextOverridesWorkspaceAndAuthor();
   TestValidSnapshot();
+  TestUpdateSnapshotRecordsRevisionsAndRestoreBringsBackOldContent();
   TestInvalidJsonSnapshot();
   TestInvalidRootSnapshot();
   TestStartAiRequestReturnsUniqueRequestIds();
