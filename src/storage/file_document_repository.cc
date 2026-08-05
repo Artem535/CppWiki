@@ -1,15 +1,16 @@
 #include "storage/file_document_repository.h"
 
-#include <rfl/json/read.hpp>
-#include <rfl/json/write.hpp>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cctype>
 #include <fstream>
 #include <optional>
+#include <rfl/json/read.hpp>
+#include <rfl/json/write.hpp>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace cppwiki::storage {
 namespace file_repository {
@@ -133,6 +134,87 @@ auto RestoreFromBackup(const std::filesystem::path& target_path) -> bool {
   }
 }
 
+// Reconciles a WriteFileAtomically() call for `target_path` that may have been interrupted (crash,
+// kill -9, power loss) partway through its rename steps: temp write -> rename target to `.backup`
+// -> rename temp into place -> remove `.backup`. Exactly which files exist tells us which step the
+// crash happened after:
+//   - target missing, `.tmp` present: crashed after the backup rename but before the final rename.
+//     The temp file is guaranteed fully written (WriteFileAtomically only reaches that rename after
+//     the temp ofstream reports good()), so finish the swap forward rather than falling back to the
+//     older `.backup` and silently losing the edit that was being saved.
+//   - target missing, only `.backup` present: the temp file is gone (or never existed for this
+//     reconciliation), so the backup is the only recoverable content -- restore it.
+//   - target present: the write itself already completed (or never started); any leftover
+//     `.tmp`/`.backup` sibling is just cleanup from a crash between the final rename and
+//     WriteFileAtomically's own post-write cleanup, not something to act on.
+auto ReconcileInterruptedWrite(const std::filesystem::path& target_path) -> void {
+  const auto temp_path = MakeTempPath(target_path);
+  const auto backup_path = MakeBackupPath(target_path);
+  const auto target_exists = std::filesystem::exists(target_path);
+  const auto temp_exists = std::filesystem::exists(temp_path);
+  const auto backup_exists = std::filesystem::exists(backup_path);
+
+  if (!temp_exists && !backup_exists) {
+    return;
+  }
+
+  try {
+    if (!target_exists && temp_exists) {
+      std::filesystem::rename(temp_path, target_path);
+      spdlog::warn("Recovered an interrupted write by completing it: {}", target_path.string());
+      if (backup_exists) {
+        std::filesystem::remove(backup_path);
+      }
+      return;
+    }
+
+    if (!target_exists && backup_exists) {
+      std::filesystem::rename(backup_path, target_path);
+      spdlog::warn("Recovered an interrupted write by restoring its backup: {}",
+                   target_path.string());
+      return;
+    }
+
+    if (temp_exists) {
+      std::filesystem::remove(temp_path);
+    }
+    if (backup_exists) {
+      std::filesystem::remove(backup_path);
+    }
+  } catch (const std::exception& e) {
+    spdlog::error("Failed to reconcile interrupted write for {}: {}", target_path.string(),
+                  e.what());
+  }
+}
+
+// Scans `directory` for `.backup`/`.tmp` files left by an interrupted WriteFileAtomically() call
+// and recovers each one via ReconcileInterruptedWrite(). Safe to call on a directory that doesn't
+// exist yet or holds no such files. Collects target paths before reconciling any of them, rather
+// than mutating files while std::filesystem::directory_iterator is still walking the directory.
+auto SweepInterruptedWrites(const std::filesystem::path& directory) -> void {
+  if (!std::filesystem::exists(directory)) {
+    return;
+  }
+
+  std::vector<std::filesystem::path> target_paths;
+  for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    const auto& path = entry.path();
+    if (path.extension() == ".backup" || path.extension() == ".tmp") {
+      target_paths.push_back(path.parent_path() / path.stem());
+    }
+  }
+
+  // The same target can be queued twice (once via its `.backup` entry, once via its `.tmp`
+  // entry); ReconcileInterruptedWrite() is idempotent (a second call sees neither sibling left
+  // and returns immediately), so no dedup pass is needed.
+  for (const auto& target_path : target_paths) {
+    ReconcileInterruptedWrite(target_path);
+  }
+}
+
 struct FileDocumentRecordDto {
   std::string id;
   std::int32_t schema_version{};
@@ -250,7 +332,12 @@ using namespace file_repository;
 
 class FileDocumentRepository::Impl {
  public:
-  explicit Impl(FileDocumentRepositoryOptions options) : options_(std::move(options)) {}
+  explicit Impl(FileDocumentRepositoryOptions options) : options_(std::move(options)) {
+    // Startup integrity sweep (issue #162): recover any page/conflict write left interrupted by
+    // a crash before this repository was last closed -- see SweepInterruptedWrites().
+    SweepInterruptedWrites(options_.storage_directory / "pages");
+    SweepInterruptedWrites(options_.storage_directory / "conflicts");
+  }
 
   [[nodiscard]] auto SaveDocument(const DocumentRecord& document) -> SaveDocumentResult {
     try {
@@ -427,9 +514,9 @@ class FileDocumentRepository::Impl {
       if (!parsed) {
         return LoadConflictResult{
             .conflict = std::nullopt,
-            .error = MakeError(RepositoryErrorCode::kInvalidRecord,
-                               std::string("Failed to parse conflict file: ") +
-                                   parsed.error().what()),
+            .error =
+                MakeError(RepositoryErrorCode::kInvalidRecord,
+                          std::string("Failed to parse conflict file: ") + parsed.error().what()),
         };
       }
 
@@ -483,13 +570,13 @@ class FileDocumentRepository::Impl {
         conflicts.push_back(std::move(*loaded.conflict));
       }
 
-      std::ranges::sort(
-          conflicts, [](const DocumentConflictRecord& lhs, const DocumentConflictRecord& rhs) {
-            if (lhs.detected_at != rhs.detected_at) {
-              return lhs.detected_at < rhs.detected_at;
-            }
-            return lhs.id < rhs.id;
-          });
+      std::ranges::sort(conflicts,
+                        [](const DocumentConflictRecord& lhs, const DocumentConflictRecord& rhs) {
+                          if (lhs.detected_at != rhs.detected_at) {
+                            return lhs.detected_at < rhs.detected_at;
+                          }
+                          return lhs.id < rhs.id;
+                        });
 
       return ListConflictsResult{
           .conflicts = std::move(conflicts),
@@ -556,9 +643,9 @@ class FileDocumentRepository::Impl {
     if (!parsed) {
       return LoadDocumentResult{
           .document = std::nullopt,
-          .error = MakeError(RepositoryErrorCode::kInvalidRecord,
-                             std::string("Failed to parse document file: ") +
-                                 parsed.error().what()),
+          .error =
+              MakeError(RepositoryErrorCode::kInvalidRecord,
+                        std::string("Failed to parse document file: ") + parsed.error().what()),
       };
     }
 
@@ -628,6 +715,8 @@ auto FileDocumentRepository::DismissConflict(std::string_view conflict_id)
   return impl_->DismissConflict(conflict_id);
 }
 
-auto FileDocumentRepository::GetSyncStatus() const -> SyncStatus { return impl_->GetSyncStatus(); }
+auto FileDocumentRepository::GetSyncStatus() const -> SyncStatus {
+  return impl_->GetSyncStatus();
+}
 
 }  // namespace cppwiki::storage
