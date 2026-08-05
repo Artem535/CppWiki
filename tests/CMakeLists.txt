@@ -202,6 +202,35 @@ add_test(
   COMMAND cppwiki_file_document_repository_tests
 )
 
+add_executable(cppwiki_workspace_archive_tests
+  storage/workspace_archive_test.cc
+  ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
+  ${CMAKE_SOURCE_DIR}/src/document/document.h
+  ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.h
+  ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
+  ${CMAKE_SOURCE_DIR}/src/storage/workspace_archive.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/workspace_archive.h
+)
+
+target_include_directories(cppwiki_workspace_archive_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_workspace_archive_tests
+  PRIVATE
+    spdlog::spdlog
+    reflectcpp::reflectcpp
+)
+
+cppwiki_apply_common_options(cppwiki_workspace_archive_tests)
+
+add_test(
+  NAME cppwiki_workspace_archive_tests
+  COMMAND cppwiki_workspace_archive_tests
+)
+
 add_executable(cppwiki_document_sync_service_tests
   sync/document_sync_service_test.cc
   ${CMAKE_SOURCE_DIR}/src/app/program_settings.cc

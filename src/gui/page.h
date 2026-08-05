@@ -75,6 +75,14 @@ class Page final : public QWidget, public IPage {
   // ImportDestinationDialog, then creates the new document there.
   void ImportDocumentAsNewFile();
 
+  // Issue #164: exports the currently active workspace (documents + conflicts + workspace root
+  // record) to a single portable JSON file picked via QFileDialog. Local-only -- doesn't touch
+  // the backend/sync, so it works with no backend configured.
+  void BackupCurrentWorkspace();
+  // Issue #164: imports a workspace archive produced by BackupCurrentWorkspace() from a file
+  // picked via QFileDialog, then refreshes the tree/list to show the restored documents.
+  void RestoreWorkspaceFromBackup();
+
  signals:
   void settingsRequested();
   void documentStatusChanged(const QString& message, bool is_error);
