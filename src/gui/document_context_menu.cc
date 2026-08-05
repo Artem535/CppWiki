@@ -3,7 +3,6 @@
 #include <QIcon>
 #include <QPushButton>
 #include <QSize>
-#include <QStyle>
 #include <QVBoxLayout>
 #include <utility>
 
@@ -42,15 +41,20 @@ DocumentContextMenu::DocumentContextMenu(const Options& options, QWidget* parent
   layout->setContentsMargins(6, 6, 6, 6);
   layout->setSpacing(2);
 
+  // Bundled icons, not QIcon::fromTheme()/style()->standardIcon() -- see
+  // gui/workspace_rail_widget.cc's comment and issue #182 (freedesktop icon-theme lookups
+  // return blank icons on Windows and are unreliable in a bare AppImage sandbox on Linux; the
+  // Qt standard icons pulled from the active QStyle are subject to the same packaged-build
+  // rendering regression tracked in issue #182).
   AddNewDocumentOptions();
   AddButton(Action::kRenameTitle, QStringLiteral("Rename title"),
-            QIcon::fromTheme(QStringLiteral("document-edit")), true);
-  AddButton(Action::kMoveUp, QStringLiteral("Move up"), style()->standardIcon(QStyle::SP_ArrowUp),
-            options.can_move_up);
+            QIcon(QStringLiteral(":/cppwiki/icons/action-pencil.svg")), true);
+  AddButton(Action::kMoveUp, QStringLiteral("Move up"),
+            QIcon(QStringLiteral(":/cppwiki/icons/action-move-up.svg")), options.can_move_up);
   AddButton(Action::kMoveDown, QStringLiteral("Move down"),
-            style()->standardIcon(QStyle::SP_ArrowDown), options.can_move_down);
+            QIcon(QStringLiteral(":/cppwiki/icons/action-move-down.svg")), options.can_move_down);
   AddButton(Action::kViewHistory, QStringLiteral("Version history"),
-            QIcon::fromTheme(QStringLiteral("document-open-recent")), true);
+            QIcon(QStringLiteral(":/cppwiki/icons/action-history.svg")), true);
 
   auto* separator = new QFrame(this);
   separator->setFrameShape(QFrame::HLine);
@@ -58,7 +62,7 @@ DocumentContextMenu::DocumentContextMenu(const Options& options, QWidget* parent
   layout->addWidget(separator);
 
   AddButton(Action::kDeletePage, QStringLiteral("Delete page"),
-            style()->standardIcon(QStyle::SP_TrashIcon), true);
+            QIcon(QStringLiteral(":/cppwiki/icons/action-trash.svg")), true);
 }
 
 void DocumentContextMenu::ShowAt(const QPoint& global_position) {
@@ -89,7 +93,7 @@ void DocumentContextMenu::AddButton(Action action, const QString& text, const QI
 
 void DocumentContextMenu::AddNewDocumentOptions() {
   auto* toggle = new QPushButton(QStringLiteral("New document"), this);
-  toggle->setIcon(style()->standardIcon(QStyle::SP_FileDialogNewFolder));
+  toggle->setIcon(QIcon(QStringLiteral(":/cppwiki/icons/action-new-folder.svg")));
   toggle->setIconSize(QSize(16, 16));
   toggle->setCursor(Qt::PointingHandCursor);
   toggle->setFocusPolicy(Qt::NoFocus);

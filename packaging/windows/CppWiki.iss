@@ -30,6 +30,10 @@ WizardStyle=modern
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 ; Unsigned MVP build: no code-signing certificate is available yet (see issue #13).
+; Shows CppWiki's own logo (doc/pic/icon.png) in the installer/uninstaller wizard instead of
+; Inno Setup's generic default -- cppwiki.exe itself embeds the same icon separately, via
+; packaging/windows/cppwiki.rc wired into the cppwiki_app CMake target (see issue #182).
+SetupIconFile=cppwiki.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

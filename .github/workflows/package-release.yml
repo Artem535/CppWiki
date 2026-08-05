@@ -128,7 +128,10 @@ jobs:
           mkdir -p build/release/AppDir/usr/share/applications
           mkdir -p build/release/AppDir/usr/share/icons/hicolor/256x256/apps
           cp packaging/linux/cppwiki.desktop build/release/AppDir/usr/share/applications/cppwiki.desktop
-          cp third_party/qlementine/branding/icon/pngs/256x256.png \
+          # CppWiki's own logo (doc/pic/icon.png, pre-resized to 256x256 -- see issue #182), not
+          # third_party/qlementine's own vendored branding icon, which this previously copied in
+          # by mistake.
+          cp packaging/linux/cppwiki-256.png \
             build/release/AppDir/usr/share/icons/hicolor/256x256/apps/cppwiki.png
 
       - name: Download linuxdeploy tools

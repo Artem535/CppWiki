@@ -13,7 +13,6 @@ qt_add_executable(cppwiki_app
         app/editor_fallback.html
         app/application_stylesheet.cc
         app/application_stylesheet.h
-        app/cppwiki.qss
         app/program_settings.cc
         app/program_settings.h
         auth/ai_api_key_store.cc
@@ -140,6 +139,24 @@ qt_add_resources(cppwiki_app cppwiki_icon_resources
         gui/assets/icons/document-excalidraw-canvas.svg
         gui/assets/icons/document-openapi-spec.svg
         gui/assets/icons/document-project-board.svg
+        # Bundled monochrome action icons (issue #182), replacing QIcon::fromTheme()/
+        # style()->standardIcon() call sites: the freedesktop icon theme QIcon::fromTheme()
+        # resolves against doesn't exist at all on Windows (every such call returns a blank
+        # icon there) and isn't reliably present in a bare AppImage sandbox on Linux either.
+        # Sourced from Lucide (https://lucide.dev, ISC license), recolored to match the
+        # existing rail-*/document-*.svg icons' fixed stroke color.
+        gui/assets/icons/action-settings.svg
+        gui/assets/icons/action-trash.svg
+        gui/assets/icons/action-folder.svg
+        gui/assets/icons/action-folder-open.svg
+        gui/assets/icons/action-file-plus.svg
+        gui/assets/icons/action-file.svg
+        gui/assets/icons/action-pencil.svg
+        gui/assets/icons/action-history.svg
+        gui/assets/icons/action-refresh.svg
+        gui/assets/icons/action-move-up.svg
+        gui/assets/icons/action-move-down.svg
+        gui/assets/icons/action-new-folder.svg
 )
 
 # Embedded as a Qt resource (not a filesystem path guessed relative to CWD/applicationDirPath())
@@ -156,6 +173,55 @@ qt_add_resources(cppwiki_app cppwiki_theme_resources
         FILES
         app/themes/dark.json
 )
+
+# Embedded as a Qt resource for the same reason as cppwiki_theme_resources above (issue #182):
+# kApplicationQssPath used to be a raw "src/app/cppwiki.qss" filesystem path that
+# ResolveApplicationStylesheetPath() guessed at relative to CWD/applicationDirPath(). It was
+# never installed/packaged anywhere, so every packaged build (AppImage/DMG/installer) silently
+# fell back to only the small ADR-016 accent-tint stylesheet, dropping every pill/rounded-corner/
+# elevated-card rule cppwiki.qss actually defines -- while the dark background color kept showing
+# through regardless, since that comes from the separately-embedded theme JSON above via
+# QApplication::setPalette(), independent of QSS. Embedding this file here fixes every context
+# at once, the same way it did for dark.json.
+qt_add_resources(cppwiki_app cppwiki_qss_resources
+        PREFIX "/cppwiki/app"
+        BASE app
+        FILES
+        app/cppwiki.qss
+)
+
+# Bundled UI font (issue #182): previously no application font family was ever set, so text
+# rendering depended entirely on whatever fonts happened to be installed on the target machine
+# -- unreliable especially in a bare AppImage sandbox or a fresh Windows install. Inter (OFL
+# 1.1, see app/fonts/OFL.txt) as a single variable-weight TTF covers Thin through Black in one
+# file, loaded via QFontDatabase::addApplicationFont() in Application's constructor and set as
+# the app's default font family.
+qt_add_resources(cppwiki_app cppwiki_font_resources
+        PREFIX "/cppwiki/fonts"
+        BASE app/fonts
+        FILES
+        app/fonts/Inter-Variable.ttf
+)
+
+# Application icon (issue #182): Qt itself embeds no icon resource, so without these, packaged
+# builds show a generic default executable/bundle icon in the taskbar/Dock/Explorer instead of
+# CppWiki's own logo (doc/pic/icon.png). Windows: cppwiki.rc embeds packaging/windows/cppwiki.ico
+# (a multi-resolution .ico generated from doc/pic/icon.png) as a resource directly in
+# cppwiki.exe -- CppWiki.iss's SetupIconFile covers the installer/uninstaller wizard separately.
+# macOS: MACOSX_BUNDLE_ICON_FILE + MACOSX_PACKAGE_LOCATION "Resources" wires
+# packaging/macos/cppwiki.icns into cppwiki.app's Info.plist/Resources, the CMake-native way to
+# set a bundle icon (see CMake's MACOSX_BUNDLE_ICON_FILE docs). Linux has no equivalent needed
+# here: the AppImage's icon is staged directly from doc/pic/icon.png by
+# .github/workflows/package-release.yml's "Stage desktop file and icon" step.
+if (WIN32)
+    target_sources(cppwiki_app PRIVATE ${CMAKE_SOURCE_DIR}/packaging/windows/cppwiki.rc)
+elseif (APPLE)
+    target_sources(cppwiki_app PRIVATE ${CMAKE_SOURCE_DIR}/packaging/macos/cppwiki.icns)
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/packaging/macos/cppwiki.icns PROPERTIES
+            MACOSX_PACKAGE_LOCATION "Resources"
+    )
+    set_target_properties(cppwiki_app PROPERTIES MACOSX_BUNDLE_ICON_FILE cppwiki.icns)
+endif ()
 
 if (CPPWIKI_ENABLE_CBLITE_STORAGE)
     target_compile_definitions(cppwiki_app
