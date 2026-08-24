@@ -16,6 +16,26 @@ access control, or an extensible architecture.
 > **Project status:** active development — Wiki Platform v9, Block Document Edition.
 > APIs, storage adapters, and product workflows are still evolving.
 
+## Direction
+
+CppWiki's current foundation is a desktop-first, offline-first workspace for
+structured knowledge and project artifacts. Its active product direction is to
+validate a narrower workflow: **engineering context for humans and AI agents**.
+
+The intended loop is:
+
+```text
+Knowledge → Task → Context Pack → External coding agent → Result → Knowledge update
+```
+
+This is future direction, not a claim that agent execution, context packs, or
+knowledge feedback are already delivered. The product will first test the
+workflow with real engineering teams before expanding into broad task-management,
+diagram, graph, or agent-runtime features. See the
+[vision](doc/modules/ROOT/pages/product/Engineering_Context_Vision.adoc),
+[validation plan](doc/modules/ROOT/pages/product/Engineering_Context_Validation.adoc),
+and [active roadmap](doc/modules/ROOT/pages/roadmap/AI_Native_Engineering_Context_Roadmap.adoc).
+
 <p align="center">
   <a href="https://en.cppreference.com/w/cpp/20"><img src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white" alt="C++20"></a>
   <a href="https://www.qt.io/"><img src="https://img.shields.io/badge/Qt-6.5%2B-41CD52?logo=qt&logoColor=white" alt="Qt 6.5+"></a>

@@ -1,6 +1,10 @@
 * xref:index.adoc[Overview]
 * xref:CONTEXT.adoc[Context glossary]
 * xref:PRD_v9_Block_Document_Edition.adoc[PRD v9 — Block Document Edition]
+* Product
+** xref:product/Engineering_Context_Vision.adoc[Engineering context vision]
+** xref:product/Engineering_Context_Validation.adoc[Validation plan]
+** xref:product/Engineering_Context_PRD.adoc[Engineering context PRD]
 * Architecture
 ** xref:architecture/Architecture_Baseline_Libraries_and_Approaches.adoc[Baseline libraries and approaches]
 ** xref:architecture/Project_Structure_and_Style.adoc[Project structure and style]
@@ -37,10 +41,12 @@
 *** xref:architecture/spikes/Couchbase_Sync_Gateway_OIDC_Example.adoc[Couchbase Sync Gateway OIDC example]
 * Backlog
 ** xref:backlog/Backlog.adoc[Backlog]
+** xref:backlog/Engineering_Context_Backlog.adoc[Engineering context triage]
 ** xref:backlog/Admin_Surface_Backlog.adoc[Admin surface backlog]
 ** xref:backlog/Desktop_Collaboration_Backlog.adoc[Desktop collaboration backlog]
 * Roadmap
-** xref:roadmap/Current_Roadmap.adoc[Current roadmap]
+** xref:roadmap/AI_Native_Engineering_Context_Roadmap.adoc[AI-native engineering context roadmap]
+** xref:roadmap/Current_Roadmap.adoc[Foundation delivery history]
 ** xref:roadmap/Realistic_Delivery_Pipeline.adoc[Realistic delivery pipeline]
 * Deployment
 ** xref:deployment/Server_Docker_Image.adoc[Server Docker image]

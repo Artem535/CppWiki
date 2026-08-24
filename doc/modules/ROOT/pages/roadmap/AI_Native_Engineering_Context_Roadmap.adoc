@@ -1,0 +1,69 @@
+= AI-Native Engineering Context Roadmap
+:revdate: 2026-08-24
+:status: Active
+:related-docs: xref:product/Engineering_Context_Vision.adoc[], xref:product/Engineering_Context_Validation.adoc[]
+
+This roadmap replaces the former feature-parity sequence as the active product roadmap.
+The existing local-wiki foundation remains a product asset; its historical delivery plan is
+preserved in xref:roadmap/Current_Roadmap.adoc[Foundation delivery history].
+
+== Phase 0 — Vision reset
+
+* Establish the AI-native engineering-context positioning and product hypothesis.
+* Separate current capabilities, active validation work, and deferred expansion.
+* Triage existing GitHub issues without discarding long-term product knowledge.
+
+== Phase 1 — Problem discovery
+
+Objective: determine whether active coding-agent users experience costly context fragmentation.
+
+Deliverables:
+
+* five to seven interviews;
+* ICP and workflow synthesis;
+* a design-partner candidate and real pilot task;
+* Continue, Pivot, or Rethink decision with recorded evidence.
+
+== Phase 2 — Context-to-agent vertical slice
+
+Objective: demonstrate one complete, inspectable workflow rather than several disconnected
+features.
+
+Deliverables:
+
+* minimum engineering artifact and explicit-relation model;
+* Context Pack v1 and preview with human include/exclude control;
+* one external coding-agent adapter;
+* Agent Run lifecycle and result capture;
+* reviewable knowledge-feedback proposals;
+* workflow measurement.
+
+== Phase 3 — Design-partner pilot
+
+Objective: use the vertical slice on real engineering work.
+
+Deliverables:
+
+* real repository and project context;
+* repeated task runs;
+* before/after evidence for context preparation, clarification, intervention, and outcome;
+* a documented adoption decision.
+
+== Phase 4 — Commercial validation
+
+Objective: turn observed use into a credible commitment.
+
+Valid outcomes include a paid pilot, paid deployment, paid licence, a recurring internal
+deployment with an accountable owner, or an explicit purchase commitment.
+
+== Phase 5 — Expand only validated needs
+
+Only after the pilot should CppWiki prioritize richer task management, integrations, graph UX,
+diagrams, collaboration, enterprise controls, semantic retrieval, or Phoenix Agents integration.
+
+== Priority rules
+
+An issue is near-term only when it either proves the product hypothesis, makes the vertical
+slice usable on a real task, measures its effect, or removes a pilot blocker. Existing calendar,
+advanced board, visual-graph, semantic-graph, generic AI-chat, and bespoke Code-mode work remains
+valuable but deferred unless pilot evidence changes the order.
