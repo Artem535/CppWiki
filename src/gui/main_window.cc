@@ -571,7 +571,10 @@ void MainWindow::BuildUi() {
 
   backend_refresh_button_ = new QToolButton(this);
   backend_refresh_button_->setObjectName(QStringLiteral("statusLineButton"));
-  backend_refresh_button_->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
+  // Bundled icon, not QIcon::fromTheme() -- see gui/workspace_rail_widget.cc's comment and
+  // issue #182 (freedesktop icon-theme lookups return blank icons on Windows and are
+  // unreliable in a bare AppImage sandbox on Linux).
+  backend_refresh_button_->setIcon(QIcon(QStringLiteral(":/cppwiki/icons/action-refresh.svg")));
   backend_refresh_button_->setToolTip(QStringLiteral("Check backend now"));
   backend_refresh_button_->setAutoRaise(true);
   connect(backend_refresh_button_, &QToolButton::clicked, this, [this]() {

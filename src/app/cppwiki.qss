@@ -160,7 +160,7 @@ QFrame#sidebarFooter {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-QPushButton#sidebarSettingsButton {
+QPushButton#sidebarSettingsButton, QPushButton#sidebarTrashButton {
   text-align: left;
   padding: 10px 12px;
   border-radius: 10px;

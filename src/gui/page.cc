@@ -198,7 +198,10 @@ void Page::BuildUi() {
 
   settings_button_ = new QPushButton(QStringLiteral("Settings"), sidebar_footer);
   settings_button_->setObjectName(QStringLiteral("sidebarSettingsButton"));
-  settings_button_->setIcon(QIcon::fromTheme(QStringLiteral("settings-configure")));
+  // Bundled icon, not QIcon::fromTheme() -- see gui/workspace_rail_widget.cc's comment and
+  // issue #182 for why (freedesktop icon-theme lookups return blank icons on Windows and are
+  // unreliable in a bare AppImage sandbox on Linux).
+  settings_button_->setIcon(QIcon(QStringLiteral(":/cppwiki/icons/action-settings.svg")));
   settings_button_->setIconSize(QSize(16, 16));
   settings_button_->setCursor(Qt::PointingHandCursor);
   connect(settings_button_, &QPushButton::clicked, this, &Page::settingsRequested);
@@ -206,7 +209,7 @@ void Page::BuildUi() {
 
   trash_button_ = new QPushButton(QStringLiteral("Trash"), sidebar_footer);
   trash_button_->setObjectName(QStringLiteral("sidebarTrashButton"));
-  trash_button_->setIcon(QIcon::fromTheme(QStringLiteral("user-trash")));
+  trash_button_->setIcon(QIcon(QStringLiteral(":/cppwiki/icons/action-trash.svg")));
   trash_button_->setIconSize(QSize(16, 16));
   trash_button_->setCursor(Qt::PointingHandCursor);
   connect(trash_button_, &QPushButton::clicked, this, &Page::ShowTrashDialog);
