@@ -308,7 +308,16 @@ class CbliteDocumentRepository::Impl {
       ScopedCollectionWriteGuard guard(*this);
       spdlog::debug("CBLite SaveDocument: id={} parent={} sort_order={}", document.metadata.id,
                     document.metadata.parent_id.value_or("<root>"), document.metadata.sort_order);
-      auto& coll = GetCollectionForWorkspace(document.metadata.workspace_id);
+      // Once a document exists, its collection is authoritative. Workspace/channel mappings can
+      // change while the document remains in the synced collection; routing that update solely by
+      // the current mapping would create a local shadow copy and leave the stale synced document
+      // visible to LoadDocument()/ListDocuments().
+      auto synced_document = collection_->getDocument(Slice(document.metadata.id));
+      auto local_document = local_collection_->getDocument(Slice(document.metadata.id));
+      const bool save_to_synced_collection =
+          synced_document ||
+          (!local_document && IsWorkspaceBackedBySync(document.metadata.workspace_id));
+      auto& coll = save_to_synced_collection ? *collection_ : *local_collection_;
       auto doc = GetMutableDocument(coll, document.metadata.id);
       doc.set("title", Slice(document.metadata.title));
       doc.set("workspace_id", Slice(document.metadata.workspace_id));
@@ -332,7 +341,10 @@ class CbliteDocumentRepository::Impl {
       doc.set("raw_snapshot", Slice(document.raw_snapshot_json));
 
       coll.saveDocument(doc);
-      SaveDocumentIndexEntry(document.metadata);
+      if (save_to_synced_collection && local_document) {
+        local_collection_->deleteDocument(local_document);
+      }
+      SaveDocumentIndexEntry(document.metadata, save_to_synced_collection);
       return SaveDocumentResult{};
     } catch (const CBLError& error) {
       return SaveDocumentResult{
@@ -1168,13 +1180,28 @@ class CbliteDocumentRepository::Impl {
     }
   }
 
-  void SaveDocumentIndexEntry(const document::PageMetadata& metadata) {
+  void SaveDocumentIndexEntry(const document::PageMetadata& metadata,
+                              std::optional<bool> saved_to_synced_collection = std::nullopt) {
     spdlog::debug("CBLite SaveDocumentIndexEntry: id={} title={}", metadata.id, metadata.title);
-    auto& coll = GetCollectionForWorkspace(metadata.workspace_id);
-    const auto index_id = GetIndexDocumentIdForWorkspace(metadata.workspace_id);
+    const bool use_synced_collection =
+        saved_to_synced_collection.value_or(IsWorkspaceBackedBySync(metadata.workspace_id));
+    auto& coll = use_synced_collection ? *collection_ : *local_collection_;
+    const auto index_id = use_synced_collection ? constants::kDocumentsIndexDocumentId
+                                                : constants::kLocalDocumentsIndexDocumentId;
     auto index_doc = GetMutableDocument(coll, index_id);
     index_doc.set(Slice(metadata.id), Slice(metadata.title));
     coll.saveDocument(index_doc);
+
+    if (!saved_to_synced_collection.has_value()) {
+      return;
+    }
+
+    auto& other_collection = use_synced_collection ? *local_collection_ : *collection_;
+    const auto other_index_id = use_synced_collection ? constants::kLocalDocumentsIndexDocumentId
+                                                      : constants::kDocumentsIndexDocumentId;
+    auto other_index_doc = GetMutableDocument(other_collection, other_index_id);
+    other_index_doc.properties().remove(Slice(metadata.id));
+    other_collection.saveDocument(other_index_doc);
   }
 
   void RemoveDocumentIndexEntry(std::string_view document_id) {

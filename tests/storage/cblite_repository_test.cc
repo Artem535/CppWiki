@@ -344,6 +344,57 @@ auto TestCbliteRepositoryPromotesLocalDocumentsAfterSyncBootstrap() -> void {
   std::filesystem::remove_all(test_directory.parent_path().parent_path());
 }
 
+// A workspace can lose its current sync-channel mapping while an existing document remains in
+// the synced collection. Updates must follow that existing document, otherwise a soft-delete is
+// written to local_documents while LoadDocument() continues to return the stale synced copy.
+auto TestCbliteRepositoryUpdatesExistingSyncedDocumentAfterChannelChange() -> void {
+  const auto test_directory = std::filesystem::temp_directory_path() /
+                              "cppwiki-cblite-existing-sync-document" / "nested" / "database";
+  std::filesystem::remove_all(test_directory);
+
+  cppwiki::storage::CbliteDocumentRepository repository({
+      .database_directory = test_directory,
+      .database_name = "test_wiki_db",
+  });
+  Require(!repository.SaveDocument(MakeDocument("page-channel-change", "Original", 1)).error,
+          "local document should save before sync bootstrap");
+
+  cppwiki::sync::SyncBootstrap synced_bootstrap;
+  synced_bootstrap.available = true;
+  synced_bootstrap.enabled = true;
+  synced_bootstrap.gateway_url = QStringLiteral("http://127.0.0.1:4984/cppwiki");
+  synced_bootstrap.database_name = QStringLiteral("cppwiki");
+  synced_bootstrap.auth_mode = QStringLiteral("oidc_access_token_passthrough");
+  synced_bootstrap.token_passthrough = true;
+  synced_bootstrap.channels = {QStringLiteral("workspace:engineering")};
+  Require(!repository.ApplySyncBootstrap(synced_bootstrap).error,
+          "sync bootstrap should promote the document");
+
+  auto changed_bootstrap = synced_bootstrap;
+  changed_bootstrap.channels = {QStringLiteral("workspace:other-workspace")};
+  Require(!repository.ApplySyncBootstrap(changed_bootstrap).error,
+          "changed sync bootstrap should apply");
+
+  auto document = repository.LoadDocument("page-channel-change");
+  Require(document.document.has_value(), "promoted document should load before soft-delete");
+  document.document->metadata.trashed_at = "2026-08-25T12:00:00.000Z";
+  Require(!repository.SaveDocument(*document.document).error,
+          "soft-delete update should save to the owning collection");
+
+  const auto reloaded = repository.LoadDocument("page-channel-change");
+  Require(reloaded.document.has_value(), "soft-deleted document should still load");
+  Require(reloaded.document->metadata.trashed_at.has_value(),
+          "reloaded document must retain its trashed state");
+
+  const auto listed = repository.ListDocuments();
+  Require(!listed.error, "listing soft-deleted document should succeed");
+  Require(listed.documents.size() == 1, "soft-delete must not create a duplicate document");
+  Require(listed.documents.front().trashed_at.has_value(),
+          "list must return the updated trashed state");
+
+  std::filesystem::remove_all(test_directory.parent_path().parent_path());
+}
+
 auto MakePendingConflict(std::string id, std::string document_id, std::string detected_at,
                          std::string local_updated_by, std::string remote_updated_by)
     -> cppwiki::storage::DocumentConflictRecord {
@@ -502,6 +553,7 @@ auto main() -> int {
     TestCbliteRepositoryPreservesMermaidSnapshot();
     TestCbliteRepositoryRefreshesStaleIndexAfterExternalWrite();
     TestCbliteRepositoryPromotesLocalDocumentsAfterSyncBootstrap();
+    TestCbliteRepositoryUpdatesExistingSyncedDocumentAfterChannelChange();
     TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord();
     TestCbliteRepositoryOfflineEditReconnectPushPull();
   } catch (const std::exception& e) {
