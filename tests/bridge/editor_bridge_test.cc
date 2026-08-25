@@ -460,6 +460,27 @@ auto TestDeleteDocumentRemovesItFromList() -> void {
           "deleting the final page must retain it in the trash");
 }
 
+// Workspaces created before workspace-root records were introduced still contain the trashed
+// document itself. That is sufficient evidence that the workspace is not new and must not
+// bootstrap a replacement Welcome page after its final document is deleted.
+auto TestDeleteDocumentFromPreRootWorkspaceLeavesNormalListEmpty() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created = bridge.createDocument();
+  RequireSuccessEnvelope(created);
+  const auto page_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+
+  RequireSuccessEnvelope(bridge.deleteDocument(page_id));
+
+  const auto listed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed);
+  Require(listed.value(QStringLiteral("result")).toList().isEmpty(),
+          "a trashed legacy document must prevent Welcome bootstrap");
+}
+
 // Issue #165: "deleteDocument" now soft-deletes -- the page must disappear from listDocuments()
 // (covered above) but reappear in listTrash(), still fully intact, until it's restored or
 // permanently deleted.
@@ -1310,6 +1331,7 @@ auto main() -> int {
   TestUpdateDocumentPlacementRejectedWhenCurrentDocumentLocked();
   TestUpdateDocumentPlacementSucceedsWhenCurrentDocumentEditable();
   TestDeleteDocumentRemovesItFromList();
+  TestDeleteDocumentFromPreRootWorkspaceLeavesNormalListEmpty();
   TestDeleteDocumentMovesItToTrashInsteadOfErasingIt();
   TestRestoreDocumentBringsItBackToTheNormalList();
   TestPermanentlyDeleteDocumentRemovesItForGood();
