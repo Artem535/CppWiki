@@ -138,6 +138,21 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     return {};
   }
 
+  [[nodiscard]] auto SaveWorkspaceRoot(const cppwiki::storage::WorkspaceRootRecord& root)
+      -> cppwiki::storage::SaveWorkspaceRootResult override {
+    workspace_roots_[root.workspace_id] = root;
+    return {};
+  }
+
+  [[nodiscard]] auto LoadWorkspaceRoot(std::string_view workspace_id)
+      -> std::optional<cppwiki::storage::WorkspaceRootRecord> override {
+    const auto it = workspace_roots_.find(std::string(workspace_id));
+    if (it == workspace_roots_.end()) {
+      return std::nullopt;
+    }
+    return it->second;
+  }
+
   [[nodiscard]] auto SupportsSync() const -> bool override {
     return true;
   }
@@ -171,6 +186,7 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
  private:
   std::map<std::string, cppwiki::storage::DocumentRecord> documents_;
   std::map<std::string, cppwiki::storage::DocumentRevisionRecord> revisions_;
+  std::map<std::string, cppwiki::storage::WorkspaceRootRecord> workspace_roots_;
 };
 
 auto TestBridgeInfo() -> void {
@@ -421,18 +437,27 @@ auto TestDeleteDocumentRemovesItFromList() -> void {
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
-  const auto created = bridge.createDocument();
-  RequireSuccessEnvelope(created);
-  const auto created_id =
-      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+  const auto listed_before = bridge.listDocuments();
+  RequireSuccessEnvelope(listed_before);
+  const auto page_id = listed_before.value(QStringLiteral("result"))
+                           .toList()
+                           .front()
+                           .toMap()
+                           .value(QStringLiteral("id"))
+                           .toString();
 
-  const auto deleted = bridge.deleteDocument(created_id);
+  const auto deleted = bridge.deleteDocument(page_id);
   RequireSuccessEnvelope(deleted);
 
   const auto listed = bridge.listDocuments();
   RequireSuccessEnvelope(listed);
   const auto pages = listed.value(QStringLiteral("result")).toList();
-  Require(pages.size() == 1, "after deleting only note, welcome page should be bootstrapped again");
+  Require(pages.isEmpty(), "deleting the final page must leave the normal document list empty");
+
+  const auto trash = bridge.listTrash();
+  RequireSuccessEnvelope(trash);
+  Require(trash.value(QStringLiteral("result")).toList().size() == 1,
+          "deleting the final page must retain it in the trash");
 }
 
 // Issue #165: "deleteDocument" now soft-deletes -- the page must disappear from listDocuments()
@@ -480,12 +505,20 @@ auto TestRestoreDocumentBringsItBackToTheNormalList() -> void {
                            .toString();
 
   RequireSuccessEnvelope(bridge.deleteDocument(page_id));
+
+  const auto listed_while_trashed = bridge.listDocuments();
+  RequireSuccessEnvelope(listed_while_trashed);
+  Require(listed_while_trashed.value(QStringLiteral("result")).toList().isEmpty(),
+          "the normal list must remain empty until the page is restored");
+
   RequireSuccessEnvelope(bridge.restoreDocument(page_id));
 
   const auto listed_after = bridge.listDocuments();
   RequireSuccessEnvelope(listed_after);
-  Require(listed_after.value(QStringLiteral("result")).toList().size() == 1,
-          "the restored page should be back in listDocuments");
+  const auto restored_pages = listed_after.value(QStringLiteral("result")).toList();
+  Require(restored_pages.size() == 1, "the restored page should be back in listDocuments");
+  Require(restored_pages.front().toMap().value(QStringLiteral("id")).toString() == page_id,
+          "restore must return the originally deleted page rather than a replacement page");
 
   const auto trash_after = bridge.listTrash();
   RequireSuccessEnvelope(trash_after);

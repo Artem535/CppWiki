@@ -778,6 +778,13 @@ QVariantMap QEditorBridge::listDocumentsInWorkspace(const QString& workspace_id)
 
   auto documents = DocumentSummariesToVariant(result.documents, normalized_workspace_id);
   if (documents.empty()) {
+    // A materialized workspace may legitimately have no live documents: its last document can
+    // be in the trash. In that case returning an empty list lets the UI clear the tree and show
+    // the explicit empty-workspace state instead of silently creating a replacement page.
+    if (repository_->LoadWorkspaceRoot(normalized_workspace_id.toStdString()).has_value()) {
+      return SuccessResponse(QVariantList{});
+    }
+
     const bool should_create_welcome =
         sync_state_provider_ == nullptr ||
         sync_state_provider_->ShouldCreateSyntheticWelcomePage(normalized_workspace_id);
