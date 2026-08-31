@@ -912,6 +912,11 @@ class CbliteDocumentRepository::Impl {
 
   [[nodiscard]] auto ApplySyncBootstrap(const sync::SyncBootstrap& bootstrap)
       -> SyncOperationResult {
+    if (const auto error = EnsureDatabaseOpen()) {
+      SetSyncStatus(MakeSyncStatus(SyncLifecycleState::kError, error->message));
+      return SyncOperationResult{.error = std::move(error)};
+    }
+
     if (bootstrap.auth_mode.trimmed() !=
         QString::fromUtf8(kSupportedSyncAuthMode.data(),
                           static_cast<qsizetype>(kSupportedSyncAuthMode.size()))) {

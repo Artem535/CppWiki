@@ -1,0 +1,98 @@
+services:
+  couchbase:
+    image: couchbase/server:community-8.0.2
+    environment:
+      CB_REST_USERNAME: Administrator
+      CB_REST_PASSWORD: password
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8091/pools >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 36
+      start_period: 20s
+
+  couchbase-init:
+    image: couchbase/server:community-8.0.2
+    depends_on:
+      couchbase:
+        condition: service_healthy
+    environment:
+      CB_HOST: couchbase
+      CB_ADMIN_USER: Administrator
+      CB_ADMIN_PASSWORD: password
+      CB_BUCKET: cppwiki
+      CB_BUCKET_RAMSIZE_MB: 256
+      CB_SYNC_USER: sync_gateway
+      CB_SYNC_PASSWORD: sync_gateway_password
+    entrypoint:
+      - /bin/bash
+      - -ceu
+      - |
+        couchbase-cli cluster-init \
+          --cluster http://couchbase:8091 \
+          --cluster-username "$${CB_ADMIN_USER}" \
+          --cluster-password "$${CB_ADMIN_PASSWORD}" \
+          --services data,index,query \
+          --cluster-ramsize 1024 \
+          --cluster-index-ramsize 256 \
+          --index-storage-setting default
+        couchbase-cli bucket-create \
+          --cluster http://couchbase:8091 \
+          --username "$${CB_ADMIN_USER}" \
+          --password "$${CB_ADMIN_PASSWORD}" \
+          --bucket "$${CB_BUCKET}" \
+          --bucket-type couchbase \
+          --bucket-ramsize "$${CB_BUCKET_RAMSIZE_MB}" \
+          --storage-backend couchstore \
+          --bucket-replica 0 \
+          --enable-flush 1 \
+          --wait
+        curl -fsS -u "$${CB_ADMIN_USER}:$${CB_ADMIN_PASSWORD}" -X POST \
+          http://couchbase:8091/pools/default/buckets/$${CB_BUCKET}/scopes/_default/collections \
+          -d name=documents
+        couchbase-cli user-manage \
+          --cluster http://couchbase:8091 \
+          --username "$${CB_ADMIN_USER}" \
+          --password "$${CB_ADMIN_PASSWORD}" \
+          --set \
+          --rbac-username "$${CB_SYNC_USER}" \
+          --rbac-password "$${CB_SYNC_PASSWORD}" \
+          --auth-domain local \
+          --roles "bucket_full_access[$${CB_BUCKET}]"
+
+  sync-gateway:
+    image: couchbase/sync-gateway:4.1.1-community
+    depends_on:
+      couchbase-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:14984:4984"
+      - "127.0.0.1:14985:4985"
+    entrypoint:
+      - /bin/sh
+      - -ceu
+      - |
+        printf '%s\n' '{"api":{"public_interface":":4984","admin_interface":":4985","admin_interface_authentication":false},"bootstrap":{"server":"couchbase://couchbase","username":"sync_gateway","password":"sync_gateway_password","use_tls_server":false},"logging":{"console":{"enabled":true,"log_level":"info"}}}' > /tmp/bootstrap.json
+        exec /entrypoint.sh /tmp/bootstrap.json
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4985/ >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+  sync-gateway-init:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      sync-gateway:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -ceu
+      - |
+        curl -fsS -X PUT http://sync-gateway:4985/cppwiki/ \
+          -H 'Content-Type: application/json' \
+          --data-binary '{"bucket":"cppwiki","enable_shared_bucket_access":true,"import_docs":true,"num_index_replicas":0,"scopes":{"_default":{"collections":{"documents":{"sync":"function(doc, oldDoc, meta) { if (doc.workspace_id) { channel('"'"'workspace:'"'"' + doc.workspace_id); return; } channel('"'"'public'"'"'); }"}}}}}'
+        curl -fsS -X PUT http://sync-gateway:4985/cppwiki/_user/GUEST \
+          -H 'Content-Type: application/json' \
+          --data-binary '{"disabled":false,"collection_access":{"_default":{"documents":{"admin_channels":["workspace:engineering"]}}}}'

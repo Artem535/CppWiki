@@ -396,6 +396,32 @@ auto TestCbliteRepositoryPromotesLocalDocumentsAfterSyncBootstrap() -> void {
   std::filesystem::remove_all(test_directory.parent_path().parent_path());
 }
 
+// Sync bootstrap can arrive before a fresh repository has saved or loaded its first document.
+// Applying it must open the database before it inspects the local/synced collections.
+auto TestCbliteRepositoryAppliesSyncBootstrapToFreshDatabase() -> void {
+  const auto test_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-cblite-fresh-sync-bootstrap";
+  std::filesystem::remove_all(test_directory);
+
+  cppwiki::storage::CbliteDocumentRepository repository({
+      .database_directory = test_directory,
+      .database_name = "fresh_sync_bootstrap",
+  });
+
+  cppwiki::sync::SyncBootstrap bootstrap;
+  bootstrap.available = true;
+  bootstrap.enabled = true;
+  bootstrap.gateway_url = QStringLiteral("http://127.0.0.1:4984/cppwiki");
+  bootstrap.database_name = QStringLiteral("cppwiki");
+  bootstrap.auth_mode = QStringLiteral("oidc_access_token_passthrough");
+  bootstrap.token_passthrough = true;
+  bootstrap.channels = {QStringLiteral("workspace:engineering")};
+
+  Require(!repository.ApplySyncBootstrap(bootstrap).error,
+          "sync bootstrap should configure a fresh CBLite repository");
+  std::filesystem::remove_all(test_directory);
+}
+
 // A workspace can lose its current sync-channel mapping while an existing document remains in
 // the synced collection. Updates must follow that existing document, otherwise a soft-delete is
 // written to local_documents while LoadDocument() continues to return the stale synced copy.
@@ -607,6 +633,7 @@ auto main() -> int {
     TestCbliteRepositoryPreservesMermaidSnapshot();
     TestCbliteRepositoryRefreshesStaleIndexAfterExternalWrite();
     TestCbliteRepositoryPromotesLocalDocumentsAfterSyncBootstrap();
+    TestCbliteRepositoryAppliesSyncBootstrapToFreshDatabase();
     TestCbliteRepositoryUpdatesExistingSyncedDocumentAfterChannelChange();
     TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord();
     TestCbliteRepositoryOfflineEditReconnectPushPull();

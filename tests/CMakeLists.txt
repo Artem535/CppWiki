@@ -540,6 +540,38 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
     NAME cppwiki_cblite_cpp_smoke_tests
     COMMAND cppwiki_cblite_cpp_smoke_tests
   )
+
+  # This executable is intentionally not registered as a default CTest test: it requires a
+  # real Couchbase Server + Sync Gateway fixture. Run it through
+  # tests/e2e/run_attachment_sync_e2e.sh, which starts and removes that isolated fixture.
+  add_executable(cppwiki_attachment_sync_e2e_tests
+    storage/attachment_sync_e2e_test.cc
+    ${CMAKE_SOURCE_DIR}/src/core/constants.h
+    ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
+    ${CMAKE_SOURCE_DIR}/src/document/document.h
+    ${CMAKE_SOURCE_DIR}/src/sync/sync_bootstrap.cc
+    ${CMAKE_SOURCE_DIR}/src/sync/sync_bootstrap.h
+    ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+    ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
+    ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.cc
+    ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.h
+    ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
+  )
+
+  target_include_directories(cppwiki_attachment_sync_e2e_tests
+    PRIVATE
+      ${CMAKE_SOURCE_DIR}/src
+  )
+
+  target_link_libraries(cppwiki_attachment_sync_e2e_tests
+    PRIVATE
+      CBLite::cblite
+      Qt6::Core
+      spdlog::spdlog
+      reflectcpp::reflectcpp
+  )
+
+  cppwiki_apply_common_options(cppwiki_attachment_sync_e2e_tests)
 endif()
 
 if(CPPWIKI_BUILD_SERVER)
