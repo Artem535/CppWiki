@@ -175,6 +175,29 @@ add_test(
   COMMAND cppwiki_local_document_repository_tests
 )
 
+add_executable(cppwiki_attachment_tests
+  storage/attachment_test.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
+)
+
+target_include_directories(cppwiki_attachment_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_attachment_tests
+  PRIVATE
+    spdlog::spdlog
+)
+
+cppwiki_apply_common_options(cppwiki_attachment_tests)
+
+add_test(
+  NAME cppwiki_attachment_tests
+  COMMAND cppwiki_attachment_tests
+)
+
 add_executable(cppwiki_file_document_repository_tests
   storage/file_document_repository_test.cc
   ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
