@@ -1,12 +1,12 @@
 #include "storage/workspace_archive.h"
 
-#include <rfl/json/read.hpp>
-#include <rfl/json/write.hpp>
 #include <spdlog/spdlog.h>
 
 #include <cstdint>
 #include <fstream>
 #include <optional>
+#include <rfl/json/read.hpp>
+#include <rfl/json/write.hpp>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -24,7 +24,7 @@ namespace cppwiki::storage {
 // `file_repository` namespace, not an anonymous one.
 namespace workspace_archive_internal {
 
-constexpr std::int32_t kArchiveSchemaVersion = 1;
+constexpr std::int32_t kArchiveSchemaVersion = 2;
 
 struct ArchiveWorkspaceDto {
   std::string workspace_id;
@@ -65,12 +65,90 @@ struct ArchiveConflictDto {
   std::string resolution_state{"pending"};
 };
 
+struct ArchiveAttachmentDto {
+  std::string id;
+  std::string workspace_id;
+  std::string filename;
+  std::string mime_type;
+  std::uint64_t size_bytes{};
+  std::string sha256;
+  std::string created_at;
+  std::string created_by;
+  std::string base64_bytes;
+};
+
 struct WorkspaceArchiveDto {
   std::int32_t archive_schema_version{kArchiveSchemaVersion};
   std::optional<ArchiveWorkspaceDto> workspace;
   std::vector<ArchiveDocumentDto> documents;
   std::vector<ArchiveConflictDto> conflicts;
+  std::vector<ArchiveAttachmentDto> attachments;
 };
+
+auto EncodeBase64(const std::vector<std::uint8_t>& bytes) -> std::string {
+  constexpr std::string_view alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string encoded;
+  encoded.reserve(((bytes.size() + 2U) / 3U) * 4U);
+  for (std::size_t index = 0; index < bytes.size(); index += 3U) {
+    const auto first = bytes[index];
+    const auto second = index + 1U < bytes.size() ? bytes[index + 1U] : 0U;
+    const auto third = index + 2U < bytes.size() ? bytes[index + 2U] : 0U;
+    const auto value = (static_cast<std::uint32_t>(first) << 16U) |
+                       (static_cast<std::uint32_t>(second) << 8U) |
+                       static_cast<std::uint32_t>(third);
+    encoded.push_back(alphabet[(value >> 18U) & 0x3FU]);
+    encoded.push_back(alphabet[(value >> 12U) & 0x3FU]);
+    encoded.push_back(index + 1U < bytes.size() ? alphabet[(value >> 6U) & 0x3FU] : '=');
+    encoded.push_back(index + 2U < bytes.size() ? alphabet[value & 0x3FU] : '=');
+  }
+  return encoded;
+}
+
+auto DecodeBase64(std::string_view encoded) -> std::optional<std::vector<std::uint8_t>> {
+  if (encoded.size() % 4U != 0U) {
+    return std::nullopt;
+  }
+  const auto value = [](char character) -> int {
+    if (character >= 'A' && character <= 'Z')
+      return character - 'A';
+    if (character >= 'a' && character <= 'z')
+      return character - 'a' + 26;
+    if (character >= '0' && character <= '9')
+      return character - '0' + 52;
+    if (character == '+')
+      return 62;
+    if (character == '/')
+      return 63;
+    return -1;
+  };
+  std::vector<std::uint8_t> bytes;
+  bytes.reserve((encoded.size() / 4U) * 3U);
+  for (std::size_t index = 0; index < encoded.size(); index += 4U) {
+    const bool third_padding = encoded[index + 2U] == '=';
+    const bool fourth_padding = encoded[index + 3U] == '=';
+    if ((third_padding && !fourth_padding) ||
+        ((third_padding || fourth_padding) && index + 4U != encoded.size())) {
+      return std::nullopt;
+    }
+    const auto first = value(encoded[index]);
+    const auto second = value(encoded[index + 1U]);
+    const auto third = third_padding ? 0 : value(encoded[index + 2U]);
+    const auto fourth = fourth_padding ? 0 : value(encoded[index + 3U]);
+    if (first < 0 || second < 0 || third < 0 || fourth < 0) {
+      return std::nullopt;
+    }
+    const auto packed =
+        (static_cast<std::uint32_t>(first) << 18U) | (static_cast<std::uint32_t>(second) << 12U) |
+        (static_cast<std::uint32_t>(third) << 6U) | static_cast<std::uint32_t>(fourth);
+    bytes.push_back(static_cast<std::uint8_t>((packed >> 16U) & 0xFFU));
+    if (!third_padding)
+      bytes.push_back(static_cast<std::uint8_t>((packed >> 8U) & 0xFFU));
+    if (!fourth_padding)
+      bytes.push_back(static_cast<std::uint8_t>(packed & 0xFFU));
+  }
+  return bytes;
+}
 
 auto ToDto(const DocumentRecord& document) -> ArchiveDocumentDto {
   return ArchiveDocumentDto{
@@ -142,6 +220,20 @@ auto FromDto(ArchiveConflictDto dto) -> DocumentConflictRecord {
   };
 }
 
+auto ToDto(const AttachmentData& attachment) -> ArchiveAttachmentDto {
+  return ArchiveAttachmentDto{
+      .id = attachment.metadata.id,
+      .workspace_id = attachment.metadata.workspace_id,
+      .filename = attachment.metadata.filename,
+      .mime_type = attachment.metadata.mime_type,
+      .size_bytes = attachment.metadata.size_bytes,
+      .sha256 = attachment.metadata.sha256,
+      .created_at = attachment.metadata.created_at,
+      .created_by = attachment.metadata.created_by,
+      .base64_bytes = EncodeBase64(attachment.bytes),
+  };
+}
+
 auto MakeError(RepositoryErrorCode code, std::string message) -> RepositoryError {
   return RepositoryError{.code = code, .message = std::move(message)};
 }
@@ -190,6 +282,20 @@ auto ExportWorkspaceToFile(LocalDocumentRepository& repository, std::string_view
     }
   }
 
+  const auto attachments = repository.ListAttachments(workspace_id);
+  if (attachments.error && attachments.error->code != RepositoryErrorCode::kUnsupported) {
+    return ExportWorkspaceResult{.error = attachments.error};
+  }
+  for (const auto& metadata : attachments.attachments) {
+    const auto loaded = repository.LoadAttachment(metadata.id, workspace_id);
+    if (loaded.error || !loaded.attachment) {
+      return ExportWorkspaceResult{
+          .error = loaded.error.value_or(MakeError(RepositoryErrorCode::kReadFailed,
+                                                   "Attachment disappeared during export."))};
+    }
+    archive.attachments.push_back(ToDto(*loaded.attachment));
+  }
+
   std::ofstream out(destination_path, std::ios::binary | std::ios::trunc);
   if (!out.is_open()) {
     return ExportWorkspaceResult{
@@ -210,18 +316,18 @@ auto ImportWorkspaceFromFile(LocalDocumentRepository& repository, const std::str
     -> ImportWorkspaceResult {
   std::ifstream in(source_path, std::ios::binary);
   if (!in.is_open()) {
-    return ImportWorkspaceResult{
-        .error = MakeError(RepositoryErrorCode::kReadFailed,
-                           "Could not open " + source_path + " for reading.")};
+    return ImportWorkspaceResult{.error =
+                                     MakeError(RepositoryErrorCode::kReadFailed,
+                                               "Could not open " + source_path + " for reading.")};
   }
   std::ostringstream buffer;
   buffer << in.rdbuf();
 
   auto parsed = rfl::json::read<WorkspaceArchiveDto>(buffer.str());
   if (!parsed) {
-    return ImportWorkspaceResult{
-        .error = MakeError(RepositoryErrorCode::kInvalidRecord,
-                           source_path + " is not a valid workspace archive.")};
+    return ImportWorkspaceResult{.error =
+                                     MakeError(RepositoryErrorCode::kInvalidRecord,
+                                               source_path + " is not a valid workspace archive.")};
   }
   auto archive = std::move(parsed).value();
 
@@ -255,6 +361,40 @@ auto ImportWorkspaceFromFile(LocalDocumentRepository& repository, const std::str
     if (save_result.error) {
       spdlog::warn("Failed to restore a conflict from workspace archive: {}",
                    save_result.error->message);
+    }
+  }
+
+  for (auto& attachment_dto : archive.attachments) {
+    if (!workspace_id) {
+      workspace_id = attachment_dto.workspace_id;
+    }
+    if (attachment_dto.workspace_id != *workspace_id) {
+      return ImportWorkspaceResult{
+          .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                             "Archive attachment belongs to another workspace.")};
+    }
+    auto bytes = DecodeBase64(attachment_dto.base64_bytes);
+    if (!bytes) {
+      return ImportWorkspaceResult{.error =
+                                       MakeError(RepositoryErrorCode::kInvalidRecord,
+                                                 "Archive attachment bytes are not valid base64.")};
+    }
+    auto saved = repository.SaveAttachment(AttachmentData{
+        .metadata =
+            AttachmentMetadata{
+                .id = std::move(attachment_dto.id),
+                .workspace_id = std::move(attachment_dto.workspace_id),
+                .filename = std::move(attachment_dto.filename),
+                .mime_type = std::move(attachment_dto.mime_type),
+                .size_bytes = attachment_dto.size_bytes,
+                .sha256 = std::move(attachment_dto.sha256),
+                .created_at = std::move(attachment_dto.created_at),
+                .created_by = std::move(attachment_dto.created_by),
+            },
+        .bytes = std::move(*bytes),
+    });
+    if (saved.error) {
+      return ImportWorkspaceResult{.error = std::move(saved.error)};
     }
   }
 
