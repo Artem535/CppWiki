@@ -1,0 +1,144 @@
+= Attachment Storage and Sync Design
+:toc:
+:toclevels: 3
+
+*Status:* Proposed
+
+== Purpose
+
+This document defines the first attachment implementation for CppWiki.
+It supports inline images and downloadable arbitrary files while preserving
+the desktop application's offline-first and workspace-scoped sync model.
+
+== Scope
+
+Version 1 provides:
+
+* attachment upload from the editor;
+* inline rendering of images;
+* explicit native <<download,Save as...>> for non-image files;
+* offline persistence and synchronization through Couchbase Lite and Sync Gateway;
+* a maximum size of 25 MiB per attachment.
+
+It does not provide public links, automatic external file opening, attachment
+versioning, malware scanning, or automatic garbage collection.
+
+== Decision
+
+An attachment is a first-class record, separate from its containing document.
+The document snapshot stores only a stable attachment URI:
+
+[source,text]
+----
+cppwiki-attachment://<attachment-id>
+----
+
+The attachment record owns its metadata and binary payload:
+
+[source,json]
+----
+{
+  "id": "attachment UUID",
+  "record_type": "cppwiki_attachment",
+  "workspace_id": "workspace UUID",
+  "filename": "architecture.png",
+  "mime_type": "image/png",
+  "size_bytes": 248731,
+  "sha256": "hex digest",
+  "created_at": "RFC 3339 timestamp",
+  "created_by": "user ID when available",
+  "blob": "Couchbase Lite Blob"
+}
+----
+
+The record is stored in the same workspace-scoped collection as its documents.
+The workspace ID gives Sync Gateway the same workspace channel as the referencing
+document. Couchbase Lite replicates the Blob with the attachment record, so
+attachment bytes are available offline after synchronization.
+
+Raw filesystem paths, file URLs, base64 payloads, and transient browser blob
+URLs must not be written into document snapshots.
+
+== Repository contract
+
+The local document repository gains a narrow attachment contract, independent of
+the current Couchbase Lite or filesystem implementation:
+
+* create an attachment from validated metadata and a byte stream;
+* retrieve metadata by attachment ID and workspace;
+* stream attachment bytes to a caller;
+* delete an attachment only through an explicit lifecycle operation.
+
+The Couchbase Lite implementation writes the payload through a Blob write stream.
+The file repository stores opaque attachment bytes and metadata in a sidecar
+layout while exposing the same IDs and URI format. This keeps file-backed local
+workspaces compatible with the editor without implying cross-device sync.
+
+== Upload boundary
+
+The browser is not allowed to choose a destination path or persist bytes itself.
+The editor passes data over the existing QWebChannel bridge in bounded chunks:
+
+[source,text]
+----
+beginAttachmentUpload(metadata) -> upload ID
+appendAttachmentChunk(upload ID, bytes)
+completeAttachmentUpload(upload ID) -> attachment URI
+----
+
+The desktop bridge validates the active workspace, a safe filename, MIME type,
+chunk sequence, and cumulative size before persistence. The upload fails once
+the total exceeds 25 MiB. Chunking avoids a single large QVariant, JavaScript
+data URL, or IPC message; the initial chunk size is 256 KiB.
+
+== Rendering and download
+
+The desktop app registers a private cppwiki-attachment QWebEngine URL scheme
+handler. The handler resolves an attachment only after validating that the ID
+belongs to the current workspace.
+
+Images are served to the editor with their stored MIME type and render inline.
+For a non-image attachment, selecting its URI opens a native *Save as...*
+dialog. The app streams the stored bytes to the selected path. It does not open
+the file automatically or hand it to an external application.
+
+[[download]]
+== Lifecycle, deletion, and restore
+
+Deleting a document or removing an attachment block does not automatically
+delete the attachment record in version 1. This avoids irreversible loss during
+undo, conflict resolution, restore, and delayed synchronization.
+
+Future garbage collection may delete only attachments proven unreferenced by
+all retained document revisions and trash entries. It must be an explicit,
+recoverable maintenance operation.
+
+Workspace archive/export and restore include both attachment records and bytes.
+Restore preserves attachment IDs so existing document URIs remain valid.
+
+== Security and privacy
+
+Attachments inherit workspace authorization and Sync Gateway channel isolation.
+The URL handler must never resolve an attachment outside the active workspace.
+The bridge accepts only bounded data, exposes no unrestricted filesystem API,
+and must reject malformed IDs and unsupported URI schemes.
+
+The 25 MiB limit is a product and resource-safety boundary, not a substitute for
+content scanning. Malware scanning and organization-wide file policy are future
+deployment concerns.
+
+== Verification
+
+The implementation is complete only when automated coverage proves:
+
+* 25 MiB is accepted and a larger file is rejected before persistence;
+* metadata and bytes round-trip through both repository implementations;
+* Couchbase Lite records contain a workspace ID and Blob;
+* a private URI cannot read an attachment from another workspace;
+* generic-file activation invokes Save as... and does not navigate or launch externally;
+* archives preserve attachment metadata and bytes;
+* a two-client Sync Gateway integration test observes the attachment after replication.
+
+Manual validation also covers drag-and-drop, paste of an image, offline upload
+followed by sync, interrupted upload cleanup, document trash/restore, and
+rendering after application restart.
