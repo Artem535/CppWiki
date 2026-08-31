@@ -150,7 +150,7 @@ class Page final : public QWidget, public IPage {
   [[nodiscard]] std::optional<QString> WorkspaceIdFromIndex(const QModelIndex& index) const;
   void ActivateWorkspace(const QString& workspace_id);
 
-  void ApplyBridgeSessionContext();
+  bool ApplyBridgeSessionContext();
   void RefreshSelectedDocumentAccess();
   void UpdateAuthCard();
   void RefreshPageListIfChanged();

@@ -304,7 +304,6 @@ void Page::BuildUi() {
   if (context_.backend_client != nullptr) {
     connect(context_.backend_client, &backend::BackendClient::syncBootstrapChanged, this, [this]() {
       ApplyBridgeSessionContext();
-      PopulatePageList();
       RefreshSelectedDocumentAccess();
     });
     connect(
@@ -326,8 +325,10 @@ void Page::BuildUi() {
   if (context_.document_sync_service != nullptr) {
     connect(context_.document_sync_service, &sync::SyncService::snapshotChanged, this,
             [this](const sync::DocumentSyncSnapshot&) {
-              ApplyBridgeSessionContext();
-              RefreshPageListIfChanged();
+              const bool tree_rebuilt = ApplyBridgeSessionContext();
+              if (!tree_rebuilt) {
+                RefreshPageListIfChanged();
+              }
               RefreshSelectedDocumentAccess();
             });
   }
@@ -372,24 +373,33 @@ void Page::BuildUi() {
 
   ApplyBridgeSessionContext();
   LoadEditor();
-  PopulatePageList();
   UpdateAuthCard();
   UpdateEditModeControls();
 }
 
-void Page::ApplyBridgeSessionContext() {
+bool Page::ApplyBridgeSessionContext() {
   if (editor_bridge_ == nullptr) {
-    return;
+    return false;
   }
 
   editor_bridge_->SetCurrentAuthorId(EffectiveAuthorId(context_));
-  available_workspace_ids_ = EffectiveWorkspaceIds(context_);
+  const auto next_workspace_ids = EffectiveWorkspaceIds(context_);
+  const auto previous_workspace_id = current_workspace_id_;
+  const auto previous_workspace_ids = available_workspace_ids_;
+  available_workspace_ids_ = next_workspace_ids;
   const auto preferred_workspace_id = PreferredWorkspaceId(context_, available_workspace_ids_);
   const auto selected_workspace_id = available_workspace_ids_.contains(current_workspace_id_)
                                          ? current_workspace_id_
                                          : preferred_workspace_id;
   ActivateWorkspace(selected_workspace_id);
-  RebuildWorkspaceTree();
+  const bool workspace_context_changed = previous_workspace_id != current_workspace_id_ ||
+                                         previous_workspace_ids != available_workspace_ids_;
+  if (workspace_context_changed) {
+    RebuildWorkspaceTree();
+  } else {
+    RefreshWorkspaceHydrationState();
+  }
+  return workspace_context_changed;
 }
 
 void Page::ActivateWorkspace(const QString& workspace_id) {

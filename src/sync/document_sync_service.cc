@@ -419,7 +419,13 @@ void DocumentSyncService::UpdateWorkspaceHydration() {
   const auto repository_state = snapshot_.repository_status.state;
   const auto global_failed = repository_state == storage::SyncLifecycleState::kError;
   bool any_newly_materialized = false;
-  const auto workspaces_with_documents = MaterializedWorkspacesFromDocuments(repository_);
+  const bool needs_document_scan =
+      std::ranges::any_of(snapshot_.workspace_ids, [this](const QString& workspace_id) {
+        return workspace_hydration_.value(workspace_id, WorkspaceHydrationState::kNotStarted) !=
+               WorkspaceHydrationState::kMaterialized;
+      });
+  const auto workspaces_with_documents =
+      needs_document_scan ? MaterializedWorkspacesFromDocuments(repository_) : QSet<QString>{};
 
   for (const auto& workspace_id : snapshot_.workspace_ids) {
     const auto previous =
