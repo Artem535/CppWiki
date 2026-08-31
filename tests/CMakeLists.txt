@@ -12,6 +12,8 @@ add_executable(cppwiki_bridge_tests
   ${CMAKE_SOURCE_DIR}/src/core/qt_string.h
   ${CMAKE_SOURCE_DIR}/src/core/uuid.cc
   ${CMAKE_SOURCE_DIR}/src/core/uuid.h
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
 )
 
 target_include_directories(cppwiki_bridge_tests

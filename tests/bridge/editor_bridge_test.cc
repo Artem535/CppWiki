@@ -109,6 +109,36 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     return result;
   }
 
+  [[nodiscard]] auto SaveAttachment(const cppwiki::storage::AttachmentData& attachment)
+      -> cppwiki::storage::SaveAttachmentResult override {
+    attachments_[attachment.metadata.id] = attachment;
+    return {};
+  }
+
+  [[nodiscard]] auto LoadAttachment(std::string_view attachment_id, std::string_view workspace_id)
+      -> cppwiki::storage::LoadAttachmentResult override {
+    const auto it = attachments_.find(std::string(attachment_id));
+    if (it == attachments_.end() || it->second.metadata.workspace_id != workspace_id) {
+      return {.attachment = std::nullopt,
+              .error = cppwiki::storage::RepositoryError{
+                  .code = cppwiki::storage::RepositoryErrorCode::kReadFailed,
+                  .message = "Attachment was not found.",
+              }};
+    }
+    return {.attachment = it->second, .error = std::nullopt};
+  }
+
+  [[nodiscard]] auto ListAttachments(std::string_view workspace_id)
+      -> cppwiki::storage::ListAttachmentsResult override {
+    cppwiki::storage::ListAttachmentsResult result;
+    for (const auto& [id, attachment] : attachments_) {
+      if (attachment.metadata.workspace_id == workspace_id) {
+        result.attachments.push_back(attachment.metadata);
+      }
+    }
+    return result;
+  }
+
   [[nodiscard]] auto SaveConflict(const cppwiki::storage::DocumentConflictRecord&)
       -> cppwiki::storage::SaveConflictResult override {
     return {};
@@ -171,9 +201,8 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
         result.revisions.push_back(revision);
       }
     }
-    std::ranges::sort(result.revisions, [](const auto& lhs, const auto& rhs) {
-      return lhs.saved_at > rhs.saved_at;
-    });
+    std::ranges::sort(result.revisions,
+                      [](const auto& lhs, const auto& rhs) { return lhs.saved_at > rhs.saved_at; });
     return result;
   }
 
@@ -185,6 +214,7 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
 
  private:
   std::map<std::string, cppwiki::storage::DocumentRecord> documents_;
+  std::map<std::string, cppwiki::storage::AttachmentData> attachments_;
   std::map<std::string, cppwiki::storage::DocumentRevisionRecord> revisions_;
   std::map<std::string, cppwiki::storage::WorkspaceRootRecord> workspace_roots_;
 };
@@ -609,13 +639,13 @@ auto TestCreateJupyterNotebookProducesLoadableNbformatContent() -> void {
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
-  const auto created =
-      bridge.createDocumentInWorkspace(QStringLiteral("default"), QStringLiteral("jupyterNotebook"));
+  const auto created = bridge.createDocumentInWorkspace(QStringLiteral("default"),
+                                                        QStringLiteral("jupyterNotebook"));
   RequireSuccessEnvelope(created);
   const auto created_result = created.value(QStringLiteral("result")).toMap();
-  Require(created_result.value(QStringLiteral("kind")).toString() ==
-              QStringLiteral("jupyterNotebook"),
-          "created document should report kind=jupyterNotebook");
+  Require(
+      created_result.value(QStringLiteral("kind")).toString() == QStringLiteral("jupyterNotebook"),
+      "created document should report kind=jupyterNotebook");
   const auto page_id = created_result.value(QStringLiteral("id")).toString();
 
   const auto loaded = bridge.loadDocument(page_id);
@@ -636,12 +666,12 @@ auto TestCreateExcalidrawCanvasProducesLoadableSceneContent() -> void {
   bridge.SetRepository(repository);
 
   const auto created = bridge.createDocumentInWorkspace(QStringLiteral("default"),
-                                                         QStringLiteral("excalidrawCanvas"));
+                                                        QStringLiteral("excalidrawCanvas"));
   RequireSuccessEnvelope(created);
   const auto created_result = created.value(QStringLiteral("result")).toMap();
-  Require(created_result.value(QStringLiteral("kind")).toString() ==
-              QStringLiteral("excalidrawCanvas"),
-          "created document should report kind=excalidrawCanvas");
+  Require(
+      created_result.value(QStringLiteral("kind")).toString() == QStringLiteral("excalidrawCanvas"),
+      "created document should report kind=excalidrawCanvas");
   const auto page_id = created_result.value(QStringLiteral("id")).toString();
 
   const auto loaded = bridge.loadDocument(page_id);
@@ -667,8 +697,8 @@ auto TestUpdateSnapshotRoundTripsForJupyterNotebook() -> void {
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
-  const auto created =
-      bridge.createDocumentInWorkspace(QStringLiteral("default"), QStringLiteral("jupyterNotebook"));
+  const auto created = bridge.createDocumentInWorkspace(QStringLiteral("default"),
+                                                        QStringLiteral("jupyterNotebook"));
   RequireSuccessEnvelope(created);
   const auto page_id =
       created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
@@ -686,8 +716,10 @@ auto TestUpdateSnapshotRoundTripsForJupyterNotebook() -> void {
 
   const auto reloaded = bridge.loadDocument(page_id);
   RequireSuccessEnvelope(reloaded);
-  const auto raw_content =
-      reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("rawContent")).toString();
+  const auto raw_content = reloaded.value(QStringLiteral("result"))
+                               .toMap()
+                               .value(QStringLiteral("rawContent"))
+                               .toString();
 
   const auto parsed = QJsonDocument::fromJson(raw_content.toUtf8());
   Require(parsed.isObject(), "rawContent must still be valid JSON after an edit+save");
@@ -703,7 +735,7 @@ auto TestUpdateSnapshotRoundTripsForExcalidrawCanvas() -> void {
   bridge.SetRepository(repository);
 
   const auto created = bridge.createDocumentInWorkspace(QStringLiteral("default"),
-                                                         QStringLiteral("excalidrawCanvas"));
+                                                        QStringLiteral("excalidrawCanvas"));
   RequireSuccessEnvelope(created);
   const auto page_id =
       created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
@@ -720,13 +752,16 @@ auto TestUpdateSnapshotRoundTripsForExcalidrawCanvas() -> void {
 
   const auto reloaded = bridge.loadDocument(page_id);
   RequireSuccessEnvelope(reloaded);
-  const auto raw_content =
-      reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("rawContent")).toString();
+  const auto raw_content = reloaded.value(QStringLiteral("result"))
+                               .toMap()
+                               .value(QStringLiteral("rawContent"))
+                               .toString();
 
   const auto parsed = QJsonDocument::fromJson(raw_content.toUtf8());
   Require(parsed.isObject(), "rawContent must still be valid JSON after an edit+save");
   const auto elements = parsed.object().value(QStringLiteral("elements")).toArray();
-  Require(elements.size() == 1, "edited element should persist through updateSnapshot -> loadDocument");
+  Require(elements.size() == 1,
+          "edited element should persist through updateSnapshot -> loadDocument");
 }
 
 auto TestOpenDocumentReturnsLoadedDocument() -> void {
@@ -939,8 +974,10 @@ auto TestUpdateSnapshotRecordsRevisionsAndRestoreBringsBackOldContent() -> void 
                            .toString();
 
   RequireSuccessEnvelope(bridge.loadDocument(page_id));
-  RequireSuccessEnvelope(bridge.updateSnapshot(page_id, HeadingSnapshot(QStringLiteral("Edit One"))));
-  RequireSuccessEnvelope(bridge.updateSnapshot(page_id, HeadingSnapshot(QStringLiteral("Edit Two"))));
+  RequireSuccessEnvelope(
+      bridge.updateSnapshot(page_id, HeadingSnapshot(QStringLiteral("Edit One"))));
+  RequireSuccessEnvelope(
+      bridge.updateSnapshot(page_id, HeadingSnapshot(QStringLiteral("Edit Two"))));
 
   const auto revisions_after_two_edits = bridge.listDocumentRevisions(page_id);
   RequireSuccessEnvelope(revisions_after_two_edits);
@@ -968,9 +1005,10 @@ auto TestUpdateSnapshotRecordsRevisionsAndRestoreBringsBackOldContent() -> void 
 
   const auto reloaded = bridge.loadDocument(page_id);
   RequireSuccessEnvelope(reloaded);
-  Require(reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
-              QStringLiteral("Edit One"),
-          "the document's live content should be Edit One's content again after restore");
+  Require(
+      reloaded.value(QStringLiteral("result")).toMap().value(QStringLiteral("title")).toString() ==
+          QStringLiteral("Edit One"),
+      "the document's live content should be Edit One's content again after restore");
 
   // Restoring must itself be undoable: it should have recorded Edit Two's content (the state it
   // just overwrote) as a new revision, on top of the two already there.
@@ -1014,7 +1052,8 @@ auto TestInvalidRootSnapshot() -> void {
                            .toString();
   RequireSuccessEnvelope(bridge.loadDocument(page_id));
 
-  const auto response = bridge.updateSnapshot(page_id, QStringLiteral(R"({ "type": "paragraph" })"));
+  const auto response =
+      bridge.updateSnapshot(page_id, QStringLiteral(R"({ "type": "paragraph" })"));
 
   RequireErrorEnvelope(response, QStringLiteral("missing_schema_version"));
 }
@@ -1286,12 +1325,12 @@ auto TestDeleteDocumentSucceedsWhenCurrentDocumentEditable() -> void {
 auto TestStartAiRequestReturnsUniqueRequestIds() -> void {
   cppwiki::bridge::QEditorBridge bridge;
 
-  const auto first_id = bridge.startAiRequest(QStringLiteral("Make this punchier"),
-                                              QStringLiteral("Some paragraph text."),
-                                              QStringLiteral("rewrite"));
-  const auto second_id = bridge.startAiRequest(QStringLiteral("Continue writing"),
-                                               QStringLiteral("Some paragraph text."),
-                                               QStringLiteral("autocomplete"));
+  const auto first_id =
+      bridge.startAiRequest(QStringLiteral("Make this punchier"),
+                            QStringLiteral("Some paragraph text."), QStringLiteral("rewrite"));
+  const auto second_id =
+      bridge.startAiRequest(QStringLiteral("Continue writing"),
+                            QStringLiteral("Some paragraph text."), QStringLiteral("autocomplete"));
 
   Require(!first_id.isEmpty(), "startAiRequest must return a non-empty request id");
   Require(!second_id.isEmpty(), "startAiRequest must return a non-empty request id");
@@ -1307,13 +1346,55 @@ auto TestStartAiRequestReturnsUniqueRequestIds() -> void {
 auto TestStartAiRequestWithToolSchemaReturnsRequestId() -> void {
   cppwiki::bridge::QEditorBridge bridge;
 
-  const auto request_id = bridge.startAiRequest(
-      QStringLiteral("Add a heading"), QStringLiteral("Some paragraph text."),
-      QStringLiteral("rewrite"), QStringLiteral("applyDocumentOperations"),
-      QStringLiteral(R"({"type":"array","items":{"type":"object"}})"));
+  const auto request_id =
+      bridge.startAiRequest(QStringLiteral("Add a heading"), QStringLiteral("Some paragraph text."),
+                            QStringLiteral("rewrite"), QStringLiteral("applyDocumentOperations"),
+                            QStringLiteral(R"({"type":"array","items":{"type":"object"}})"));
 
   Require(!request_id.isEmpty(),
-         "startAiRequest with a tool schema must still return a non-empty request id");
+          "startAiRequest with a tool schema must still return a non-empty request id");
+}
+
+auto TestAttachmentUploadPersistsOnlyAfterComplete() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+  bridge.SetCurrentWorkspaceId(QStringLiteral("engineering"));
+  bridge.SetCurrentAuthorId(QStringLiteral("tester"));
+
+  const auto begun = bridge.beginAttachmentUpload(QVariantMap{
+      {QStringLiteral("filename"), QStringLiteral("architecture.png")},
+      {QStringLiteral("mimeType"), QStringLiteral("image/png")},
+      {QStringLiteral("sizeBytes"), 4},
+  });
+  RequireSuccessEnvelope(begun);
+  const auto upload_id =
+      begun.value(QStringLiteral("result")).toMap().value(QStringLiteral("uploadId")).toString();
+  Require(!upload_id.isEmpty(), "upload must return an ID");
+
+  RequireSuccessEnvelope(bridge.appendAttachmentChunk(upload_id, QByteArray::fromHex("8950")));
+  RequireSuccessEnvelope(bridge.appendAttachmentChunk(upload_id, QByteArray::fromHex("4e47")));
+  const auto completed = bridge.completeAttachmentUpload(upload_id);
+  RequireSuccessEnvelope(completed);
+  const auto uri =
+      completed.value(QStringLiteral("result")).toMap().value(QStringLiteral("uri")).toString();
+  Require(uri.startsWith(QStringLiteral("cppwiki-attachment://")),
+          "completed upload must return a private URI");
+
+  const auto attachment_id = uri.mid(QStringLiteral("cppwiki-attachment://").size());
+  const auto stored = repository->LoadAttachment(attachment_id.toStdString(), "engineering");
+  Require(stored.attachment.has_value() &&
+              stored.attachment->bytes == std::vector<std::uint8_t>({0x89, 0x50, 0x4E, 0x47}),
+          "completed upload must persist accumulated bytes");
+  RequireErrorEnvelope(bridge.appendAttachmentChunk(upload_id, QByteArray("x")),
+                       QStringLiteral("upload_not_found"));
+
+  const auto oversize = bridge.beginAttachmentUpload(QVariantMap{
+      {QStringLiteral("filename"), QStringLiteral("large.bin")},
+      {QStringLiteral("mimeType"), QStringLiteral("application/octet-stream")},
+      {QStringLiteral("sizeBytes"), static_cast<qlonglong>(26LL * 1024LL * 1024LL)},
+  });
+  RequireErrorEnvelope(oversize, QStringLiteral("attachment_too_large"));
 }
 
 }  // namespace
@@ -1360,6 +1441,7 @@ auto main() -> int {
   TestInvalidRootSnapshot();
   TestStartAiRequestReturnsUniqueRequestIds();
   TestStartAiRequestWithToolSchemaReturnsRequestId();
+  TestAttachmentUploadPersistsOnlyAfterComplete();
 
   spdlog::info("cppwiki_bridge_tests passed");
   return EXIT_SUCCESS;

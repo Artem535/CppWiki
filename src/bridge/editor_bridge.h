@@ -1,6 +1,7 @@
 #ifndef CPPWIKI_EDITOR_BRIDGE_H
 #define CPPWIKI_EDITOR_BRIDGE_H
 
+#include <QByteArray>
 #include <QHash>
 #include <QObject>
 #include <QString>
@@ -10,6 +11,7 @@
 #include <optional>
 
 #include "document/document.h"
+#include "storage/attachment.h"
 #include "sync/sync_state_provider.h"
 
 class QNetworkAccessManager;
@@ -139,6 +141,11 @@ class QEditorBridge final : public QObject {
   // caller, matching updateSnapshot()'s existing well-formedness-only checks for non-wikiPage
   // kinds.
   Q_INVOKABLE QVariantMap importTextFromFile(const QString& name_filter);
+  Q_INVOKABLE QVariantMap beginAttachmentUpload(const QVariantMap& metadata);
+  Q_INVOKABLE QVariantMap appendAttachmentChunk(const QString& upload_id, const QByteArray& bytes);
+  Q_INVOKABLE QVariantMap completeAttachmentUpload(const QString& upload_id);
+  Q_INVOKABLE QVariantMap cancelAttachmentUpload(const QString& upload_id);
+  Q_INVOKABLE QVariantMap saveAttachmentToFile(const QString& attachment_id);
 
   // Starts an AI request (rewrite or autocomplete, per ADR-010's MVP scope)
   // and returns a request id immediately; the actual provider call happens
@@ -222,6 +229,11 @@ class QEditorBridge final : public QObject {
   // See StashPendingMarkdownImport(). Keyed by page id; consumed (erased) the first time that
   // document is loaded, whether or not this bridge instance is the one that stashed it.
   QHash<QString, QString> pending_markdown_imports_;
+  struct PendingAttachmentUpload {
+    storage::AttachmentMetadata metadata;
+    QByteArray bytes;
+  };
+  QHash<QString, PendingAttachmentUpload> pending_attachment_uploads_;
 
   bool ai_backend_enabled_ = false;
   QString ai_backend_base_url_;
