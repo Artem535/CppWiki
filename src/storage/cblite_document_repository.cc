@@ -870,8 +870,7 @@ class CbliteDocumentRepository::Impl {
       const auto append = [this, workspace_id, &attachments](const cbl::Collection& collection) {
         const auto query_text = "SELECT META().id AS doc_id FROM " +
                                 MakeCollectionQualifiedName(collection) +
-                                " WHERE record_type = 'cppwiki_attachment' AND workspace_id = '" +
-                                std::string(workspace_id) + "'";
+                                " WHERE record_type = 'cppwiki_attachment'";
         auto query = database_->createQuery(kCBLN1QLLanguage, Slice(query_text));
         auto results = query.execute();
         for (const auto& row : results) {
