@@ -1,4 +1,4 @@
-import { bridgeApiVersion, type BridgeResult, type EditorBridge, type StoredAttachment } from "../bridge/editorBridge";
+import type { BridgeResult, EditorBridge, StoredAttachment } from "../bridge/editorBridge";
 
 // The C++ bridge applies the authoritative 25 MiB file limit. Keeping browser chunks below the
 // 256 KiB decoded-byte limit also keeps individual JSON/QWebChannel messages bounded despite
