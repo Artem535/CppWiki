@@ -26,6 +26,8 @@ import { en as aiEnDictionary } from "@blocknote/xl-ai/locales";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ExcalidrawCanvasView } from "./canvas/ExcalidrawCanvasView";
+import { AttachmentBlock, getAttachmentSlashMenuItem } from "./blocks/AttachmentBlock";
+import { setAttachmentBridge } from "./blocks/attachmentBridgeContext";
 import { getMermaidSlashMenuItem, MermaidBlock } from "./blocks/MermaidBlock";
 import { ProjectBoardView } from "./project/ProjectBoardView";
 import { createEditorBridge } from "./bridge";
@@ -59,6 +61,7 @@ const editorSchema = BlockNoteSchema.create({
     // createReactBlockSpec() returns an options factory, not a BlockSpec itself — call it with
     // no options to get the actual spec, same as how @blocknote/core builds defaultBlockSpecs.
     mermaid: MermaidBlock(),
+    attachment: AttachmentBlock(),
   },
 });
 
@@ -85,6 +88,10 @@ function UnsupportedKindPlaceholder({
 
 function EditorApp() {
   const [bridge, setBridge] = useState<EditorBridge | null>(null);
+  useEffect(() => {
+    setAttachmentBridge(bridge);
+    return () => setAttachmentBridge(null);
+  }, [bridge]);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [isEditable, setIsEditable] = useState(true);
   const [, setIsLoadingDocument] = useState(false);
@@ -525,6 +532,7 @@ function EditorApp() {
                     [
                       ...getDefaultReactSlashMenuItems(editor),
                       getMermaidSlashMenuItem(editor),
+                      getAttachmentSlashMenuItem(editor),
                       ...(aiFeaturesEnabled && aiAutocompleteEnabled
                         ? getAISlashMenuItems(editor)
                         : []),

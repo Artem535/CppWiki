@@ -116,7 +116,7 @@
 
 *Files:* create frontend/editor/src/blocks/AttachmentBlock.tsx, frontend/editor/src/blocks/attachmentUpload.ts, and frontend/editor/src/blocks/attachmentUpload.test.ts; modify frontend/editor/src/main.tsx and the three bridge TypeScript files.
 
-*Interfaces:* browser upload slices a File into 256 KiB chunks, inserts the private URI only after completion, and provides an image view plus a generic-file Save as... control.
+*Interfaces:* browser upload slices a File into 192 KiB raw chunks, Base64-encodes each QWebChannel message, inserts the private URI only after completion, and provides an image view plus a generic-file Save as... control. The native bridge accepts at most 256 KiB after decoding.
 
 . Add failing Vitest cases for chunk boundaries, error leaves document unchanged, image metadata renders an img element, and generic metadata renders a save action.
 . Run cd frontend/editor and then rtk npm run test -- --run src/blocks/attachmentUpload.test.ts. Expected: FAIL.

@@ -1372,8 +1372,10 @@ auto TestAttachmentUploadPersistsOnlyAfterComplete() -> void {
       begun.value(QStringLiteral("result")).toMap().value(QStringLiteral("uploadId")).toString();
   Require(!upload_id.isEmpty(), "upload must return an ID");
 
-  RequireSuccessEnvelope(bridge.appendAttachmentChunk(upload_id, QByteArray::fromHex("8950")));
-  RequireSuccessEnvelope(bridge.appendAttachmentChunk(upload_id, QByteArray::fromHex("4e47")));
+  RequireSuccessEnvelope(bridge.appendAttachmentChunk(
+      upload_id, QString::fromLatin1(QByteArray::fromHex("8950").toBase64())));
+  RequireSuccessEnvelope(bridge.appendAttachmentChunk(
+      upload_id, QString::fromLatin1(QByteArray::fromHex("4e47").toBase64())));
   const auto completed = bridge.completeAttachmentUpload(upload_id);
   RequireSuccessEnvelope(completed);
   const auto uri =
@@ -1386,7 +1388,7 @@ auto TestAttachmentUploadPersistsOnlyAfterComplete() -> void {
   Require(stored.attachment.has_value() &&
               stored.attachment->bytes == std::vector<std::uint8_t>({0x89, 0x50, 0x4E, 0x47}),
           "completed upload must persist accumulated bytes");
-  RequireErrorEnvelope(bridge.appendAttachmentChunk(upload_id, QByteArray("x")),
+  RequireErrorEnvelope(bridge.appendAttachmentChunk(upload_id, QStringLiteral("eA==")),
                        QStringLiteral("upload_not_found"));
 
   const auto oversize = bridge.beginAttachmentUpload(QVariantMap{

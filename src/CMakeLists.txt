@@ -67,6 +67,8 @@ qt_add_executable(cppwiki_app
         gui/trash_dialog.h
         gui/page.cc
         gui/page.h
+        gui/attachment_url_scheme_handler.cc
+        gui/attachment_url_scheme_handler.h
         gui/page_helpers.cc
         gui/page_helpers.h
         gui/project_board/project_board_native_widget.cc
@@ -85,6 +87,8 @@ qt_add_executable(cppwiki_app
         sync/sync_bootstrap.h
         storage/file_document_repository.cc
         storage/file_document_repository.h
+        storage/attachment.cc
+        storage/attachment.h
         storage/cblite_document_repository.h
         storage/local_document_repository.h
         storage/repository_factory.cc

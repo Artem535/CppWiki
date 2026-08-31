@@ -13,6 +13,17 @@ export type BridgeResult<T> =
 export type DocumentSnapshot = Block[];
 export type InitialDocumentSnapshot = PartialBlock[];
 
+export type AttachmentUploadMetadata = {
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
+export type StoredAttachment = {
+  attachmentId: string;
+  uri: string;
+};
+
 // Content-schema/renderer discriminator for a document (ADR-017), mirroring
 // cppwiki::document::DocumentKind on the C++ side. Persisted/transmitted as
 // the string key produced by ToDocumentKindKey(), not a raw enum value.
@@ -106,6 +117,13 @@ export interface EditorBridge {
   importTextFromFile(
     nameFilter: string,
   ): Promise<BridgeResult<{ path: string; fileName: string; content: string }>>;
+  beginAttachmentUpload(metadata: AttachmentUploadMetadata): Promise<BridgeResult<{ uploadId: string }>>;
+  appendAttachmentChunk(uploadId: string, base64Bytes: string): Promise<BridgeResult<void>>;
+  completeAttachmentUpload(uploadId: string): Promise<BridgeResult<StoredAttachment>>;
+  cancelAttachmentUpload(uploadId: string): Promise<BridgeResult<void>>;
+  saveAttachmentToFile(
+    attachmentId: string,
+  ): Promise<BridgeResult<{ path: string; fileName: string }>>;
 
   onDocumentOpenRequested(callback: (pageId: string) => void): () => void;
   onDocumentLoaded(callback: (document: LoadedDocument) => void): () => void;

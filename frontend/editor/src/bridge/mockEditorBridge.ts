@@ -152,6 +152,49 @@ export function createMockEditorBridge(): EditorBridge {
       };
     },
 
+    async beginAttachmentUpload() {
+      return {
+        apiVersion: bridgeApiVersion,
+        ok: false,
+        error: {
+          code: "unsupported",
+          message: "Attachments are only available in the desktop app.",
+        },
+      };
+    },
+
+    async appendAttachmentChunk() {
+      return {
+        apiVersion: bridgeApiVersion,
+        ok: false,
+        error: { code: "unsupported", message: "Attachments are only available in the desktop app." },
+      };
+    },
+
+    async completeAttachmentUpload() {
+      return {
+        apiVersion: bridgeApiVersion,
+        ok: false,
+        error: { code: "unsupported", message: "Attachments are only available in the desktop app." },
+      };
+    },
+
+    async cancelAttachmentUpload() {
+      return {
+        apiVersion: bridgeApiVersion,
+        ok: false,
+        error: { code: "unsupported", message: "Attachments are only available in the desktop app." },
+      };
+    },
+
+    async saveAttachmentToFile() {
+      return {
+        apiVersion: bridgeApiVersion,
+        ok: false,
+        error: { code: "unsupported", message: "Attachments are only available in the desktop app." },
+      };
+    },
+
     onDocumentOpenRequested() {
       return () => undefined;
     },

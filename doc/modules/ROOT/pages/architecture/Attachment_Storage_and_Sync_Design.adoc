@@ -82,14 +82,18 @@ The editor passes data over the existing QWebChannel bridge in bounded chunks:
 [source,text]
 ----
 beginAttachmentUpload(metadata) -> upload ID
-appendAttachmentChunk(upload ID, bytes)
+appendAttachmentChunk(upload ID, Base64 chunk)
 completeAttachmentUpload(upload ID) -> attachment URI
 ----
 
 The desktop bridge validates the active workspace, a safe filename, MIME type,
 chunk sequence, and cumulative size before persistence. The upload fails once
 the total exceeds 25 MiB. Chunking avoids a single large QVariant, JavaScript
-data URL, or IPC message; the initial chunk size is 256 KiB.
+data URL, or IPC message. QWebChannel itself transports JSON, so the web
+client explicitly Base64-encodes each bounded chunk; the bridge decodes it
+before validating or persisting. The bridge accepts at most 256 KiB of decoded
+data per call, while the web client uses 192 KiB raw slices to account for
+Base64 expansion.
 
 == Rendering and download
 
@@ -98,9 +102,9 @@ handler. The handler resolves an attachment only after validating that the ID
 belongs to the current workspace.
 
 Images are served to the editor with their stored MIME type and render inline.
-For a non-image attachment, selecting its URI opens a native *Save as...*
-dialog. The app streams the stored bytes to the selected path. It does not open
-the file automatically or hand it to an external application.
+For a non-image attachment, the block exposes a native *Save as...* action.
+The app streams the stored bytes to the selected path. It does not open the
+file automatically or hand it to an external application.
 
 [[download]]
 == Lifecycle, deletion, and restore
