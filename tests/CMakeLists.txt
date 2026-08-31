@@ -497,6 +497,8 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
     ${CMAKE_SOURCE_DIR}/src/sync/sync_bootstrap.h
     ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.cc
     ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.h
+    ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+    ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
     ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
   )
 

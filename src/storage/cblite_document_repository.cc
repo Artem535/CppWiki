@@ -22,6 +22,8 @@ namespace cppwiki::storage {
 namespace {
 
 constexpr std::string_view kSupportedSyncAuthMode = "oidc_access_token_passthrough";
+constexpr std::string_view kAttachmentDocumentIdPrefix = "attachment::";
+constexpr std::string_view kAttachmentRecordType = "cppwiki_attachment";
 
 auto Slice(std::string_view value) -> cbl::slice {
   return cbl::slice(value.data(), value.size());
@@ -98,6 +100,14 @@ auto MakeWorkspaceRootDocumentId(std::string_view workspace_id) -> std::string {
 
 auto IsWorkspaceRootDocumentId(std::string_view document_id) -> bool {
   return document_id.starts_with(constants::kWorkspaceDocumentIdPrefix);
+}
+
+auto MakeAttachmentDocumentId(std::string_view attachment_id) -> std::string {
+  return std::string(kAttachmentDocumentIdPrefix) + std::string(attachment_id);
+}
+
+auto IsAttachmentDocumentId(std::string_view document_id) -> bool {
+  return document_id.starts_with(kAttachmentDocumentIdPrefix);
 }
 
 auto IsPendingConflict(const DocumentConflictRecord& conflict) -> bool {
@@ -743,6 +753,152 @@ class CbliteDocumentRepository::Impl {
     }
   }
 
+  [[nodiscard]] auto SaveAttachment(const AttachmentData& attachment) -> SaveAttachmentResult {
+    if (const auto validation = ValidateAttachmentMetadata(attachment.metadata); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    if (attachment.metadata.size_bytes != attachment.bytes.size()) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                 "Attachment metadata size does not match bytes.")};
+    }
+    if (const auto error = EnsureDatabaseOpen()) {
+      return {.error = error};
+    }
+    try {
+      ScopedCollectionWriteGuard guard(*this);
+      const auto document_id = MakeAttachmentDocumentId(attachment.metadata.id);
+      auto synced = collection_->getDocument(Slice(document_id));
+      auto local = local_collection_->getDocument(Slice(document_id));
+      const bool use_synced =
+          synced || (!local && IsWorkspaceBackedBySync(attachment.metadata.workspace_id));
+      auto& target = use_synced ? *collection_ : *local_collection_;
+      auto document = GetMutableDocument(target, document_id);
+      document.set("record_type", Slice(kAttachmentRecordType));
+      document.set("workspace_id", Slice(attachment.metadata.workspace_id));
+      document.set("filename", Slice(attachment.metadata.filename));
+      document.set("mime_type", Slice(attachment.metadata.mime_type));
+      document.set("size_bytes", static_cast<std::int64_t>(attachment.metadata.size_bytes));
+      document.set("sha256", Slice(attachment.metadata.sha256));
+      document.set("created_at", Slice(attachment.metadata.created_at));
+      document.set("created_by", Slice(attachment.metadata.created_by));
+      cbl::BlobWriteStream writer(*database_);
+      if (!attachment.bytes.empty()) {
+        writer.write(attachment.bytes.data(), attachment.bytes.size());
+      }
+      cbl::Blob blob(Slice(attachment.metadata.mime_type), writer);
+      document.set("blob", blob);
+      target.saveDocument(document);
+      if (use_synced && local) {
+        local_collection_->deleteDocument(local);
+      }
+      return {};
+    } catch (const CBLError& error) {
+      return {.error = MakeError(RepositoryErrorCode::kWriteFailed, CbliteErrorMessage(error))};
+    } catch (const std::exception& error) {
+      return {.error = MakeError(RepositoryErrorCode::kWriteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto LoadAttachment(std::string_view attachment_id, std::string_view workspace_id)
+      -> LoadAttachmentResult {
+    if (const auto error = EnsureDatabaseOpen()) {
+      return {.attachment = std::nullopt, .error = error};
+    }
+    try {
+      const auto document_id = MakeAttachmentDocumentId(attachment_id);
+      auto document = collection_->getDocument(Slice(document_id));
+      if (!document) {
+        document = local_collection_->getDocument(Slice(document_id));
+      }
+      if (!document) {
+        return {.attachment = std::nullopt,
+                .error = MakeError(RepositoryErrorCode::kReadFailed, "Attachment not found.")};
+      }
+      const auto properties = document.properties();
+      if (std::string(properties["record_type"].asString()) != kAttachmentRecordType ||
+          std::string(properties["workspace_id"].asString()) != workspace_id) {
+        return {.attachment = std::nullopt,
+                .error = MakeError(RepositoryErrorCode::kReadFailed, "Attachment not found.")};
+      }
+      AttachmentMetadata metadata{
+          .id = std::string(attachment_id),
+          .workspace_id = std::string(workspace_id),
+          .filename = std::string(properties["filename"].asString()),
+          .mime_type = std::string(properties["mime_type"].asString()),
+          .size_bytes = static_cast<std::uint64_t>(properties["size_bytes"].asInt()),
+          .sha256 = std::string(properties["sha256"].asString()),
+          .created_at = std::string(properties["created_at"].asString()),
+          .created_by = std::string(properties["created_by"].asString()),
+      };
+      if (const auto validation = ValidateAttachmentMetadata(metadata); validation) {
+        return {.attachment = std::nullopt,
+                .error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+      }
+      const auto blob_value = properties["blob"];
+      if (!blob_value || !cbl::Blob::isBlob(blob_value.asDict())) {
+        return {
+            .attachment = std::nullopt,
+            .error = MakeError(RepositoryErrorCode::kInvalidRecord, "Attachment Blob missing.")};
+      }
+      cbl::Blob blob(blob_value.asDict());
+      const auto content = blob.loadContent();
+      const auto* data = static_cast<const std::uint8_t*>(content.buf);
+      std::vector<std::uint8_t> bytes(data, data + content.size);
+      if (metadata.size_bytes != bytes.size()) {
+        return {
+            .attachment = std::nullopt,
+            .error = MakeError(RepositoryErrorCode::kInvalidRecord, "Attachment size mismatch.")};
+      }
+      return {
+          .attachment = AttachmentData{.metadata = std::move(metadata), .bytes = std::move(bytes)},
+          .error = std::nullopt};
+    } catch (const CBLError& error) {
+      return {.attachment = std::nullopt,
+              .error = MakeError(RepositoryErrorCode::kReadFailed, CbliteErrorMessage(error))};
+    } catch (const std::exception& error) {
+      return {.attachment = std::nullopt,
+              .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto ListAttachments(std::string_view workspace_id) -> ListAttachmentsResult {
+    if (const auto error = EnsureDatabaseOpen()) {
+      return {.attachments = {}, .error = error};
+    }
+    try {
+      std::vector<AttachmentMetadata> attachments;
+      const auto append = [this, workspace_id, &attachments](const cbl::Collection& collection) {
+        const auto query_text = "SELECT META().id AS doc_id FROM " +
+                                MakeCollectionQualifiedName(collection) +
+                                " WHERE record_type = 'cppwiki_attachment' AND workspace_id = '" +
+                                std::string(workspace_id) + "'";
+        auto query = database_->createQuery(kCBLN1QLLanguage, Slice(query_text));
+        auto results = query.execute();
+        for (const auto& row : results) {
+          const auto value = row["doc_id"];
+          if (!value)
+            continue;
+          const auto document_id = std::string(value.asString());
+          if (!IsAttachmentDocumentId(document_id))
+            continue;
+          const auto loaded =
+              LoadAttachment(document_id.substr(kAttachmentDocumentIdPrefix.size()), workspace_id);
+          if (loaded.attachment)
+            attachments.push_back(loaded.attachment->metadata);
+        }
+      };
+      append(*collection_);
+      append(*local_collection_);
+      return {.attachments = std::move(attachments), .error = std::nullopt};
+    } catch (const CBLError& error) {
+      return {.attachments = {},
+              .error = MakeError(RepositoryErrorCode::kReadFailed, CbliteErrorMessage(error))};
+    } catch (const std::exception& error) {
+      return {.attachments = {},
+              .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
   [[nodiscard]] auto SetSyncAccessToken(std::string access_token) -> SyncOperationResult {
     const bool changed = access_token_ != access_token;
     access_token_ = std::move(access_token);
@@ -1374,7 +1530,8 @@ class CbliteDocumentRepository::Impl {
               const auto changed_id = std::string(doc_id.asString());
               if (changed_id == constants::kDocumentsIndexDocumentId ||
                   changed_id == constants::kConflictsIndexDocumentId ||
-                  IsConflictDocumentId(changed_id) || IsWorkspaceRootDocumentId(changed_id)) {
+                  IsConflictDocumentId(changed_id) || IsWorkspaceRootDocumentId(changed_id) ||
+                  IsAttachmentDocumentId(changed_id)) {
                 continue;
               }
               has_document_changes = true;
@@ -1407,7 +1564,8 @@ class CbliteDocumentRepository::Impl {
             for (const auto& doc_id : change->docIDs()) {
               const auto changed_id = std::string(doc_id.asString());
               if (changed_id == constants::kLocalDocumentsIndexDocumentId ||
-                  IsConflictDocumentId(changed_id) || IsWorkspaceRootDocumentId(changed_id)) {
+                  IsConflictDocumentId(changed_id) || IsWorkspaceRootDocumentId(changed_id) ||
+                  IsAttachmentDocumentId(changed_id)) {
                 continue;
               }
               has_document_changes = true;
@@ -1485,6 +1643,22 @@ auto CbliteDocumentRepository::LoadDocument(std::string_view page_id) -> LoadDoc
 
 auto CbliteDocumentRepository::ListDocuments() -> ListDocumentsResult {
   return impl_->ListDocuments();
+}
+
+auto CbliteDocumentRepository::SaveAttachment(const AttachmentData& attachment)
+    -> SaveAttachmentResult {
+  return impl_->SaveAttachment(attachment);
+}
+
+auto CbliteDocumentRepository::LoadAttachment(std::string_view attachment_id,
+                                              std::string_view workspace_id)
+    -> LoadAttachmentResult {
+  return impl_->LoadAttachment(attachment_id, workspace_id);
+}
+
+auto CbliteDocumentRepository::ListAttachments(std::string_view workspace_id)
+    -> ListAttachmentsResult {
+  return impl_->ListAttachments(workspace_id);
 }
 
 auto CbliteDocumentRepository::SaveConflict(const DocumentConflictRecord& conflict)
