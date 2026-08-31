@@ -142,7 +142,10 @@ class QEditorBridge final : public QObject {
   // kinds.
   Q_INVOKABLE QVariantMap importTextFromFile(const QString& name_filter);
   Q_INVOKABLE QVariantMap beginAttachmentUpload(const QVariantMap& metadata);
-  Q_INVOKABLE QVariantMap appendAttachmentChunk(const QString& upload_id, const QByteArray& bytes);
+  // QWebChannel messages are JSON. Accept an explicit Base64 chunk rather than relying on an
+  // undocumented JavaScript-to-QByteArray conversion; decoded bytes remain bounded to 256 KiB.
+  Q_INVOKABLE QVariantMap appendAttachmentChunk(const QString& upload_id,
+                                                const QString& base64_bytes);
   Q_INVOKABLE QVariantMap completeAttachmentUpload(const QString& upload_id);
   Q_INVOKABLE QVariantMap cancelAttachmentUpload(const QString& upload_id);
   Q_INVOKABLE QVariantMap saveAttachmentToFile(const QString& attachment_id);

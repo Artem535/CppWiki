@@ -47,6 +47,7 @@
 #include "bridge/editor_bridge.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "gui/attachment_url_scheme_handler.h"
 #include "gui/document_context_menu.h"
 #include "gui/document_tree_item_delegate.h"
 #include "gui/document_tree_model.h"
@@ -119,6 +120,10 @@ void Page::BuildUi() {
   }
 
   editor_view_ = new QWebEngineView(this);
+  editor_view_->page()->profile()->installUrlSchemeHandler(
+      QByteArrayLiteral("cppwiki-attachment"),
+      new gui::AttachmentUrlSchemeHandler(
+          context_.document_repository, [this]() { return current_workspace_id_; }, editor_view_));
   editor_view_->page()->setWebChannel(channel_);
   InstallWebChannelScript();
   InstallNativeFilePickerGuards();

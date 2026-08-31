@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QFile>
 #include <QFileDialog>
@@ -84,6 +85,11 @@ auto BridgeInfo(bool ai_features_enabled, bool ai_autocomplete_enabled,
            ToQString(constants::kBridgeMethodUpdateSnapshot),
            ToQString(constants::kBridgeMethodExportTextToFile),
            ToQString(constants::kBridgeMethodImportTextFromFile),
+           ToQString(constants::kBridgeMethodBeginAttachmentUpload),
+           ToQString(constants::kBridgeMethodAppendAttachmentChunk),
+           ToQString(constants::kBridgeMethodCompleteAttachmentUpload),
+           ToQString(constants::kBridgeMethodCancelAttachmentUpload),
+           ToQString(constants::kBridgeMethodSaveAttachmentToFile),
        }},
   };
 }
@@ -1550,24 +1556,34 @@ QVariantMap QEditorBridge::beginAttachmentUpload(const QVariantMap& metadata) {
     return ErrorResponse(code, QString::fromStdString(*validation));
   }
   const auto upload_id = QString::fromStdString(GenerateUuidString());
-  pending_attachment_uploads_.insert(upload_id,
-                                     PendingAttachmentUpload{.metadata = std::move(attachment)});
+  pending_attachment_uploads_.insert(upload_id, PendingAttachmentUpload{
+                                                    .metadata = std::move(attachment),
+                                                    .bytes = {},
+                                                });
   return SuccessResponse(QVariantMap{{QStringLiteral("uploadId"), upload_id}});
 }
 
 QVariantMap QEditorBridge::appendAttachmentChunk(const QString& upload_id,
-                                                 const QByteArray& bytes) {
+                                                 const QString& base64_bytes) {
   const auto it = pending_attachment_uploads_.find(upload_id);
   if (it == pending_attachment_uploads_.end()) {
     return ErrorResponse(QStringLiteral("upload_not_found"),
                          QStringLiteral("Upload was not found."));
+  }
+  const auto bytes =
+      QByteArray::fromBase64(base64_bytes.toLatin1(), QByteArray::AbortOnBase64DecodingErrors);
+  if (bytes.isNull()) {
+    pending_attachment_uploads_.erase(it);
+    return ErrorResponse(QStringLiteral("invalid_attachment"),
+                         QStringLiteral("Attachment chunk is not valid Base64."));
   }
   if (bytes.size() > kAttachmentUploadChunkSize) {
     pending_attachment_uploads_.erase(it);
     return ErrorResponse(QStringLiteral("invalid_attachment"),
                          QStringLiteral("Attachment chunk exceeds 256 KiB."));
   }
-  if (it->bytes.size() > static_cast<qsizetype>(it->metadata.size_bytes) - bytes.size()) {
+  if (bytes.size() > static_cast<qsizetype>(it->metadata.size_bytes) ||
+      it->bytes.size() > static_cast<qsizetype>(it->metadata.size_bytes) - bytes.size()) {
     pending_attachment_uploads_.erase(it);
     return ErrorResponse(QStringLiteral("attachment_too_large"),
                          QStringLiteral("Attachment exceeds its declared size."));
@@ -1588,6 +1604,8 @@ QVariantMap QEditorBridge::completeAttachmentUpload(const QString& upload_id) {
     return ErrorResponse(QStringLiteral("invalid_attachment"),
                          QStringLiteral("Attachment byte count does not match declared size."));
   }
+  upload.metadata.sha256 =
+      QCryptographicHash::hash(upload.bytes, QCryptographicHash::Sha256).toHex().toStdString();
   const auto attachment_id = QString::fromStdString(upload.metadata.id);
   const auto saved = repository_->SaveAttachment(storage::AttachmentData{
       .metadata = std::move(upload.metadata),

@@ -38,6 +38,11 @@ inline constexpr std::string_view kBridgeMethodUpdateSnapshot = "UpdateSnapshot"
 // page.cc's fileSystemAccessRequested handling) file pickers.
 inline constexpr std::string_view kBridgeMethodExportTextToFile = "ExportTextToFile";
 inline constexpr std::string_view kBridgeMethodImportTextFromFile = "ImportTextFromFile";
+inline constexpr std::string_view kBridgeMethodBeginAttachmentUpload = "BeginAttachmentUpload";
+inline constexpr std::string_view kBridgeMethodAppendAttachmentChunk = "AppendAttachmentChunk";
+inline constexpr std::string_view kBridgeMethodCompleteAttachmentUpload = "CompleteAttachmentUpload";
+inline constexpr std::string_view kBridgeMethodCancelAttachmentUpload = "CancelAttachmentUpload";
+inline constexpr std::string_view kBridgeMethodSaveAttachmentToFile = "SaveAttachmentToFile";
 
 inline constexpr std::string_view kDatabaseDirectoryName = "database";
 inline constexpr std::string_view kDefaultPageTitle = "Welcome to CppWiki";

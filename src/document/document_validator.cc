@@ -1,12 +1,12 @@
 #include "document/document_validator.h"
 
-#include <QJsonDocument>
-#include <rfl/json/read.hpp>
 #include <spdlog/spdlog.h>
 
+#include <QJsonDocument>
 #include <array>
 #include <cstddef>
 #include <optional>
+#include <rfl/json/read.hpp>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -22,8 +22,8 @@ struct BlockResult {
   std::optional<ValidationError> error;
 };
 
-auto ConvertBlock(const BlockNoteBlockSnapshot& snapshot,
-                  std::unordered_set<std::string>& seen_ids) -> BlockResult;
+auto ConvertBlock(const BlockNoteBlockSnapshot& snapshot, std::unordered_set<std::string>& seen_ids)
+    -> BlockResult;
 
 auto MakeValidationError(ValidationErrorCode code, std::string message) -> ValidationError {
   return ValidationError{
@@ -71,6 +71,7 @@ auto MakeBlockError(ValidationErrorCode code, std::string message) -> BlockResul
       std::pair{std::string_view{"divider"}, BlockType::kDivider},
       std::pair{std::string_view{"pageBreak"}, BlockType::kPageBreak},
       std::pair{std::string_view{"mermaid"}, BlockType::kMermaid},
+      std::pair{std::string_view{"attachment"}, BlockType::kAttachment},
   };
 
   for (const auto& [block_type_name, block_type] : kBlockTypes) {
@@ -131,8 +132,8 @@ auto ConvertChildren(const std::optional<std::vector<BlockNoteBlockSnapshot>>& s
   return children;
 }
 
-auto ConvertBlock(const BlockNoteBlockSnapshot& snapshot,
-                  std::unordered_set<std::string>& seen_ids) -> BlockResult {
+auto ConvertBlock(const BlockNoteBlockSnapshot& snapshot, std::unordered_set<std::string>& seen_ids)
+    -> BlockResult {
   if (!snapshot.id) {
     return MakeBlockError(ValidationErrorCode::kMissingBlockId, "Block is missing an id.");
   }
@@ -246,8 +247,8 @@ auto ConvertBlocks(const std::vector<BlockNoteBlockSnapshot>& snapshots,
   };
 }
 
-auto ConvertDocument(const BlockNoteDocumentSnapshot& snapshot,
-                     std::string raw_snapshot_json) -> DocumentValidator::Result {
+auto ConvertDocument(const BlockNoteDocumentSnapshot& snapshot, std::string raw_snapshot_json)
+    -> DocumentValidator::Result {
   if (!snapshot.schema_version) {
     return MakeError(ValidationErrorCode::kMissingSchemaVersion,
                      "Document object is missing schema_version.");
@@ -310,8 +311,8 @@ auto ToString(ValidationErrorCode code) -> std::string {
   return "unknown_validation_error";
 }
 
-auto DocumentValidator::ParseAndValidateSnapshot(const QByteArray& snapshot_json,
-                                                 DocumentKind kind) -> Result {
+auto DocumentValidator::ParseAndValidateSnapshot(const QByteArray& snapshot_json, DocumentKind kind)
+    -> Result {
   const auto json_view = ToJsonView(snapshot_json);
   const auto raw_snapshot_json = std::string(json_view);
 
@@ -320,8 +321,8 @@ auto DocumentValidator::ParseAndValidateSnapshot(const QByteArray& snapshot_json
     // confirm the payload is well-formed JSON, so callers get a real ValidationError instead of
     // silently persisting garbage. document/snapshot are left unset since neither
     // Document/BlockNoteDocumentSnapshot applies to these kinds.
-    const auto parse_error = QJsonDocument::fromJson(snapshot_json).isNull() &&
-                             !snapshot_json.trimmed().isEmpty();
+    const auto parse_error =
+        QJsonDocument::fromJson(snapshot_json).isNull() && !snapshot_json.trimmed().isEmpty();
     if (parse_error) {
       return MakeError(ValidationErrorCode::kInvalidJson, "Snapshot payload is not valid JSON.");
     }
@@ -345,14 +346,12 @@ auto DocumentValidator::ParseAndValidateSnapshot(const QByteArray& snapshot_json
 
   const auto document_error = document_result.error().what();
   const auto blocks_error = blocks_result.error().what();
-  spdlog::warn("document snapshot rejected by reflect-cpp: document={}, blocks={}",
-               document_error,
+  spdlog::warn("document snapshot rejected by reflect-cpp: document={}, blocks={}", document_error,
                blocks_error);
 
   if (document_error.find("Could not parse document") != std::string::npos ||
       blocks_error.find("Could not parse document") != std::string::npos) {
-    return MakeError(ValidationErrorCode::kInvalidJson,
-                     "Snapshot payload is not valid JSON.");
+    return MakeError(ValidationErrorCode::kInvalidJson, "Snapshot payload is not valid JSON.");
   }
 
   return MakeError(ValidationErrorCode::kInvalidRoot,
