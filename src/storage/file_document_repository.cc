@@ -65,6 +65,16 @@ auto MakeRevisionFilePath(const std::filesystem::path& storage_dir, std::string_
   return storage_dir / "revisions" / (sanitized + ".json");
 }
 
+auto MakeAttachmentMetadataFilePath(const std::filesystem::path& storage_dir,
+                                    std::string_view attachment_id) -> std::filesystem::path {
+  return storage_dir / "attachments" / (std::string(attachment_id) + ".json");
+}
+
+auto MakeAttachmentBlobFilePath(const std::filesystem::path& storage_dir,
+                                std::string_view attachment_id) -> std::filesystem::path {
+  return storage_dir / "attachments" / (std::string(attachment_id) + ".blob");
+}
+
 auto MakeBackupPath(const std::filesystem::path& page_path) -> std::filesystem::path {
   return page_path.string() + ".backup";
 }
@@ -275,6 +285,43 @@ struct FileDocumentRevisionDto {
   std::string saved_at;
 };
 
+struct FileAttachmentDto {
+  std::string id;
+  std::string workspace_id;
+  std::string filename;
+  std::string mime_type;
+  std::uint64_t size_bytes{};
+  std::string sha256;
+  std::string created_at;
+  std::string created_by;
+};
+
+auto ToDto(const AttachmentMetadata& attachment) -> FileAttachmentDto {
+  return FileAttachmentDto{
+      .id = attachment.id,
+      .workspace_id = attachment.workspace_id,
+      .filename = attachment.filename,
+      .mime_type = attachment.mime_type,
+      .size_bytes = attachment.size_bytes,
+      .sha256 = attachment.sha256,
+      .created_at = attachment.created_at,
+      .created_by = attachment.created_by,
+  };
+}
+
+auto FromDto(FileAttachmentDto dto) -> AttachmentMetadata {
+  return AttachmentMetadata{
+      .id = std::move(dto.id),
+      .workspace_id = std::move(dto.workspace_id),
+      .filename = std::move(dto.filename),
+      .mime_type = std::move(dto.mime_type),
+      .size_bytes = dto.size_bytes,
+      .sha256 = std::move(dto.sha256),
+      .created_at = std::move(dto.created_at),
+      .created_by = std::move(dto.created_by),
+  };
+}
+
 auto ToDto(const DocumentRecord& document) -> FileDocumentRecordDto {
   return FileDocumentRecordDto{
       .id = document.metadata.id,
@@ -389,6 +436,7 @@ class FileDocumentRepository::Impl {
     // a crash before this repository was last closed -- see SweepInterruptedWrites().
     SweepInterruptedWrites(options_.storage_directory / "pages");
     SweepInterruptedWrites(options_.storage_directory / "conflicts");
+    SweepInterruptedWrites(options_.storage_directory / "attachments");
   }
 
   [[nodiscard]] auto SaveDocument(const DocumentRecord& document) -> SaveDocumentResult {
@@ -533,6 +581,116 @@ class FileDocumentRepository::Impl {
           .documents = {},
           .error = MakeError(RepositoryErrorCode::kReadFailed, e.what()),
       };
+    }
+  }
+
+  [[nodiscard]] auto SaveAttachment(const AttachmentData& attachment) -> SaveAttachmentResult {
+    if (const auto validation = ValidateAttachmentMetadata(attachment.metadata); validation) {
+      return SaveAttachmentResult{.error =
+                                      MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    if (attachment.metadata.size_bytes != attachment.bytes.size()) {
+      return SaveAttachmentResult{
+          .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                             "Attachment metadata size does not match its byte payload.")};
+    }
+
+    try {
+      const auto metadata_path =
+          MakeAttachmentMetadataFilePath(options_.storage_directory, attachment.metadata.id);
+      const auto blob_path =
+          MakeAttachmentBlobFilePath(options_.storage_directory, attachment.metadata.id);
+      if (std::filesystem::exists(metadata_path) || std::filesystem::exists(blob_path)) {
+        return SaveAttachmentResult{
+            .error = MakeError(RepositoryErrorCode::kWriteFailed, "Attachment already exists.")};
+      }
+
+      const std::string blob_content(attachment.bytes.begin(), attachment.bytes.end());
+      if (!WriteFileAtomically(blob_path, blob_content)) {
+        return SaveAttachmentResult{.error = MakeError(RepositoryErrorCode::kWriteFailed,
+                                                       "Failed to write attachment bytes.")};
+      }
+      const auto metadata_content = rfl::json::write(ToDto(attachment.metadata));
+      if (!WriteFileAtomically(metadata_path, metadata_content)) {
+        std::filesystem::remove(blob_path);
+        return SaveAttachmentResult{.error = MakeError(RepositoryErrorCode::kWriteFailed,
+                                                       "Failed to write attachment metadata.")};
+      }
+      return SaveAttachmentResult{};
+    } catch (const std::exception& error) {
+      return SaveAttachmentResult{.error =
+                                      MakeError(RepositoryErrorCode::kWriteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto LoadAttachment(std::string_view attachment_id, std::string_view workspace_id)
+      -> LoadAttachmentResult {
+    try {
+      const auto metadata_path =
+          MakeAttachmentMetadataFilePath(options_.storage_directory, attachment_id);
+      const auto blob_path = MakeAttachmentBlobFilePath(options_.storage_directory, attachment_id);
+      const auto metadata_content = ReadFileToString(metadata_path);
+      const auto blob_content = ReadFileToString(blob_path);
+      if (!metadata_content || !blob_content) {
+        return LoadAttachmentResult{
+            .attachment = std::nullopt,
+            .error = MakeError(RepositoryErrorCode::kReadFailed, "Attachment not found.")};
+      }
+      auto parsed = rfl::json::read<FileAttachmentDto>(*metadata_content);
+      if (!parsed) {
+        return LoadAttachmentResult{.attachment = std::nullopt,
+                                    .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                                       "Attachment metadata is invalid.")};
+      }
+      auto metadata = FromDto(std::move(parsed.value()));
+      if (metadata.id != attachment_id || metadata.workspace_id != workspace_id) {
+        return LoadAttachmentResult{
+            .attachment = std::nullopt,
+            .error = MakeError(RepositoryErrorCode::kReadFailed, "Attachment not found.")};
+      }
+      if (const auto validation = ValidateAttachmentMetadata(metadata); validation) {
+        return LoadAttachmentResult{
+            .attachment = std::nullopt,
+            .error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+      }
+      std::vector<std::uint8_t> bytes(blob_content->begin(), blob_content->end());
+      if (metadata.size_bytes != bytes.size()) {
+        return LoadAttachmentResult{
+            .attachment = std::nullopt,
+            .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                               "Attachment metadata size does not match stored bytes.")};
+      }
+      return LoadAttachmentResult{
+          .attachment = AttachmentData{.metadata = std::move(metadata), .bytes = std::move(bytes)},
+          .error = std::nullopt};
+    } catch (const std::exception& error) {
+      return LoadAttachmentResult{
+          .attachment = std::nullopt,
+          .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto ListAttachments(std::string_view workspace_id) -> ListAttachmentsResult {
+    try {
+      const auto directory = options_.storage_directory / "attachments";
+      if (!std::filesystem::exists(directory)) {
+        return ListAttachmentsResult{};
+      }
+      std::vector<AttachmentMetadata> attachments;
+      for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json") {
+          continue;
+        }
+        const auto attachment_id = entry.path().stem().string();
+        const auto loaded = LoadAttachment(attachment_id, workspace_id);
+        if (loaded.attachment) {
+          attachments.push_back(loaded.attachment->metadata);
+        }
+      }
+      return ListAttachmentsResult{.attachments = std::move(attachments), .error = std::nullopt};
+    } catch (const std::exception& error) {
+      return ListAttachmentsResult{
+          .attachments = {}, .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
     }
   }
 
@@ -851,6 +1009,21 @@ auto FileDocumentRepository::LoadDocument(std::string_view page_id) -> LoadDocum
 
 auto FileDocumentRepository::ListDocuments() -> ListDocumentsResult {
   return impl_->ListDocuments();
+}
+
+auto FileDocumentRepository::SaveAttachment(const AttachmentData& attachment)
+    -> SaveAttachmentResult {
+  return impl_->SaveAttachment(attachment);
+}
+
+auto FileDocumentRepository::LoadAttachment(std::string_view attachment_id,
+                                            std::string_view workspace_id) -> LoadAttachmentResult {
+  return impl_->LoadAttachment(attachment_id, workspace_id);
+}
+
+auto FileDocumentRepository::ListAttachments(std::string_view workspace_id)
+    -> ListAttachmentsResult {
+  return impl_->ListAttachments(workspace_id);
 }
 
 auto FileDocumentRepository::SaveConflict(const DocumentConflictRecord& conflict)

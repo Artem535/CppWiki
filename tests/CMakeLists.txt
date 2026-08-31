@@ -200,6 +200,8 @@ add_test(
 
 add_executable(cppwiki_file_document_repository_tests
   storage/file_document_repository_test.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
   ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
   ${CMAKE_SOURCE_DIR}/src/document/document.h
   ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.cc
@@ -231,6 +233,8 @@ add_executable(cppwiki_workspace_archive_tests
   ${CMAKE_SOURCE_DIR}/src/document/document.h
   ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.cc
   ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.h
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
   ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
   ${CMAKE_SOURCE_DIR}/src/storage/workspace_archive.cc
   ${CMAKE_SOURCE_DIR}/src/storage/workspace_archive.h

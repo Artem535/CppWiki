@@ -32,6 +32,9 @@ auto ValidateAttachmentMetadata(const AttachmentMetadata& metadata) -> std::opti
   if (metadata.id.empty()) {
     return "Attachment ID must not be empty.";
   }
+  if (metadata.id.find_first_of("/\\\0") != std::string::npos) {
+    return "Attachment ID must not contain a path separator or NUL.";
+  }
   if (metadata.workspace_id.empty()) {
     return "Attachment workspace ID must not be empty.";
   }
