@@ -1653,32 +1653,85 @@ QVariantMap QEditorBridge::pasteClipboardAttachment() {
     }
     filename = QStringLiteral("clipboard.png");
     mime_type = QStringLiteral("image/png");
-  } else if (mime_data->hasUrls()) {
+  } else {
+    // Some clipboard providers expose the encoded image but do not make it available through
+    // QMimeData::hasImage()/imageData(). Prefer the raw image MIME payload in that case.
+    const auto image_format = std::find_if(
+        mime_data->formats().cbegin(), mime_data->formats().cend(),
+        [](const QString& format) { return format.startsWith(QStringLiteral("image/")); });
+    if (image_format != mime_data->formats().cend()) {
+      bytes = mime_data->data(*image_format);
+      mime_type = *image_format;
+      const auto suffix = QMimeDatabase().mimeTypeForName(mime_type).preferredSuffix();
+      filename =
+          QStringLiteral("clipboard.%1").arg(suffix.isEmpty() ? QStringLiteral("bin") : suffix);
+    }
+  }
+
+  if (bytes.isEmpty() && mime_type.isEmpty() && mime_data->hasUrls()) {
     const auto local_url = std::find_if(mime_data->urls().cbegin(), mime_data->urls().cend(),
                                         [](const QUrl& url) { return url.isLocalFile(); });
-    if (local_url == mime_data->urls().cend()) {
-      return ErrorResponse(QStringLiteral("clipboard_unsupported"),
-                           QStringLiteral("Clipboard does not contain a local file."));
+    if (local_url != mime_data->urls().cend()) {
+      const QFileInfo file_info(local_url->toLocalFile());
+      if (!file_info.isFile()) {
+        return ErrorResponse(QStringLiteral("clipboard_read_failed"),
+                             QStringLiteral("The clipboard file is not available."));
+      }
+      if (file_info.size() > static_cast<qint64>(storage::kMaxAttachmentSizeBytes)) {
+        return ErrorResponse(QStringLiteral("attachment_too_large"),
+                             QStringLiteral("Attachment exceeds the 25 MiB limit."));
+      }
+      QFile file(file_info.filePath());
+      if (!file.open(QIODevice::ReadOnly)) {
+        return ErrorResponse(QStringLiteral("clipboard_read_failed"), file.errorString());
+      }
+      bytes = file.readAll();
+      filename = file_info.fileName();
+      mime_type = QMimeDatabase().mimeTypeForFile(file_info).name();
     }
-    const QFileInfo file_info(local_url->toLocalFile());
-    if (!file_info.isFile()) {
-      return ErrorResponse(QStringLiteral("clipboard_read_failed"),
-                           QStringLiteral("The clipboard file is not available."));
+  }
+
+  if (bytes.isEmpty() && mime_type.isEmpty()) {
+    // File managers commonly publish copied files as text/uri-list. Parse it directly when
+    // QMimeData::hasUrls() did not decode that format for us.
+    const auto uri_data = mime_data->data(QStringLiteral("text/uri-list"));
+    const auto uri_lines = uri_data.split('\n');
+    const auto uri_line =
+        std::find_if(uri_lines.cbegin(), uri_lines.cend(), [](const QByteArray& line) {
+          const auto trimmed = line.trimmed();
+          return !trimmed.isEmpty() && !trimmed.startsWith('#');
+        });
+    if (uri_line != uri_lines.cend()) {
+      const QUrl local_url = QUrl::fromEncoded(uri_line->trimmed());
+      if (local_url.isLocalFile()) {
+        const QFileInfo file_info(local_url.toLocalFile());
+        if (!file_info.isFile()) {
+          return ErrorResponse(QStringLiteral("clipboard_read_failed"),
+                               QStringLiteral("The clipboard file is not available."));
+        }
+        if (file_info.size() > static_cast<qint64>(storage::kMaxAttachmentSizeBytes)) {
+          return ErrorResponse(QStringLiteral("attachment_too_large"),
+                               QStringLiteral("Attachment exceeds the 25 MiB limit."));
+        }
+        QFile file(file_info.filePath());
+        if (!file.open(QIODevice::ReadOnly)) {
+          return ErrorResponse(QStringLiteral("clipboard_read_failed"), file.errorString());
+        }
+        bytes = file.readAll();
+        filename = file_info.fileName();
+        mime_type = QMimeDatabase().mimeTypeForFile(file_info).name();
+      }
     }
-    if (file_info.size() > static_cast<qint64>(storage::kMaxAttachmentSizeBytes)) {
-      return ErrorResponse(QStringLiteral("attachment_too_large"),
-                           QStringLiteral("Attachment exceeds the 25 MiB limit."));
-    }
-    QFile file(file_info.filePath());
-    if (!file.open(QIODevice::ReadOnly)) {
-      return ErrorResponse(QStringLiteral("clipboard_read_failed"), file.errorString());
-    }
-    bytes = file.readAll();
-    filename = file_info.fileName();
-    mime_type = QMimeDatabase().mimeTypeForFile(file_info).name();
-  } else {
+  }
+
+  if (bytes.isEmpty() && mime_type.isEmpty()) {
     return ErrorResponse(QStringLiteral("clipboard_unsupported"),
                          QStringLiteral("Clipboard does not contain an image or local file."));
+  }
+
+  if (bytes.size() > static_cast<qsizetype>(storage::kMaxAttachmentSizeBytes)) {
+    return ErrorResponse(QStringLiteral("attachment_too_large"),
+                         QStringLiteral("Attachment exceeds the 25 MiB limit."));
   }
 
   storage::AttachmentMetadata metadata{
