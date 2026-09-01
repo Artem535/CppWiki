@@ -122,6 +122,9 @@ type QtEditorBridgeObject = {
     attachmentId: string,
     callback: (response: BridgeResult<{ path: string; fileName: string }>) => void,
   ): void;
+  pasteClipboardAttachment(
+    callback: (response: BridgeResult<StoredAttachment & { filename: string; mimeType: string; sizeBytes: number }>) => void,
+  ): void;
 };
 
 export async function createQtEditorBridge(): Promise<EditorBridge | null> {
@@ -211,6 +214,12 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
     saveAttachmentToFile(attachmentId) {
       return new Promise((resolve) => {
         qtObject.saveAttachmentToFile(attachmentId, resolve);
+      });
+    },
+
+    pasteClipboardAttachment() {
+      return new Promise((resolve) => {
+        qtObject.pasteClipboardAttachment(resolve);
       });
     },
 

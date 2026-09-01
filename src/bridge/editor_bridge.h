@@ -149,6 +149,7 @@ class QEditorBridge final : public QObject {
   Q_INVOKABLE QVariantMap completeAttachmentUpload(const QString& upload_id);
   Q_INVOKABLE QVariantMap cancelAttachmentUpload(const QString& upload_id);
   Q_INVOKABLE QVariantMap saveAttachmentToFile(const QString& attachment_id);
+  Q_INVOKABLE QVariantMap pasteClipboardAttachment();
 
   // Starts an AI request (rewrite or autocomplete, per ADR-010's MVP scope)
   // and returns a request id immediately; the actual provider call happens

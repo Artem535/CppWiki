@@ -124,6 +124,7 @@ export interface EditorBridge {
   saveAttachmentToFile(
     attachmentId: string,
   ): Promise<BridgeResult<{ path: string; fileName: string }>>;
+  pasteClipboardAttachment(): Promise<BridgeResult<StoredAttachment & { filename: string; mimeType: string; sizeBytes: number }>>;
 
   onDocumentOpenRequested(callback: (pageId: string) => void): () => void;
   onDocumentLoaded(callback: (document: LoadedDocument) => void): () => void;

@@ -220,7 +220,11 @@ function EditorApp() {
       },
       pasteHandler: ({ event, editor: activeEditor, defaultPasteHandler }) => {
         const files = getClipboardFiles(event);
-        if (files.length === 0) {
+        const clipboardTypes = Array.from(event.clipboardData?.types ?? []);
+        const mayContainNativeFile = clipboardTypes.some(
+          (type) => type === "Files" || type === "text/uri-list" || type.startsWith("image/"),
+        );
+        if (files.length === 0 && !mayContainNativeFile) {
           return defaultPasteHandler();
         }
 
@@ -236,23 +240,23 @@ function EditorApp() {
           }
 
           let referenceBlock = activeEditor.getTextCursorPosition().block;
-          for (const file of files) {
-            const uploaded = await uploadAttachment(activeBridge, file);
-            if (!uploaded.ok) {
-              console.error("Failed to upload clipboard attachment", uploaded.error);
-              continue;
-            }
-
+          const insertAttachment = (attachment: {
+            attachmentId: string;
+            uri: string;
+            filename: string;
+            mimeType: string;
+            sizeBytes: number;
+          }) => {
             const [insertedBlock] = activeEditor.insertBlocks(
               [
                 {
                   type: "attachment",
                   props: {
-                    attachmentId: uploaded.result.attachmentId,
-                    uri: uploaded.result.uri,
-                    filename: file.name,
-                    mimeType: file.type || "application/octet-stream",
-                    sizeBytes: file.size,
+                    attachmentId: attachment.attachmentId,
+                    uri: attachment.uri,
+                    filename: attachment.filename,
+                    mimeType: attachment.mimeType,
+                    sizeBytes: attachment.sizeBytes,
                   },
                 },
               ],
@@ -260,6 +264,32 @@ function EditorApp() {
               "after",
             );
             referenceBlock = insertedBlock;
+          };
+
+          if (files.length === 0) {
+            const pasted = await activeBridge.pasteClipboardAttachment();
+            if (pasted.ok) {
+              insertAttachment(pasted.result);
+            } else if (pasted.error.code !== "clipboard_unsupported" && pasted.error.code !== "clipboard_empty") {
+              console.error("Failed to read clipboard attachment", pasted.error);
+            } else {
+              defaultPasteHandler();
+            }
+            return;
+          }
+
+          for (const file of files) {
+            const uploaded = await uploadAttachment(activeBridge, file);
+            if (!uploaded.ok) {
+              console.error("Failed to upload clipboard attachment", uploaded.error);
+              continue;
+            }
+            insertAttachment({
+              ...uploaded.result,
+              filename: file.name,
+              mimeType: file.type || "application/octet-stream",
+              sizeBytes: file.size,
+            });
           }
         })();
         return true;

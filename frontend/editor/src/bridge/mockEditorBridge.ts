@@ -195,6 +195,14 @@ export function createMockEditorBridge(): EditorBridge {
       };
     },
 
+    async pasteClipboardAttachment() {
+      return {
+        apiVersion: bridgeApiVersion,
+        ok: false,
+        error: { code: "unsupported", message: "Clipboard attachments are only available in the desktop app." },
+      };
+    },
+
     onDocumentOpenRequested() {
       return () => undefined;
     },
