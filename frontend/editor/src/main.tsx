@@ -220,17 +220,14 @@ function EditorApp() {
       },
       pasteHandler: ({ event, editor: activeEditor, defaultPasteHandler }) => {
         const files = getClipboardFiles(event);
-        const clipboardTypes = Array.from(event.clipboardData?.types ?? []);
-        const mayContainNativeFile = clipboardTypes.some(
-          (type) => type === "Files" || type === "text/uri-list" || type.startsWith("image/"),
-        );
-        if (files.length === 0 && !mayContainNativeFile) {
+        if (files.length === 0 && !event.clipboardData) {
           return defaultPasteHandler();
         }
 
         // BlockNote's built-in paste handler does not insert clipboard image/file items when
-        // the editor is hosted in QWebEngine. Handle only file items here and leave text/HTML
-        // clipboard content to BlockNote's normal parser.
+        // the editor is hosted in QWebEngine. When JavaScript cannot expose a file, ask the
+        // native bridge as well; QWebEngine may report an empty `types` list for binary data.
+        // Ordinary text/HTML is passed back to BlockNote if the native clipboard has no file.
         event.preventDefault();
         void (async () => {
           const activeBridge = bridge_ref.current;
