@@ -187,6 +187,9 @@ class Page final : public QWidget, public IPage {
   bridge::QEditorBridge* editor_bridge_ = nullptr;
   QString selected_page_id_;
   QString current_workspace_id_{QStringLiteral("default")};
+  // URL of an image explicitly selected through the native context menu. Only this download is
+  // allowed through the embedded browser; unrelated browser downloads remain blocked.
+  QString pending_image_download_url_;
   QStringList available_workspace_ids_{QStringList{QStringLiteral("default")}};
   bool current_document_editable_ = false;
   bool current_document_local_only_ = true;

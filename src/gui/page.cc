@@ -77,11 +77,9 @@ class AttachmentWebEngineView final : public QWebEngineView {
  protected:
   void contextMenuEvent(QContextMenuEvent* event) override {
     auto* request = lastContextMenuRequest();
-    const bool is_attachment_image =
-        request != nullptr &&
-        request->mediaType() == QWebEngineContextMenuRequest::MediaTypeImage &&
-        request->mediaUrl().scheme() == QStringLiteral("cppwiki-attachment");
-    if (!is_attachment_image) {
+    const bool is_image =
+        request != nullptr && request->mediaType() == QWebEngineContextMenuRequest::MediaTypeImage;
+    if (!is_image) {
       QWebEngineView::contextMenuEvent(event);
       return;
     }
@@ -188,20 +186,23 @@ void Page::BuildUi() {
 
   editor_view_ = new AttachmentWebEngineView(this, [this](const QUrl& url) {
     const auto attachment_id = storage::ParseAttachmentUri(url.toString().toStdString());
-    if (!attachment_id) {
+    if (attachment_id) {
+      const auto result =
+          editor_bridge_->saveAttachmentToFile(QString::fromStdString(*attachment_id));
+      if (!result.value(QStringLiteral("ok")).toBool() &&
+          result.value(QStringLiteral("error")).toMap().value(QStringLiteral("code")).toString() !=
+              QStringLiteral("cancelled")) {
+        QMessageBox::warning(this, QStringLiteral("Save attachment"),
+                             result.value(QStringLiteral("error"))
+                                 .toMap()
+                                 .value(QStringLiteral("message"))
+                                 .toString());
+      }
       return;
     }
-    const auto result =
-        editor_bridge_->saveAttachmentToFile(QString::fromStdString(*attachment_id));
-    if (!result.value(QStringLiteral("ok")).toBool() &&
-        result.value(QStringLiteral("error")).toMap().value(QStringLiteral("code")).toString() !=
-            QStringLiteral("cancelled")) {
-      QMessageBox::warning(this, QStringLiteral("Save attachment"),
-                           result.value(QStringLiteral("error"))
-                               .toMap()
-                               .value(QStringLiteral("message"))
-                               .toString());
-    }
+
+    pending_image_download_url_ = url.toString();
+    editor_view_->page()->download(url, QStringLiteral("image"));
   });
   editor_view_->page()->profile()->installUrlSchemeHandler(
       QByteArrayLiteral("cppwiki-attachment"),
@@ -608,7 +609,21 @@ void Page::InstallNativeFilePickerGuards() {
   // this app is wired up to actually save arbitrary browser-initiated downloads to disk, so
   // cancel them explicitly rather than leaving the request unresolved.
   connect(editor_view_->page()->profile(), &QWebEngineProfile::downloadRequested, this,
-          [](QWebEngineDownloadRequest* download) {
+          [this](QWebEngineDownloadRequest* download) {
+            if (download != nullptr && download->url().toString() == pending_image_download_url_) {
+              pending_image_download_url_.clear();
+              const auto path = QFileDialog::getSaveFileName(this, QStringLiteral("Save image"),
+                                                             download->suggestedFileName());
+              if (path.isEmpty()) {
+                download->cancel();
+                return;
+              }
+              const QFileInfo file_info(path);
+              download->setDownloadDirectory(file_info.absolutePath());
+              download->setDownloadFileName(file_info.fileName());
+              download->accept();
+              return;
+            }
             spdlog::warn("Cancelling unexpected browser download request: {}",
                          download->downloadFileName().toStdString());
             download->cancel();
