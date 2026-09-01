@@ -12,6 +12,8 @@ add_executable(cppwiki_bridge_tests
   ${CMAKE_SOURCE_DIR}/src/core/qt_string.h
   ${CMAKE_SOURCE_DIR}/src/core/uuid.cc
   ${CMAKE_SOURCE_DIR}/src/core/uuid.h
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
 )
 
 target_include_directories(cppwiki_bridge_tests
@@ -175,8 +177,33 @@ add_test(
   COMMAND cppwiki_local_document_repository_tests
 )
 
+add_executable(cppwiki_attachment_tests
+  storage/attachment_test.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
+)
+
+target_include_directories(cppwiki_attachment_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_attachment_tests
+  PRIVATE
+    spdlog::spdlog
+)
+
+cppwiki_apply_common_options(cppwiki_attachment_tests)
+
+add_test(
+  NAME cppwiki_attachment_tests
+  COMMAND cppwiki_attachment_tests
+)
+
 add_executable(cppwiki_file_document_repository_tests
   storage/file_document_repository_test.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
   ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
   ${CMAKE_SOURCE_DIR}/src/document/document.h
   ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.cc
@@ -208,6 +235,8 @@ add_executable(cppwiki_workspace_archive_tests
   ${CMAKE_SOURCE_DIR}/src/document/document.h
   ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.cc
   ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.h
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
   ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
   ${CMAKE_SOURCE_DIR}/src/storage/workspace_archive.cc
   ${CMAKE_SOURCE_DIR}/src/storage/workspace_archive.h
@@ -470,6 +499,8 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
     ${CMAKE_SOURCE_DIR}/src/sync/sync_bootstrap.h
     ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.cc
     ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.h
+    ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+    ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
     ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
   )
 
@@ -509,6 +540,38 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
     NAME cppwiki_cblite_cpp_smoke_tests
     COMMAND cppwiki_cblite_cpp_smoke_tests
   )
+
+  # This executable is intentionally not registered as a default CTest test: it requires a
+  # real Couchbase Server + Sync Gateway fixture. Run it through
+  # tests/e2e/run_attachment_sync_e2e.sh, which starts and removes that isolated fixture.
+  add_executable(cppwiki_attachment_sync_e2e_tests
+    storage/attachment_sync_e2e_test.cc
+    ${CMAKE_SOURCE_DIR}/src/core/constants.h
+    ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
+    ${CMAKE_SOURCE_DIR}/src/document/document.h
+    ${CMAKE_SOURCE_DIR}/src/sync/sync_bootstrap.cc
+    ${CMAKE_SOURCE_DIR}/src/sync/sync_bootstrap.h
+    ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+    ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
+    ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.cc
+    ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.h
+    ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
+  )
+
+  target_include_directories(cppwiki_attachment_sync_e2e_tests
+    PRIVATE
+      ${CMAKE_SOURCE_DIR}/src
+  )
+
+  target_link_libraries(cppwiki_attachment_sync_e2e_tests
+    PRIVATE
+      CBLite::cblite
+      Qt6::Core
+      spdlog::spdlog
+      reflectcpp::reflectcpp
+  )
+
+  cppwiki_apply_common_options(cppwiki_attachment_sync_e2e_tests)
 endif()
 
 if(CPPWIKI_BUILD_SERVER)

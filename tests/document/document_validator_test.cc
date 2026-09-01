@@ -1,11 +1,11 @@
 #include "document/document_validator.h"
 
-#include <rfl/json/read.hpp>
-#include <rfl/json/write.hpp>
 #include <spdlog/spdlog.h>
 
 #include <QByteArray>
 #include <cstdlib>
+#include <rfl/json/read.hpp>
+#include <rfl/json/write.hpp>
 #include <string>
 #include <string_view>
 
@@ -22,23 +22,20 @@ auto Require(bool condition, std::string_view message) -> void {
   }
 }
 
-auto RequireError(
-    const cppwiki::document::DocumentValidator::Result& result,
-    std::string_view expected_error_substring,
-    std::string_view test_name) -> void {
+auto RequireError(const cppwiki::document::DocumentValidator::Result& result,
+                  std::string_view expected_error_substring, std::string_view test_name) -> void {
   Require(!result.document.has_value(),
           (std::string("expected no document: ") + std::string(test_name)).c_str());
   Require(result.error.has_value(),
           (std::string("expected error: ") + std::string(test_name)).c_str());
   Require(result.error->message.find(std::string(expected_error_substring)) != std::string::npos,
-          (std::string("expected error containing '") +
-           std::string(expected_error_substring) + "' in " + std::string(test_name))
+          (std::string("expected error containing '") + std::string(expected_error_substring) +
+           "' in " + std::string(test_name))
               .c_str());
 }
 
-auto RequireSuccess(
-    const cppwiki::document::DocumentValidator::Result& result,
-    std::string_view test_name) -> void {
+auto RequireSuccess(const cppwiki::document::DocumentValidator::Result& result,
+                    std::string_view test_name) -> void {
   Require(result.document.has_value(),
           (std::string("expected document: ") + std::string(test_name)).c_str());
   Require(!result.error.has_value(),
@@ -149,8 +146,7 @@ auto TestReflectCppSnapshotRoundTrip() -> void {
   ])");
 
   const auto parsed =
-      rfl::json::read<std::vector<cppwiki::document::BlockNoteBlockSnapshot>>(
-          ToStringView(json));
+      rfl::json::read<std::vector<cppwiki::document::BlockNoteBlockSnapshot>>(ToStringView(json));
   Require(static_cast<bool>(parsed), "reflect-cpp must read BlockNote block snapshots");
 
   const auto serialized = rfl::json::write(*parsed);
@@ -185,8 +181,7 @@ auto TestValidQuoteBlock() -> void {
   Require(result.document->blocks.size() == 1, "quote payload must produce one block");
   Require(result.document->blocks[0].type == cppwiki::document::BlockType::kQuote,
           "quote block type must be preserved");
-  Require(result.document->blocks[0].text_content == "Quoted text",
-          "quote text must be extracted");
+  Require(result.document->blocks[0].text_content == "Quoted text", "quote text must be extracted");
 }
 
 // Mermaid diagram block (ADR-017, issue #50): a custom BlockNote block spec with plain inline
@@ -212,6 +207,29 @@ auto TestValidMermaidBlock() -> void {
           "mermaid block type must be preserved");
   Require(result.document->blocks[0].text_content == "graph TD; A-->B;",
           "mermaid diagram source must be extracted as text_content");
+}
+
+auto TestValidAttachmentBlock() -> void {
+  const auto json = QByteArray(R"([
+    {
+      "id": "attachment-1",
+      "type": "attachment",
+      "props": {
+        "attachmentId": "a-1",
+        "uri": "cppwiki-attachment://a-1",
+        "filename": "design.png",
+        "mimeType": "image/png",
+        "sizeBytes": 4
+      },
+      "children": []
+    }
+  ])");
+
+  const auto result = cppwiki::document::DocumentValidator::ParseAndValidateSnapshot(json);
+  RequireSuccess(result, "TestValidAttachmentBlock");
+  Require(result.document->blocks.size() == 1, "attachment payload must produce one block");
+  Require(result.document->blocks[0].type == cppwiki::document::BlockType::kAttachment,
+          "attachment block type must be preserved");
 }
 
 auto TestValidDefaultBlockNoteBlockTypes() -> void {
@@ -336,7 +354,8 @@ auto TestValidDefaultBlockNoteBlockTypes() -> void {
 }
 
 auto TestInvalidJson() -> void {
-  const auto result = cppwiki::document::DocumentValidator::ParseAndValidateSnapshot(QByteArray("{"));
+  const auto result =
+      cppwiki::document::DocumentValidator::ParseAndValidateSnapshot(QByteArray("{"));
   RequireError(result, "valid JSON", "TestInvalidJson");
 }
 
@@ -530,6 +549,7 @@ auto main() -> int {
   TestReflectCppSnapshotRoundTrip();
   TestValidQuoteBlock();
   TestValidMermaidBlock();
+  TestValidAttachmentBlock();
   TestValidDefaultBlockNoteBlockTypes();
   TestInvalidJson();
   TestInvalidRoot();

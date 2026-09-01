@@ -82,6 +82,30 @@ auto TestExportImportRoundTripsDocumentsAndConflicts() -> void {
   // A document in a different workspace must not leak into the "engineering" export.
   Require(!source_repository.SaveDocument(MakeDocument("other-page", "design")).error,
           "saving other-page should succeed");
+  const auto MakeAttachment = [](std::string id, std::string workspace_id,
+                                 std::vector<std::uint8_t> bytes) {
+    return cppwiki::storage::AttachmentData{
+        .metadata =
+            cppwiki::storage::AttachmentMetadata{
+                .id = std::move(id),
+                .workspace_id = std::move(workspace_id),
+                .filename = "architecture.png",
+                .mime_type = "image/png",
+                .size_bytes = bytes.size(),
+                .sha256 = "0123456789abcdef",
+                .created_at = "2026-08-31T10:00:00Z",
+                .created_by = "tester",
+            },
+        .bytes = std::move(bytes),
+    };
+  };
+  Require(
+      !source_repository.SaveAttachment(MakeAttachment("attachment-1", "engineering", {1, 2, 3, 4}))
+           .error,
+      "engineering attachment should save");
+  Require(!source_repository.SaveAttachment(MakeAttachment("attachment-other", "design", {5, 6, 7}))
+               .error,
+          "other workspace attachment should save");
 
   Require(!source_repository
                .SaveConflict(cppwiki::storage::DocumentConflictRecord{
@@ -130,6 +154,13 @@ auto TestExportImportRoundTripsDocumentsAndConflicts() -> void {
           "exactly the one engineering-workspace conflict should be restored");
   Require(restored_conflicts.conflicts.front().id == "conflict-1",
           "the restored conflict should preserve its id");
+  const auto restored_attachment = dest_repository.LoadAttachment("attachment-1", "engineering");
+  Require(!restored_attachment.error && restored_attachment.attachment.has_value(),
+          "engineering attachment should be restored");
+  Require(restored_attachment.attachment->bytes == std::vector<std::uint8_t>({1, 2, 3, 4}),
+          "attachment bytes should round-trip");
+  Require(!dest_repository.LoadAttachment("attachment-other", "design").attachment.has_value(),
+          "other workspace attachment must not be restored");
 
   std::filesystem::remove_all(source_dir);
   std::filesystem::remove_all(dest_dir);

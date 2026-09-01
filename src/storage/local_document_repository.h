@@ -8,6 +8,7 @@
 
 #include "document/block_note_snapshot.h"
 #include "document/document.h"
+#include "storage/attachment.h"
 
 namespace cppwiki::sync {
 struct SyncBootstrap;
@@ -44,8 +45,8 @@ struct DocumentSummary {
   std::optional<std::string> trashed_at;
 };
 
-[[nodiscard]] inline auto DocumentSummaryFromMetadata(
-    const document::PageMetadata& metadata) -> DocumentSummary {
+[[nodiscard]] inline auto DocumentSummaryFromMetadata(const document::PageMetadata& metadata)
+    -> DocumentSummary {
   return DocumentSummary{
       .id = metadata.id,
       .kind = metadata.kind,
@@ -81,6 +82,20 @@ struct SaveDocumentResult {
 };
 
 struct DeleteDocumentResult {
+  std::optional<RepositoryError> error;
+};
+
+struct SaveAttachmentResult {
+  std::optional<RepositoryError> error;
+};
+
+struct LoadAttachmentResult {
+  std::optional<AttachmentData> attachment;
+  std::optional<RepositoryError> error;
+};
+
+struct ListAttachmentsResult {
+  std::vector<AttachmentMetadata> attachments;
   std::optional<RepositoryError> error;
 };
 
@@ -200,48 +215,78 @@ class LocalDocumentRepository {
   auto operator=(LocalDocumentRepository&&) -> LocalDocumentRepository& = delete;
   virtual ~LocalDocumentRepository() = default;
 
-  [[nodiscard]] virtual auto SaveDocument(const DocumentRecord& document)
-      -> SaveDocumentResult = 0;
-  [[nodiscard]] virtual auto DeleteDocument(std::string_view page_id)
-      -> DeleteDocumentResult = 0;
+  [[nodiscard]] virtual auto SaveDocument(const DocumentRecord& document) -> SaveDocumentResult = 0;
+  [[nodiscard]] virtual auto DeleteDocument(std::string_view page_id) -> DeleteDocumentResult = 0;
   [[nodiscard]] virtual auto LoadDocument(std::string_view page_id) -> LoadDocumentResult = 0;
   [[nodiscard]] virtual auto ListDocuments() -> ListDocumentsResult = 0;
+  [[nodiscard]] virtual auto SaveAttachment(const AttachmentData&) -> SaveAttachmentResult {
+    return SaveAttachmentResult{
+        .error =
+            RepositoryError{
+                .code = RepositoryErrorCode::kUnsupported,
+                .message = "Repository does not support attachments.",
+            },
+    };
+  }
+  [[nodiscard]] virtual auto LoadAttachment(std::string_view, std::string_view)
+      -> LoadAttachmentResult {
+    return LoadAttachmentResult{
+        .attachment = std::nullopt,
+        .error =
+            RepositoryError{
+                .code = RepositoryErrorCode::kUnsupported,
+                .message = "Repository does not support attachments.",
+            },
+    };
+  }
+  [[nodiscard]] virtual auto ListAttachments(std::string_view) -> ListAttachmentsResult {
+    return ListAttachmentsResult{
+        .attachments = {},
+        .error =
+            RepositoryError{
+                .code = RepositoryErrorCode::kUnsupported,
+                .message = "Repository does not support attachments.",
+            },
+    };
+  }
   [[nodiscard]] virtual auto SaveConflict(const DocumentConflictRecord& conflict)
       -> SaveConflictResult = 0;
   [[nodiscard]] virtual auto DeleteConflict(std::string_view conflict_id)
       -> DeleteConflictResult = 0;
-  [[nodiscard]] virtual auto LoadConflict(std::string_view conflict_id)
-      -> LoadConflictResult = 0;
+  [[nodiscard]] virtual auto LoadConflict(std::string_view conflict_id) -> LoadConflictResult = 0;
   [[nodiscard]] virtual auto ListConflicts() -> ListConflictsResult = 0;
   [[nodiscard]] virtual auto ResolveConflict(std::string_view conflict_id)
       -> UpdateConflictResolutionResult = 0;
   [[nodiscard]] virtual auto DismissConflict(std::string_view conflict_id)
       -> UpdateConflictResolutionResult = 0;
-  [[nodiscard]] virtual auto SupportsSync() const -> bool { return false; }
-  [[nodiscard]] virtual auto SetSyncAccessToken(std::string)
-      -> SyncOperationResult {
+  [[nodiscard]] virtual auto SupportsSync() const -> bool {
+    return false;
+  }
+  [[nodiscard]] virtual auto SetSyncAccessToken(std::string) -> SyncOperationResult {
     return SyncOperationResult{
-        .error = RepositoryError{
-            .code = RepositoryErrorCode::kUnsupported,
-            .message = "Repository does not support sync access tokens.",
-        },
+        .error =
+            RepositoryError{
+                .code = RepositoryErrorCode::kUnsupported,
+                .message = "Repository does not support sync access tokens.",
+            },
     };
   }
-  [[nodiscard]] virtual auto ApplySyncBootstrap(const sync::SyncBootstrap&)
-      -> SyncOperationResult {
+  [[nodiscard]] virtual auto ApplySyncBootstrap(const sync::SyncBootstrap&) -> SyncOperationResult {
     return SyncOperationResult{
-        .error = RepositoryError{
-            .code = RepositoryErrorCode::kUnsupported,
-            .message = "Repository does not support sync bootstrap.",
-        },
+        .error =
+            RepositoryError{
+                .code = RepositoryErrorCode::kUnsupported,
+                .message = "Repository does not support sync bootstrap.",
+            },
     };
   }
   [[nodiscard]] virtual auto StartSync() -> SyncOperationResult {
     return SyncOperationResult{
-        .error = RepositoryError{
-            .code = RepositoryErrorCode::kUnsupported,
-            .message = "Repository does not support sync replication.",
-        },
+        .error =
+            RepositoryError{
+                .code = RepositoryErrorCode::kUnsupported,
+                .message = "Repository does not support sync replication.",
+            },
     };
   }
   [[nodiscard]] virtual auto StopSync() -> SyncOperationResult {
@@ -261,10 +306,11 @@ class LocalDocumentRepository {
   [[nodiscard]] virtual auto SaveWorkspaceRoot(const WorkspaceRootRecord&)
       -> SaveWorkspaceRootResult {
     return SaveWorkspaceRootResult{
-        .error = RepositoryError{
-            .code = RepositoryErrorCode::kUnsupported,
-            .message = "Repository does not support workspace root records.",
-        },
+        .error =
+            RepositoryError{
+                .code = RepositoryErrorCode::kUnsupported,
+                .message = "Repository does not support workspace root records.",
+            },
     };
   }
   [[nodiscard]] virtual auto LoadWorkspaceRoot(std::string_view)
@@ -274,10 +320,11 @@ class LocalDocumentRepository {
   [[nodiscard]] virtual auto ListWorkspaces() -> ListWorkspacesResult {
     return ListWorkspacesResult{
         .workspace_ids = {},
-        .error = RepositoryError{
-            .code = RepositoryErrorCode::kUnsupported,
-            .message = "Repository does not support listing workspaces.",
-        },
+        .error =
+            RepositoryError{
+                .code = RepositoryErrorCode::kUnsupported,
+                .message = "Repository does not support listing workspaces.",
+            },
     };
   }
 
@@ -286,29 +333,32 @@ class LocalDocumentRepository {
   [[nodiscard]] virtual auto SaveDocumentRevision(const DocumentRevisionRecord&)
       -> SaveDocumentRevisionResult {
     return SaveDocumentRevisionResult{
-        .error = RepositoryError{
-            .code = RepositoryErrorCode::kUnsupported,
-            .message = "Repository does not support document revisions.",
-        },
+        .error =
+            RepositoryError{
+                .code = RepositoryErrorCode::kUnsupported,
+                .message = "Repository does not support document revisions.",
+            },
     };
   }
   [[nodiscard]] virtual auto ListDocumentRevisions(std::string_view)
       -> ListDocumentRevisionsResult {
     return ListDocumentRevisionsResult{
         .revisions = {},
-        .error = RepositoryError{
-            .code = RepositoryErrorCode::kUnsupported,
-            .message = "Repository does not support document revisions.",
-        },
+        .error =
+            RepositoryError{
+                .code = RepositoryErrorCode::kUnsupported,
+                .message = "Repository does not support document revisions.",
+            },
     };
   }
   [[nodiscard]] virtual auto DeleteDocumentRevision(std::string_view)
       -> DeleteDocumentRevisionResult {
     return DeleteDocumentRevisionResult{
-        .error = RepositoryError{
-            .code = RepositoryErrorCode::kUnsupported,
-            .message = "Repository does not support document revisions.",
-        },
+        .error =
+            RepositoryError{
+                .code = RepositoryErrorCode::kUnsupported,
+                .message = "Repository does not support document revisions.",
+            },
     };
   }
 };

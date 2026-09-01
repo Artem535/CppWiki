@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 
 #include <QAbstractItemView>
+#include <QContextMenuEvent>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -25,6 +26,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWebChannel>
+#include <QWebEngineContextMenuRequest>
 #include <QWebEngineDownloadRequest>
 #include <QWebEngineFileSystemAccessRequest>
 #include <QWebEnginePage>
@@ -47,6 +49,7 @@
 #include "bridge/editor_bridge.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "gui/attachment_url_scheme_handler.h"
 #include "gui/document_context_menu.h"
 #include "gui/document_tree_item_delegate.h"
 #include "gui/document_tree_model.h"
@@ -63,6 +66,69 @@ namespace cppwiki {
 namespace {
 
 using namespace gui::page_helpers;
+
+class AttachmentWebEngineView final : public QWebEngineView {
+ public:
+  using SaveImageCallback = std::function<void(const QUrl&)>;
+
+  explicit AttachmentWebEngineView(QWidget* parent, SaveImageCallback save_image_callback)
+      : QWebEngineView(parent), save_image_callback_(std::move(save_image_callback)) {}
+
+ protected:
+  void contextMenuEvent(QContextMenuEvent* event) override {
+    auto* request = lastContextMenuRequest();
+    const bool is_image =
+        request != nullptr && request->mediaType() == QWebEngineContextMenuRequest::MediaTypeImage;
+    if (!is_image) {
+      QWebEngineView::contextMenuEvent(event);
+      return;
+    }
+
+    auto* menu = new QFrame(this, Qt::Popup | Qt::FramelessWindowHint);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->setObjectName(QStringLiteral("imageContextMenu"));
+    menu->setStyleSheet(QStringLiteral(R"(
+      QFrame#imageContextMenu {
+        background-color: palette(base);
+        border: 1px solid palette(mid);
+        border-radius: 6px;
+      }
+      QFrame#imageContextMenu QPushButton {
+        border: none;
+        border-radius: 4px;
+        min-height: 30px;
+        padding: 4px 10px;
+        text-align: left;
+        background: transparent;
+        color: palette(text);
+      }
+      QFrame#imageContextMenu QPushButton:hover {
+        background-color: palette(highlight);
+        color: palette(highlighted-text);
+      }
+    )"));
+    auto* layout = new QVBoxLayout(menu);
+    layout->setContentsMargins(6, 6, 6, 6);
+    auto* save_button = new QPushButton(QStringLiteral("Save image as…"), menu);
+    save_button->setCursor(Qt::PointingHandCursor);
+    save_button->setFocusPolicy(Qt::NoFocus);
+    save_button->setFlat(true);
+    layout->addWidget(save_button);
+    connect(save_button, &QPushButton::clicked, menu, [this, menu, url = request->mediaUrl()]() {
+      menu->close();
+      if (save_image_callback_) {
+        save_image_callback_(url);
+      }
+    });
+    event->accept();
+    menu->adjustSize();
+    menu->move(event->globalPos());
+    menu->show();
+  }
+
+ private:
+  SaveImageCallback save_image_callback_;
+};
 
 }  // namespace
 
@@ -118,7 +184,30 @@ void Page::BuildUi() {
             });
   }
 
-  editor_view_ = new QWebEngineView(this);
+  editor_view_ = new AttachmentWebEngineView(this, [this](const QUrl& url) {
+    const auto attachment_id = storage::ParseAttachmentUri(url.toString().toStdString());
+    if (attachment_id) {
+      const auto result =
+          editor_bridge_->saveAttachmentToFile(QString::fromStdString(*attachment_id));
+      if (!result.value(QStringLiteral("ok")).toBool() &&
+          result.value(QStringLiteral("error")).toMap().value(QStringLiteral("code")).toString() !=
+              QStringLiteral("cancelled")) {
+        QMessageBox::warning(this, QStringLiteral("Save attachment"),
+                             result.value(QStringLiteral("error"))
+                                 .toMap()
+                                 .value(QStringLiteral("message"))
+                                 .toString());
+      }
+      return;
+    }
+
+    pending_image_download_url_ = url.toString();
+    editor_view_->page()->download(url, QStringLiteral("image"));
+  });
+  editor_view_->page()->profile()->installUrlSchemeHandler(
+      QByteArrayLiteral("cppwiki-attachment"),
+      new gui::AttachmentUrlSchemeHandler(
+          context_.document_repository, [this]() { return current_workspace_id_; }, editor_view_));
   editor_view_->page()->setWebChannel(channel_);
   InstallWebChannelScript();
   InstallNativeFilePickerGuards();
@@ -520,7 +609,21 @@ void Page::InstallNativeFilePickerGuards() {
   // this app is wired up to actually save arbitrary browser-initiated downloads to disk, so
   // cancel them explicitly rather than leaving the request unresolved.
   connect(editor_view_->page()->profile(), &QWebEngineProfile::downloadRequested, this,
-          [](QWebEngineDownloadRequest* download) {
+          [this](QWebEngineDownloadRequest* download) {
+            if (download != nullptr && download->url().toString() == pending_image_download_url_) {
+              pending_image_download_url_.clear();
+              const auto path = QFileDialog::getSaveFileName(this, QStringLiteral("Save image"),
+                                                             download->suggestedFileName());
+              if (path.isEmpty()) {
+                download->cancel();
+                return;
+              }
+              const QFileInfo file_info(path);
+              download->setDownloadDirectory(file_info.absolutePath());
+              download->setDownloadFileName(file_info.fileName());
+              download->accept();
+              return;
+            }
             spdlog::warn("Cancelling unexpected browser download request: {}",
                          download->downloadFileName().toStdString());
             download->cancel();

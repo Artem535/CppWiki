@@ -1,18 +1,18 @@
-#include "storage/cblite_document_repository.h"
-#include "sync/sync_bootstrap.h"
-
 #include <spdlog/spdlog.h>
 
-#include <cstdlib>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <functional>
-#include <thread>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
+
+#include "storage/cblite_document_repository.h"
+#include "sync/sync_bootstrap.h"
 
 namespace {
 
@@ -48,35 +48,39 @@ auto TestCbliteRepositorySaveLoad() -> void {
     cppwiki::storage::CbliteDocumentRepository repository(options);
 
     cppwiki::storage::DocumentRecord original_document{
-        .metadata = {
-            .id = "page-123",
-            .schema_version = cppwiki::document::SchemaVersion::kV1,
-            .title = "Test Page",
-            .workspace_id = "engineering",
-            .parent_id = std::make_optional<std::string>("parent-page"),
-            .sort_order = 42,
-            .created_at = "2026-06-16T08:00:00.000Z",
-            .updated_at = "2026-06-16T08:01:00.000Z",
-            .created_by = "creator",
-            .updated_by = "editor",
-            .content_version = 5,
-        },
-        .snapshot = {
-            .id = std::string("page-123"),
-            .schema_version = 1,
-            .title = std::string("Test Page"),
-            .blocks = std::vector<cppwiki::document::BlockNoteBlockSnapshot>{
-                {
-                    .id = std::string("block-1"),
-                    .type = std::string("paragraph"),
-                    .content = std::make_optional(rfl::Generic("Hello from CBLite!")),
-                    .props = std::nullopt,
-                    .checked = std::nullopt,
-                    .children = std::nullopt,
-                },
+        .metadata =
+            {
+                .id = "page-123",
+                .schema_version = cppwiki::document::SchemaVersion::kV1,
+                .title = "Test Page",
+                .workspace_id = "engineering",
+                .parent_id = std::make_optional<std::string>("parent-page"),
+                .sort_order = 42,
+                .created_at = "2026-06-16T08:00:00.000Z",
+                .updated_at = "2026-06-16T08:01:00.000Z",
+                .created_by = "creator",
+                .updated_by = "editor",
+                .content_version = 5,
             },
-        },
-        .raw_snapshot_json = R"({"id":"page-123","schema_version":1,"title":"Test Page","blocks":[{"id":"block-1","type":"paragraph","content":"Hello from CBLite!"}]})",
+        .snapshot =
+            {
+                .id = std::string("page-123"),
+                .schema_version = 1,
+                .title = std::string("Test Page"),
+                .blocks =
+                    std::vector<cppwiki::document::BlockNoteBlockSnapshot>{
+                        {
+                            .id = std::string("block-1"),
+                            .type = std::string("paragraph"),
+                            .content = std::make_optional(rfl::Generic("Hello from CBLite!")),
+                            .props = std::nullopt,
+                            .checked = std::nullopt,
+                            .children = std::nullopt,
+                        },
+                    },
+            },
+        .raw_snapshot_json =
+            R"({"id":"page-123","schema_version":1,"title":"Test Page","blocks":[{"id":"block-1","type":"paragraph","content":"Hello from CBLite!"}]})",
     };
 
     const auto save_result = repository.SaveDocument(original_document);
@@ -108,8 +112,7 @@ auto TestCbliteRepositorySaveLoad() -> void {
     Require(loaded.metadata.sort_order == 42, "Loaded CBLite sort order should match");
     Require(loaded.metadata.created_by == "creator", "Loaded CBLite created_by should match");
     Require(loaded.metadata.updated_by == "editor", "Loaded CBLite updated_by should match");
-    Require(loaded.metadata.content_version == 5,
-            "Loaded CBLite content_version should match");
+    Require(loaded.metadata.content_version == 5, "Loaded CBLite content_version should match");
     if (loaded.raw_snapshot_json != original_document.raw_snapshot_json) {
       spdlog::error("JSON mismatch");
       std::exit(EXIT_FAILURE);
@@ -123,9 +126,9 @@ auto TestCbliteRepositorySaveLoad() -> void {
     Require(list_result.documents.size() == 1, "CBLite list should include saved document");
     Require(list_result.documents.front().id == "page-123", "CBLite list id should match");
     Require(list_result.documents.front().title == "Test Page", "CBLite list title should match");
-    Require(list_result.documents.front().parent_id ==
-                std::make_optional<std::string>("parent-page"),
-            "CBLite list parent id should match");
+    Require(
+        list_result.documents.front().parent_id == std::make_optional<std::string>("parent-page"),
+        "CBLite list parent id should match");
     Require(list_result.documents.front().workspace_id == "engineering",
             "CBLite list workspace id should match");
     Require(list_result.documents.front().sort_order == 42, "CBLite list sort order should match");
@@ -196,12 +199,59 @@ auto TestCbliteRepositorySaveLoad() -> void {
   std::filesystem::remove_all(test_directory.parent_path().parent_path());
 }
 
+auto TestCbliteRepositoryAttachmentLifecycle() -> void {
+  const auto test_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-cblite-attachment-test";
+  std::filesystem::remove_all(test_directory);
+
+  cppwiki::storage::CbliteDocumentRepository repository({
+      .database_directory = test_directory,
+      .database_name = "attachment_test",
+  });
+  const cppwiki::storage::AttachmentData attachment{
+      .metadata =
+          cppwiki::storage::AttachmentMetadata{
+              .id = "a1dcb4e6-8442-4ee4-94b4-8cef8d5c1f16",
+              .workspace_id = "engineering",
+              .filename = "architecture.png",
+              .mime_type = "image/png",
+              .size_bytes = 4,
+              .sha256 = "0123456789abcdef",
+              .created_at = "2026-08-31T10:00:00Z",
+              .created_by = "tester",
+          },
+      .bytes = {0x89, 0x50, 0x4E, 0x47},
+  };
+
+  Require(!repository.SaveAttachment(attachment).error, "CBLite must save attachment");
+  const auto loaded =
+      repository.LoadAttachment(attachment.metadata.id, attachment.metadata.workspace_id);
+  Require(!loaded.error && loaded.attachment.has_value(), "CBLite attachment must load");
+  Require(loaded.attachment->metadata.filename == attachment.metadata.filename,
+          "CBLite attachment metadata must round-trip");
+  Require(loaded.attachment->bytes == attachment.bytes,
+          "CBLite attachment Blob bytes must round-trip");
+
+  const auto wrong_workspace =
+      repository.LoadAttachment(attachment.metadata.id, "another-workspace");
+  Require(!wrong_workspace.attachment.has_value() && wrong_workspace.error.has_value(),
+          "CBLite must reject attachment from another workspace");
+
+  const auto listed = repository.ListAttachments(attachment.metadata.workspace_id);
+  Require(!listed.error && listed.attachments.size() == 1,
+          "CBLite must list workspace attachments");
+  Require(listed.attachments.front().id == attachment.metadata.id,
+          "CBLite listed attachment ID must match");
+
+  std::filesystem::remove_all(test_directory);
+}
+
 // A Mermaid block is a custom BlockNote block with multi-line inline content.  Keep this
 // round-trip separate from the generic paragraph test above: a successful SaveDocument log is
 // not enough if the stored snapshot cannot later be handed back to the editor unchanged.
 auto TestCbliteRepositoryPreservesMermaidSnapshot() -> void {
-  const auto test_directory = std::filesystem::temp_directory_path() /
-                              "cppwiki-cblite-mermaid-test" / "database";
+  const auto test_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-cblite-mermaid-test" / "database";
   std::filesystem::remove_all(test_directory);
 
   cppwiki::storage::CbliteDocumentRepository repository({
@@ -209,19 +259,21 @@ auto TestCbliteRepositoryPreservesMermaidSnapshot() -> void {
       .database_name = "test_wiki_db",
   });
 
-  constexpr auto kSnapshot = R"({"id":"mermaid-page","schema_version":1,"title":"Diagram","blocks":[{"id":"mermaid-block","type":"mermaid","props":{},"content":[{"type":"text","text":"graph TD\n  A[Start] --> B{Decision}\n  B -->|Yes| C[Done]","styles":{}}],"children":[]}]})";
+  constexpr auto kSnapshot =
+      R"({"id":"mermaid-page","schema_version":1,"title":"Diagram","blocks":[{"id":"mermaid-block","type":"mermaid","props":{},"content":[{"type":"text","text":"graph TD\n  A[Start] --> B{Decision}\n  B -->|Yes| C[Done]","styles":{}}],"children":[]}]})";
   cppwiki::storage::DocumentRecord document{
-      .metadata = {
-          .id = "mermaid-page",
-          .schema_version = cppwiki::document::SchemaVersion::kV1,
-          .title = "Diagram",
-          .workspace_id = "default",
-          .created_at = "2026-07-20T00:00:00.000Z",
-          .updated_at = "2026-07-20T00:00:00.000Z",
-          .created_by = "test",
-          .updated_by = "test",
-          .content_version = 1,
-      },
+      .metadata =
+          {
+              .id = "mermaid-page",
+              .schema_version = cppwiki::document::SchemaVersion::kV1,
+              .title = "Diagram",
+              .workspace_id = "default",
+              .created_at = "2026-07-20T00:00:00.000Z",
+              .updated_at = "2026-07-20T00:00:00.000Z",
+              .created_by = "test",
+              .updated_by = "test",
+              .content_version = 1,
+          },
       .raw_snapshot_json = kSnapshot,
   };
 
@@ -307,8 +359,8 @@ auto TestCbliteRepositoryRefreshesStaleIndexAfterExternalWrite() -> void {
 }
 
 auto TestCbliteRepositoryPromotesLocalDocumentsAfterSyncBootstrap() -> void {
-  const auto test_directory =
-      std::filesystem::temp_directory_path() / "cppwiki-cblite-promote-local" / "nested" / "database";
+  const auto test_directory = std::filesystem::temp_directory_path() /
+                              "cppwiki-cblite-promote-local" / "nested" / "database";
   std::filesystem::remove_all(test_directory);
 
   cppwiki::storage::CbliteDocumentRepository repository(
@@ -342,6 +394,32 @@ auto TestCbliteRepositoryPromotesLocalDocumentsAfterSyncBootstrap() -> void {
           "promoted document should preserve workspace id");
 
   std::filesystem::remove_all(test_directory.parent_path().parent_path());
+}
+
+// Sync bootstrap can arrive before a fresh repository has saved or loaded its first document.
+// Applying it must open the database before it inspects the local/synced collections.
+auto TestCbliteRepositoryAppliesSyncBootstrapToFreshDatabase() -> void {
+  const auto test_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-cblite-fresh-sync-bootstrap";
+  std::filesystem::remove_all(test_directory);
+
+  cppwiki::storage::CbliteDocumentRepository repository({
+      .database_directory = test_directory,
+      .database_name = "fresh_sync_bootstrap",
+  });
+
+  cppwiki::sync::SyncBootstrap bootstrap;
+  bootstrap.available = true;
+  bootstrap.enabled = true;
+  bootstrap.gateway_url = QStringLiteral("http://127.0.0.1:4984/cppwiki");
+  bootstrap.database_name = QStringLiteral("cppwiki");
+  bootstrap.auth_mode = QStringLiteral("oidc_access_token_passthrough");
+  bootstrap.token_passthrough = true;
+  bootstrap.channels = {QStringLiteral("workspace:engineering")};
+
+  Require(!repository.ApplySyncBootstrap(bootstrap).error,
+          "sync bootstrap should configure a fresh CBLite repository");
+  std::filesystem::remove_all(test_directory);
 }
 
 // A workspace can lose its current sync-channel mapping while an existing document remains in
@@ -413,9 +491,8 @@ auto MakePendingConflict(std::string id, std::string document_id, std::string de
 }
 
 auto TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord() -> void {
-  const auto test_directory =
-      std::filesystem::temp_directory_path() / "cppwiki-cblite-conflict-lifecycle" / "nested" /
-      "database";
+  const auto test_directory = std::filesystem::temp_directory_path() /
+                              "cppwiki-cblite-conflict-lifecycle" / "nested" / "database";
   std::filesystem::remove_all(test_directory);
 
   cppwiki::storage::CbliteDocumentRepositoryOptions options{
@@ -440,7 +517,8 @@ auto TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord() -> void {
            list.conflicts.front().resolution_state == "pending";
   });
   Require(saw_pending_conflict,
-          "primary should observe externally persisted pending conflict through repository index refresh");
+          "primary should observe externally persisted pending conflict through repository index "
+          "refresh");
 
   const auto pending_status = primary.GetSyncStatus();
   Require(pending_status.has_conflicts,
@@ -455,8 +533,9 @@ auto TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord() -> void {
     const auto loaded = secondary.LoadConflict("conflict-e2e-1");
     return loaded.conflict.has_value() && loaded.conflict->resolution_state == "resolved";
   });
-  Require(resolved_state_replicated,
-          "resolved state should be visible across repository instances sharing the same CBLite db");
+  Require(
+      resolved_state_replicated,
+      "resolved state should be visible across repository instances sharing the same CBLite db");
 
   const auto status_after_resolve = primary.GetSyncStatus();
   Require(!status_after_resolve.has_conflicts,
@@ -478,8 +557,7 @@ auto TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord() -> void {
       return conflict.id == "conflict-e2e-2" && conflict.resolution_state == "pending";
     });
   });
-  Require(saw_second_pending,
-          "primary should observe second pending conflict before dismiss flow");
+  Require(saw_second_pending, "primary should observe second pending conflict before dismiss flow");
 
   const auto dismiss_result = primary.DismissConflict("conflict-e2e-2");
   Require(!dismiss_result.error, "primary should dismiss externally ingested pending conflict");
@@ -488,8 +566,9 @@ auto TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord() -> void {
     const auto loaded = secondary.LoadConflict("conflict-e2e-2");
     return loaded.conflict.has_value() && loaded.conflict->resolution_state == "dismissed";
   });
-  Require(dismissed_state_replicated,
-          "dismissed state should be visible across repository instances sharing the same CBLite db");
+  Require(
+      dismissed_state_replicated,
+      "dismissed state should be visible across repository instances sharing the same CBLite db");
 
   const auto status_after_dismiss = primary.GetSyncStatus();
   Require(!status_after_dismiss.has_conflicts,
@@ -548,11 +627,13 @@ auto TestCbliteRepositoryOfflineEditReconnectPushPull() -> void {
 }  // namespace
 
 auto main() -> int {
+  TestCbliteRepositoryAttachmentLifecycle();
   try {
     TestCbliteRepositorySaveLoad();
     TestCbliteRepositoryPreservesMermaidSnapshot();
     TestCbliteRepositoryRefreshesStaleIndexAfterExternalWrite();
     TestCbliteRepositoryPromotesLocalDocumentsAfterSyncBootstrap();
+    TestCbliteRepositoryAppliesSyncBootstrapToFreshDatabase();
     TestCbliteRepositoryUpdatesExistingSyncedDocumentAfterChannelChange();
     TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord();
     TestCbliteRepositoryOfflineEditReconnectPushPull();

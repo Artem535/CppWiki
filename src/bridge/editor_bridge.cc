@@ -2,20 +2,28 @@
 
 #include <spdlog/spdlog.h>
 
+#include <QBuffer>
+#include <QClipboard>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QIODevice>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QMetaObject>
+#include <QMimeData>
+#include <QMimeDatabase>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcessEnvironment>
+#include <QSaveFile>
 #include <QUrl>
 #include <QVariant>
 #include <QWidget>
@@ -83,9 +91,17 @@ auto BridgeInfo(bool ai_features_enabled, bool ai_autocomplete_enabled,
            ToQString(constants::kBridgeMethodUpdateSnapshot),
            ToQString(constants::kBridgeMethodExportTextToFile),
            ToQString(constants::kBridgeMethodImportTextFromFile),
+           ToQString(constants::kBridgeMethodBeginAttachmentUpload),
+           ToQString(constants::kBridgeMethodAppendAttachmentChunk),
+           ToQString(constants::kBridgeMethodCompleteAttachmentUpload),
+           ToQString(constants::kBridgeMethodCancelAttachmentUpload),
+           ToQString(constants::kBridgeMethodSaveAttachmentToFile),
+           ToQString(constants::kBridgeMethodPasteClipboardAttachment),
        }},
   };
 }
+
+constexpr qsizetype kAttachmentUploadChunkSize = 256 * 1024;
 
 auto InlineText(QString text) -> QJsonArray {
   QJsonObject content;
@@ -509,7 +525,8 @@ struct BuiltDocumentRecord {
 auto BuildDocumentRecordFromSnapshot(document::PageMetadata base_metadata,
                                      document::DocumentKind kind, const QByteArray& snapshot_bytes,
                                      const QString& author_id) -> BuiltDocumentRecord {
-  const auto validation = document::DocumentValidator::ParseAndValidateSnapshot(snapshot_bytes, kind);
+  const auto validation =
+      document::DocumentValidator::ParseAndValidateSnapshot(snapshot_bytes, kind);
   if (validation.error) {
     return BuiltDocumentRecord{.record = std::nullopt, .error = validation.error};
   }
@@ -648,7 +665,7 @@ auto PermanentlyDeleteDocumentTree(std::shared_ptr<storage::LocalDocumentReposit
 // is needed. All-or-nothing isn't enforced here (matching the existing hard-delete tree walk's
 // behavior above): a mid-walk error leaves whatever was already trashed, trashed.
 auto TrashDocumentTree(std::shared_ptr<storage::LocalDocumentRepository> repository,
-                      std::string_view root_id, const std::string& trashed_at)
+                       std::string_view root_id, const std::string& trashed_at)
     -> std::optional<storage::RepositoryError> {
   auto tree_ids_or_error = CollectDocumentTreeIds(repository, root_id);
   if (std::holds_alternative<storage::RepositoryError>(tree_ids_or_error)) {
@@ -673,7 +690,7 @@ auto TrashDocumentTree(std::shared_ptr<storage::LocalDocumentRepository> reposit
 // Issue #165: restore. Only clears trashed_at on ids that currently have it set, so restoring a
 // page whose child was independently trashed at a different time doesn't resurrect that child.
 auto RestoreDocumentTree(std::shared_ptr<storage::LocalDocumentRepository> repository,
-                        std::string_view root_id) -> std::optional<storage::RepositoryError> {
+                         std::string_view root_id) -> std::optional<storage::RepositoryError> {
   auto tree_ids_or_error = CollectDocumentTreeIds(repository, root_id);
   if (std::holds_alternative<storage::RepositoryError>(tree_ids_or_error)) {
     return std::get<storage::RepositoryError>(std::move(tree_ids_or_error));
@@ -778,8 +795,8 @@ QVariantMap QEditorBridge::listDocumentsInWorkspace(const QString& workspace_id)
 
   auto documents = DocumentSummariesToVariant(result.documents, normalized_workspace_id);
   if (documents.empty()) {
-    const auto has_existing_workspace_document = std::ranges::any_of(
-        result.documents, [&](const storage::DocumentSummary& document) {
+    const auto has_existing_workspace_document =
+        std::ranges::any_of(result.documents, [&](const storage::DocumentSummary& document) {
           return QString::fromStdString(EffectiveWorkspaceId(document.workspace_id)) ==
                  normalized_workspace_id;
         });
@@ -1117,8 +1134,7 @@ QVariantMap QEditorBridge::restoreDocument(const QString& page_id) {
   }
 
   if (const auto error = RestoreDocumentTree(repository_, page_id.toStdString())) {
-    return ErrorResponse(QStringLiteral("restore_failed"),
-                         QString::fromStdString(error->message));
+    return ErrorResponse(QStringLiteral("restore_failed"), QString::fromStdString(error->message));
   }
   return SuccessResponse(QVariant{});
 }
@@ -1161,7 +1177,7 @@ QVariantMap QEditorBridge::listTrash() {
   }
 
   return SuccessResponse(DocumentSummariesToVariant(result.documents, current_workspace_id_,
-                                                     TrashFilter::kOnlyTrashed));
+                                                    TrashFilter::kOnlyTrashed));
 }
 
 QVariantMap QEditorBridge::emptyTrash() {
@@ -1177,8 +1193,7 @@ QVariantMap QEditorBridge::emptyTrash() {
   }
 
   for (const auto& document : result.documents) {
-    const auto workspace_id =
-        QString::fromStdString(EffectiveWorkspaceId(document.workspace_id));
+    const auto workspace_id = QString::fromStdString(EffectiveWorkspaceId(document.workspace_id));
     if (workspace_id != current_workspace_id_ || !document.trashed_at) {
       continue;
     }
@@ -1518,6 +1533,276 @@ QVariantMap QEditorBridge::importTextFromFile(const QString& name_filter) {
       {QStringLiteral("path"), path},
       {QStringLiteral("fileName"), QFileInfo(path).fileName()},
       {QStringLiteral("content"), content},
+  });
+}
+
+QVariantMap QEditorBridge::beginAttachmentUpload(const QVariantMap& metadata) {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+  const auto size_bytes = metadata.value(QStringLiteral("sizeBytes")).toLongLong();
+  if (size_bytes < 0) {
+    return ErrorResponse(QStringLiteral("invalid_attachment"),
+                         QStringLiteral("Attachment size must not be negative."));
+  }
+  storage::AttachmentMetadata attachment{
+      .id = GenerateUuidString(),
+      .workspace_id = current_workspace_id_.toStdString(),
+      .filename = metadata.value(QStringLiteral("filename")).toString().toStdString(),
+      .mime_type = metadata.value(QStringLiteral("mimeType")).toString().toStdString(),
+      .size_bytes = static_cast<std::uint64_t>(size_bytes),
+      .sha256 = {},
+      .created_at = CurrentUtcTimestamp(),
+      .created_by = current_author_id_.toStdString(),
+  };
+  if (const auto validation = storage::ValidateAttachmentMetadata(attachment); validation) {
+    const auto code = attachment.size_bytes > storage::kMaxAttachmentSizeBytes
+                          ? QStringLiteral("attachment_too_large")
+                          : QStringLiteral("invalid_attachment");
+    return ErrorResponse(code, QString::fromStdString(*validation));
+  }
+  const auto upload_id = QString::fromStdString(GenerateUuidString());
+  pending_attachment_uploads_.insert(upload_id, PendingAttachmentUpload{
+                                                    .metadata = std::move(attachment),
+                                                    .bytes = {},
+                                                });
+  return SuccessResponse(QVariantMap{{QStringLiteral("uploadId"), upload_id}});
+}
+
+QVariantMap QEditorBridge::appendAttachmentChunk(const QString& upload_id,
+                                                 const QString& base64_bytes) {
+  const auto it = pending_attachment_uploads_.find(upload_id);
+  if (it == pending_attachment_uploads_.end()) {
+    return ErrorResponse(QStringLiteral("upload_not_found"),
+                         QStringLiteral("Upload was not found."));
+  }
+  const auto bytes =
+      QByteArray::fromBase64(base64_bytes.toLatin1(), QByteArray::AbortOnBase64DecodingErrors);
+  if (bytes.isNull()) {
+    pending_attachment_uploads_.erase(it);
+    return ErrorResponse(QStringLiteral("invalid_attachment"),
+                         QStringLiteral("Attachment chunk is not valid Base64."));
+  }
+  if (bytes.size() > kAttachmentUploadChunkSize) {
+    pending_attachment_uploads_.erase(it);
+    return ErrorResponse(QStringLiteral("invalid_attachment"),
+                         QStringLiteral("Attachment chunk exceeds 256 KiB."));
+  }
+  if (bytes.size() > static_cast<qsizetype>(it->metadata.size_bytes) ||
+      it->bytes.size() > static_cast<qsizetype>(it->metadata.size_bytes) - bytes.size()) {
+    pending_attachment_uploads_.erase(it);
+    return ErrorResponse(QStringLiteral("attachment_too_large"),
+                         QStringLiteral("Attachment exceeds its declared size."));
+  }
+  it->bytes.append(bytes);
+  return SuccessResponse(QVariant{});
+}
+
+QVariantMap QEditorBridge::completeAttachmentUpload(const QString& upload_id) {
+  const auto it = pending_attachment_uploads_.find(upload_id);
+  if (it == pending_attachment_uploads_.end()) {
+    return ErrorResponse(QStringLiteral("upload_not_found"),
+                         QStringLiteral("Upload was not found."));
+  }
+  auto upload = std::move(*it);
+  pending_attachment_uploads_.erase(it);
+  if (upload.bytes.size() != static_cast<qsizetype>(upload.metadata.size_bytes)) {
+    return ErrorResponse(QStringLiteral("invalid_attachment"),
+                         QStringLiteral("Attachment byte count does not match declared size."));
+  }
+  upload.metadata.sha256 =
+      QCryptographicHash::hash(upload.bytes, QCryptographicHash::Sha256).toHex().toStdString();
+  const auto attachment_id = QString::fromStdString(upload.metadata.id);
+  const auto saved = repository_->SaveAttachment(storage::AttachmentData{
+      .metadata = std::move(upload.metadata),
+      .bytes = std::vector<std::uint8_t>(upload.bytes.begin(), upload.bytes.end()),
+  });
+  if (saved.error) {
+    return ErrorResponse(QStringLiteral("attachment_save_failed"),
+                         QString::fromStdString(saved.error->message));
+  }
+  return SuccessResponse(QVariantMap{
+      {QStringLiteral("uri"),
+       QString::fromStdString(storage::MakeAttachmentUri(attachment_id.toStdString()))},
+      {QStringLiteral("attachmentId"), attachment_id},
+  });
+}
+
+QVariantMap QEditorBridge::pasteClipboardAttachment() {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+
+  const auto* mime_data = QGuiApplication::clipboard()->mimeData();
+  if (mime_data == nullptr) {
+    return ErrorResponse(QStringLiteral("clipboard_empty"), QStringLiteral("Clipboard is empty."));
+  }
+
+  QByteArray bytes;
+  QString filename;
+  QString mime_type;
+  if (mime_data->hasImage()) {
+    const auto image = qvariant_cast<QImage>(mime_data->imageData());
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::WriteOnly);
+    if (!image.save(&buffer, "PNG")) {
+      return ErrorResponse(QStringLiteral("clipboard_read_failed"),
+                           QStringLiteral("Could not read the clipboard image."));
+    }
+    filename = QStringLiteral("clipboard.png");
+    mime_type = QStringLiteral("image/png");
+  } else {
+    // Some clipboard providers expose the encoded image but do not make it available through
+    // QMimeData::hasImage()/imageData(). Prefer the raw image MIME payload in that case.
+    const auto image_format = std::find_if(
+        mime_data->formats().cbegin(), mime_data->formats().cend(),
+        [](const QString& format) { return format.startsWith(QStringLiteral("image/")); });
+    if (image_format != mime_data->formats().cend()) {
+      bytes = mime_data->data(*image_format);
+      mime_type = *image_format;
+      const auto suffix = QMimeDatabase().mimeTypeForName(mime_type).preferredSuffix();
+      filename =
+          QStringLiteral("clipboard.%1").arg(suffix.isEmpty() ? QStringLiteral("bin") : suffix);
+    }
+  }
+
+  if (bytes.isEmpty() && mime_type.isEmpty() && mime_data->hasUrls()) {
+    const auto local_url = std::find_if(mime_data->urls().cbegin(), mime_data->urls().cend(),
+                                        [](const QUrl& url) { return url.isLocalFile(); });
+    if (local_url != mime_data->urls().cend()) {
+      const QFileInfo file_info(local_url->toLocalFile());
+      if (!file_info.isFile()) {
+        return ErrorResponse(QStringLiteral("clipboard_read_failed"),
+                             QStringLiteral("The clipboard file is not available."));
+      }
+      if (file_info.size() > static_cast<qint64>(storage::kMaxAttachmentSizeBytes)) {
+        return ErrorResponse(QStringLiteral("attachment_too_large"),
+                             QStringLiteral("Attachment exceeds the 25 MiB limit."));
+      }
+      QFile file(file_info.filePath());
+      if (!file.open(QIODevice::ReadOnly)) {
+        return ErrorResponse(QStringLiteral("clipboard_read_failed"), file.errorString());
+      }
+      bytes = file.readAll();
+      filename = file_info.fileName();
+      mime_type = QMimeDatabase().mimeTypeForFile(file_info).name();
+    }
+  }
+
+  if (bytes.isEmpty() && mime_type.isEmpty()) {
+    // File managers commonly publish copied files as text/uri-list. Parse it directly when
+    // QMimeData::hasUrls() did not decode that format for us.
+    const auto uri_data = mime_data->data(QStringLiteral("text/uri-list"));
+    const auto uri_lines = uri_data.split('\n');
+    const auto uri_line =
+        std::find_if(uri_lines.cbegin(), uri_lines.cend(), [](const QByteArray& line) {
+          const auto trimmed = line.trimmed();
+          return !trimmed.isEmpty() && !trimmed.startsWith('#');
+        });
+    if (uri_line != uri_lines.cend()) {
+      const QUrl local_url = QUrl::fromEncoded(uri_line->trimmed());
+      if (local_url.isLocalFile()) {
+        const QFileInfo file_info(local_url.toLocalFile());
+        if (!file_info.isFile()) {
+          return ErrorResponse(QStringLiteral("clipboard_read_failed"),
+                               QStringLiteral("The clipboard file is not available."));
+        }
+        if (file_info.size() > static_cast<qint64>(storage::kMaxAttachmentSizeBytes)) {
+          return ErrorResponse(QStringLiteral("attachment_too_large"),
+                               QStringLiteral("Attachment exceeds the 25 MiB limit."));
+        }
+        QFile file(file_info.filePath());
+        if (!file.open(QIODevice::ReadOnly)) {
+          return ErrorResponse(QStringLiteral("clipboard_read_failed"), file.errorString());
+        }
+        bytes = file.readAll();
+        filename = file_info.fileName();
+        mime_type = QMimeDatabase().mimeTypeForFile(file_info).name();
+      }
+    }
+  }
+
+  if (bytes.isEmpty() && mime_type.isEmpty()) {
+    return ErrorResponse(QStringLiteral("clipboard_unsupported"),
+                         QStringLiteral("Clipboard does not contain an image or local file."));
+  }
+
+  if (bytes.size() > static_cast<qsizetype>(storage::kMaxAttachmentSizeBytes)) {
+    return ErrorResponse(QStringLiteral("attachment_too_large"),
+                         QStringLiteral("Attachment exceeds the 25 MiB limit."));
+  }
+
+  storage::AttachmentMetadata metadata{
+      .id = GenerateUuidString(),
+      .workspace_id = current_workspace_id_.toStdString(),
+      .filename = filename.toStdString(),
+      .mime_type = mime_type.toStdString(),
+      .size_bytes = static_cast<std::uint64_t>(bytes.size()),
+      .sha256 = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex().toStdString(),
+      .created_at = CurrentUtcTimestamp(),
+      .created_by = current_author_id_.toStdString(),
+  };
+  if (const auto validation = storage::ValidateAttachmentMetadata(metadata); validation) {
+    return ErrorResponse(QStringLiteral("invalid_attachment"), QString::fromStdString(*validation));
+  }
+  const auto attachment_id = QString::fromStdString(metadata.id);
+  const auto saved = repository_->SaveAttachment(storage::AttachmentData{
+      .metadata = std::move(metadata),
+      .bytes = std::vector<std::uint8_t>(bytes.begin(), bytes.end()),
+  });
+  if (saved.error) {
+    return ErrorResponse(QStringLiteral("attachment_save_failed"),
+                         QString::fromStdString(saved.error->message));
+  }
+  return SuccessResponse(QVariantMap{
+      {QStringLiteral("attachmentId"), attachment_id},
+      {QStringLiteral("uri"),
+       QString::fromStdString(storage::MakeAttachmentUri(attachment_id.toStdString()))},
+      {QStringLiteral("filename"), filename},
+      {QStringLiteral("mimeType"), mime_type},
+      {QStringLiteral("sizeBytes"), bytes.size()},
+  });
+}
+
+QVariantMap QEditorBridge::cancelAttachmentUpload(const QString& upload_id) {
+  if (pending_attachment_uploads_.remove(upload_id) == 0) {
+    return ErrorResponse(QStringLiteral("upload_not_found"),
+                         QStringLiteral("Upload was not found."));
+  }
+  return SuccessResponse(QVariant{});
+}
+
+QVariantMap QEditorBridge::saveAttachmentToFile(const QString& attachment_id) {
+  if (!repository_) {
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  }
+  const auto loaded =
+      repository_->LoadAttachment(attachment_id.toStdString(), current_workspace_id_.toStdString());
+  if (loaded.error || !loaded.attachment) {
+    return ErrorResponse(QStringLiteral("attachment_not_found"),
+                         QStringLiteral("Attachment was not found in this workspace."));
+  }
+  auto* parent_widget = qobject_cast<QWidget*>(parent());
+  const auto path =
+      QFileDialog::getSaveFileName(parent_widget, QStringLiteral("Save attachment"),
+                                   QString::fromStdString(loaded.attachment->metadata.filename));
+  if (path.isEmpty()) {
+    return ErrorResponse(QStringLiteral("cancelled"), QStringLiteral("Save was cancelled."));
+  }
+  QSaveFile file(path);
+  if (!file.open(QIODevice::WriteOnly) ||
+      file.write(reinterpret_cast<const char*>(loaded.attachment->bytes.data()),
+                 static_cast<qint64>(loaded.attachment->bytes.size())) !=
+          static_cast<qint64>(loaded.attachment->bytes.size()) ||
+      !file.commit()) {
+    return ErrorResponse(QStringLiteral("write_failed"), file.errorString());
+  }
+  return SuccessResponse(QVariantMap{
+      {QStringLiteral("path"), path},
+      {QStringLiteral("fileName"), QFileInfo(path).fileName()},
   });
 }
 

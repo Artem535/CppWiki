@@ -12,6 +12,8 @@
 #include <string_view>
 #include <vector>
 
+#include "storage/attachment.h"
+
 namespace {
 
 auto Require(bool condition, std::string_view message) -> void {
@@ -468,14 +470,14 @@ auto TestFileRepositoryRevisionLifecycle() -> void {
   Require(!repository.SaveDocumentRevision(MakeRevision("rev-2", "page-1", "2026-08-02T10:00:00Z"))
                .error,
           "file repository should save a second revision for the same document");
-  Require(!repository.SaveDocumentRevision(MakeRevision("rev-other", "page-2", "2026-08-01T10:00:00Z"))
-               .error,
-          "file repository should save a revision for a different document");
+  Require(
+      !repository.SaveDocumentRevision(MakeRevision("rev-other", "page-2", "2026-08-01T10:00:00Z"))
+           .error,
+      "file repository should save a revision for a different document");
 
   const auto listed = repository.ListDocumentRevisions("page-1");
   Require(!listed.error, "listing revisions should succeed");
-  Require(listed.revisions.size() == 2,
-          "only page-1's revisions should be returned, not page-2's");
+  Require(listed.revisions.size() == 2, "only page-1's revisions should be returned, not page-2's");
   Require(listed.revisions.front().id == "rev-2",
           "revisions should be sorted newest first by saved_at");
   Require(listed.revisions.front().title == "Old title",
@@ -528,6 +530,62 @@ auto TestFileRepositoryDeleteDocumentCleansUpItsRevisions() -> void {
   std::filesystem::remove_all(storage_directory);
 }
 
+auto TestFileRepositoryAttachmentLifecycle() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-attachment-test";
+  std::filesystem::remove_all(storage_directory);
+
+  const cppwiki::storage::AttachmentData attachment{
+      .metadata =
+          cppwiki::storage::AttachmentMetadata{
+              .id = "a1dcb4e6-8442-4ee4-94b4-8cef8d5c1f16",
+              .workspace_id = "engineering",
+              .filename = "architecture.png",
+              .mime_type = "image/png",
+              .size_bytes = 4,
+              .sha256 = "0123456789abcdef",
+              .created_at = "2026-08-31T10:00:00Z",
+              .created_by = "tester",
+          },
+      .bytes = {0x89, 0x50, 0x4E, 0x47},
+  };
+
+  {
+    cppwiki::storage::FileDocumentRepository repository(
+        cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+    Require(!repository.SaveAttachment(attachment).error,
+            "file repository must save attachment metadata and bytes");
+  }
+
+  cppwiki::storage::FileDocumentRepository reopened_repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+  const auto loaded =
+      reopened_repository.LoadAttachment(attachment.metadata.id, attachment.metadata.workspace_id);
+  Require(!loaded.error, "saved attachment must load after repository restart");
+  Require(loaded.attachment.has_value(), "saved attachment must be returned");
+  Require(loaded.attachment->metadata.filename == attachment.metadata.filename,
+          "attachment filename must round-trip");
+  Require(loaded.attachment->metadata.mime_type == attachment.metadata.mime_type,
+          "attachment MIME type must round-trip");
+  Require(loaded.attachment->bytes == attachment.bytes, "attachment bytes must round-trip");
+
+  const auto wrong_workspace =
+      reopened_repository.LoadAttachment(attachment.metadata.id, "another-workspace");
+  Require(!wrong_workspace.attachment.has_value(),
+          "attachment must not be readable from another workspace");
+  Require(wrong_workspace.error.has_value() &&
+              wrong_workspace.error->code == cppwiki::storage::RepositoryErrorCode::kReadFailed,
+          "wrong workspace must fail as a missing attachment");
+
+  const auto listed = reopened_repository.ListAttachments(attachment.metadata.workspace_id);
+  Require(!listed.error, "listing attachments must succeed");
+  Require(listed.attachments.size() == 1, "workspace must list its attachment");
+  Require(listed.attachments.front().id == attachment.metadata.id,
+          "listed attachment ID must match");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -541,6 +599,7 @@ auto main() -> int {
   TestFileRepositoryReportsCorruptedDocumentAsPlaceholderInsteadOfHidingIt();
   TestFileRepositoryRevisionLifecycle();
   TestFileRepositoryDeleteDocumentCleansUpItsRevisions();
+  TestFileRepositoryAttachmentLifecycle();
   spdlog::info("cppwiki_file_document_repository_tests passed");
   return EXIT_SUCCESS;
 }

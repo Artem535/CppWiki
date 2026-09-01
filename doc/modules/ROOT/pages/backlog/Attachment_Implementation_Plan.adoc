@@ -1,0 +1,139 @@
+= Synced Attachments v1: Implementation Plan
+:toc:
+:toclevels: 2
+
+> *For agentic workers:* execute one task at a time; begin each code task with its failing test and run the stated focused verification before committing.
+
+*Goal:* Let users attach images and arbitrary files up to 25 MiB to a wiki page, retain them offline, synchronize them through Couchbase Lite and Sync Gateway, render images inline, and save generic files through a native dialog.
+
+*Architecture:* An attachment is a workspace-scoped record with metadata and an opaque payload. BlockNote snapshots retain only a stable cppwiki-attachment URI. The browser uploads bounded chunks through QWebChannel; the desktop bridge and repository own validation, persistence, reading, and native file access.
+
+*Tech stack:* C++20, Qt 6 WebEngine/WebChannel/Widgets, Couchbase Lite C++, BlockNote/React/TypeScript, Vitest, CTest.
+
+*Spec:* xref:architecture/Attachment_Storage_and_Sync_Design.adoc[Attachment Storage and Sync Design].
+
+== Global constraints
+
+* One file must not exceed 25 MiB; reject a too-large upload before persistence.
+* Keep attachment bytes outside document snapshots; persist only stable private URIs there.
+* Records in a synced workspace contain workspace_id and a Couchbase Lite Blob.
+* Do not expose raw filesystem access, external application launch, or public attachment URLs to editor JavaScript.
+* Images render inline through a private scheme; all other files use explicit native *Save as...*.
+* A document or block deletion does not delete attachment bytes in v1.
+* Archive/restore preserves IDs, metadata, and bytes.
+* Do not configure or build the server. Reuse the checkout's existing desktop build and only build focused desktop/test targets.
+
+---
+
+== File structure
+
+* src/storage/attachment.h and .cc define metadata, URI parsing/formatting, size validation, and repository result envelopes.
+* src/storage/local_document_repository.h exposes attachment persistence/read/list operations.
+* src/storage/file_document_repository.{h,cc} implements opaque local files and JSON metadata.
+* src/storage/cblite_document_repository.{h,cc} implements records and CBL Blobs in the selected workspace collection.
+* src/storage/workspace_archive.{h,cc} adds attachment payloads to schema version 2 archives.
+* src/bridge/editor_bridge.{h,cc} owns upload sessions and native Save as...
+* src/gui/attachment_scheme_handler.{h,cc} serves only authorized private attachment URIs to QWebEngine.
+* src/gui/page.{h,cc} registers the scheme handler and routes generic attachment activation to the bridge.
+* frontend/editor/src/blocks/AttachmentBlock.tsx implements image and generic-file blocks.
+* frontend/editor/src/bridge adds the typed upload/download contract.
+
+== Task 1: Attachment domain contract and URI validation
+
+*Files:* create src/storage/attachment.h, src/storage/attachment.cc, and tests/storage/attachment_test.cc; modify tests/CMakeLists.txt.
+
+*Interfaces:* define AttachmentMetadata, AttachmentData, CreateAttachmentResult, LoadAttachmentResult, ListAttachmentsResult, MakeAttachmentUri(id), ParseAttachmentUri(uri), and ValidateAttachmentSize(bytes).
+
+. Write failing tests: an ID produces cppwiki-attachment://ID, only that scheme parses, a file URL is rejected, exactly 25 MiB is accepted, and 25 MiB plus one byte is rejected.
+. Run rtk cmake --build build/debug --target cppwiki_attachment_tests and then rtk ctest --test-dir build/debug -R cppwiki_attachment_tests --output-on-failure. Expected: the target is absent or the new tests fail.
+. Implement the Qt-free value types. Reject empty IDs, path separators or NUL in filename, and invalid size. Preserve MIME and SHA-256 as metadata; do not use either one for authorization.
+. Re-run the focused CTest command. Expected: PASS.
+. Commit: git commit -m "feat: add attachment domain contract".
+
+== Task 2: Repository interface and file-backed persistence
+
+*Files:* modify src/storage/local_document_repository.h, src/storage/file_document_repository.{h,cc}, tests/storage/local_document_repository_test.cc, tests/storage/file_document_repository_test.cc, and tests/CMakeLists.txt.
+
+*Interfaces:* add CreateAttachment(data), LoadAttachment(id, workspace_id), and ListAttachments(workspace_id) to LocalDocumentRepository. Existing fake repositories implement the same methods.
+
+. Write failing tests that create a 1 KiB attachment, reopen FileDocumentRepository, load it by ID and workspace, compare bytes/metadata, and reject a different workspace.
+. Build cppwiki_file_document_repository_tests and cppwiki_local_document_repository_tests; run their CTest regexes. Expected: FAIL.
+. Add default unsupported interface methods and update every test fake. Store metadata under attachments/ID.json and bytes under attachments/ID.blob. Use the existing atomic-write helper for both files and remove neither one when a document or block disappears.
+. Re-run both focused CTest regexes. Expected: PASS.
+. Commit: git commit -m "feat: persist attachments in file repository".
+
+== Task 3: Couchbase Lite Blob persistence and replication
+
+*Files:* modify src/storage/cblite_document_repository.{h,cc}, tests/storage/cblite_repository_test.cc, tests/CMakeLists.txt, and the existing CBLite replication integration test.
+
+*Interfaces:* an attachment record contains record_type cppwiki_attachment, workspace_id, all metadata, and a Blob; CreateAttachment uses the same owning-collection rule as SaveDocument.
+
+. Add failing tests for local and synced workspaces: save, reload exact bytes, reject a wrong workspace, and inspect workspace_id, record_type, and Blob.
+. Build and run cppwiki_cblite_repository_tests. Expected: FAIL.
+. Use Couchbase Lite Blob write streams for persistence. If an attachment already exists, retain its owning collection despite a later workspace channel mapping change.
+. Add the two-client replication case: client A writes an attachment, synchronization becomes idle, and client B loads matching bytes/metadata. Reuse the existing local Sync Gateway image; do not build the server.
+. Re-run repository and integration tests. Expected: PASS.
+. Commit: git commit -m "feat: sync attachment blobs with Couchbase Lite".
+
+== Task 4: Archive and restore
+
+*Files:* modify src/storage/workspace_archive.{h,cc}, tests/storage/workspace_archive_test.cc, and tests/CMakeLists.txt.
+
+*Interfaces:* schema version 2 adds an attachments array of metadata plus base64 payload. Schema version 1 with no attachments remains readable.
+
+. Write a failing archive test with two attachments in the exported workspace and one attachment in another workspace. Assert import preserves IDs, metadata, and bytes only for the selected workspace.
+. Build and run cppwiki_workspace_archive_tests. Expected: FAIL.
+. Export attachments only after loading them through the repository contract. On import, decode and validate every item through CreateAttachment before returning success.
+. Re-run cppwiki_workspace_archive_tests. Expected: PASS.
+. Commit: git commit -m "feat: preserve attachments in workspace archives".
+
+== Task 5: QWebChannel upload sessions and native Save as...
+
+*Files:* modify src/bridge/editor_bridge.{h,cc}, src/core/constants.h, tests/bridge/editor_bridge_test.cc, and tests/CMakeLists.txt.
+
+*Interfaces:* expose beginAttachmentUpload(metadata), appendAttachmentChunk(upload_id, bytes), completeAttachmentUpload(upload_id), cancelAttachmentUpload(upload_id), and saveAttachmentToFile(attachment_id) as Q_INVOKABLE bridge operations.
+
+. Extend FakeDocumentRepository and write failing bridge tests for a two-chunk upload, oversize rejection, unknown upload, workspace mismatch, and cancellation cleanup.
+. Build and run cppwiki_bridge_tests. Expected: FAIL.
+. Implement unguessable upload IDs and 256 KiB chunk validation. A session belongs to the bridge current workspace; completion persists through CreateAttachment and returns only the private URI. Clear every session on failure, completion, or cancel.
+. Implement saveAttachmentToFile using the current-workspace attachment, QFileDialog::getSaveFileName, and QSaveFile. Never use QDesktopServices or a process launcher.
+. Re-run cppwiki_bridge_tests. Expected: PASS.
+. Commit: git commit -m "feat: add native attachment bridge operations".
+
+== Task 6: Private URL scheme and navigation policy
+
+*Files:* create src/gui/attachment_scheme_handler.{h,cc} and tests/gui/attachment_scheme_handler_test.cc; modify src/gui/page.{h,cc}, the desktop target source list, and tests/CMakeLists.txt.
+
+*Interfaces:* cppwiki-attachment resolves only after current-workspace validation. Image MIME data is served to QWebEngine; generic attachment activation delegates to saveAttachmentToFile and cancels navigation.
+
+. Add failing tests for valid image response, malformed URI, missing attachment, and cross-workspace rejection. Add a Page test seam for generic-file delegation.
+. Build and run the focused handler target. Expected: FAIL.
+. Register the scheme before QApplication construction and one handler on the editor profile. Keep the editor page in place on generic file activation.
+. Re-run focused tests. Manually verify an image renders and a generic file opens the native Save as... dialog without launching an external application.
+. Commit: git commit -m "feat: serve and download private attachments".
+
+== Task 7: BlockNote UI and typed browser bridge
+
+*Files:* create frontend/editor/src/blocks/AttachmentBlock.tsx, frontend/editor/src/blocks/attachmentUpload.ts, and frontend/editor/src/blocks/attachmentUpload.test.ts; modify frontend/editor/src/main.tsx and the three bridge TypeScript files.
+
+*Interfaces:* browser upload slices a File into 192 KiB raw chunks, Base64-encodes each QWebChannel message, inserts the private URI only after completion, and provides an image view plus a generic-file Save as... control. The native bridge accepts at most 256 KiB after decoding.
+
+. Add failing Vitest cases for chunk boundaries, error leaves document unchanged, image metadata renders an img element, and generic metadata renders a save action.
+. Run cd frontend/editor and then rtk npm run test -- --run src/blocks/attachmentUpload.test.ts. Expected: FAIL.
+. Implement the typed bridge calls, slash-menu item, picker, drag/drop, and image-paste paths. Use File.arrayBuffer slices; do not encode raw file data into the BlockNote snapshot.
+. Run the focused Vitest test and then rtk npm run build from frontend/editor. Expected: PASS.
+. Commit: git commit -m "feat: attach files from BlockNote editor".
+
+== Task 8: End-to-end verification and documentation
+
+*Files:* modify the user-facing AsciiDoc page, the PRD, and the attachment design document.
+
+. Run focused CTest targets for attachment, file repository, CBLite repository, workspace archive, bridge, and scheme handler. Run the existing replication test against the prebuilt local environment. Run rtk npm run build from frontend/editor.
+. When focused tests are clean, run rtk ctest --test-dir build/debug --output-on-failure. Do not invoke a CMake configure step or a server target.
+. Manually attach an image by picker/paste, drag a generic file, restart, work offline then sync, restore a trashed document containing an attachment, archive/restore, and save a generic attachment to disk.
+. Document the 25 MiB limit, offline/sync behavior, Save as... behavior, and deliberate no-auto-delete rule. Update #148 and open a PR with Closes #148.
+. Commit: git commit -m "docs: document attachment workflow".
+
+== Plan self-review
+
+Tasks 1 through 4 cover identity, persistence, sync, and restore. Tasks 5 through 7 cover the bounded trust boundary, rendering, native download, and editor interaction. Task 8 verifies all accepted user flows without building the server.

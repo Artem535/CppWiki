@@ -8,6 +8,7 @@
 ** xref:architecture/Desktop_Auth_Flow_ru.adoc[Desktop auth flow (RU)]
 ** xref:architecture/Desktop_Backend_Sync_Interaction.adoc[Desktop/backend sync interaction]
 ** xref:architecture/Collaboration_With_Couchbase_Sync_ru.adoc[Collaboration with Couchbase Sync (RU)]
+** xref:architecture/Attachment_Storage_and_Sync_Design.adoc[Attachment storage and sync design]
 ** xref:architecture/Server_and_Realtime_Editing_Architecture.adoc[Server and realtime editing architecture]
 ** xref:architecture/Server_Code_Explained.adoc[Server code explained]
 ** xref:architecture/Server_Code_Explained_ru.adoc[Server code explained (RU)]
@@ -39,6 +40,7 @@
 ** xref:backlog/Backlog.adoc[Backlog]
 ** xref:backlog/Admin_Surface_Backlog.adoc[Admin surface backlog]
 ** xref:backlog/Desktop_Collaboration_Backlog.adoc[Desktop collaboration backlog]
+** xref:backlog/Attachment_Implementation_Plan.adoc[Synced attachments implementation plan]
 * Roadmap
 ** xref:roadmap/Current_Roadmap.adoc[Current roadmap]
 ** xref:roadmap/Realistic_Delivery_Pipeline.adoc[Realistic delivery pipeline]

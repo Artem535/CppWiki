@@ -5,6 +5,8 @@ import type {
   EditorBridge,
   InitialDocumentSnapshot,
   LoadedDocument,
+  AttachmentUploadMetadata,
+  StoredAttachment,
 } from "./editorBridge";
 
 declare global {
@@ -99,6 +101,30 @@ type QtEditorBridgeObject = {
       response: BridgeResult<{ path: string; fileName: string; content: string }>,
     ) => void,
   ): void;
+  beginAttachmentUpload(
+    metadata: AttachmentUploadMetadata,
+    callback: (response: BridgeResult<{ uploadId: string }>) => void,
+  ): void;
+  appendAttachmentChunk(
+    uploadId: string,
+    base64Bytes: string,
+    callback: (response: BridgeResult<void>) => void,
+  ): void;
+  completeAttachmentUpload(
+    uploadId: string,
+    callback: (response: BridgeResult<StoredAttachment>) => void,
+  ): void;
+  cancelAttachmentUpload(
+    uploadId: string,
+    callback: (response: BridgeResult<void>) => void,
+  ): void;
+  saveAttachmentToFile(
+    attachmentId: string,
+    callback: (response: BridgeResult<{ path: string; fileName: string }>) => void,
+  ): void;
+  pasteClipboardAttachment(
+    callback: (response: BridgeResult<StoredAttachment & { filename: string; mimeType: string; sizeBytes: number }>) => void,
+  ): void;
 };
 
 export async function createQtEditorBridge(): Promise<EditorBridge | null> {
@@ -158,6 +184,42 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
     importTextFromFile(nameFilter) {
       return new Promise((resolve) => {
         qtObject.importTextFromFile(nameFilter, resolve);
+      });
+    },
+
+    beginAttachmentUpload(metadata) {
+      return new Promise((resolve) => {
+        qtObject.beginAttachmentUpload(metadata, resolve);
+      });
+    },
+
+    appendAttachmentChunk(uploadId, base64Bytes) {
+      return new Promise((resolve) => {
+        qtObject.appendAttachmentChunk(uploadId, base64Bytes, resolve);
+      });
+    },
+
+    completeAttachmentUpload(uploadId) {
+      return new Promise((resolve) => {
+        qtObject.completeAttachmentUpload(uploadId, resolve);
+      });
+    },
+
+    cancelAttachmentUpload(uploadId) {
+      return new Promise((resolve) => {
+        qtObject.cancelAttachmentUpload(uploadId, resolve);
+      });
+    },
+
+    saveAttachmentToFile(attachmentId) {
+      return new Promise((resolve) => {
+        qtObject.saveAttachmentToFile(attachmentId, resolve);
+      });
+    },
+
+    pasteClipboardAttachment() {
+      return new Promise((resolve) => {
+        qtObject.pasteClipboardAttachment(resolve);
       });
     },
 

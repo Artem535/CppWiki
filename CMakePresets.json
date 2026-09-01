@@ -59,6 +59,19 @@
         "CPPWIKI_BUILD_TESTS": "OFF",
         "CPPWIKI_ENABLE_CBLITE_STORAGE": "OFF"
       }
+    },
+    {
+      "name": "attachment-e2e",
+      "displayName": "Attachment Sync E2E",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build/attachment-e2e",
+      "cacheVariables": {
+        "CPPWIKI_BUILD_DESKTOP_APP": "OFF",
+        "CPPWIKI_BUILD_SERVER": "OFF",
+        "CPPWIKI_BUILD_ADMIN_CLI": "OFF",
+        "CPPWIKI_ENABLE_CBLITE_STORAGE": "ON",
+        "CPPWIKI_CBLITE_ROOT": "${sourceDir}/.deps/couchbase-lite/linux-x86_64"
+      }
     }
   ],
   "buildPresets": [

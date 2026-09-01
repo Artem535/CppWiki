@@ -26,6 +26,10 @@ import { en as aiEnDictionary } from "@blocknote/xl-ai/locales";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ExcalidrawCanvasView } from "./canvas/ExcalidrawCanvasView";
+import { AttachmentBlock, getAttachmentSlashMenuItem } from "./blocks/AttachmentBlock";
+import { setAttachmentBridge } from "./blocks/attachmentBridgeContext";
+import { uploadAttachment } from "./blocks/attachmentUpload";
+import { getClipboardFiles } from "./blocks/clipboardAttachments";
 import { getMermaidSlashMenuItem, MermaidBlock } from "./blocks/MermaidBlock";
 import { ProjectBoardView } from "./project/ProjectBoardView";
 import { createEditorBridge } from "./bridge";
@@ -59,6 +63,7 @@ const editorSchema = BlockNoteSchema.create({
     // createReactBlockSpec() returns an options factory, not a BlockSpec itself — call it with
     // no options to get the actual spec, same as how @blocknote/core builds defaultBlockSpecs.
     mermaid: MermaidBlock(),
+    attachment: AttachmentBlock(),
   },
 });
 
@@ -85,6 +90,13 @@ function UnsupportedKindPlaceholder({
 
 function EditorApp() {
   const [bridge, setBridge] = useState<EditorBridge | null>(null);
+  // The editor is created once, before QWebChannel resolves asynchronously. Keep the current
+  // bridge in a ref so BlockNote's long-lived uploadFile callback can use it for paste/drop.
+  const bridge_ref = useRef<EditorBridge | null>(null);
+  useEffect(() => {
+    setAttachmentBridge(bridge);
+    return () => setAttachmentBridge(null);
+  }, [bridge]);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [isEditable, setIsEditable] = useState(true);
   const [, setIsLoadingDocument] = useState(false);
@@ -133,11 +145,6 @@ function EditorApp() {
   const snapshot_timer = useRef<number | null>(null);
   const replacing_document = useRef(false);
   const selected_page_id = useRef<string | null>(null);
-  // The bridge is created asynchronously (see effect below); this ref lets
-  // the AI transports (constructed once, up front) reach the live bridge
-  // instance once it exists, without recreating the editor.
-  const bridge_ref = useRef<EditorBridge | null>(null);
-
   // ADR-012: forwards every AI request (both the formatting-toolbar rewrite
   // and the slash-command autocomplete — MVP scope, ADR-010) through
   // EditorBridge, never fetching directly from this JS context. `mode` is a
@@ -197,6 +204,109 @@ function EditorApp() {
       dictionary: { ...coreEnDictionary, ai: aiEnDictionary },
       extensions: [createAIExtension({ transport: aiTransport }), inlineSuggestionExtension],
       schema: editorSchema,
+      // Covers BlockNote's own image/file flows (including paste/drop), while the dedicated
+      // attachment block below gives generic files the explicit native Save as... action. The
+      // callback never exposes a filesystem path or remote URL to the editor.
+      uploadFile: async (file) => {
+        const activeBridge = bridge_ref.current;
+        if (activeBridge === null) {
+          throw new Error("Attachments are not ready yet.");
+        }
+        const uploaded = await uploadAttachment(activeBridge, file);
+        if (!uploaded.ok) {
+          throw new Error(uploaded.error.message);
+        }
+        return uploaded.result.uri;
+      },
+      pasteHandler: ({ event, editor: activeEditor, defaultPasteHandler }) => {
+        const files = getClipboardFiles(event);
+        if (files.length === 0 && !event.clipboardData) {
+          return defaultPasteHandler();
+        }
+
+        // BlockNote's built-in paste handler does not insert clipboard image/file items when
+        // the editor is hosted in QWebEngine. When JavaScript cannot expose a file, ask the
+        // native bridge as well; QWebEngine may report an empty `types` list for binary data.
+        // Keep pasted images as native BlockNote image blocks and use the custom attachment
+        // block only for generic files. Ordinary text/HTML is passed back to BlockNote if the
+        // native clipboard has no file.
+        event.preventDefault();
+        void (async () => {
+          const activeBridge = bridge_ref.current;
+          if (activeBridge === null) {
+            console.error("Cannot paste clipboard attachment: bridge is not ready");
+            return;
+          }
+
+          let referenceBlock = activeEditor.getTextCursorPosition().block;
+          const insertClipboardItem = (attachment: {
+            attachmentId: string;
+            uri: string;
+            filename: string;
+            mimeType: string;
+            sizeBytes: number;
+          }) => {
+            const [insertedBlock] = attachment.mimeType.startsWith("image/")
+              ? activeEditor.insertBlocks(
+                  [
+                    {
+                      type: "image",
+                      props: {
+                        url: attachment.uri,
+                        name: attachment.filename,
+                      },
+                    },
+                  ],
+                  referenceBlock,
+                  "after",
+                )
+              : activeEditor.insertBlocks(
+                  [
+                    {
+                      type: "attachment",
+                      props: {
+                        attachmentId: attachment.attachmentId,
+                        uri: attachment.uri,
+                        filename: attachment.filename,
+                        mimeType: attachment.mimeType,
+                        sizeBytes: attachment.sizeBytes,
+                      },
+                    },
+                  ],
+                  referenceBlock,
+                  "after",
+                );
+            referenceBlock = insertedBlock;
+          };
+
+          if (files.length === 0) {
+            const pasted = await activeBridge.pasteClipboardAttachment();
+            if (pasted.ok) {
+              insertClipboardItem(pasted.result);
+            } else if (pasted.error.code !== "clipboard_unsupported" && pasted.error.code !== "clipboard_empty") {
+              console.error("Failed to read clipboard attachment", pasted.error);
+            } else {
+              defaultPasteHandler();
+            }
+            return;
+          }
+
+          for (const file of files) {
+            const uploaded = await uploadAttachment(activeBridge, file);
+            if (!uploaded.ok) {
+              console.error("Failed to upload clipboard attachment", uploaded.error);
+              continue;
+            }
+            insertClipboardItem({
+              ...uploaded.result,
+              filename: file.name,
+              mimeType: file.type || "application/octet-stream",
+              sizeBytes: file.size,
+            });
+          }
+        })();
+        return true;
+      },
     },
     [],
   );
@@ -525,6 +635,7 @@ function EditorApp() {
                     [
                       ...getDefaultReactSlashMenuItems(editor),
                       getMermaidSlashMenuItem(editor),
+                      getAttachmentSlashMenuItem(editor),
                       ...(aiFeaturesEnabled && aiAutocompleteEnabled
                         ? getAISlashMenuItems(editor)
                         : []),

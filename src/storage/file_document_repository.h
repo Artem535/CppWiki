@@ -30,10 +30,15 @@ class FileDocumentRepository final : public LocalDocumentRepository {
   [[nodiscard]] auto DeleteDocument(std::string_view page_id) -> DeleteDocumentResult override;
   [[nodiscard]] auto LoadDocument(std::string_view page_id) -> LoadDocumentResult override;
   [[nodiscard]] auto ListDocuments() -> ListDocumentsResult override;
+  [[nodiscard]] auto SaveAttachment(const AttachmentData& attachment)
+      -> SaveAttachmentResult override;
+  [[nodiscard]] auto LoadAttachment(std::string_view attachment_id, std::string_view workspace_id)
+      -> LoadAttachmentResult override;
+  [[nodiscard]] auto ListAttachments(std::string_view workspace_id)
+      -> ListAttachmentsResult override;
   [[nodiscard]] auto SaveConflict(const DocumentConflictRecord& conflict)
       -> SaveConflictResult override;
-  [[nodiscard]] auto DeleteConflict(std::string_view conflict_id)
-      -> DeleteConflictResult override;
+  [[nodiscard]] auto DeleteConflict(std::string_view conflict_id) -> DeleteConflictResult override;
   [[nodiscard]] auto LoadConflict(std::string_view conflict_id) -> LoadConflictResult override;
   [[nodiscard]] auto ListConflicts() -> ListConflictsResult override;
   [[nodiscard]] auto ResolveConflict(std::string_view conflict_id)

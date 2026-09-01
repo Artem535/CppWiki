@@ -519,6 +519,94 @@ button {
   word-break: break-word;
 }
 
+/* Synchronized attachment block: the browser only sees an opaque cppwiki-attachment URI;
+   generic files are saved via the native bridge rather than opened by Chromium. */
+.attachment-block {
+  display: flex;
+  position: relative;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  margin: 6px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface);
+  color: var(--app-text-muted);
+}
+
+.attachment-block--empty {
+  border-style: dashed;
+}
+
+.attachment-block-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attachment-block-copy strong {
+  overflow: hidden;
+  color: var(--app-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-block-copy span {
+  font-size: 12px;
+}
+
+.attachment-block-action {
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+  cursor: pointer;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.attachment-block-action:hover:not(:disabled) {
+  background: var(--app-surface-hover);
+}
+
+.attachment-block-action:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.attachment-block-file-input {
+  display: none;
+}
+
+.attachment-block-image {
+  display: block;
+  max-width: min(720px, 100%);
+  max-height: 260px;
+  border-radius: 5px;
+  object-fit: contain;
+}
+
+.attachment-block--image {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.attachment-block-error {
+  position: absolute;
+  right: 12px;
+  bottom: -24px;
+  margin: 0;
+  color: #ff6b6b;
+  font-size: 12px;
+}
+
 /* Project board document kind (issue #106): Gantt/Kanban/DataGrid views (SVAR) need a real,
    definite, non-zero height to render into — the same `height: 100%` chain requirement
    documented at the top of this file for .editor-surface/.excalidraw-canvas. .project-board-view
