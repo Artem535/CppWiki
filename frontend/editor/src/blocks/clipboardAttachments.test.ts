@@ -6,6 +6,10 @@ function clipboardEventWithItems(items: DataTransferItem[]): ClipboardEvent {
   return { clipboardData: { items } } as unknown as ClipboardEvent;
 }
 
+function clipboardEventWithFiles(files: File[]): ClipboardEvent {
+  return { clipboardData: { files } } as unknown as ClipboardEvent;
+}
+
 describe("clipboard attachment extraction", () => {
   it("extracts clipboard files and gives unnamed images a stable filename", () => {
     const image = new File([new Uint8Array([1, 2, 3])], "", { type: "image/png" });
@@ -37,5 +41,11 @@ describe("clipboard attachment extraction", () => {
     } as unknown as DataTransferItem;
 
     expect(getClipboardFiles(clipboardEventWithItems([item]))).toEqual([]);
+  });
+
+  it("also extracts files exposed through the clipboard file list", () => {
+    const file = new File([new Uint8Array([1])], "notes.txt", { type: "text/plain" });
+
+    expect(getClipboardFiles(clipboardEventWithFiles([file]))).toEqual([file]);
   });
 });
