@@ -3,7 +3,6 @@
 #include <spdlog/spdlog.h>
 
 #include <QAbstractItemView>
-#include <QAction>
 #include <QContextMenuEvent>
 #include <QFile>
 #include <QFileDialog>
@@ -17,7 +16,6 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
-#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSet>
@@ -88,16 +86,46 @@ class AttachmentWebEngineView final : public QWebEngineView {
       return;
     }
 
-    auto* menu = createStandardContextMenu();
-    menu->addSeparator();
-    auto* save_action = menu->addAction(QStringLiteral("Save image as…"));
-    connect(save_action, &QAction::triggered, this, [this, url = request->mediaUrl()]() {
+    auto* menu = new QFrame(this, Qt::Popup | Qt::FramelessWindowHint);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->setObjectName(QStringLiteral("imageContextMenu"));
+    menu->setStyleSheet(QStringLiteral(R"(
+      QFrame#imageContextMenu {
+        background-color: palette(base);
+        border: 1px solid palette(mid);
+        border-radius: 6px;
+      }
+      QFrame#imageContextMenu QPushButton {
+        border: none;
+        border-radius: 4px;
+        min-height: 30px;
+        padding: 4px 10px;
+        text-align: left;
+        background: transparent;
+        color: palette(text);
+      }
+      QFrame#imageContextMenu QPushButton:hover {
+        background-color: palette(highlight);
+        color: palette(highlighted-text);
+      }
+    )"));
+    auto* layout = new QVBoxLayout(menu);
+    layout->setContentsMargins(6, 6, 6, 6);
+    auto* save_button = new QPushButton(QStringLiteral("Save image as…"), menu);
+    save_button->setCursor(Qt::PointingHandCursor);
+    save_button->setFocusPolicy(Qt::NoFocus);
+    save_button->setFlat(true);
+    layout->addWidget(save_button);
+    connect(save_button, &QPushButton::clicked, menu, [this, menu, url = request->mediaUrl()]() {
+      menu->close();
       if (save_image_callback_) {
         save_image_callback_(url);
       }
     });
-    menu->exec(event->globalPos());
-    delete menu;
+    event->accept();
+    menu->adjustSize();
+    menu->move(event->globalPos());
+    menu->show();
   }
 
  private:
