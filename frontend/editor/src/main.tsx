@@ -29,6 +29,7 @@ import { ExcalidrawCanvasView } from "./canvas/ExcalidrawCanvasView";
 import { AttachmentBlock, getAttachmentSlashMenuItem } from "./blocks/AttachmentBlock";
 import { setAttachmentBridge } from "./blocks/attachmentBridgeContext";
 import { uploadAttachment } from "./blocks/attachmentUpload";
+import { getClipboardFiles } from "./blocks/clipboardAttachments";
 import { getMermaidSlashMenuItem, MermaidBlock } from "./blocks/MermaidBlock";
 import { ProjectBoardView } from "./project/ProjectBoardView";
 import { createEditorBridge } from "./bridge";
@@ -216,6 +217,52 @@ function EditorApp() {
           throw new Error(uploaded.error.message);
         }
         return uploaded.result.uri;
+      },
+      pasteHandler: ({ event, editor: activeEditor, defaultPasteHandler }) => {
+        const files = getClipboardFiles(event);
+        if (files.length === 0) {
+          return defaultPasteHandler();
+        }
+
+        // BlockNote's built-in paste handler does not insert clipboard image/file items when
+        // the editor is hosted in QWebEngine. Handle only file items here and leave text/HTML
+        // clipboard content to BlockNote's normal parser.
+        event.preventDefault();
+        void (async () => {
+          const activeBridge = bridge_ref.current;
+          if (activeBridge === null) {
+            console.error("Cannot paste clipboard attachment: bridge is not ready");
+            return;
+          }
+
+          let referenceBlock = activeEditor.getTextCursorPosition().block;
+          for (const file of files) {
+            const uploaded = await uploadAttachment(activeBridge, file);
+            if (!uploaded.ok) {
+              console.error("Failed to upload clipboard attachment", uploaded.error);
+              continue;
+            }
+
+            const [insertedBlock] = activeEditor.insertBlocks(
+              [
+                {
+                  type: "attachment",
+                  props: {
+                    attachmentId: uploaded.result.attachmentId,
+                    uri: uploaded.result.uri,
+                    filename: file.name,
+                    mimeType: file.type || "application/octet-stream",
+                    sizeBytes: file.size,
+                  },
+                },
+              ],
+              referenceBlock,
+              "after",
+            );
+            referenceBlock = insertedBlock;
+          }
+        })();
+        return true;
       },
     },
     [],
