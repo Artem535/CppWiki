@@ -128,19 +128,21 @@ function AttachmentBlockContent(
   }
 
   return (
-    <div className="attachment-block" contentEditable={false}>
+    <div className={`attachment-block${isImage ? " attachment-block--image" : ""}`} contentEditable={false}>
       {isImage ? (
         <img className="attachment-block-image" src={props.block.props.uri} alt={props.block.props.filename} />
       ) : (
-        <AttachmentIcon />
+        <>
+          <AttachmentIcon />
+          <div className="attachment-block-copy">
+            <strong>{props.block.props.filename}</strong>
+            <span>{formatFileSize(props.block.props.sizeBytes)} · {props.block.props.mimeType}</span>
+          </div>
+          <button type="button" className="attachment-block-action" onClick={() => void saveToFile()}>
+            Save as…
+          </button>
+        </>
       )}
-      <div className="attachment-block-copy">
-        <strong>{props.block.props.filename}</strong>
-        <span>{formatFileSize(props.block.props.sizeBytes)} · {props.block.props.mimeType}</span>
-      </div>
-      <button type="button" className="attachment-block-action" onClick={() => void saveToFile()}>
-        Save as…
-      </button>
       {error ? <p className="attachment-block-error">{error}</p> : null}
     </div>
   );

@@ -227,7 +227,9 @@ function EditorApp() {
         // BlockNote's built-in paste handler does not insert clipboard image/file items when
         // the editor is hosted in QWebEngine. When JavaScript cannot expose a file, ask the
         // native bridge as well; QWebEngine may report an empty `types` list for binary data.
-        // Ordinary text/HTML is passed back to BlockNote if the native clipboard has no file.
+        // Keep pasted images as native BlockNote image blocks and use the custom attachment
+        // block only for generic files. Ordinary text/HTML is passed back to BlockNote if the
+        // native clipboard has no file.
         event.preventDefault();
         void (async () => {
           const activeBridge = bridge_ref.current;
@@ -237,36 +239,50 @@ function EditorApp() {
           }
 
           let referenceBlock = activeEditor.getTextCursorPosition().block;
-          const insertAttachment = (attachment: {
+          const insertClipboardItem = (attachment: {
             attachmentId: string;
             uri: string;
             filename: string;
             mimeType: string;
             sizeBytes: number;
           }) => {
-            const [insertedBlock] = activeEditor.insertBlocks(
-              [
-                {
-                  type: "attachment",
-                  props: {
-                    attachmentId: attachment.attachmentId,
-                    uri: attachment.uri,
-                    filename: attachment.filename,
-                    mimeType: attachment.mimeType,
-                    sizeBytes: attachment.sizeBytes,
-                  },
-                },
-              ],
-              referenceBlock,
-              "after",
-            );
+            const [insertedBlock] = attachment.mimeType.startsWith("image/")
+              ? activeEditor.insertBlocks(
+                  [
+                    {
+                      type: "image",
+                      props: {
+                        url: attachment.uri,
+                        name: attachment.filename,
+                      },
+                    },
+                  ],
+                  referenceBlock,
+                  "after",
+                )
+              : activeEditor.insertBlocks(
+                  [
+                    {
+                      type: "attachment",
+                      props: {
+                        attachmentId: attachment.attachmentId,
+                        uri: attachment.uri,
+                        filename: attachment.filename,
+                        mimeType: attachment.mimeType,
+                        sizeBytes: attachment.sizeBytes,
+                      },
+                    },
+                  ],
+                  referenceBlock,
+                  "after",
+                );
             referenceBlock = insertedBlock;
           };
 
           if (files.length === 0) {
             const pasted = await activeBridge.pasteClipboardAttachment();
             if (pasted.ok) {
-              insertAttachment(pasted.result);
+              insertClipboardItem(pasted.result);
             } else if (pasted.error.code !== "clipboard_unsupported" && pasted.error.code !== "clipboard_empty") {
               console.error("Failed to read clipboard attachment", pasted.error);
             } else {
@@ -281,7 +297,7 @@ function EditorApp() {
               console.error("Failed to upload clipboard attachment", uploaded.error);
               continue;
             }
-            insertAttachment({
+            insertClipboardItem({
               ...uploaded.result,
               filename: file.name,
               mimeType: file.type || "application/octet-stream",

@@ -13,7 +13,11 @@ auto ParseAttachmentUri(std::string_view uri) -> std::optional<std::string> {
     return std::nullopt;
   }
 
-  const auto attachment_id = uri.substr(kAttachmentUriScheme.size());
+  auto attachment_id = uri.substr(kAttachmentUriScheme.size());
+  // QWebEngine normalizes host-only custom-scheme URLs by appending a root slash.
+  if (attachment_id.ends_with('/')) {
+    attachment_id.remove_suffix(1);
+  }
   if (attachment_id.empty() || attachment_id.find_first_of("/?#") != std::string_view::npos) {
     return std::nullopt;
   }

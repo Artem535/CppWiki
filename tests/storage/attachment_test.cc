@@ -35,6 +35,10 @@ auto TestAttachmentUriRoundTrip() -> void {
   const auto parsed = cppwiki::storage::ParseAttachmentUri(uri);
   Require(parsed.has_value(), "private attachment URI must parse");
   Require(*parsed == "a1dcb4e6-8442-4ee4-94b4-8cef8d5c1f16", "parsed attachment ID must match");
+  const auto parsed_webengine = cppwiki::storage::ParseAttachmentUri(
+      "cppwiki-attachment://a1dcb4e6-8442-4ee4-94b4-8cef8d5c1f16/");
+  Require(parsed_webengine.has_value() && *parsed_webengine == *parsed,
+          "WebEngine-normalized attachment URI must parse");
 
   Require(!cppwiki::storage::ParseAttachmentUri("file:///tmp/architecture.png").has_value(),
           "filesystem URL must not be accepted");

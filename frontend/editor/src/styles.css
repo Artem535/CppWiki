@@ -583,10 +583,19 @@ button {
 
 .attachment-block-image {
   display: block;
-  max-width: min(420px, 45%);
+  max-width: min(720px, 100%);
   max-height: 260px;
   border-radius: 5px;
   object-fit: contain;
+}
+
+.attachment-block--image {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .attachment-block-error {

@@ -3,6 +3,8 @@
 #include <spdlog/spdlog.h>
 
 #include <QAbstractItemView>
+#include <QAction>
+#include <QContextMenuEvent>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -15,6 +17,7 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSet>
@@ -25,6 +28,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWebChannel>
+#include <QWebEngineContextMenuRequest>
 #include <QWebEngineDownloadRequest>
 #include <QWebEngineFileSystemAccessRequest>
 #include <QWebEnginePage>
@@ -64,6 +68,41 @@ namespace cppwiki {
 namespace {
 
 using namespace gui::page_helpers;
+
+class AttachmentWebEngineView final : public QWebEngineView {
+ public:
+  using SaveImageCallback = std::function<void(const QUrl&)>;
+
+  explicit AttachmentWebEngineView(QWidget* parent, SaveImageCallback save_image_callback)
+      : QWebEngineView(parent), save_image_callback_(std::move(save_image_callback)) {}
+
+ protected:
+  void contextMenuEvent(QContextMenuEvent* event) override {
+    auto* request = lastContextMenuRequest();
+    const bool is_attachment_image =
+        request != nullptr &&
+        request->mediaType() == QWebEngineContextMenuRequest::MediaTypeImage &&
+        request->mediaUrl().scheme() == QStringLiteral("cppwiki-attachment");
+    if (!is_attachment_image) {
+      QWebEngineView::contextMenuEvent(event);
+      return;
+    }
+
+    auto* menu = createStandardContextMenu();
+    menu->addSeparator();
+    auto* save_action = menu->addAction(QStringLiteral("Save image as…"));
+    connect(save_action, &QAction::triggered, this, [this, url = request->mediaUrl()]() {
+      if (save_image_callback_) {
+        save_image_callback_(url);
+      }
+    });
+    menu->exec(event->globalPos());
+    delete menu;
+  }
+
+ private:
+  SaveImageCallback save_image_callback_;
+};
 
 }  // namespace
 
@@ -119,7 +158,23 @@ void Page::BuildUi() {
             });
   }
 
-  editor_view_ = new QWebEngineView(this);
+  editor_view_ = new AttachmentWebEngineView(this, [this](const QUrl& url) {
+    const auto attachment_id = storage::ParseAttachmentUri(url.toString().toStdString());
+    if (!attachment_id) {
+      return;
+    }
+    const auto result =
+        editor_bridge_->saveAttachmentToFile(QString::fromStdString(*attachment_id));
+    if (!result.value(QStringLiteral("ok")).toBool() &&
+        result.value(QStringLiteral("error")).toMap().value(QStringLiteral("code")).toString() !=
+            QStringLiteral("cancelled")) {
+      QMessageBox::warning(this, QStringLiteral("Save attachment"),
+                           result.value(QStringLiteral("error"))
+                               .toMap()
+                               .value(QStringLiteral("message"))
+                               .toString());
+    }
+  });
   editor_view_->page()->profile()->installUrlSchemeHandler(
       QByteArrayLiteral("cppwiki-attachment"),
       new gui::AttachmentUrlSchemeHandler(

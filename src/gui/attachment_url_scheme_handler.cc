@@ -41,8 +41,8 @@ void AttachmentUrlSchemeHandler::requestStarted(QWebEngineUrlRequestJob* job) {
     job->fail(QWebEngineUrlRequestJob::UrlInvalid);
     return;
   }
-  const auto attachment =
-      repository_->LoadAttachment(*attachment_id, workspace_id_provider_().toStdString());
+  const auto workspace_id = workspace_id_provider_();
+  const auto attachment = repository_->LoadAttachment(*attachment_id, workspace_id.toStdString());
   if (attachment.error || !attachment.attachment ||
       !IsSafeInlineImageMime(attachment.attachment->metadata.mime_type)) {
     job->fail(QWebEngineUrlRequestJob::RequestDenied);
