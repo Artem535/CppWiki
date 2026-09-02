@@ -14,6 +14,7 @@
 ** xref:architecture/Server_Code_Explained_ru.adoc[Server code explained (RU)]
 ** xref:architecture/Sync_Document_Model_and_Conflict_Contract.adoc[Sync document model and conflict contract]
 ** xref:architecture/QWebChannel_Editor_Bridge_Explained.adoc[QWebChannel editor bridge explained]
+** xref:architecture/Knowledge_Graph_and_Semantic_Layer.adoc[Knowledge Graph and Semantic Layer]
 ** ADRs
 *** xref:architecture/adr/ADR-001-editor-choice.adoc[ADR-001]
 *** xref:architecture/adr/ADR-002-document-model.adoc[ADR-002]
@@ -44,6 +45,7 @@
 * Roadmap
 ** xref:roadmap/Current_Roadmap.adoc[Current roadmap]
 ** xref:roadmap/Realistic_Delivery_Pipeline.adoc[Realistic delivery pipeline]
+** xref:roadmap/Knowledge_Graph_Delivery.adoc[Knowledge Graph delivery]
 * Deployment
 ** xref:deployment/Server_Docker_Image.adoc[Server Docker image]
 * ML LLM Delivery Pipeline

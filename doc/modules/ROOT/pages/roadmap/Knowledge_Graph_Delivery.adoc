@@ -1,0 +1,111 @@
+= Knowledge Graph Delivery
+
+*Product:* CppWiki +
+*Status:* Proposed delivery map +
+*Date:* 2026-08-20 +
+*Design:* xref:architecture/Knowledge_Graph_and_Semantic_Layer.adoc[]
+
+'''
+
+== Purpose
+
+This document turns the Knowledge Graph and Semantic Layer design into independently deliverable, GitHub-tracked vertical slices. It deliberately follows the local-wiki reliability work on the current roadmap: authoritative knowledge must be safe, migratable, and syncable before it gains a graph view or semantic assistance.
+
+The GitHub parent issue, https://github.com/Artem535/CppWiki/issues/184[#184], is the planning authority for issue numbers and live status. This document records the intended dependency shape and is updated if the delivery graph materially changes.
+
+== Dependency Map
+
+[source,text]
+----
+1  Knowledge model and migration contract
+|-- 2  Workspace property catalog and page properties
+|   |-- 3  Tags vocabulary
+|   `-- 4  Typed relations and inverse representations
+|       `-- 6  Connections section
+|           `-- 7  Explicit Graph local navigation
+|               `-- 8  Explicit Graph global view and filters
+|
+|-- 5  Wikilinks and backlinks
+|   `-- 6
+|   `-- 7
+|
+`-- 9  Local semantic-index foundation
+    `-- 10 Semantic Graph and evidence
+        |-- 11 Promote a semantic relation
+        `-- 12 Knowledge-assistance recommendations
+
+3 also blocks 8 and 12.
+4 also blocks 11.
+----
+
+== Tracer-Bullet Issues
+
+[cols="1,3,3",options="header"]
+|===
+|Order |Issue |What it delivers
+
+|1
+|https://github.com/Artem535/CppWiki/issues/185[#185 -- Define the knowledge model and migration contract]
+|A sync-safe, workspace-scoped storage contract for property definitions, property values, relation instances, and link identity, including schema/deletion/rename rules.
+
+|2
+|https://github.com/Artem535/CppWiki/issues/186[#186 -- Add workspace property catalog and page properties]
+|A person can define a property once per workspace and use it on any page in a compact page-header block; values survive storage and synchronization.
+
+|3
+|https://github.com/Artem535/CppWiki/issues/187[#187 -- Add tags as a workspace property vocabulary]
+|A person can select workspace tags on pages and use them to search or filter, without making tags graph nodes.
+
+|4
+|https://github.com/Artem535/CppWiki/issues/188[#188 -- Add typed page relations and inverse representations]
+|A person can create directed or symmetric page relations; every logical edge is stored once and shown correctly from either endpoint.
+
+|5
+|https://github.com/Artem535/CppWiki/issues/189[#189 -- Extract wikilinks and provide backlinks]
+|A person can create rename-safe links to pages and see resolved incoming backlinks and broken links.
+
+|6
+|https://github.com/Artem535/CppWiki/issues/190[#190 -- Deliver the page Connections section]
+|A page shows its incoming typed relations and backlinks without duplicating outgoing content links.
+
+|7
+|https://github.com/Artem535/CppWiki/issues/191[#191 -- Deliver Explicit Graph local navigation]
+|A person can explore a selected page and its immediate explicit neighbourhood, inspect details, and open pages from the graph.
+
+|8
+|https://github.com/Artem535/CppWiki/issues/192[#192 -- Deliver Explicit Graph global view and filters]
+|A person can explore the bounded whole-workspace Explicit Graph and filter it by title, tags, properties, and relation type.
+
+|9
+|https://github.com/Artem535/CppWiki/issues/193[#193 -- Build the local semantic-index foundation]
+|A device can safely create, incrementally update, delete, and rebuild a local semantic index with no dependency on synchronization.
+
+|10
+|https://github.com/Artem535/CppWiki/issues/194[#194 -- Deliver Semantic Graph with evidence]
+|A person can explore derived page similarity, tune visual noise, and inspect the chunk evidence behind a semantic edge.
+
+|11
+|https://github.com/Artem535/CppWiki/issues/195[#195 -- Promote a semantic discovery to an explicit relation]
+|A person can turn reviewed semantic evidence into a normal explicit relation after selecting its type and confirming the action.
+
+|12
+|https://github.com/Artem535/CppWiki/issues/196[#196 -- Add knowledge-assistance recommendations]
+|A person receives optional, explainable tag, cluster, and related-page recommendations; none can change authoritative knowledge automatically.
+|===
+
+== Test Strategy
+
+Each issue validates observable behavior through the highest stable seam available:
+
+* `WorkspaceKnowledgeStore` contract tests prove identical behavior for file and Couchbase Lite storage, including migrations, round trips, deletion/recovery, and conflict preservation.
+* editor bridge and page UI tests prove properties, link navigation, and Connections behavior from a user-visible contract.
+* Graph View tests prove selected-node details, navigation, edge classification, and filters without asserting a particular force-layout coordinate.
+* semantic tests use deterministic provider fixtures and index fixtures; they assert evidence, incremental invalidation, and the absence of authoritative mutations rather than a model's exact floating-point output.
+
+== Release Gates
+
+Phase 1 is complete only when all authoritative knowledge records survive local storage, sync, workspace archive/restore, recoverable trash, and page rename/delete flows without silently losing relations or property values.
+
+Phase 2 is complete only when semantic data can be removed and rebuilt, provider absence leaves normal wiki work intact, and every visible semantic relation has inspectable evidence.
+
+Phase 3 is complete only when all recommendations can be ignored safely and no AI operation can mutate authoritative knowledge without an explicit user action.
