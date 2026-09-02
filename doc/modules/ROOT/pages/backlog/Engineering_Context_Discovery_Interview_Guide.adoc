@@ -1,0 +1,177 @@
+= Engineering Context Discovery Form
+
+:description: Async discovery form and synthesis template for validating the CppWiki engineering-context hypothesis.
+
+== Purpose
+
+This form supports Issue https://github.com/Artem535/CppWiki/issues/200[#200]. Its purpose is to learn how engineers currently assemble context for coding-agent work and whether the problem is painful enough to justify a dedicated workflow.
+
+It is designed to be sent as an asynchronous questionnaire. A live interview is optional. This is discovery material, not a product pitch and not evidence that the hypothesis is already validated.
+
+== Working hypothesis
+
+[quote]
+____
+When engineers use coding agents, the context required to perform a task is fragmented across tasks, documentation, architecture decisions, repositories and conversations. A connected context workflow may reduce preparation time, clarification cycles and stale knowledge.
+____
+
+Treat this statement as an assumption. The form must be able to disprove it.
+
+== Form design
+
+Use a mix of short-answer, multiple-choice and long-form questions. Keep the form anonymous by default, but provide an optional contact field for participants willing to join a pilot.
+
+Prefer participants who recently completed a real engineering task with Claude Code, Codex, Cursor, Copilot or a comparable coding agent.
+
+Collect the following:
+
+* role and approximate team size;
+* type of product or system;
+* coding agents used and frequency;
+* tools used for tasks, documentation, decisions and source code;
+* whether the participant can provide a representative task for a later pilot;
+* optional contact information for follow-up.
+
+Do not recruit only people who already agree with the CppWiki direction.
+
+== Copy-ready form
+
+Introductory text: ``We are researching how engineers use coding agents on real work. Please answer from one recent task, not from an ideal workflow. We are not evaluating you or your tools, and there are no expected answers. Do not include confidential source code, credentials or private customer information.``
+
+=== About you
+
+. Role and team size. (Short answer)
+. What kind of product or system do you work on? (Short answer)
+. Which coding agents do you use, and how often? (Multiple choice plus optional detail)
+. Where do you keep tasks, documentation, architecture decisions and code? (Checkboxes)
+
+=== Your most recent agent task
+
+. Describe the last real engineering task where you used a coding agent. What was the intended outcome? (Long answer)
+. How did you decide that the task was ready to start? (Long answer)
+. Where did the task context come from? (Long answer)
+. Which documents, decisions, code areas or conversations did you consult? (Long answer)
+. How did you find those sources? (Long answer)
+. What did you manually copy, summarize or explain to the agent? (Long answer)
+. What did the agent have to rediscover? (Long answer)
+. Which important context was missing or difficult to find? (Long answer)
+
+=== Execution and outcome
+
+. How did the agent receive instructions and constraints? (Long answer)
+. How many clarification or correction cycles were needed? (Number)
+. Did the agent make a wrong assumption? What caused it? (Long answer)
+. How did you check that the result respected requirements and architecture decisions? (Long answer)
+. How much human intervention did the task require? (Multiple choice plus optional detail)
+. What artifacts were created or changed afterwards: code, PR, task, ADR, documentation or diagrams? (Checkboxes plus optional detail)
+. Which post-task updates were automatic and which were manual? (Long answer)
+. What usually remains stale after implementation? (Long answer)
+
+=== Cost and current workaround
+
+. How often does this workflow occur? (Multiple choice)
+. What do you do today to reduce context problems? (Long answer)
+. How much time does context preparation usually take? (Multiple choice plus optional detail)
+. What happens when context is incomplete? (Checkboxes plus optional detail)
+. Have you repeated research or rediscovered an existing decision? Describe one example. (Long answer)
+. What would make this problem important enough to change your current workflow? (Long answer)
+
+=== Adoption and pilot
+
+. Would you prefer a new workspace or integration with the tools you already use? Why? (Long answer)
+. What data could not leave your current systems? (Long answer)
+. What permissions would an agent need, and which actions would require approval? (Long answer)
+. Would you provide one real task and its non-confidential context for a prototype? (Yes / no / maybe)
+. Would you be willing to test the workflow more than once? (Yes / no / maybe)
+. Optional: how can we contact you about a pilot? (Email or handle)
+
+Do not ask ``Would you use CppWiki?`` as the primary demand signal. Prefer the concrete commitments in the pilot section.
+
+== Per-response synthesis
+
+Create one completed record per form response. Separate reported facts from interpretation.
+
+=== Participant
+
+* Identifier:
+* Role:
+* Team size:
+* Agent and usage frequency:
+* Current tools:
+* Response date:
+
+=== Observed workflow
+
+* Real task:
+* Context sources:
+* How context was assembled:
+* Agent execution path:
+* Verification path:
+* Post-task knowledge updates:
+
+=== Problem statement
+
+Write one sentence using this form:
+
+[quote]
+____
+`<user>` has `<problem>` during `<workflow>`, currently solves it with `<workaround>`, and the impact is `<observable cost>`.
+____
+
+* Direct evidence or quote:
+* Frequency:
+* Observable cost:
+* Severity:
+* Confidence: low / medium / high
+
+=== Demand signal
+
+* Will provide a real task: yes / no / unclear
+* Will provide project context: yes / no / unclear
+* Will repeat the workflow: yes / no / unclear
+* Will join a pilot: yes / no / unclear
+* Would pay or sponsor deployment: yes / no / unclear
+* Main adoption blocker:
+
+=== Analyst notes
+
+* What supports the hypothesis:
+* What contradicts the hypothesis:
+* What should not be built based on this response:
+* Follow-up:
+
+== Cross-response synthesis
+
+After at least five responses, group findings by repeated workflow and pain rather than by participant.
+
+Record:
+
+* number of participants matching the initial ICP;
+* number independently reporting context fragmentation;
+* number reporting measurable preparation or rework cost;
+* number willing to provide a real task and project context;
+* number willing to repeat a prototype workflow;
+* number willing to sponsor or pay for a pilot;
+* evidence that integration is preferred over a replacement workspace;
+* important privacy, permission and offline constraints;
+* strongest disconfirming evidence.
+
+== Decision gate
+
+=== Continue
+
+Recommend Continue only when multiple relevant participants independently report the problem, at least one participant offers a real task for a pilot, and the proposed workflow has a measurable expected benefit.
+
+=== Pivot
+
+Recommend Pivot when the problem is real but participants reject another workspace. The likely direction is an engineering-context layer integrated with existing task, documentation and code tools.
+
+=== Rethink
+
+Recommend Rethink when the problem is infrequent, current tools already solve it sufficiently, or participants do not commit to a real workflow test.
+
+== Data handling
+
+Store only the minimum information needed for synthesis. Ask permission before recording identifying details, repository content or transcripts. Replace company, product and task names with stable identifiers in shared notes unless the participant explicitly allows disclosure.
+
+Do not treat a form opinion as product validation. Validation requires repeated evidence and a concrete behavioral commitment.

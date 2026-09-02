@@ -41,6 +41,7 @@
 ** xref:backlog/Admin_Surface_Backlog.adoc[Admin surface backlog]
 ** xref:backlog/Desktop_Collaboration_Backlog.adoc[Desktop collaboration backlog]
 ** xref:backlog/Attachment_Implementation_Plan.adoc[Synced attachments implementation plan]
+** xref:backlog/Engineering_Context_Discovery_Interview_Guide.adoc[Engineering context discovery interview guide]
 * Roadmap
 ** xref:roadmap/Current_Roadmap.adoc[Current roadmap]
 ** xref:roadmap/Realistic_Delivery_Pipeline.adoc[Realistic delivery pipeline]
