@@ -54,6 +54,7 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
   }
 
   [[nodiscard]] auto ListDocuments() -> cppwiki::storage::ListDocumentsResult override {
+    ++list_documents_calls;
     return {
         .documents = listed_documents,
         .error = std::nullopt,
@@ -174,6 +175,7 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
   bool start_sync_called = false;
   bool stop_sync_called = false;
   bool access_token_set = false;
+  int list_documents_calls = 0;
   cppwiki::sync::SyncBootstrap last_bootstrap;
   std::string last_access_token;
   cppwiki::storage::SyncStatus sync_status{};
@@ -736,6 +738,11 @@ auto TestWorkspaceWithLocalDocumentsIsMaterializedWithoutRootRecord() -> void {
       .initial_pull_completed = false,
   };
   service.RefreshStatus();
+
+  const auto list_documents_calls_after_materialization = repository->list_documents_calls;
+  service.RefreshStatus();
+  Require(repository->list_documents_calls == list_documents_calls_after_materialization,
+          "unchanged materialized workspace should not be listed on every refresh tick");
 
   const auto snapshot = service.Snapshot();
   Require(snapshot.workspace_hydration.value(QStringLiteral("engineering")) ==
