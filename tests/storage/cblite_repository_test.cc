@@ -625,6 +625,7 @@ auto TestCbliteRepositoryOfflineEditReconnectPushPull() -> void {
 }
 
 }  // namespace
+auto TestCbliteRepositoryKnowledgeRecordLifecycle() -> void;
 
 auto main() -> int {
   TestCbliteRepositoryAttachmentLifecycle();
@@ -637,6 +638,7 @@ auto main() -> int {
     TestCbliteRepositoryUpdatesExistingSyncedDocumentAfterChannelChange();
     TestCbliteRepositoryConflictLifecycleFromExternalPendingRecord();
     TestCbliteRepositoryOfflineEditReconnectPushPull();
+    TestCbliteRepositoryKnowledgeRecordLifecycle();
   } catch (const std::exception& e) {
     spdlog::error("Unhandled exception: {}", e.what());
     return EXIT_FAILURE;
@@ -644,4 +646,82 @@ auto main() -> int {
 
   spdlog::info("cppwiki_cblite_repository_tests passed");
   return EXIT_SUCCESS;
+}
+
+auto TestCbliteRepositoryKnowledgeRecordLifecycle() -> void {
+  const auto test_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-cblite-knowledge-record-test";
+  std::filesystem::remove_all(test_directory);
+  const cppwiki::storage::CbliteDocumentRepositoryOptions options{
+      .database_directory = test_directory,
+      .database_name = "knowledge_records",
+  };
+  const cppwiki::knowledge::AuditMetadata audit{
+      .created_at = "2026-09-08T10:00:00Z",
+      .updated_at = "2026-09-08T10:00:00Z",
+      .created_by = "tester",
+      .updated_by = "tester",
+  };
+  const cppwiki::knowledge::PropertyDefinition property{
+      .id = "property-status",
+      .workspace_id = "engineering",
+      .name = "Status",
+      .value_kind = cppwiki::knowledge::PropertyValueKind::kSelect,
+      .options = {"Draft", "Approved"},
+      .audit = audit,
+  };
+  const cppwiki::knowledge::RelationType relation_type{
+      .id = "relation-depends-on",
+      .workspace_id = "engineering",
+      .name = "Depends on",
+      .inverse_name = "Required by",
+      .audit = audit,
+  };
+  {
+    cppwiki::storage::CbliteDocumentRepository repository(options);
+    Require(!repository.SavePropertyDefinition(property).error,
+            "CBLite should save a property definition");
+    Require(!repository
+                 .SavePagePropertyValue({
+                     .id = "value-auth-status",
+                     .workspace_id = "engineering",
+                     .page_id = "page-auth",
+                     .property_definition_id = "property-status",
+                     .values = {"Draft"},
+                     .audit = audit,
+                 })
+                 .error,
+            "CBLite should save a page property value");
+    Require(!repository.SaveRelationType(relation_type).error,
+            "CBLite should save a relation type");
+    Require(!repository
+                 .SavePageRelation({
+                     .id = "relation-auth-api",
+                     .workspace_id = "engineering",
+                     .relation_type_id = "relation-depends-on",
+                     .source_page_id = "page-auth",
+                     .target_page_id = "page-api",
+                     .audit = audit,
+                 })
+                 .error,
+            "CBLite should save a page relation");
+  }
+  {
+    cppwiki::storage::CbliteDocumentRepository repository(options);
+    Require(repository.ListPropertyDefinitions("engineering").definitions.size() == 1,
+            "CBLite should persist property definitions");
+    Require(repository.ListPagePropertyValues("engineering", "page-auth").values.size() == 1,
+            "CBLite should persist page property values");
+    Require(repository.ListRelationTypes("engineering").relation_types.size() == 1,
+            "CBLite should persist relation types");
+    Require(repository.ListPageRelations("engineering", "page-auth").relations.size() == 1,
+            "CBLite should persist page relations");
+    Require(!repository.DeleteKnowledgeForPage("engineering", "page-auth").error,
+            "CBLite page knowledge cleanup should succeed");
+    Require(repository.ListPagePropertyValues("engineering", "page-auth").values.empty(),
+            "CBLite page cleanup should remove property values");
+    Require(repository.ListPageRelations("engineering", "page-auth").relations.empty(),
+            "CBLite page cleanup should remove page relations");
+  }
+  std::filesystem::remove_all(test_directory);
 }
