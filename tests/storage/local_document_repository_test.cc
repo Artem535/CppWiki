@@ -263,12 +263,44 @@ auto TestRepositoryInterfaceUpdatesConflictResolutionState() -> void {
           "dismissed conflict should keep dismissed state");
 }
 
+auto TestKnowledgeMethodsDefaultToUnsupported() -> void {
+  FakeDocumentRepository repository;
+  const cppwiki::knowledge::PropertyDefinition definition{
+      .id = "property-status",
+      .workspace_id = "engineering",
+      .name = "Status",
+      .group_name = std::nullopt,
+      .value_kind = cppwiki::knowledge::PropertyValueKind::kSelect,
+      .options = {"Draft", "Approved"},
+      .state = cppwiki::knowledge::RecordState::kActive,
+      .audit =
+          {
+              .created_at = "2026-09-08T10:00:00.000Z",
+              .updated_at = "2026-09-08T10:00:00.000Z",
+              .created_by = "tester",
+              .updated_by = "tester",
+          },
+  };
+  const auto save = repository.SavePropertyDefinition(definition);
+  Require(save.error.has_value() &&
+              save.error->code == cppwiki::storage::RepositoryErrorCode::kUnsupported,
+          "repositories without knowledge persistence must report kUnsupported");
+  const auto definitions = repository.ListPropertyDefinitions("engineering");
+  Require(definitions.error.has_value() && definitions.definitions.empty(),
+          "unsupported knowledge list must return an error and no records");
+  const auto deleted = repository.DeleteKnowledgeForPage("engineering", "page-auth");
+  Require(deleted.error.has_value() &&
+              deleted.error->code == cppwiki::storage::RepositoryErrorCode::kUnsupported,
+          "unsupported knowledge page cleanup must report kUnsupported");
+}
+
 }  // namespace
 
 auto main() -> int {
   TestRepositoryInterfaceStoresValidatedRawSnapshot();
   TestRepositoryInterfaceStoresConflictRecords();
   TestRepositoryInterfaceUpdatesConflictResolutionState();
+  TestKnowledgeMethodsDefaultToUnsupported();
 
   spdlog::info("cppwiki_local_document_repository_tests passed");
   return EXIT_SUCCESS;
