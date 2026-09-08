@@ -586,6 +586,103 @@ auto TestFileRepositoryAttachmentLifecycle() -> void {
   std::filesystem::remove_all(storage_directory);
 }
 
+// Issue #185: knowledge records are first-class, workspace-scoped records. They must survive a
+// repository restart independently of their page content, and a permanent page deletion must
+// remove only values and relations that refer to that page.
+auto TestFileRepositoryKnowledgeRecordLifecycle() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-knowledge-record-test";
+  std::filesystem::remove_all(storage_directory);
+
+  const cppwiki::knowledge::AuditMetadata audit{
+      .created_at = "2026-09-08T10:00:00Z",
+      .updated_at = "2026-09-08T10:00:00Z",
+      .created_by = "tester",
+      .updated_by = "tester",
+  };
+  const cppwiki::knowledge::PropertyDefinition property{
+      .id = "property-status",
+      .workspace_id = "engineering",
+      .name = "Status",
+      .group_name = std::nullopt,
+      .value_kind = cppwiki::knowledge::PropertyValueKind::kSelect,
+      .options = {"Draft", "Approved"},
+      .state = cppwiki::knowledge::RecordState::kActive,
+      .audit = audit,
+  };
+  const cppwiki::knowledge::RelationType relation_type{
+      .id = "relation-depends-on",
+      .workspace_id = "engineering",
+      .name = "Depends on",
+      .inverse_name = "Required by",
+      .direction = cppwiki::knowledge::RelationDirection::kDirected,
+      .state = cppwiki::knowledge::RecordState::kActive,
+      .audit = audit,
+  };
+
+  {
+    cppwiki::storage::FileDocumentRepository repository(
+        cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+    Require(!repository.SavePropertyDefinition(property).error,
+            "file repository should save a property definition");
+    Require(!repository
+                 .SavePagePropertyValue(cppwiki::knowledge::PagePropertyValue{
+                     .id = "property-value-auth-status",
+                     .workspace_id = "engineering",
+                     .page_id = "page-auth",
+                     .property_definition_id = "property-status",
+                     .values = {"Draft"},
+                     .audit = audit,
+                 })
+                 .error,
+            "file repository should save a page property value");
+    Require(!repository.SaveRelationType(relation_type).error,
+            "file repository should save a relation type");
+    Require(!repository
+                 .SavePageRelation(cppwiki::knowledge::PageRelation{
+                     .id = "relation-auth-api",
+                     .workspace_id = "engineering",
+                     .relation_type_id = "relation-depends-on",
+                     .source_page_id = "page-auth",
+                     .target_page_id = "page-api",
+                     .audit = audit,
+                 })
+                 .error,
+            "file repository should save a page relation");
+  }
+
+  cppwiki::storage::FileDocumentRepository reopened_repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+  const auto properties = reopened_repository.ListPropertyDefinitions("engineering");
+  Require(!properties.error && properties.definitions.size() == 1,
+          "property definitions should survive repository restart");
+  Require(properties.definitions.front().name == "Status",
+          "property definition fields should round-trip");
+  const auto property_values =
+      reopened_repository.ListPagePropertyValues("engineering", "page-auth");
+  Require(!property_values.error && property_values.values.size() == 1,
+          "page property values should survive repository restart");
+  const auto relation_types = reopened_repository.ListRelationTypes("engineering");
+  Require(!relation_types.error && relation_types.relation_types.size() == 1,
+          "relation types should survive repository restart");
+  const auto relations = reopened_repository.ListPageRelations("engineering", "page-auth");
+  Require(!relations.error && relations.relations.size() == 1,
+          "relations should be returned for either endpoint page");
+
+  Require(!reopened_repository.DeleteKnowledgeForPage("engineering", "page-auth").error,
+          "permanent page deletion cleanup should succeed");
+  Require(reopened_repository.ListPagePropertyValues("engineering", "page-auth").values.empty(),
+          "page cleanup should delete its property values");
+  Require(reopened_repository.ListPageRelations("engineering", "page-auth").relations.empty(),
+          "page cleanup should delete its relations");
+  Require(reopened_repository.ListPropertyDefinitions("engineering").definitions.size() == 1,
+          "page cleanup must preserve workspace property definitions");
+  Require(reopened_repository.ListRelationTypes("engineering").relation_types.size() == 1,
+          "page cleanup must preserve workspace relation types");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -600,6 +697,7 @@ auto main() -> int {
   TestFileRepositoryRevisionLifecycle();
   TestFileRepositoryDeleteDocumentCleansUpItsRevisions();
   TestFileRepositoryAttachmentLifecycle();
+  TestFileRepositoryKnowledgeRecordLifecycle();
   spdlog::info("cppwiki_file_document_repository_tests passed");
   return EXIT_SUCCESS;
 }
