@@ -1,0 +1,114 @@
+= Knowledge Foundation Implementation Plan
+
+For agentic workers: execute this plan task-by-task. Every task ends with a focused test and commit.
+
+== Goal
+
+Implement the authoritative, workspace-scoped persistence contract for property definitions, page property values, relation types and typed page relations required by Issue https://github.com/Artem535/CppWiki/issues/185[#185].
+
+== Architecture
+
+Knowledge records are separate from `DocumentRecord`, keyed by stable UUID and workspace ID. `LocalDocumentRepository` exposes typed methods for those records. Both file and Couchbase Lite repositories persist one logical record per storage object, so unrelated property and relation edits do not update a whole page snapshot.
+
+== Technology
+
+Qt 6, C++20, reflect-cpp JSON serialization, Couchbase Lite C++, the existing repository abstraction, and the current workspace archive format.
+
+== Constraints
+
+* Documentation uses AsciiDoc.
+* Existing page IDs and BlockNote snapshots remain unchanged.
+* Knowledge records sync through the existing workspace/channel mapping.
+* No property catalog UI, relation editor, backlinks or graph UI belongs to this issue.
+* No generic arbitrary-record repository API is introduced.
+
+== Files and responsibilities
+
+* `src/knowledge/knowledge_record.h/.cc`: value kinds, record types, validation and normalization.
+* `tests/knowledge/knowledge_record_test.cc`: record validation and symmetric-edge normalization.
+* `src/storage/local_document_repository.h`: typed record/result structs and narrow repository methods.
+* `src/storage/file_document_repository.h/.cc`: atomic JSON persistence and workspace/page queries.
+* `src/storage/cblite_document_repository.h/.cc`: separate CBLite documents, record discriminator and collection routing.
+* `src/storage/workspace_archive.h/.cc`: archive version and record arrays.
+* `tests/storage/file_document_repository_test.cc`: file persistence, validation and deletion tests.
+* `tests/storage/cblite_repository_test.cc`: CBLite persistence and workspace scoping tests.
+* `tests/storage/workspace_archive_test.cc`: archive round-trip and dangling-reference rejection tests.
+* `src/CMakeLists.txt`, `tests/CMakeLists.txt`: production and focused test target sources.
+
+== Tasks
+
+=== Task 1: Create the domain record module
+
+Interfaces produced:
+
+* `PropertyValueKind`, `PropertyDefinition`, `PagePropertyValue`, `RelationDirection`, `RelationType`, `PageRelation`.
+* `ValidatePropertyDefinition`, `ValidatePagePropertyValue`, `ValidateRelationType`, `NormalizeAndValidatePageRelation`.
+
+. Write failing tests for:
+.. a property definition with empty ID, workspace ID or name;
+.. select values not present in options;
+.. a directed relation type without an inverse name;
+.. a symmetric edge whose source and target are normalized into stable order;
+.. a relation whose endpoints are empty or identical.
+. Add `knowledge_record.h/.cc` with the exact types and validators in the contract.
+. Run `cppwiki_knowledge_record_tests` and make it pass.
+. Commit: `feat: add knowledge record contract`.
+
+=== Task 2: Extend the repository boundary
+
+Interfaces produced:
+
+* `SavePropertyDefinition`, `ListPropertyDefinitions`, `SavePagePropertyValue`, `ListPagePropertyValues`.
+* `SaveRelationType`, `ListRelationTypes`, `SavePageRelation`, `ListPageRelations`, `DeleteKnowledgeForPage`.
+
+. Add result structs carrying `RepositoryError` consistently with existing document methods.
+. Add default `kUnsupported` implementations to `LocalDocumentRepository`, so existing test doubles and optional repositories compile unchanged.
+. Extend `local_document_repository_test.cc` with a fake that asserts repository consumers can store each typed record without a generic record API.
+. Run `cppwiki_local_document_repository_tests`.
+. Commit: `feat: add knowledge repository interface`.
+
+=== Task 3: Implement file-repository persistence
+
+Interfaces consumed: the typed repository methods from Task 2.
+
+. Write failing file repository tests that save and list a property definition, value, relation type and relation in two workspaces.
+. Implement one atomic JSON file per record in the dedicated `knowledge/` subdirectories.
+. Validate records before writing and return `kInvalidRecord` for malformed JSON during listing.
+. Add page lifecycle tests: page-scoped values and incoming/outgoing relations are deleted only by `DeleteKnowledgeForPage`; unrelated workspace records survive.
+. Run `cppwiki_file_document_repository_tests`.
+. Commit: `feat: persist knowledge records in file repository`.
+
+=== Task 4: Implement Couchbase Lite persistence and sync-safe routing
+
+Interfaces consumed: the typed repository methods from Task 2.
+
+. Write failing CBLite tests that save records into a synced workspace and a local workspace, then list only records in the requested workspace.
+. Store records as independently addressable CBLite documents with a `record_type` property and reserved ID prefix.
+. Route writes through the same owning collection rule as documents, preventing a stale local/synced shadow record after a workspace channel mapping changes.
+. Verify ListDocuments remains page-only and knowledge records do not enter the document index.
+. Implement `DeleteKnowledgeForPage` across both collections, deleting page values and source/target relations.
+. Run `cppwiki_cblite_repository_tests`.
+. Commit: `feat: persist knowledge records in Couchbase Lite`.
+
+=== Task 5: Extend workspace archives and deletion integration
+
+Interfaces consumed: list/save/delete knowledge methods from Tasks 2--4.
+
+. Write a failing archive test with a workspace containing definitions, values and relations plus unrelated records in another workspace.
+. Increment the archive version; export only records owned by the selected workspace.
+. On import, validate workspace scope and references before writing anything; reject dangling page or definition references.
+. Ensure a restored archive preserves record IDs and keeps its relations independent of page snapshot JSON.
+. Run `cppwiki_workspace_archive_tests`.
+. Commit: `feat: archive workspace knowledge records`.
+
+=== Task 6: Integrate, verify and document the finished contract
+
+. Add new production sources and focused test target sources to CMake.
+. Run the knowledge, local repository, file repository, CBLite repository and workspace archive test targets.
+. Run `rtk git diff --check`.
+. Update the contract document with any implementation-driven corrections.
+. Commit: `docs: finalize knowledge foundation contract`.
+
+== Completion criteria
+
+Issue #185 is complete when every authoritative knowledge record has a stable workspace-scoped ID; distinct records persist and sync independently; rename, trash, permanent delete and archive behavior follow the contract; and File/CBLite/archive tests verify the behavior.
