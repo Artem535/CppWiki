@@ -5,6 +5,8 @@ import {
   type BridgeResult,
   type EditorBridge,
   type InitialDocumentSnapshot,
+  type PropertyDefinition,
+  type PagePropertyValue,
 } from "./editorBridge";
 import {
   mockBodyBlockId,
@@ -44,6 +46,18 @@ const documents: DocumentSummary[] = [
     kind: "wikiPage",
   },
 ];
+
+const mockPropertyDefinitions: PropertyDefinition[] = [
+  {
+    id: "status",
+    workspaceId: "default",
+    name: "Status",
+    valueKind: "select",
+    options: ["Draft", "Approved"],
+    state: "active",
+  },
+];
+const mockPagePropertyValues: PagePropertyValue[] = [];
 
 const mockAiChunkListeners = new Set<(requestId: string, chunk: string) => void>();
 const mockAiToolCallListeners = new Set<
@@ -125,6 +139,51 @@ export function createMockEditorBridge(): EditorBridge {
           kind: "wikiPage",
         },
       };
+    },
+
+    async listPropertyDefinitions(workspaceId) {
+      return { apiVersion: bridgeApiVersion, ok: true, result: mockPropertyDefinitions.filter((item) => item.workspaceId === workspaceId) };
+    },
+
+    async savePropertyDefinition(definition) {
+      const next: PropertyDefinition = {
+        id: definition.id ?? `property-${Date.now()}`,
+        workspaceId: definition.workspaceId ?? "default",
+        name: definition.name,
+        groupName: definition.groupName,
+        valueKind: definition.valueKind,
+        options: definition.options ?? [],
+        state: definition.state ?? "active",
+      };
+      const index = mockPropertyDefinitions.findIndex((item) => item.id === next.id);
+      if (index < 0) mockPropertyDefinitions.push(next);
+      else mockPropertyDefinitions[index] = next;
+      return { apiVersion: bridgeApiVersion, ok: true, result: next };
+    },
+
+    async retirePropertyDefinition(definitionId) {
+      const item = mockPropertyDefinitions.find((definition) => definition.id === definitionId);
+      if (!item) return { apiVersion: bridgeApiVersion, ok: false, error: { code: "not_found", message: "Property definition was not found." } };
+      item.state = "retired";
+      return { apiVersion: bridgeApiVersion, ok: true, result: item };
+    },
+
+    async listPagePropertyValues(workspaceId, pageId) {
+      return { apiVersion: bridgeApiVersion, ok: true, result: mockPagePropertyValues.filter((item) => item.workspaceId === workspaceId && item.pageId === pageId) };
+    },
+
+    async savePagePropertyValue(value) {
+      const next: PagePropertyValue = { ...value, id: value.id ?? `value-${Date.now()}` };
+      const index = mockPagePropertyValues.findIndex((item) => item.id === next.id);
+      if (index < 0) mockPagePropertyValues.push(next);
+      else mockPagePropertyValues[index] = next;
+      return { apiVersion: bridgeApiVersion, ok: true, result: next };
+    },
+
+    async deletePagePropertyValue(valueId) {
+      const index = mockPagePropertyValues.findIndex((item) => item.id === valueId);
+      if (index >= 0) mockPagePropertyValues.splice(index, 1);
+      return { apiVersion: bridgeApiVersion, ok: true, result: undefined };
     },
 
     async updateSnapshot(_pageId, _snapshot): Promise<BridgeResult<void>> {
