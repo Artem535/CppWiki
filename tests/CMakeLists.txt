@@ -177,6 +177,24 @@ add_test(
   COMMAND cppwiki_local_document_repository_tests
 )
 
+add_executable(cppwiki_knowledge_record_tests
+  knowledge/knowledge_record_test.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.h
+)
+
+target_include_directories(cppwiki_knowledge_record_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+cppwiki_apply_common_options(cppwiki_knowledge_record_tests)
+
+add_test(
+  NAME cppwiki_knowledge_record_tests
+  COMMAND cppwiki_knowledge_record_tests
+)
+
 add_executable(cppwiki_attachment_tests
   storage/attachment_test.cc
   ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
