@@ -89,6 +89,22 @@ function UnsupportedKindPlaceholder({
   );
 }
 
+function PropertiesIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 6h16M4 12h16M4 18h16"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      <circle cx="9" cy="6" r="2" fill="var(--app-bg)" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="15" cy="12" r="2" fill="var(--app-bg)" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="10" cy="18" r="2" fill="var(--app-bg)" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
+  );
+}
+
 function EditorApp() {
   const [bridge, setBridge] = useState<EditorBridge | null>(null);
   // The editor is created once, before QWebChannel resolves asynchronously. Keep the current
@@ -542,8 +558,14 @@ function EditorApp() {
     <main className="app-shell">
       <section className="editor-pane" aria-label="Document editor">
         {selectedPageId && isWikiPage ? (
-          <button className="properties-trigger" onClick={() => setPropertiesOpen(true)} aria-expanded={propertiesOpen}>
-            Properties
+          <button
+            className="properties-trigger"
+            onClick={() => setPropertiesOpen(true)}
+            aria-label="Open properties"
+            aria-expanded={propertiesOpen}
+            title="Properties"
+          >
+            <PropertiesIcon />
           </button>
         ) : null}
         {shouldMountEditor && isJupyterNotebook ? (

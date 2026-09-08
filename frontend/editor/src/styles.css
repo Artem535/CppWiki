@@ -1315,14 +1315,28 @@ button {
   top: 16px;
   right: 20px;
   z-index: 4;
-  border: 1px solid var(--app-border, #d8dbe2);
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid transparent;
   border-radius: 9px;
-  background: var(--app-surface, #fff);
-  color: var(--app-text, #242833);
-  padding: 8px 12px;
-  font: inherit;
+  background: transparent;
+  color: var(--app-text-muted, #9aa3b5);
+  padding: 0;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgb(20 24 35 / 8%);
+  transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+
+.properties-trigger:hover {
+  border-color: var(--app-border, #454b59);
+  background: rgb(255 255 255 / 7%);
+  color: var(--app-text, #f5f7fb);
+}
+
+.properties-trigger:focus-visible {
+  outline: 2px solid var(--app-accent, #7db5ff);
+  outline-offset: 2px;
 }
 
 .properties-drawer-backdrop {
