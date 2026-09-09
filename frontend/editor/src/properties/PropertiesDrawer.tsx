@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { EditorBridge, PagePropertyValue, PropertyDefinition, PropertyValueKind } from "../bridge/editorBridge";
+import { getPropertySummary } from "./propertyModel";
 
 type PropertiesDrawerProps = {
   bridge: EditorBridge;
@@ -23,6 +24,83 @@ const valueKinds: Array<{ value: PropertyValueKind; label: string }> = [
 
 function valuesToText(value: PagePropertyValue | undefined): string {
   return value?.values.join(", ") ?? "";
+}
+
+function PropertyTypeMark({ kind }: { kind: PropertyValueKind }) {
+  const mark = kind === "checkbox" ? "✓" : kind === "date" ? "◷" : kind === "relation" ? "↗" : "•";
+  return <span className="property-chip__mark" aria-hidden="true">{mark}</span>;
+}
+
+export function PropertiesSummary({
+  bridge,
+  workspaceId,
+  pageId,
+  onOpen,
+}: {
+  bridge: EditorBridge;
+  workspaceId: string;
+  pageId: string;
+  onOpen: () => void;
+}) {
+  const [definitions, setDefinitions] = useState<PropertyDefinition[]>([]);
+  const [values, setValues] = useState<PagePropertyValue[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      bridge.listPropertyDefinitions(workspaceId),
+      bridge.listPagePropertyValues(workspaceId, pageId),
+    ]).then(([definitionResponse, valueResponse]) => {
+      if (!active || !definitionResponse.ok || !valueResponse.ok) return;
+      setDefinitions(definitionResponse.result);
+      setValues(valueResponse.result);
+    });
+    return () => {
+      active = false;
+    };
+  }, [bridge, pageId, workspaceId]);
+
+  const summary = getPropertySummary(definitions, values);
+
+  return (
+    <div className="properties-summary" data-testid="properties-summary">
+      <div className="properties-summary__identity">
+        <span className="properties-summary__icon" aria-hidden="true">◈</span>
+        <div>
+          <span className="properties-summary__type">Wiki page</span>
+          <span className="properties-summary__hint">Object metadata</span>
+        </div>
+      </div>
+      <div className="properties-summary__chips" aria-label="Page properties">
+        {summary.slice(0, 4).map((item) => (
+          <span className="property-chip" key={item.id}>
+            <PropertyTypeMark kind={item.valueKind} />
+            <span className="property-chip__name">{item.name}</span>
+            <span className="property-chip__value">{item.value}</span>
+          </span>
+        ))}
+        {summary.length > 4 ? <span className="property-chip property-chip--muted">+{summary.length - 4} more</span> : null}
+        <button className="properties-summary__add" onClick={onOpen} type="button">
+          {summary.length === 0 ? "+ Add property" : "+ Property"}
+        </button>
+      </div>
+      <button className="properties-summary__manage" onClick={onOpen} type="button" aria-label="Open properties">
+        <PropertiesGlyph />
+        <span>Properties</span>
+      </button>
+    </div>
+  );
+}
+
+function PropertiesGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="9" cy="6" r="2" fill="currentColor" />
+      <circle cx="15" cy="12" r="2" fill="currentColor" />
+      <circle cx="10" cy="18" r="2" fill="currentColor" />
+    </svg>
+  );
 }
 
 export function PropertiesDrawer({

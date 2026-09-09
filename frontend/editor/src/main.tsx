@@ -51,7 +51,7 @@ import {
 import { createInlineSuggestionExtension } from "./extensions/inlineSuggestionExtension";
 import { NotebookView } from "./notebook/NotebookView";
 import { OpenApiSpecView } from "./openapi/OpenApiSpecView";
-import { PropertiesDrawer } from "./properties/PropertiesDrawer";
+import { PropertiesDrawer, PropertiesSummary } from "./properties/PropertiesDrawer";
 
 // BlockNote's default schema plus the Mermaid diagram block (ADR-017, issue #50) and real
 // syntax-highlighted code blocks (issue #51, via @blocknote/code-block's shiki-based highlighter
@@ -86,22 +86,6 @@ function UnsupportedKindPlaceholder({
       <h1>Unsupported document kind</h1>
       <p>{messages[kind]}</p>
     </div>
-  );
-}
-
-function PropertiesIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M4 6h16M4 12h16M4 18h16"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <circle cx="9" cy="6" r="2" fill="var(--app-bg)" stroke="currentColor" strokeWidth="1.7" />
-      <circle cx="15" cy="12" r="2" fill="var(--app-bg)" stroke="currentColor" strokeWidth="1.7" />
-      <circle cx="10" cy="18" r="2" fill="var(--app-bg)" stroke="currentColor" strokeWidth="1.7" />
-    </svg>
   );
 }
 
@@ -556,17 +540,14 @@ function EditorApp() {
 
   return (
     <main className="app-shell">
-      <section className="editor-pane" aria-label="Document editor">
-        {selectedPageId && isWikiPage ? (
-          <button
-            className="properties-trigger"
-            onClick={() => setPropertiesOpen(true)}
-            aria-label="Open properties"
-            aria-expanded={propertiesOpen}
-            title="Properties"
-          >
-            <PropertiesIcon />
-          </button>
+      <section className={`editor-pane${selectedPageId && isWikiPage ? " editor-pane--wiki" : ""}`} aria-label="Document editor">
+        {bridge && selectedPageId && isWikiPage ? (
+          <PropertiesSummary
+            bridge={bridge!}
+            workspaceId={selectedWorkspaceId}
+            pageId={selectedPageId}
+            onOpen={() => setPropertiesOpen(true)}
+          />
         ) : null}
         {shouldMountEditor && isJupyterNotebook ? (
           <div className="editor-surface" data-document-kind={documentKind}>

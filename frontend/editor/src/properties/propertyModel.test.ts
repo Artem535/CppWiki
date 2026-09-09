@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatPropertyValue,
+  getPropertySummary,
   removePagePropertyValue,
   upsertPagePropertyValue,
   type PagePropertyValue,
@@ -25,6 +26,24 @@ const value = (id: string, values: string[]): PagePropertyValue => ({
 });
 
 describe("property model", () => {
+  it("builds a compact summary from assigned active properties only", () => {
+    const definitions = [
+      definition,
+      { ...definition, id: "owner", name: "Owner", valueKind: "text" as const },
+      { ...definition, id: "retired", name: "Retired", state: "retired" as const },
+    ];
+    const values = [
+      value("v1", ["Approved"]),
+      { ...value("v2", ["Ada"]), propertyDefinitionId: "owner" },
+      { ...value("v3", ["Hidden"]), propertyDefinitionId: "retired" },
+    ];
+
+    expect(getPropertySummary(definitions, values)).toEqual([
+      { id: "status", name: "Status", value: "Approved", valueKind: "select" },
+      { id: "owner", name: "Owner", value: "Ada", valueKind: "text" },
+    ]);
+  });
+
   it("formats scalar and multi-value properties for the compact row", () => {
     expect(formatPropertyValue({ ...definition, valueKind: "text" }, value("v1", ["Roadmap"]))).toBe("Roadmap");
     expect(formatPropertyValue({ ...definition, valueKind: "tags" }, value("v2", ["one", "two"]))).toBe("one, two");
