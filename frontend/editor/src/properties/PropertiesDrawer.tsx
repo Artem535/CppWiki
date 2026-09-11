@@ -284,7 +284,6 @@ export function PropertiesDrawer({
       <aside className="properties-drawer" aria-label="Page properties" data-testid="properties-drawer">
         <header className="properties-drawer__header">
           <div>
-            <p className="properties-drawer__eyebrow">Page metadata</p>
             <h2>Properties</h2>
           </div>
           <button className="properties-drawer__close" onClick={onClose} aria-label="Close properties">×</button>

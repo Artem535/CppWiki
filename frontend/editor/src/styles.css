@@ -1636,55 +1636,99 @@ button {
 }
 
 .properties-drawer-backdrop {
-  background: rgb(8 10 16 / 54%);
-  backdrop-filter: blur(2px);
+  background: transparent;
 }
 
 .properties-drawer {
   width: min(400px, 100vw);
   border-left: 1px solid var(--app-border);
-  background: #22252d;
-  box-shadow: -20px 0 50px rgb(0 0 0 / 34%);
+  background: var(--app-surface);
+  box-shadow: -4px 0 16px rgb(0 0 0 / 10%);
   color: var(--app-text);
+  padding: 20px;
+  font-size: 13px;
 }
 
 .properties-drawer__header {
-  border-bottom: 1px solid rgb(255 255 255 / 8%);
-  padding-bottom: 18px;
+  padding-bottom: 4px;
 }
+
+.properties-drawer__header h2 { font-size: 16px; font-weight: 600; }
+.properties-drawer__section h3 { font-size: 12px; font-weight: 500; }
+.properties-drawer__section { margin-top: 24px; }
+.properties-drawer__section-title { padding: 0 8px; margin-bottom: 8px; }
 
 .properties-drawer__eyebrow,
 .properties-drawer__section-title span,
 .properties-drawer__empty,
 .catalog-row span {
-  color: #8993ae;
+  color: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
 }
 
 .properties-drawer__close,
 .property-row > button,
 .catalog-row button {
-  color: #9faaca;
+  color: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
 }
 
 .property-row {
-  border-bottom-color: rgb(255 255 255 / 8%);
+  display: grid;
+  grid-template-columns: minmax(0, 112px) minmax(0, 1fr) 28px;
+  gap: 6px;
+  border: 0;
+  min-height: 42px;
+  border-radius: 6px;
+  padding: 3px 0 3px 8px;
 }
 
 .property-row__name {
-  color: #aab3ca;
+  width: auto;
+  overflow-wrap: anywhere;
+  color: color-mix(in srgb, var(--app-text) 65%, var(--app-surface));
 }
 
 .property-row input,
+.property-row select,
 .properties-catalog input,
 .properties-catalog select {
-  border-color: rgb(151 166 204 / 24%);
-  background: #2b2f39;
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  background: transparent;
   color: var(--app-text);
 }
 
+.property-row select { cursor: pointer; }
+.property-row select option,
+.properties-catalog select option { background: var(--app-surface); }
+.property-row:hover,
+.properties-drawer button:hover { background: color-mix(in srgb, var(--app-text) 5%, var(--app-surface)); }
+.properties-drawer input:hover,
+.properties-drawer select:hover { background: color-mix(in srgb, var(--app-text) 7%, var(--app-surface)); }
+.properties-drawer input:focus,
+.properties-drawer select:focus { outline: 1px solid var(--app-border); background: var(--app-bg); }
+.properties-drawer button:focus-visible { outline: 2px solid var(--app-text); outline-offset: 2px; }
+.properties-drawer input::placeholder { color: color-mix(in srgb, var(--app-text) 45%, var(--app-surface)); }
+.property-row input[type="checkbox"] { width: 16px; height: 16px; margin: 8px; }
+.property-row > button,
+.properties-drawer__close { width: 28px; height: 28px; padding: 0; border-radius: 5px; }
+.property-row > button { grid-column: 3; font-size: 16px; }
+.properties-drawer button:disabled { opacity: .4; cursor: default; }
+.properties-catalog input,
+.properties-catalog select { border-color: var(--app-border); }
+.properties-catalog__create button { background: var(--app-bg); color: var(--app-text); border: 1px solid var(--app-border); }
+
 .properties-drawer__catalog-toggle {
-  border-top-color: rgb(255 255 255 / 8%);
-  color: #dce3f5;
+  border-top-color: var(--app-border);
+  color: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 14px 8px;
 }
 
 .catalog-row {
