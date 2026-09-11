@@ -5,6 +5,7 @@ import {
   type BridgeResult,
   type EditorBridge,
   type InitialDocumentSnapshot,
+  type LoadedDocument,
   type PropertyDefinition,
   type PagePropertyValue,
 } from "./editorBridge";
@@ -56,8 +57,76 @@ const mockPropertyDefinitions: PropertyDefinition[] = [
     options: ["Draft", "Approved"],
     state: "active",
   },
+  {
+    id: "owner",
+    workspaceId: "default",
+    name: "Owner",
+    valueKind: "text",
+    options: [],
+    state: "active",
+  },
+  {
+    id: "type",
+    workspaceId: "default",
+    name: "Type",
+    valueKind: "select",
+    options: ["Reference", "Project", "Note"],
+    state: "active",
+  },
+  {
+    id: "tags",
+    workspaceId: "default",
+    name: "Tags",
+    valueKind: "tags",
+    options: [],
+    state: "active",
+  },
+  {
+    id: "confidence",
+    workspaceId: "default",
+    name: "Confidence",
+    valueKind: "number",
+    options: [],
+    state: "active",
+  },
+  {
+    id: "review",
+    workspaceId: "default",
+    name: "Review date",
+    valueKind: "date",
+    options: [],
+    state: "active",
+  },
 ];
-const mockPagePropertyValues: PagePropertyValue[] = [];
+const mockPagePropertyValues: PagePropertyValue[] = [
+  { id: "value-status", workspaceId: "default", pageId: mockPageId, propertyDefinitionId: "status", values: ["Draft"] },
+  { id: "value-owner", workspaceId: "default", pageId: mockPageId, propertyDefinitionId: "owner", values: ["Alex"] },
+  { id: "value-type", workspaceId: "default", pageId: mockPageId, propertyDefinitionId: "type", values: ["Reference"] },
+  { id: "value-tags", workspaceId: "default", pageId: mockPageId, propertyDefinitionId: "tags", values: ["knowledge", "design"] },
+  { id: "value-confidence", workspaceId: "default", pageId: mockPageId, propertyDefinitionId: "confidence", values: ["92"] },
+  { id: "value-review", workspaceId: "default", pageId: mockPageId, propertyDefinitionId: "review", values: ["2026-09-18"] },
+];
+
+export function isMockPropertiesPreview(search: string): boolean {
+  return new URLSearchParams(search).get("preview") === "properties";
+}
+
+function makeMockLoadedDocument(pageId: string): LoadedDocument {
+  return {
+    id: pageId,
+    workspaceId: "default",
+    title: mockPageTitle,
+    parentId: null,
+    sortOrder: 0,
+    createdAt: mockPageCreatedAt,
+    updatedAt: mockPageUpdatedAt,
+    blocks: initialDocument,
+    editable: true,
+    lockOwner: null,
+    accessMessage: "Document: local-only editing",
+    kind: "wikiPage",
+  };
+}
 
 const mockAiChunkListeners = new Set<(requestId: string, chunk: string) => void>();
 const mockAiToolCallListeners = new Set<
@@ -67,6 +136,9 @@ const mockAiCompletedListeners = new Set<(requestId: string) => void>();
 const mockAiFailedListeners = new Set<(requestId: string, error: string) => void>();
 
 export function createMockEditorBridge(): EditorBridge {
+  const propertiesPreview =
+    typeof window !== "undefined" && isMockPropertiesPreview(window.location.search);
+
   return {
     async getBridgeInfo(): Promise<BridgeResult<BridgeInfo>> {
       return {
@@ -105,19 +177,7 @@ export function createMockEditorBridge(): EditorBridge {
       return {
         apiVersion: bridgeApiVersion,
         ok: true,
-        result: {
-          id: mockPageId,
-          title: mockPageTitle,
-          parentId: null,
-          sortOrder: 0,
-          createdAt: mockPageCreatedAt,
-          updatedAt: mockPageUpdatedAt,
-          blocks: initialDocument,
-          editable: true,
-          lockOwner: null,
-          accessMessage: "Document: local-only editing",
-          kind: "wikiPage",
-        },
+        result: makeMockLoadedDocument(mockPageId),
       };
     },
 
@@ -125,19 +185,7 @@ export function createMockEditorBridge(): EditorBridge {
       return {
         apiVersion: bridgeApiVersion,
         ok: true,
-        result: {
-          id: pageId,
-          title: mockPageTitle,
-          parentId: null,
-          sortOrder: 0,
-          createdAt: mockPageCreatedAt,
-          updatedAt: mockPageUpdatedAt,
-          blocks: initialDocument,
-          editable: true,
-          lockOwner: null,
-          accessMessage: "Document: local-only editing",
-          kind: "wikiPage",
-        },
+        result: makeMockLoadedDocument(pageId),
       };
     },
 
@@ -266,7 +314,11 @@ export function createMockEditorBridge(): EditorBridge {
       return () => undefined;
     },
 
-    onDocumentLoaded() {
+    onDocumentLoaded(callback) {
+      if (propertiesPreview) {
+        const timer = window.setTimeout(() => callback(makeMockLoadedDocument(mockPageId)), 0);
+        return () => window.clearTimeout(timer);
+      }
       return () => undefined;
     },
 

@@ -101,6 +101,7 @@ function EditorApp() {
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("default");
   const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const [propertiesRevision, setPropertiesRevision] = useState(0);
   const [isEditable, setIsEditable] = useState(true);
   const [, setIsLoadingDocument] = useState(false);
   const [hasLoadedDocumentOnce, setHasLoadedDocumentOnce] = useState(false);
@@ -546,6 +547,7 @@ function EditorApp() {
             bridge={bridge!}
             workspaceId={selectedWorkspaceId}
             pageId={selectedPageId}
+            refreshToken={propertiesRevision}
             onOpen={() => setPropertiesOpen(true)}
           />
         ) : null}
@@ -679,6 +681,7 @@ function EditorApp() {
           bridge={bridge}
           workspaceId={selectedWorkspaceId}
           pageId={selectedPageId}
+          onChange={() => setPropertiesRevision((revision) => revision + 1)}
           editable={isEditable}
           open={propertiesOpen}
           onClose={() => setPropertiesOpen(false)}

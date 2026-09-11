@@ -6,6 +6,7 @@ type PropertiesDrawerProps = {
   bridge: EditorBridge;
   workspaceId: string;
   pageId: string;
+  onChange?: () => void;
   editable: boolean;
   open: boolean;
   onClose: () => void;
@@ -35,11 +36,13 @@ export function PropertiesSummary({
   bridge,
   workspaceId,
   pageId,
+  refreshToken,
   onOpen,
 }: {
   bridge: EditorBridge;
   workspaceId: string;
   pageId: string;
+  refreshToken: number;
   onOpen: () => void;
 }) {
   const [definitions, setDefinitions] = useState<PropertyDefinition[]>([]);
@@ -58,7 +61,7 @@ export function PropertiesSummary({
     return () => {
       active = false;
     };
-  }, [bridge, pageId, workspaceId]);
+  }, [bridge, pageId, refreshToken, workspaceId]);
 
   const summary = getPropertySummary(definitions, values);
 
@@ -107,6 +110,7 @@ export function PropertiesDrawer({
   bridge,
   workspaceId,
   pageId,
+  onChange,
   editable,
   open,
   onClose,
@@ -170,6 +174,7 @@ export function PropertiesDrawer({
         ? [...previous, response.result]
         : previous.map((value, valueIndex) => (valueIndex === index ? response.result : value));
     });
+    onChange?.();
     setError(null);
   };
 
@@ -180,6 +185,7 @@ export function PropertiesDrawer({
       return;
     }
     setValues((previous) => previous.filter((item) => item.id !== value.id));
+    onChange?.();
   };
 
   const renderValueEditor = (
@@ -244,6 +250,7 @@ export function PropertiesDrawer({
       return;
     }
     setDefinitions((previous) => [...previous.filter((item) => item.id !== response.result.id), response.result]);
+    onChange?.();
     setDraftName("");
     setDraftOptions("");
     setError(null);
@@ -256,6 +263,7 @@ export function PropertiesDrawer({
       return;
     }
     setDefinitions((previous) => previous.map((item) => (item.id === response.result.id ? response.result : item)));
+    onChange?.();
   };
 
   const retireDefinition = async (definition: PropertyDefinition) => {
@@ -265,6 +273,7 @@ export function PropertiesDrawer({
       return;
     }
     setDefinitions((previous) => previous.map((item) => (item.id === response.result.id ? response.result : item)));
+    onChange?.();
   };
 
   if (!open) return null;
