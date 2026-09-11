@@ -51,6 +51,7 @@ import {
 import { createInlineSuggestionExtension } from "./extensions/inlineSuggestionExtension";
 import { NotebookView } from "./notebook/NotebookView";
 import { OpenApiSpecView } from "./openapi/OpenApiSpecView";
+import { PropertiesDrawer, PropertiesSummary } from "./properties/PropertiesDrawer";
 
 // BlockNote's default schema plus the Mermaid diagram block (ADR-017, issue #50) and real
 // syntax-highlighted code blocks (issue #51, via @blocknote/code-block's shiki-based highlighter
@@ -98,6 +99,9 @@ function EditorApp() {
     return () => setAttachmentBridge(null);
   }, [bridge]);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("default");
+  const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const [propertiesRevision, setPropertiesRevision] = useState(0);
   const [isEditable, setIsEditable] = useState(true);
   const [, setIsLoadingDocument] = useState(false);
   const [hasLoadedDocumentOnce, setHasLoadedDocumentOnce] = useState(false);
@@ -430,6 +434,8 @@ function EditorApp() {
         }
         selected_page_id.current = document.id;
         setSelectedPageId(document.id);
+        setSelectedWorkspaceId(document.workspaceId ?? "default");
+        setPropertiesOpen(false);
         setIsEditable(document.editable);
         setDocumentKind(document.kind ?? "wikiPage");
         setDocumentRawContent(document.rawContent);
@@ -458,6 +464,8 @@ function EditorApp() {
         created_bridge.onDocumentSelectionCleared(() => {
           selected_page_id.current = null;
           setSelectedPageId(null);
+          setSelectedWorkspaceId("default");
+          setPropertiesOpen(false);
           setIsEditable(true);
           setDocumentKind("wikiPage");
           setDocumentRawContent(undefined);
@@ -533,7 +541,16 @@ function EditorApp() {
 
   return (
     <main className="app-shell">
-      <section className="editor-pane" aria-label="Document editor">
+      <section className={`editor-pane${selectedPageId && isWikiPage ? " editor-pane--wiki" : ""}`} aria-label="Document editor">
+        {bridge && selectedPageId && isWikiPage ? (
+          <PropertiesSummary
+            bridge={bridge!}
+            workspaceId={selectedWorkspaceId}
+            pageId={selectedPageId}
+            refreshToken={propertiesRevision}
+            onOpen={() => setPropertiesOpen(true)}
+          />
+        ) : null}
         {shouldMountEditor && isJupyterNotebook ? (
           <div className="editor-surface" data-document-kind={documentKind}>
             <NotebookView
@@ -659,6 +676,17 @@ function EditorApp() {
           </div>
         ) : null}
       </section>
+      {bridge && selectedPageId && isWikiPage ? (
+        <PropertiesDrawer
+          bridge={bridge}
+          workspaceId={selectedWorkspaceId}
+          pageId={selectedPageId}
+          onChange={() => setPropertiesRevision((revision) => revision + 1)}
+          editable={isEditable}
+          open={propertiesOpen}
+          onClose={() => setPropertiesOpen(false)}
+        />
+      ) : null}
     </main>
   );
 }

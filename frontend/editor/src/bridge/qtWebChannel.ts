@@ -7,6 +7,8 @@ import type {
   LoadedDocument,
   AttachmentUploadMetadata,
   StoredAttachment,
+  PropertyDefinition,
+  PagePropertyValue,
 } from "./editorBridge";
 
 declare global {
@@ -84,6 +86,12 @@ type QtEditorBridgeObject = {
     pageId: string,
     callback: (response: BridgeResult<LoadedDocument>) => void,
   ): void;
+  listPropertyDefinitions(workspaceId: string, callback: (response: BridgeResult<PropertyDefinition[]>) => void): void;
+  savePropertyDefinition(definition: PropertyDefinition, callback: (response: BridgeResult<PropertyDefinition>) => void): void;
+  retirePropertyDefinition(definitionId: string, callback: (response: BridgeResult<PropertyDefinition>) => void): void;
+  listPagePropertyValues(workspaceId: string, pageId: string, callback: (response: BridgeResult<PagePropertyValue[]>) => void): void;
+  savePagePropertyValue(value: PagePropertyValue, callback: (response: BridgeResult<PagePropertyValue>) => void): void;
+  deletePagePropertyValue(valueId: string, callback: (response: BridgeResult<void>) => void): void;
   updateSnapshot(
     pageId: string,
     snapshotJson: string,
@@ -167,6 +175,30 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
       return new Promise((resolve) => {
         qtObject.openDocument(pageId, resolve);
       });
+    },
+
+    listPropertyDefinitions(workspaceId) {
+      return new Promise((resolve) => qtObject.listPropertyDefinitions(workspaceId, resolve));
+    },
+
+    savePropertyDefinition(definition) {
+      return new Promise((resolve) => qtObject.savePropertyDefinition(definition as PropertyDefinition, resolve));
+    },
+
+    retirePropertyDefinition(definitionId) {
+      return new Promise((resolve) => qtObject.retirePropertyDefinition(definitionId, resolve));
+    },
+
+    listPagePropertyValues(workspaceId, pageId) {
+      return new Promise((resolve) => qtObject.listPagePropertyValues(workspaceId, pageId, resolve));
+    },
+
+    savePagePropertyValue(value) {
+      return new Promise((resolve) => qtObject.savePagePropertyValue(value as PagePropertyValue, resolve));
+    },
+
+    deletePagePropertyValue(valueId) {
+      return new Promise((resolve) => qtObject.deletePagePropertyValue(valueId, resolve));
     },
 
     updateSnapshot(pageId, snapshot) {
