@@ -3,7 +3,10 @@
 
 == Status
 
-Proposed for Issue https://github.com/Artem535/CppWiki/issues/185[#185].
+Implemented for Issue https://github.com/Artem535/CppWiki/issues/185[#185]: domain module,
+repository contract, file and Couchbase Lite persistence, and workspace archive round-trip are
+all in place and covered by focused tests. UI and graph visualization remain in follow-up issues
+(#186, #188, #189, #190).
 
 == Goal
 
