@@ -44,6 +44,7 @@
 #include "core/uuid.h"
 #include "document/document.h"
 #include "document/document_validator.h"
+#include "knowledge/knowledge_record.h"
 #include "storage/local_document_repository.h"
 
 namespace cppwiki::bridge {
@@ -483,6 +484,107 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
   };
 }
 
+// Issue #219: base set of properties a new page of a given kind should start with, so e.g. a
+// project board doesn't open with an empty properties strip. Definitions are matched by name
+// within the workspace and only created the first time a page of that kind appears there --
+// later pages of the same kind reuse the existing definition instead of duplicating it.
+struct DefaultPropertySpec {
+  std::string name;
+  knowledge::PropertyValueKind value_kind{knowledge::PropertyValueKind::kText};
+  std::vector<std::string> options;
+  // The value seeded into the new page's PagePropertyValue. Left empty when the value should be
+  // derived from the document being created instead (see defaults_to_creator).
+  std::vector<std::string> default_values;
+  bool defaults_to_creator = false;
+};
+
+auto DefaultPropertySpecsForKind(document::DocumentKind kind) -> std::vector<DefaultPropertySpec> {
+  switch (kind) {
+    case document::DocumentKind::kProjectBoard:
+      return {
+          DefaultPropertySpec{
+              .name = "Status",
+              .value_kind = knowledge::PropertyValueKind::kSelect,
+              .options = {"Not started", "In progress", "Done"},
+              .default_values = {"Not started"},
+          },
+          DefaultPropertySpec{
+              .name = "Owner",
+              .value_kind = knowledge::PropertyValueKind::kText,
+              .defaults_to_creator = true,
+          },
+      };
+    case document::DocumentKind::kWikiPage:
+    case document::DocumentKind::kJupyterNotebook:
+    case document::DocumentKind::kExcalidrawCanvas:
+    case document::DocumentKind::kOpenApiSpec:
+      return {};
+  }
+  return {};
+}
+
+// Best-effort: a page is fully created once SaveDocument() above succeeds, so a seeding failure
+// (e.g. a knowledge-record validation error) is logged and skipped rather than surfaced as a
+// document-creation error.
+void SeedDefaultPropertiesForNewDocument(
+    const std::shared_ptr<storage::LocalDocumentRepository>& repository,
+    const document::PageMetadata& metadata) {
+  const auto specs = DefaultPropertySpecsForKind(metadata.kind);
+  if (specs.empty() || !repository) {
+    return;
+  }
+
+  const auto existing = repository->ListPropertyDefinitions(metadata.workspace_id);
+  const auto now = CurrentUtcTimestamp();
+
+  for (const auto& spec : specs) {
+    const auto found = std::find_if(
+        existing.definitions.begin(), existing.definitions.end(), [&](const auto& definition) {
+          return definition.state == knowledge::RecordState::kActive && definition.name == spec.name;
+        });
+
+    knowledge::PropertyDefinition definition;
+    if (found != existing.definitions.end()) {
+      definition = *found;
+    } else {
+      definition = knowledge::PropertyDefinition{
+          .id = GenerateUuidString(),
+          .workspace_id = metadata.workspace_id,
+          .name = spec.name,
+          .value_kind = spec.value_kind,
+          .options = spec.options,
+          .audit = knowledge::AuditMetadata{.created_at = now, .updated_at = now,
+                                            .created_by = metadata.created_by,
+                                            .updated_by = metadata.created_by},
+      };
+      if (repository->SavePropertyDefinition(definition).error) {
+        spdlog::warn("Skipping default property '{}': failed to save its definition.", spec.name);
+        continue;
+      }
+    }
+
+    const auto values = spec.defaults_to_creator ? std::vector<std::string>{metadata.created_by}
+                                                 : spec.default_values;
+    if (values.empty()) {
+      continue;
+    }
+
+    const auto save_result = repository->SavePagePropertyValue(knowledge::PagePropertyValue{
+        .id = GenerateUuidString(),
+        .workspace_id = metadata.workspace_id,
+        .page_id = metadata.id,
+        .property_definition_id = definition.id,
+        .values = values,
+        .audit = knowledge::AuditMetadata{.created_at = now, .updated_at = now,
+                                          .created_by = metadata.created_by,
+                                          .updated_by = metadata.created_by},
+    });
+    if (save_result.error) {
+      spdlog::warn("Skipping default property '{}': failed to save its page value.", spec.name);
+    }
+  }
+}
+
 auto NextChildSortOrder(std::shared_ptr<storage::LocalDocumentRepository> repository,
                         std::string_view parent_id) -> std::int32_t {
   if (!repository) {
@@ -889,6 +991,7 @@ QVariantMap QEditorBridge::createDocumentInWorkspace(const QString& workspace_id
     return ErrorResponse(QStringLiteral("create_failed"),
                          QString::fromStdString(save_result.error->message));
   }
+  SeedDefaultPropertiesForNewDocument(repository_, record.metadata);
 
   return SuccessResponse(MetadataToVariant(record.metadata));
 }
@@ -933,6 +1036,7 @@ QVariantMap QEditorBridge::createChildDocumentInWorkspace(const QString& workspa
     return ErrorResponse(QStringLiteral("create_failed"),
                          QString::fromStdString(save_result.error->message));
   }
+  SeedDefaultPropertiesForNewDocument(repository_, record.metadata);
 
   return SuccessResponse(MetadataToVariant(record.metadata));
 }
