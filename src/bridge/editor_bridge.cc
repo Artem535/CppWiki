@@ -484,10 +484,13 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
   };
 }
 
-// Issue #219: base set of properties a new page of a given kind should start with, so e.g. a
-// project board doesn't open with an empty properties strip. Definitions are matched by name
-// within the workspace and only created the first time a page of that kind appears there --
-// later pages of the same kind reuse the existing definition instead of duplicating it.
+// Issue #219: base set of properties a new page of a given kind should start with, so a fresh
+// page doesn't open with an empty properties strip. A definition is reused across pages -- of
+// the same or a different kind -- only when an existing one matches on name, value kind AND
+// options; "Status" therefore stays a single shared definition when two kinds happen to use the
+// exact same option set, but gets its own definition when a kind's vocabulary differs (e.g. a
+// wiki page's Draft/Published vs. a project board's Not started/In progress/Done), instead of
+// silently reusing -- and corrupting -- whichever options happened to be saved first.
 struct DefaultPropertySpec {
   std::string name;
   knowledge::PropertyValueKind value_kind{knowledge::PropertyValueKind::kText};
@@ -497,6 +500,14 @@ struct DefaultPropertySpec {
   std::vector<std::string> default_values;
   bool defaults_to_creator = false;
 };
+
+auto OwnerDefaultPropertySpec() -> DefaultPropertySpec {
+  return DefaultPropertySpec{
+      .name = "Owner",
+      .value_kind = knowledge::PropertyValueKind::kText,
+      .defaults_to_creator = true,
+  };
+}
 
 auto DefaultPropertySpecsForKind(document::DocumentKind kind) -> std::vector<DefaultPropertySpec> {
   switch (kind) {
@@ -508,17 +519,48 @@ auto DefaultPropertySpecsForKind(document::DocumentKind kind) -> std::vector<Def
               .options = {"Not started", "In progress", "Done"},
               .default_values = {"Not started"},
           },
-          DefaultPropertySpec{
-              .name = "Owner",
-              .value_kind = knowledge::PropertyValueKind::kText,
-              .defaults_to_creator = true,
-          },
+          OwnerDefaultPropertySpec(),
       };
     case document::DocumentKind::kWikiPage:
+      return {
+          DefaultPropertySpec{
+              .name = "Status",
+              .value_kind = knowledge::PropertyValueKind::kSelect,
+              .options = {"Draft", "Published"},
+              .default_values = {"Draft"},
+          },
+          OwnerDefaultPropertySpec(),
+      };
     case document::DocumentKind::kJupyterNotebook:
+      return {
+          DefaultPropertySpec{
+              .name = "Status",
+              .value_kind = knowledge::PropertyValueKind::kSelect,
+              .options = {"Draft", "Reviewed"},
+              .default_values = {"Draft"},
+          },
+          OwnerDefaultPropertySpec(),
+      };
     case document::DocumentKind::kExcalidrawCanvas:
+      return {
+          DefaultPropertySpec{
+              .name = "Status",
+              .value_kind = knowledge::PropertyValueKind::kSelect,
+              .options = {"Draft", "Final"},
+              .default_values = {"Draft"},
+          },
+          OwnerDefaultPropertySpec(),
+      };
     case document::DocumentKind::kOpenApiSpec:
-      return {};
+      return {
+          DefaultPropertySpec{
+              .name = "Status",
+              .value_kind = knowledge::PropertyValueKind::kSelect,
+              .options = {"Draft", "Stable", "Deprecated"},
+              .default_values = {"Draft"},
+          },
+          OwnerDefaultPropertySpec(),
+      };
   }
   return {};
 }
@@ -540,7 +582,9 @@ void SeedDefaultPropertiesForNewDocument(
   for (const auto& spec : specs) {
     const auto found = std::find_if(
         existing.definitions.begin(), existing.definitions.end(), [&](const auto& definition) {
-          return definition.state == knowledge::RecordState::kActive && definition.name == spec.name;
+          return definition.state == knowledge::RecordState::kActive &&
+                definition.name == spec.name && definition.value_kind == spec.value_kind &&
+                definition.options == spec.options;
         });
 
     knowledge::PropertyDefinition definition;
