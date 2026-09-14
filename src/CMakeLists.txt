@@ -165,6 +165,7 @@ qt_add_resources(cppwiki_app cppwiki_icon_resources
         gui/assets/icons/action-move-up.svg
         gui/assets/icons/action-move-down.svg
         gui/assets/icons/action-new-folder.svg
+        gui/assets/icons/action-properties.svg
 )
 
 # Embedded as a Qt resource (not a filesystem path guessed relative to CWD/applicationDirPath())

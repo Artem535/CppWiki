@@ -5,8 +5,10 @@
 #include <cstdint>
 
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QLayoutItem>
+#include <QSize>
 #include <QStringList>
 #include <QToolButton>
 #include <QWidget>
@@ -162,7 +164,8 @@ void PropertiesStripWidget::Rebuild() {
 
   auto* button = new QToolButton(this);
   button->setObjectName(QStringLiteral("propertiesStripButton"));
-  button->setText(QStringLiteral("Properties"));
+  button->setIcon(QIcon(QStringLiteral(":/cppwiki/icons/action-properties.svg")));
+  button->setIconSize(QSize(16, 16));
   button->setAutoRaise(true);
   button->setToolTip(QStringLiteral("Open properties"));
   connect(button, &QToolButton::clicked, this, &PropertiesStripWidget::propertiesRequested);
