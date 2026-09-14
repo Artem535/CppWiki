@@ -80,6 +80,101 @@ QLabel#avatarLabel {
   font-weight: 700;
 }
 
+/* Issue #186: native property chip row (PropertiesStripWidget), living in
+   collaboration_panel_ next to presenceStripWidget -- see
+   gui/properties_strip_widget.cc. Chip height is fixed in code (22px) so all
+   chips read as one uniform row regardless of value text length; these rules
+   only add the rounded-pill framing and per-value color, mirroring
+   frontend/editor/src/styles.css's .tag-pill--* palette exactly so a
+   property value reads as the same color here and in the JS-side drawer. */
+QFrame#propertiesStripWidget {
+  background-color: transparent;
+  border: none;
+}
+
+QWidget#propertyChip {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-radius: 11px;
+}
+
+QLabel#propertyChipName {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+QLabel#propertyChipValue {
+  color: palette(text);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+QLabel#propertyChipValue[chipColor="grey"] {
+  background-color: transparent;
+  color: #b7bdd1;
+}
+
+QLabel#propertyChipValue[chipColor="red"] {
+  background-color: transparent;
+  color: #ff9c9c;
+}
+
+QLabel#propertyChipValue[chipColor="orange"] {
+  background-color: transparent;
+  color: #ffbb77;
+}
+
+QLabel#propertyChipValue[chipColor="yellow"] {
+  background-color: transparent;
+  color: #e8d16b;
+}
+
+QLabel#propertyChipValue[chipColor="green"] {
+  background-color: transparent;
+  color: #83dd9c;
+}
+
+QLabel#propertyChipValue[chipColor="teal"] {
+  background-color: transparent;
+  color: #7fe0d3;
+}
+
+QLabel#propertyChipValue[chipColor="blue"] {
+  background-color: transparent;
+  color: #8fbaf5;
+}
+
+QLabel#propertyChipValue[chipColor="purple"] {
+  background-color: transparent;
+  color: #bda3f2;
+}
+
+QLabel#propertyChipValue[chipColor="pink"] {
+  background-color: transparent;
+  color: #eba7dd;
+}
+
+QLabel#propertyChipOverflow {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+QToolButton#propertiesStripButton {
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.62);
+  background-color: transparent;
+  border: none;
+}
+
+QToolButton#propertiesStripButton:hover {
+  color: palette(text);
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
 QFrame#contentToolbar {
   background-color: rgba(255, 255, 255, 0.02);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);

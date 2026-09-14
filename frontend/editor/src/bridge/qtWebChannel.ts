@@ -47,6 +47,7 @@ type QtEditorBridgeObject = {
     disconnect(callback: () => void): void;
   };
   exportCurrentDocumentRequested: { connect(callback: () => void): void; disconnect(callback: () => void): void };
+  openPropertiesDrawerRequested: { connect(callback: () => void): void; disconnect(callback: () => void): void };
   aiChunkReceived: {
     connect(callback: (requestId: string, chunk: string) => void): void;
     disconnect(callback: (requestId: string, chunk: string) => void): void;
@@ -292,6 +293,10 @@ export async function createQtEditorBridge(): Promise<EditorBridge | null> {
     onExportCurrentDocumentRequested(callback) {
       qtObject.exportCurrentDocumentRequested.connect(callback);
       return () => qtObject.exportCurrentDocumentRequested.disconnect(callback);
+    },
+    onOpenPropertiesDrawerRequested(callback) {
+      qtObject.openPropertiesDrawerRequested.connect(callback);
+      return () => qtObject.openPropertiesDrawerRequested.disconnect(callback);
     },
 
     startAiRequest(prompt, contextText, mode, toolName, toolSchemaJson) {

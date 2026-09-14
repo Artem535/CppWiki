@@ -1451,6 +1451,7 @@ QVariantMap QEditorBridge::savePropertyDefinition(const QVariantMap& input) {
   if (result.error)
     return ErrorResponse(QStringLiteral("save_property_failed"),
                          QString::fromStdString(result.error->message));
+  emit propertiesChanged();
   return SuccessResponse(PropertyDefinitionToVariant(definition));
 }
 
@@ -1477,6 +1478,7 @@ QVariantMap QEditorBridge::retirePropertyDefinition(const QString& definition_id
   if (save_result.error)
     return ErrorResponse(QStringLiteral("retire_property_failed"),
                          QString::fromStdString(save_result.error->message));
+  emit propertiesChanged();
   return SuccessResponse(PropertyDefinitionToVariant(definition));
 }
 
@@ -1540,6 +1542,7 @@ QVariantMap QEditorBridge::savePagePropertyValue(const QVariantMap& input) {
   if (result.error)
     return ErrorResponse(QStringLiteral("save_page_property_failed"),
                          QString::fromStdString(result.error->message));
+  emit propertiesChanged();
   return SuccessResponse(PagePropertyValueToVariant(value));
 }
 
@@ -1551,6 +1554,7 @@ QVariantMap QEditorBridge::deletePagePropertyValue(const QString& value_id) {
   if (result.error)
     return ErrorResponse(QStringLiteral("delete_page_property_failed"),
                          QString::fromStdString(result.error->message));
+  emit propertiesChanged();
   return SuccessResponse(QVariant{});
 }
 

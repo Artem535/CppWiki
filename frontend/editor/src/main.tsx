@@ -51,7 +51,7 @@ import {
 import { createInlineSuggestionExtension } from "./extensions/inlineSuggestionExtension";
 import { NotebookView } from "./notebook/NotebookView";
 import { OpenApiSpecView } from "./openapi/OpenApiSpecView";
-import { PropertiesDrawer, PropertiesSummary } from "./properties/PropertiesDrawer";
+import { PropertiesDrawer } from "./properties/PropertiesDrawer";
 
 // BlockNote's default schema plus the Mermaid diagram block (ADR-017, issue #50) and real
 // syntax-highlighted code blocks (issue #51, via @blocknote/code-block's shiki-based highlighter
@@ -101,7 +101,6 @@ function EditorApp() {
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("default");
   const [propertiesOpen, setPropertiesOpen] = useState(false);
-  const [propertiesRevision, setPropertiesRevision] = useState(0);
   const [isEditable, setIsEditable] = useState(true);
   const [, setIsLoadingDocument] = useState(false);
   const [hasLoadedDocumentOnce, setHasLoadedDocumentOnce] = useState(false);
@@ -475,12 +474,19 @@ function EditorApp() {
       const unsubscribeExport = created_bridge.onExportCurrentDocumentRequested(() => {
         window.dispatchEvent(new Event("cppwiki-export-current-document"));
       });
+      // Native trigger: the compact property chip row lives in MainWindow's chrome next to
+      // PresenceStripWidget (gui/properties_strip_widget.cc), not in this web page, so its
+      // "Properties" button opens this drawer through the bridge instead of a local button.
+      const unsubscribeOpenProperties = created_bridge.onOpenPropertiesDrawerRequested(() => {
+        setPropertiesOpen(true);
+      });
       unsubscribers.push(
         unsubscribeLoaded,
         unsubscribeAccessChanged,
         unsubscribeLoadFailed,
         unsubscribeSelectionCleared,
         unsubscribeExport,
+        unsubscribeOpenProperties,
       );
 
       if (cancelled) {
@@ -541,16 +547,7 @@ function EditorApp() {
 
   return (
     <main className="app-shell">
-      <section className={`editor-pane${selectedPageId && isWikiPage ? " editor-pane--wiki" : ""}`} aria-label="Document editor">
-        {bridge && selectedPageId && isWikiPage ? (
-          <PropertiesSummary
-            bridge={bridge!}
-            workspaceId={selectedWorkspaceId}
-            pageId={selectedPageId}
-            refreshToken={propertiesRevision}
-            onOpen={() => setPropertiesOpen(true)}
-          />
-        ) : null}
+      <section className="editor-pane" aria-label="Document editor">
         {shouldMountEditor && isJupyterNotebook ? (
           <div className="editor-surface" data-document-kind={documentKind}>
             <NotebookView
@@ -681,7 +678,6 @@ function EditorApp() {
           bridge={bridge}
           workspaceId={selectedWorkspaceId}
           pageId={selectedPageId}
-          onChange={() => setPropertiesRevision((revision) => revision + 1)}
           editable={isEditable}
           open={propertiesOpen}
           onClose={() => setPropertiesOpen(false)}

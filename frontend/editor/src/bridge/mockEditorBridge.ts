@@ -336,6 +336,17 @@ export function createMockEditorBridge(): EditorBridge {
     onExportCurrentDocumentRequested() {
       return () => undefined;
     },
+    onOpenPropertiesDrawerRequested(callback) {
+      // The real trigger is the native PropertiesStripWidget's "Properties" button (see
+      // gui/properties_strip_widget.cc) -- there's no native chrome in this standalone preview,
+      // so open the drawer once automatically to keep `?preview=properties` useful for the
+      // drawer's own editing UI.
+      if (propertiesPreview) {
+        const timer = window.setTimeout(callback, 0);
+        return () => window.clearTimeout(timer);
+      }
+      return () => undefined;
+    },
 
     async startAiRequest(prompt, contextText, _mode, toolName, toolSchemaJson) {
       const requestId = `mock-ai-${Math.random().toString(36).slice(2)}`;

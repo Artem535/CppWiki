@@ -83,6 +83,12 @@ class Page final : public QWidget, public IPage {
   // picked via QFileDialog, then refreshes the tree/list to show the restored documents.
   void RestoreWorkspaceFromBackup();
 
+  // Opens the JS-side PropertiesDrawer for the currently selected document, triggered by
+  // PropertiesStripWidget's native "Properties" button (see gui/properties_strip_widget.cc) --
+  // that widget lives in MainWindow's chrome, not this web page, so it can't call into React
+  // directly. No-op when no document is selected or the bridge isn't ready.
+  void OpenPropertiesDrawer();
+
  signals:
   void settingsRequested();
   void documentStatusChanged(const QString& message, bool is_error);
@@ -99,6 +105,16 @@ class Page final : public QWidget, public IPage {
   // MainWindow uses this to show/hide and label its native Import/Export buttons — wiki pages
   // have no import/export concept, so it hides them for `kind == DocumentKind::kWikiPage` too.
   void documentKindStateChanged(document::DocumentKind kind, bool has_document, bool editable);
+  // Emitted alongside documentKindStateChanged, carrying the identity PropertiesStripWidget
+  // needs to query the knowledge repository directly (it doesn't go through the bridge/JS at
+  // all -- see gui/properties_strip_widget.cc). `has_document` false means no document is
+  // selected, in which case workspace_id/page_id aren't meaningful.
+  void documentPropertiesContextChanged(const QString& workspace_id, const QString& page_id,
+                                        bool has_document);
+  // Relayed from QEditorBridge::propertiesChanged (see bridge/editor_bridge.h) so
+  // PropertiesStripWidget can refresh after an edit made in the JS-side drawer, without needing
+  // a direct reference to the bridge object itself.
+  void propertiesChanged();
 
  private:
   void BuildUi();

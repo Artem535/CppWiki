@@ -55,3 +55,30 @@ export function upsertPagePropertyValue(values: PagePropertyValue[], nextValue: 
 export function removePagePropertyValue(values: PagePropertyValue[], valueId: string): PagePropertyValue[] {
   return values.filter((value) => value.id !== valueId);
 }
+
+// A fixed, named palette (not an arbitrary color picker) so two workspaces that both have a
+// "Draft" option render it the same way, and so the UI never has to persist a color choice
+// alongside an option string.
+export const tagPaletteNames = [
+  "grey",
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "teal",
+  "blue",
+  "purple",
+  "pink",
+] as const;
+export type TagPaletteName = (typeof tagPaletteNames)[number];
+
+// Deterministic so the same option text always lands on the same color, both across reloads and
+// across every place it's rendered (compact summary chips, drawer rows). Not a security hash —
+// just a stable, cheap distribution over the palette.
+export function colorForTagValue(value: string): TagPaletteName {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return tagPaletteNames[Math.abs(hash) % tagPaletteNames.length];
+}

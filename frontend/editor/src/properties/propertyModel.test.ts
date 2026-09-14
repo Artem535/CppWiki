@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  colorForTagValue,
   formatPropertyValue,
   getPropertySummary,
   removePagePropertyValue,
+  tagPaletteNames,
   upsertPagePropertyValue,
   type PagePropertyValue,
   type PropertyDefinition,
@@ -60,5 +62,15 @@ describe("property model", () => {
   it("removes only the selected page value", () => {
     const previous = [value("v1", ["Draft"]), value("v2", ["Approved"] )];
     expect(removePagePropertyValue(previous, "v1")).toEqual([value("v2", ["Approved"])]);
+  });
+
+  it("assigns a stable palette color to the same option text", () => {
+    expect(colorForTagValue("Draft")).toBe(colorForTagValue("Draft"));
+    expect(tagPaletteNames).toContain(colorForTagValue("Draft"));
+  });
+
+  it("spreads distinct option text across more than one palette color", () => {
+    const colors = new Set(["Draft", "Approved", "Blocked", "Done", "Archived"].map(colorForTagValue));
+    expect(colors.size).toBeGreaterThan(1);
   });
 });

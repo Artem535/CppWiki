@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { EditorBridge, PagePropertyValue, PropertyDefinition, PropertyValueKind } from "../bridge/editorBridge";
-import { getPropertySummary } from "./propertyModel";
+import { colorForTagValue } from "./propertyModel";
 
 type PropertiesDrawerProps = {
   bridge: EditorBridge;
@@ -23,86 +23,246 @@ const valueKinds: Array<{ value: PropertyValueKind; label: string }> = [
   { value: "relation", label: "Relation" },
 ];
 
+const optionKinds: PropertyValueKind[] = ["select", "multiSelect"];
+const multiValueKinds: PropertyValueKind[] = ["multiSelect", "tags", "relation"];
+
 function valuesToText(value: PagePropertyValue | undefined): string {
   return value?.values.join(", ") ?? "";
 }
 
-function PropertyTypeMark({ kind }: { kind: PropertyValueKind }) {
-  const mark = kind === "checkbox" ? "✓" : kind === "date" ? "◷" : kind === "relation" ? "↗" : "•";
-  return <span className="property-chip__mark" aria-hidden="true">{mark}</span>;
+// One small line icon per relation kind, muted to the same color as the label so the row reads
+// as "icon + label" first and "value" second -- the same visual hierarchy the drawer's row
+// layout depends on (see .property-row__label in styles.css).
+function PropertyKindIcon({ kind }: { kind: PropertyValueKind }) {
+  const common = { width: 14, height: 14, viewBox: "0 0 14 14", fill: "none", "aria-hidden": true } as const;
+  switch (kind) {
+    case "checkbox":
+      return (
+        <svg {...common}>
+          <rect x="1.5" y="1.5" width="11" height="11" rx="2.5" stroke="currentColor" strokeWidth="1.3" />
+          <path d="M4 7.2l1.8 1.8L10 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "date":
+      return (
+        <svg {...common}>
+          <rect x="1.5" y="2.5" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+          <path d="M1.5 5.5h11M4 1.2v2M10 1.2v2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+      );
+    case "number":
+      return (
+        <svg {...common}>
+          <path
+            d="M5 1.5L3.6 12.5M10.4 1.5L9 12.5M2 5h10M1.6 9h10"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinecap="round"
+          />
+        </svg>
+      );
+    case "select":
+      return (
+        <svg {...common}>
+          <circle cx="7" cy="7" r="5.2" stroke="currentColor" strokeWidth="1.3" />
+          <circle cx="7" cy="7" r="2" fill="currentColor" />
+        </svg>
+      );
+    case "multiSelect":
+      return (
+        <svg {...common}>
+          <circle cx="5" cy="5.5" r="3" stroke="currentColor" strokeWidth="1.2" />
+          <circle cx="9.5" cy="9" r="3" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      );
+    case "tags":
+      return (
+        <svg {...common}>
+          <path
+            d="M2 2h4.6L12 7.4a1.4 1.4 0 0 1 0 2L8.4 13a1.4 1.4 0 0 1-2 0L2 8.6V2z"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          <circle cx="4.6" cy="4.6" r="1" fill="currentColor" />
+        </svg>
+      );
+    case "relation":
+      return (
+        <svg {...common}>
+          <path
+            d="M5.6 8.4L8.4 5.6M6 3.2l.7-.7a2.5 2.5 0 0 1 3.5 3.5l-.7.7M8 10.8l-.7.7a2.5 2.5 0 0 1-3.5-3.5l.7-.7"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinecap="round"
+          />
+        </svg>
+      );
+    case "text":
+    default:
+      return (
+        <svg {...common}>
+          <path d="M2 3.5h10M2 7h7M2 10.5h9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+      );
+  }
 }
 
-export function PropertiesSummary({
-  bridge,
-  workspaceId,
-  pageId,
-  refreshToken,
-  onOpen,
-}: {
-  bridge: EditorBridge;
-  workspaceId: string;
-  pageId: string;
-  refreshToken: number;
-  onOpen: () => void;
-}) {
-  const [definitions, setDefinitions] = useState<PropertyDefinition[]>([]);
-  const [values, setValues] = useState<PagePropertyValue[]>([]);
-
-  useEffect(() => {
-    let active = true;
-    void Promise.all([
-      bridge.listPropertyDefinitions(workspaceId),
-      bridge.listPagePropertyValues(workspaceId, pageId),
-    ]).then(([definitionResponse, valueResponse]) => {
-      if (!active || !definitionResponse.ok || !valueResponse.ok) return;
-      setDefinitions(definitionResponse.result);
-      setValues(valueResponse.result);
-    });
-    return () => {
-      active = false;
-    };
-  }, [bridge, pageId, refreshToken, workspaceId]);
-
-  const summary = getPropertySummary(definitions, values);
-
+function TagPill({ label, onRemove, editable }: { label: string; onRemove?: () => void; editable?: boolean }) {
+  const color = colorForTagValue(label);
   return (
-    <div className="properties-summary" data-testid="properties-summary">
-      <div className="properties-summary__identity">
-        <span className="properties-summary__icon" aria-hidden="true">◈</span>
-        <div>
-          <span className="properties-summary__type">Wiki page</span>
-          <span className="properties-summary__hint">Object metadata</span>
-        </div>
-      </div>
-      <div className="properties-summary__chips" aria-label="Page properties">
-        {summary.slice(0, 4).map((item) => (
-          <span className="property-chip" key={item.id}>
-            <PropertyTypeMark kind={item.valueKind} />
-            <span className="property-chip__name">{item.name}</span>
-            <span className="property-chip__value">{item.value}</span>
-          </span>
-        ))}
-        {summary.length > 4 ? <span className="property-chip property-chip--muted">+{summary.length - 4} more</span> : null}
-        <button className="properties-summary__add" onClick={onOpen} type="button">
-          {summary.length === 0 ? "+ Add property" : "+ Property"}
+    <span className={`tag-pill tag-pill--${color}`}>
+      <span className="tag-pill__label">{label}</span>
+      {onRemove ? (
+        <button
+          type="button"
+          className="tag-pill__remove"
+          onClick={onRemove}
+          disabled={!editable}
+          aria-label={`Remove ${label}`}
+        >
+          ×
         </button>
-      </div>
-      <button className="properties-summary__manage" onClick={onOpen} type="button" aria-label="Open properties">
-        <PropertiesGlyph />
-        <span>Properties</span>
-      </button>
-    </div>
+      ) : null}
+    </span>
   );
 }
 
-function PropertiesGlyph() {
+// One property row's value cell. Owns its own "click to edit" state so the parent drawer doesn't
+// need to track which of N rows is currently being edited -- each cell is a self-contained unit
+// that renders itself as plain text/pills until the person clicks in, then becomes an input.
+function PropertyValueCell({
+  definition,
+  existing,
+  editable,
+  onSave,
+}: {
+  definition: PropertyDefinition;
+  existing: PagePropertyValue | undefined;
+  editable: boolean;
+  onSave: (nextValues: string[]) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const values = existing?.values ?? [];
+
+  if (definition.valueKind === "checkbox") {
+    const checked = values[0] === "true";
+    return (
+      <label className="property-checkbox">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={!editable}
+          onChange={(event) => onSave([event.currentTarget.checked ? "true" : "false"])}
+          aria-label={definition.name}
+        />
+        <span className="property-checkbox__box" aria-hidden="true" />
+      </label>
+    );
+  }
+
+  if (definition.valueKind === "select") {
+    return (
+      <span className="property-value property-value--overlaySelect">
+        {values[0] ? <TagPill label={values[0]} /> : <span className="property-value__empty">Empty</span>}
+        <select
+          className="property-value__overlay"
+          value={values[0] ?? ""}
+          disabled={!editable}
+          onChange={(event) => onSave(event.currentTarget.value ? [event.currentTarget.value] : [])}
+          aria-label={definition.name}
+        >
+          <option value="">Empty</option>
+          {definition.options.map((option) => (
+            <option value={option} key={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </span>
+    );
+  }
+
+  if (multiValueKinds.includes(definition.valueKind) && definition.valueKind !== "relation") {
+    const addFromDraft = () => {
+      const additions = draft.split(",").map((item) => item.trim()).filter(Boolean);
+      if (additions.length > 0) onSave([...values, ...additions]);
+      setDraft("");
+      setEditing(false);
+    };
+    return (
+      <span className="property-value property-value--pills">
+        {values.map((one) => (
+          <TagPill
+            key={one}
+            label={one}
+            editable={editable}
+            onRemove={() => onSave(values.filter((existingValue) => existingValue !== one))}
+          />
+        ))}
+        {editable && editing ? (
+          <input
+            autoFocus
+            className="property-value__pill-input"
+            value={draft}
+            placeholder={definition.valueKind === "tags" ? "Add tag" : "Add option"}
+            onChange={(event) => setDraft(event.currentTarget.value)}
+            onBlur={addFromDraft}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") addFromDraft();
+              if (event.key === "Escape") {
+                setDraft("");
+                setEditing(false);
+              }
+            }}
+          />
+        ) : editable ? (
+          <button type="button" className="property-value__pill-add" onClick={() => setEditing(true)}>
+            +
+          </button>
+        ) : values.length === 0 ? (
+          <span className="property-value__empty">Empty</span>
+        ) : null}
+      </span>
+    );
+  }
+
+  // text, number, date, relation: plain scalar rendered as text until clicked into.
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="property-value property-value--text"
+        disabled={!editable}
+        onClick={() => {
+          setDraft(valuesToText(existing));
+          setEditing(true);
+        }}
+      >
+        {values.length > 0 ? valuesToText(existing) : <span className="property-value__empty">Empty</span>}
+      </button>
+    );
+  }
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <circle cx="9" cy="6" r="2" fill="currentColor" />
-      <circle cx="15" cy="12" r="2" fill="currentColor" />
-      <circle cx="10" cy="18" r="2" fill="currentColor" />
-    </svg>
+    <input
+      autoFocus
+      className="property-value__input"
+      type={definition.valueKind === "number" ? "number" : definition.valueKind === "date" ? "date" : "text"}
+      value={draft}
+      disabled={!editable}
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onBlur={() => {
+        setEditing(false);
+        const next = draft.split(",").map((item) => item.trim()).filter(Boolean);
+        if (next.length > 0) onSave(next);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") setEditing(false);
+      }}
+      aria-label={definition.name}
+    />
   );
 }
 
@@ -117,7 +277,8 @@ export function PropertiesDrawer({
 }: PropertiesDrawerProps) {
   const [definitions, setDefinitions] = useState<PropertyDefinition[]>([]);
   const [values, setValues] = useState<PagePropertyValue[]>([]);
-  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftKind, setDraftKind] = useState<PropertyValueKind>("text");
   const [draftOptions, setDraftOptions] = useState("");
@@ -151,12 +312,12 @@ export function PropertiesDrawer({
     [definitions],
   );
 
-  const saveValue = async (definition: PropertyDefinition, text: string, existing?: PagePropertyValue) => {
-    const nextValues = text.split(",").map((item) => item.trim()).filter(Boolean);
-    if (nextValues.length === 0) {
-      setError("Property values cannot be empty.");
+  const saveValue = async (definition: PropertyDefinition, nextValues: string[], existing?: PagePropertyValue) => {
+    if (nextValues.length === 0 && existing) {
+      await removeValue(existing);
       return;
     }
+    if (nextValues.length === 0) return;
     const response = await bridge.savePagePropertyValue({
       id: existing?.id,
       workspaceId,
@@ -188,53 +349,6 @@ export function PropertiesDrawer({
     onChange?.();
   };
 
-  const renderValueEditor = (
-    definition: PropertyDefinition,
-    existing: PagePropertyValue | undefined,
-  ) => {
-    const value = existing?.values[0] ?? "";
-    const save = (nextValue: string) => void saveValue(definition, nextValue, existing);
-    if (definition.valueKind === "checkbox") {
-      return (
-        <input
-          key={`${pageId}-${definition.id}`}
-          type="checkbox"
-          checked={value === "true"}
-          disabled={!editable}
-          onChange={(event) => save(event.currentTarget.checked ? "true" : "false")}
-          aria-label={definition.name}
-        />
-      );
-    }
-    if (definition.valueKind === "select") {
-      return (
-        <select
-          key={`${pageId}-${definition.id}`}
-          value={value}
-          disabled={!editable}
-          onChange={(event) => save(event.currentTarget.value)}
-          aria-label={definition.name}
-        >
-          <option value="">Choose…</option>
-          {definition.options.map((option) => <option value={option} key={option}>{option}</option>)}
-        </select>
-      );
-    }
-    return (
-      <input
-        key={`${pageId}-${definition.id}`}
-        type={definition.valueKind === "number" ? "number" : definition.valueKind === "date" ? "date" : "text"}
-        disabled={!editable}
-        defaultValue={valuesToText(existing)}
-        placeholder={`Add ${definition.name.toLowerCase()}`}
-        onBlur={(event) => {
-          if (event.currentTarget.value.trim()) save(event.currentTarget.value);
-        }}
-        aria-label={definition.name}
-      />
-    );
-  };
-
   const createDefinition = async () => {
     if (!draftName.trim()) return;
     const response = await bridge.savePropertyDefinition({
@@ -253,6 +367,8 @@ export function PropertiesDrawer({
     onChange?.();
     setDraftName("");
     setDraftOptions("");
+    setDraftGroup("");
+    setCreating(false);
     setError(null);
   };
 
@@ -283,48 +399,110 @@ export function PropertiesDrawer({
       <button className="properties-drawer-backdrop" aria-label="Close properties" onClick={onClose} />
       <aside className="properties-drawer" aria-label="Page properties" data-testid="properties-drawer">
         <header className="properties-drawer__header">
-          <div>
-            <h2>Properties</h2>
-          </div>
+          <h2>Properties</h2>
           <button className="properties-drawer__close" onClick={onClose} aria-label="Close properties">×</button>
         </header>
         {error ? <p className="properties-drawer__error" role="alert">{error}</p> : null}
-        <section className="properties-drawer__section">
-          <div className="properties-drawer__section-title"><h3>This page</h3><span>{activeDefinitions.length} available</span></div>
+        <section className="properties-drawer__list">
           {activeDefinitions.map((definition) => {
             const existing = values.find((value) => value.propertyDefinitionId === definition.id);
             return (
-              <label className="property-row" key={definition.id}>
-                <span className="property-row__name">{definition.name}</span>
-                {renderValueEditor(definition, existing)}
-                {existing ? <button disabled={!editable} onClick={() => void removeValue(existing)} aria-label={`Remove ${definition.name}`}>×</button> : null}
-              </label>
+              <div className="property-row" key={definition.id}>
+                <span className="property-row__label">
+                  <span className="property-row__icon"><PropertyKindIcon kind={definition.valueKind} /></span>
+                  <span className="property-row__name">{definition.name}</span>
+                </span>
+                <PropertyValueCell
+                  definition={definition}
+                  existing={existing}
+                  editable={editable}
+                  onSave={(nextValues) => void saveValue(definition, nextValues, existing)}
+                />
+                {existing ? (
+                  <button
+                    className="property-row__remove"
+                    disabled={!editable}
+                    onClick={() => void removeValue(existing)}
+                    aria-label={`Remove ${definition.name}`}
+                  >
+                    ×
+                  </button>
+                ) : (
+                  <span className="property-row__remove property-row__remove--spacer" aria-hidden="true" />
+                )}
+              </div>
             );
           })}
-          {activeDefinitions.length === 0 ? <p className="properties-drawer__empty">Create a property in the catalog below.</p> : null}
-        </section>
-        <section className="properties-drawer__section">
-          <button className="properties-drawer__catalog-toggle" onClick={() => setCatalogOpen((value) => !value)}>
-            <span>Workspace catalog</span><span>{catalogOpen ? "−" : "+"}</span>
-          </button>
-          {catalogOpen ? (
-            <div className="properties-catalog">
-              <div className="properties-catalog__create">
-                <input value={draftName} onChange={(event) => setDraftName(event.target.value)} placeholder="Property name" disabled={!editable} />
-                <select value={draftKind} onChange={(event) => setDraftKind(event.target.value as PropertyValueKind)} disabled={!editable}>
-                  {valueKinds.map((kind) => <option value={kind.value} key={kind.value}>{kind.label}</option>)}
+          {activeDefinitions.length === 0 ? <p className="properties-drawer__empty">No properties yet.</p> : null}
+          {editable ? (
+            creating ? (
+              <div className="property-create">
+                <input
+                  autoFocus
+                  value={draftName}
+                  onChange={(event) => setDraftName(event.target.value)}
+                  placeholder="Property name"
+                  onKeyDown={(event) => event.key === "Enter" && void createDefinition()}
+                />
+                <select value={draftKind} onChange={(event) => setDraftKind(event.target.value as PropertyValueKind)}>
+                  {valueKinds.map((kind) => (
+                    <option value={kind.value} key={kind.value}>
+                      {kind.label}
+                    </option>
+                  ))}
                 </select>
-                <input value={draftGroup} onChange={(event) => setDraftGroup(event.target.value)} placeholder="Group (optional)" disabled={!editable} />
-                {draftKind === "select" ? <input value={draftOptions} onChange={(event) => setDraftOptions(event.target.value)} placeholder="Options, comma-separated" disabled={!editable} /> : null}
-                <button onClick={() => void createDefinition()} disabled={!editable || !draftName.trim()}>Create property</button>
+                {optionKinds.includes(draftKind) ? (
+                  <input
+                    value={draftOptions}
+                    onChange={(event) => setDraftOptions(event.target.value)}
+                    placeholder="Options, comma-separated"
+                  />
+                ) : null}
+                <div className="property-create__actions">
+                  <button type="button" onClick={() => void createDefinition()} disabled={!draftName.trim()}>
+                    Add
+                  </button>
+                  <button type="button" className="property-create__cancel" onClick={() => setCreating(false)}>
+                    Cancel
+                  </button>
+                </div>
               </div>
+            ) : (
+              <button type="button" className="property-row property-row--ghost" onClick={() => setCreating(true)}>
+                <span className="property-row__label">
+                  <span className="property-row__icon property-row__icon--add">+</span>
+                  <span className="property-row__name">New property</span>
+                </span>
+              </button>
+            )
+          ) : null}
+        </section>
+        <section className="properties-drawer__manage">
+          <button className="properties-drawer__manage-toggle" onClick={() => setManageOpen((value) => !value)} type="button">
+            <span>Manage properties</span>
+            <span>{manageOpen ? "−" : "+"}</span>
+          </button>
+          {manageOpen ? (
+            <div className="properties-catalog">
               {definitions.map((definition) => (
                 <div className="catalog-row" key={definition.id}>
-                  <input defaultValue={definition.name} disabled={!editable || definition.state === "retired"} aria-label={`Name for ${definition.name}`} onBlur={(event) => void renameDefinition(definition, event.currentTarget.value, definition.groupName ?? "")} />
-                  <span>{definition.valueKind}{definition.groupName ? ` · ${definition.groupName}` : ""}</span>
-                  {definition.state === "active" ? <button disabled={!editable} onClick={() => void retireDefinition(definition)}>Retire</button> : <em>Retired</em>}
+                  <input
+                    defaultValue={definition.name}
+                    disabled={!editable || definition.state === "retired"}
+                    aria-label={`Name for ${definition.name}`}
+                    onBlur={(event) => void renameDefinition(definition, event.currentTarget.value, definition.groupName ?? "")}
+                  />
+                  <span className="catalog-row__kind">{definition.valueKind}{definition.groupName ? ` · ${definition.groupName}` : ""}</span>
+                  {definition.state === "active" ? (
+                    <button disabled={!editable} onClick={() => void retireDefinition(definition)}>
+                      Retire
+                    </button>
+                  ) : (
+                    <em>Retired</em>
+                  )}
                 </div>
               ))}
+              {definitions.length === 0 ? <p className="properties-drawer__empty">No properties in this workspace yet.</p> : null}
             </div>
           ) : null}
         </section>

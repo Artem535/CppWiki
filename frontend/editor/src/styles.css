@@ -1339,12 +1339,61 @@ button {
   outline-offset: 2px;
 }
 
+/* Tag/select/multi-select pills: a fixed named palette (see colorForTagValue), so the same
+   option text always reads the same everywhere it appears. Each color is a soft tint of the
+   background with a saturated foreground -- legible on this app's dark surfaces without glowing. */
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 140px;
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.tag-pill__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag-pill__remove {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: .65;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+}
+
+.tag-pill__remove:hover {
+  opacity: 1;
+}
+
+.tag-pill__remove:disabled {
+  display: none;
+}
+
+.tag-pill--grey { background: rgb(150 158 180 / 18%); color: #b7bdd1; }
+.tag-pill--red { background: rgb(255 90 90 / 16%); color: #ff9c9c; }
+.tag-pill--orange { background: rgb(255 150 60 / 18%); color: #ffbb77; }
+.tag-pill--yellow { background: rgb(232 209 80 / 18%); color: #e8d16b; }
+.tag-pill--green { background: rgb(90 200 120 / 16%); color: #83dd9c; }
+.tag-pill--teal { background: rgb(70 200 185 / 16%); color: #7fe0d3; }
+.tag-pill--blue { background: rgb(90 150 240 / 18%); color: #8fbaf5; }
+.tag-pill--purple { background: rgb(150 110 230 / 18%); color: #bda3f2; }
+.tag-pill--pink { background: rgb(230 110 200 / 18%); color: #eba7dd; }
+
 .properties-drawer-backdrop {
   position: fixed;
   inset: 0;
   z-index: 20;
   border: 0;
-  background: rgb(15 19 28 / 18%);
+  background: transparent;
   cursor: default;
 }
 
@@ -1352,407 +1401,425 @@ button {
   position: fixed;
   inset: 0 0 0 auto;
   z-index: 21;
-  width: min(390px, 100vw);
+  width: min(360px, 100vw);
   overflow: auto;
-  padding: 24px;
-  background: var(--app-surface, #fff);
-  color: var(--app-text, #242833);
-  box-shadow: -14px 0 40px rgb(20 24 35 / 16%);
+  border-left: 1px solid var(--app-border);
+  background: var(--app-surface);
+  box-shadow: -4px 0 16px rgb(0 0 0 / 10%);
+  color: var(--app-text);
+  padding: 18px;
+  font-size: 13px;
 }
 
-.properties-drawer__header,
-.properties-drawer__section-title,
-.properties-drawer__catalog-toggle,
-.catalog-row,
-.property-row {
+.properties-drawer__header {
   display: flex;
   align-items: center;
-}
-
-.properties-drawer__header,
-.properties-drawer__section-title,
-.properties-drawer__catalog-toggle {
   justify-content: space-between;
+  padding-bottom: 12px;
 }
 
-.properties-drawer__header h2,
-.properties-drawer__section h3 {
+.properties-drawer__header h2 {
   margin: 0;
-}
-
-.properties-drawer__eyebrow {
-  margin: 0 0 4px;
-  color: #778091;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .11em;
-  text-transform: uppercase;
-}
-
-.properties-drawer__close,
-.property-row > button,
-.catalog-row button {
-  border: 0;
-  background: transparent;
-  color: #778091;
-  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .properties-drawer__close {
-  font-size: 25px;
-}
-
-.properties-drawer__section {
-  margin-top: 28px;
-}
-
-.properties-drawer__section-title {
-  margin-bottom: 10px;
-}
-
-.properties-drawer__section-title span {
-  color: #778091;
-  font-size: 12px;
-}
-
-.property-row {
-  gap: 8px;
-  min-height: 42px;
-  border-bottom: 1px solid #eceef2;
-}
-
-.property-row__name {
-  width: 35%;
-  color: #697284;
-  font-size: 13px;
-}
-
-.property-row input,
-.properties-catalog input,
-.properties-catalog select {
-  min-width: 0;
-  flex: 1;
-  border: 1px solid #e0e3e9;
-  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
   background: transparent;
-  color: inherit;
-  padding: 7px 8px;
-  font: inherit;
+  color: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.properties-drawer__close:hover {
+  background: color-mix(in srgb, var(--app-text) 8%, var(--app-surface));
 }
 
 .properties-drawer__error {
-  margin: 16px 0 0;
-  border-radius: 7px;
-  background: #fff0f0;
-  color: #b42318;
-  padding: 9px;
-  font-size: 13px;
+  margin: 0 0 12px;
+  border-radius: 6px;
+  background: rgb(255 90 90 / 12%);
+  color: #ff9c9c;
+  padding: 8px 10px;
+  font-size: 12px;
 }
 
 .properties-drawer__empty {
-  color: #778091;
-  font-size: 13px;
-}
-
-.properties-drawer__catalog-toggle {
-  width: 100%;
-  border: 0;
-  border-top: 1px solid #eceef2;
-  background: transparent;
-  padding: 14px 0;
-  font: inherit;
-  font-weight: 700;
-  text-align: left;
-  cursor: pointer;
-}
-
-.properties-catalog__create {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 18px;
-}
-
-.properties-catalog__create button {
-  border: 0;
-  border-radius: 6px;
-  background: #315efb;
-  color: #fff;
-  padding: 8px;
-  font: inherit;
-  cursor: pointer;
-}
-
-.catalog-row {
-  gap: 8px;
-  border-top: 1px solid #eceef2;
-  padding: 10px 0;
+  color: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
   font-size: 12px;
+  padding: 6px 8px;
 }
 
-.catalog-row span {
-  color: #778091;
-  white-space: nowrap;
-}
-
-.catalog-row em {
-  color: #9aa2b1;
-  font-size: 12px;
-}
-
-@media (max-width: 600px) {
-  .properties-drawer {
-    padding: 20px;
-  }
-}
-
-/* Anytype-inspired object metadata: quiet chrome, compact chips, and one clear action. */
-.editor-pane--wiki {
+.properties-drawer__list {
   display: flex;
   flex-direction: column;
 }
 
-.editor-pane--wiki > .editor-surface {
-  height: calc(100% - 68px);
-  min-height: 0;
-}
-
-.properties-summary {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  min-height: 68px;
-  border-bottom: 1px solid rgb(255 255 255 / 7%);
-  background: rgb(31 33 39 / 88%);
-  padding: 10px 24px;
-}
-
-.properties-summary__identity {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 10px;
-  min-width: 142px;
-}
-
-.properties-summary__icon {
+/* One relation row: icon + label in a fixed column, value filling the rest, remove button
+   reserved but only painted in on hover so the resting list reads clean (see the ':hover'
+   overrides below) -- this is the single biggest visual gap vs. the previous drawer, which kept
+   a permanently-visible remove button and bare <select>/<input> chrome on every row. */
+.property-row {
   display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 1px solid rgb(150 166 205 / 35%);
-  border-radius: 8px;
-  color: #b7c7f0;
-  font-size: 15px;
+  grid-template-columns: minmax(0, 118px) minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  border-radius: 6px;
+  padding: 0 4px 0 8px;
 }
 
-.properties-summary__identity > div {
-  display: grid;
-  gap: 2px;
+.property-row:hover {
+  background: color-mix(in srgb, var(--app-text) 5%, var(--app-surface));
 }
 
-.properties-summary__type {
-  color: var(--app-text);
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.properties-summary__hint {
-  color: var(--app-text-muted);
-  font-size: 11px;
-}
-
-.properties-summary__chips {
+.property-row__label {
   display: flex;
-  flex: 1;
   align-items: center;
   gap: 7px;
   min-width: 0;
   overflow: hidden;
 }
 
-.property-chip {
+.property-row__icon {
   display: inline-flex;
   flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  max-width: 220px;
-  border: 1px solid rgb(151 166 204 / 24%);
-  border-radius: 7px;
-  background: rgb(80 91 124 / 22%);
-  color: #dce3f5;
-  padding: 5px 8px;
-  font-size: 12px;
+  color: color-mix(in srgb, var(--app-text) 45%, var(--app-surface));
 }
 
-.property-chip__mark {
-  color: #9fafe0;
-  font-size: 12px;
-}
-
-.property-chip__name {
-  color: #9faaca;
-}
-
-.property-chip__value {
-  max-width: 110px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.property-chip--muted {
-  border-color: transparent;
-  background: transparent;
-  color: var(--app-text-muted);
-}
-
-.properties-summary__add,
-.properties-summary__manage {
-  flex: 0 0 auto;
-  border: 0;
-  background: transparent;
-  color: #aab9e4;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.properties-summary__add {
-  border: 1px dashed rgb(151 166 204 / 35%);
-  border-radius: 7px;
-  padding: 5px 8px;
-}
-
-.properties-summary__add:hover,
-.properties-summary__manage:hover {
-  color: #fff;
-}
-
-.properties-summary__manage {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-left: 1px solid rgb(255 255 255 / 10%);
-  padding-left: 16px;
-}
-
-.properties-drawer-backdrop {
-  background: transparent;
-}
-
-.properties-drawer {
-  width: min(400px, 100vw);
-  border-left: 1px solid var(--app-border);
-  background: var(--app-surface);
-  box-shadow: -4px 0 16px rgb(0 0 0 / 10%);
-  color: var(--app-text);
-  padding: 20px;
+.property-row__icon--add {
+  justify-content: center;
+  width: 14px;
   font-size: 13px;
-}
-
-.properties-drawer__header {
-  padding-bottom: 4px;
-}
-
-.properties-drawer__header h2 { font-size: 16px; font-weight: 600; }
-.properties-drawer__section h3 { font-size: 12px; font-weight: 500; }
-.properties-drawer__section { margin-top: 24px; }
-.properties-drawer__section-title { padding: 0 8px; margin-bottom: 8px; }
-
-.properties-drawer__eyebrow,
-.properties-drawer__section-title span,
-.properties-drawer__empty,
-.catalog-row span {
-  color: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
-}
-
-.properties-drawer__close,
-.property-row > button,
-.catalog-row button {
-  color: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
-}
-
-.property-row {
-  display: grid;
-  grid-template-columns: minmax(0, 112px) minmax(0, 1fr) 28px;
-  gap: 6px;
-  border: 0;
-  min-height: 42px;
-  border-radius: 6px;
-  padding: 3px 0 3px 8px;
+  line-height: 1;
 }
 
 .property-row__name {
-  width: auto;
-  overflow-wrap: anywhere;
+  overflow: hidden;
   color: color-mix(in srgb, var(--app-text) 65%, var(--app-surface));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
 }
 
-.property-row input,
-.property-row select,
-.properties-catalog input,
-.properties-catalog select {
-  box-sizing: border-box;
-  min-width: 0;
-  width: 100%;
-  height: 34px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 6px 8px;
-  font: inherit;
+.property-row__remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
   background: transparent;
+  color: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+}
+
+.property-row:hover .property-row__remove {
+  opacity: 1;
+}
+
+.property-row__remove:hover {
+  background: color-mix(in srgb, var(--app-text) 10%, var(--app-surface));
+}
+
+.property-row__remove:disabled {
+  opacity: 0 !important;
+  cursor: default;
+}
+
+.property-row__remove--spacer {
+  pointer-events: none;
+}
+
+/* The value cell. Text/number/date/relation render as plain text until clicked; select overlays
+   an invisible native <select> on top of a pill/placeholder so the row still looks like a pill
+   button at rest but keeps native dropdown/keyboard behavior. */
+.property-value {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 28px;
+  color: var(--app-text);
+  font-size: 13px;
+}
+
+button.property-value--text {
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+  padding: 0;
+}
+
+button.property-value--text:disabled {
+  cursor: default;
+}
+
+.property-value__empty {
+  color: color-mix(in srgb, var(--app-text) 40%, var(--app-surface));
+}
+
+.property-value__input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 28px;
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  background: var(--app-bg);
+  color: var(--app-text);
+  padding: 3px 6px;
+  font: inherit;
+}
+
+.property-value--overlaySelect {
+  position: relative;
+  display: inline-flex;
+}
+
+.property-value__overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.property-value__overlay:disabled {
+  cursor: default;
+}
+
+.property-value--pills {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.property-value__pill-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px dashed color-mix(in srgb, var(--app-text) 30%, var(--app-surface));
+  border-radius: 5px;
+  background: transparent;
+  color: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+}
+
+.property-value__pill-input {
+  width: 96px;
+  height: 22px;
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  background: var(--app-bg);
+  color: var(--app-text);
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.property-checkbox {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.property-checkbox input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.property-checkbox__box {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--app-border);
+  border-radius: 4px;
+  background: var(--app-bg);
+}
+
+.property-checkbox input:checked + .property-checkbox__box {
+  border-color: #7fb0f2;
+  background: #7fb0f2 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 7.2l2.4 2.4L11 4' fill='none' stroke='%23101318' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px no-repeat;
+}
+
+.property-checkbox input:focus-visible + .property-checkbox__box {
+  outline: 2px solid var(--app-text);
+  outline-offset: 2px;
+}
+
+/* The ghost "New property" row: styled to sit in the same list as real rows (not a separate
+   accordion), so adding a property feels like the next row rather than a detour. */
+.property-row--ghost {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: color-mix(in srgb, var(--app-text) 45%, var(--app-surface));
+  text-align: left;
+}
+
+.property-row--ghost:hover {
   color: var(--app-text);
 }
 
-.property-row select { cursor: pointer; }
-.property-row select option,
-.properties-catalog select option { background: var(--app-surface); }
-.property-row:hover,
-.properties-drawer button:hover { background: color-mix(in srgb, var(--app-text) 5%, var(--app-surface)); }
-.properties-drawer input:hover,
-.properties-drawer select:hover { background: color-mix(in srgb, var(--app-text) 7%, var(--app-surface)); }
-.properties-drawer input:focus,
-.properties-drawer select:focus { outline: 1px solid var(--app-border); background: var(--app-bg); }
-.properties-drawer button:focus-visible { outline: 2px solid var(--app-text); outline-offset: 2px; }
-.properties-drawer input::placeholder { color: color-mix(in srgb, var(--app-text) 45%, var(--app-surface)); }
-.property-row input[type="checkbox"] { width: 16px; height: 16px; margin: 8px; }
-.property-row > button,
-.properties-drawer__close { width: 28px; height: 28px; padding: 0; border-radius: 5px; }
-.property-row > button { grid-column: 3; font-size: 16px; }
-.properties-drawer button:disabled { opacity: .4; cursor: default; }
-.properties-catalog input,
-.properties-catalog select { border-color: var(--app-border); }
-.properties-catalog__create button { background: var(--app-bg); color: var(--app-text); border: 1px solid var(--app-border); }
+.property-create {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--app-text) 4%, var(--app-surface));
+}
 
-.properties-drawer__catalog-toggle {
-  border-top-color: var(--app-border);
-  color: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 14px 8px;
+.property-create input,
+.property-create select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  background: var(--app-bg);
+  color: var(--app-text);
+  padding: 4px 8px;
+  font: inherit;
+}
+
+.property-create__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.property-create__actions button {
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.property-create__actions button:first-child {
+  background: #7fb0f2;
+  color: #101318;
+}
+
+.property-create__actions button:first-child:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.property-create__cancel {
+  background: transparent !important;
+  color: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
+}
+
+.properties-drawer__manage {
+  margin-top: 18px;
+  border-top: 1px solid color-mix(in srgb, var(--app-text) 10%, var(--app-surface));
+  padding-top: 4px;
+}
+
+.properties-drawer__manage-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
+  cursor: pointer;
+  padding: 10px 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.properties-catalog {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 4px;
 }
 
 .catalog-row {
-  border-top-color: rgb(255 255 255 / 8%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  font-size: 12px;
 }
 
-@media (max-width: 760px) {
-  .properties-summary {
-    gap: 10px;
-    padding: 9px 14px;
-  }
+.catalog-row input {
+  box-sizing: border-box;
+  min-width: 0;
+  flex: 1;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--app-text);
+  padding: 4px 6px;
+  font: inherit;
+}
 
-  .properties-summary__identity {
-    min-width: 32px;
-  }
+.catalog-row input:hover,
+.catalog-row input:focus {
+  border-color: var(--app-border);
+  background: var(--app-bg);
+}
 
-  .properties-summary__identity > div,
-  .property-chip__name,
-  .properties-summary__manage span {
-    display: none;
-  }
+.catalog-row__kind {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
+  white-space: nowrap;
+}
 
-  .properties-summary__manage {
-    border-left: 0;
-    padding-left: 4px;
+.catalog-row em {
+  color: color-mix(in srgb, var(--app-text) 45%, var(--app-surface));
+  font-size: 12px;
+  font-style: normal;
+}
+
+.catalog-row button {
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.catalog-row button:hover {
+  color: var(--app-text);
+}
+
+.catalog-row button:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+@media (max-width: 600px) {
+  .properties-drawer {
+    width: 100vw;
+    padding: 16px;
   }
 }
+

@@ -197,6 +197,16 @@ class QEditorBridge final : public QObject {
   // Emitted when document save status changes (for UI feedback).
   void saveStatusChanged(const QString& pageId, bool success, const QString& message);
 
+  // Native -> JS: the native PropertiesStripWidget's "Properties" button (see
+  // gui/properties_strip_widget.cc) lives in MainWindow's chrome, not this web page, so it opens
+  // the JS-side PropertiesDrawer through this signal instead of a local button click.
+  void openPropertiesDrawerRequested();
+  // JS -> native: emitted after a property definition, page value, or relation mutation
+  // succeeds, so PropertiesStripWidget can refresh its chip row without JS having to call back
+  // in through a dedicated "notify" method -- the same Q_INVOKABLE calls that make the change
+  // already run on this object.
+  void propertiesChanged();
+
  private:
   // Returns a document_read_only error envelope if `page_id` refers to the currently
   // open document and that document is locked/read-only; otherwise returns std::nullopt.
