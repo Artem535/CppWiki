@@ -1,0 +1,255 @@
+= Knowledge Graph and Semantic Layer
+
+*Product:* CppWiki +
+*Status:* Draft architecture and product specification +
+*Date:* 2026-08-20 +
+*Related:* xref:architecture/adr/ADR-002-document-model.adoc[], xref:architecture/adr/ADR-003-collaboration-strategy.adoc[], xref:architecture/adr/ADR-018-document-schema-migration-path.adoc[], xref:architecture/Sync_Document_Model_and_Conflict_Contract.adoc[]
+
+'''
+
+== Purpose
+
+CppWiki remains a local-first hierarchical wiki. This feature complements the page tree with a structured knowledge model and two graph views:
+
+* *Explicit Graph* visualizes knowledge deliberately created by people: page hierarchy, wiki links, properties, tags, and typed page relations.
+* *Semantic Graph* visualizes content similarity discovered locally from page chunks and embeddings. It is an aid to discovery, never an authority over the workspace.
+
+The intended user loop is:
+
+[source,text]
+----
+Write pages -> organize and link them -> inspect the Explicit Graph
+    -> discover a possible connection in the Semantic Graph -> inspect evidence
+    -> explicitly confirm a useful relation
+----
+
+The feature enriches normal wiki work without requiring an AI provider, forcing a schema on pages, or making the editor feel like a database form.
+
+== Product Boundary
+
+=== Goals
+
+* Preserve the existing page tree as the primary organizational model.
+* Add workspace-scoped properties, tags, typed relations, wiki links, and backlinks.
+* Show explicit and semantic knowledge through separate but consistent graph navigation.
+* Keep authoritative knowledge available offline and synchronized between devices.
+* Make every semantic edge explainable and allow a person to promote it to an explicit relation.
+* Make a local embedding provider a first-class path; no LLM, external API, or embedding provider is required for ordinary wiki use.
+
+=== Non-goals
+
+The first three phases do not include a visual graph editor, drag-and-drop relation creation, mandatory page types or schemas, block-to-block user relations, tag nodes in the graph, automatic edits or automatic relation creation, a server vector database, embedding synchronization, GraphRAG, or a knowledge-reasoning engine.
+
+Semantic analysis does not rearrange the page tree, modify a document, set a property, create a tag, or create an explicit relation without a user's confirmation.
+
+== Core Model
+
+=== Ubiquitous Language
+
+[cols="1,3",options="header"]
+|===
+|Term |Meaning
+
+|Workspace
+|The ownership, access-control, and synchronization boundary for all knowledge records.
+
+|Page
+|A user-authored document with a stable page identifier, a place in the tree, and a structured BlockNote snapshot as its source content.
+
+|Property definition
+|A workspace-owned, reusable description of a property. It has a stable identifier, display name, type, optional group, and type-specific configuration.
+
+|Property value
+|A page's explicit value for one property definition. Absence means the property is not used on that page; empty values are not rendered in the page property block.
+
+|Tag vocabulary entry
+|A workspace-owned tag value usable by the `Tags` property. It is not a graph node by default.
+
+|Relation type
+|A property definition of type `Relation`, with directed or symmetric semantics and, for a directed relation, an inverse display name.
+
+|Relation instance
+|One stored edge from a source page to a target page using a relation type.
+
+|Wiki link
+|A content-level reference from one page to another. It records a target page identifier and can have a display label; it is not a typed relation.
+
+|Explicit Graph
+|A visualization derived from hierarchy, resolved wiki links, and relation instances.
+
+|Semantic index
+|Locally derived chunks, embeddings, similarity candidates, evidence, clusters, and labels. It can be deleted and rebuilt without losing workspace knowledge.
+|===
+
+=== Authoritative Knowledge
+
+The following is user-owned, workspace-scoped, and synchronized:
+
+[source,text]
+----
+Pages and hierarchy
+Property definitions and groups
+Property values
+Tag vocabulary and tag values
+Resolved wiki links (as part of page content)
+Relation types and relation instances
+----
+
+Each persisted authoritative record has an immutable identifier and `workspace_id`. Display names, titles, group names, option labels, and inverse names are mutable presentation data; no relation or link may depend on a mutable title for identity.
+
+The storage model preserves independent mutation units. A relation instance is its own record, and a page property value is independently addressable from page content and other properties. Concurrent edits to unrelated properties or relations must not create a conflict on the whole page snapshot. A concurrent edit to the same value remains an explicit product-level conflict: neither side may be silently discarded.
+
+The existing page contract remains the authority for page title, hierarchy, author metadata, and BlockNote snapshot. The knowledge model adds workspace records alongside pages; it does not overload Couchbase infrastructure revision identifiers as product identifiers or business state.
+
+=== Derived Knowledge
+
+The following is device-local and rebuildable:
+
+[source,text]
+----
+Chunk boundaries and stable chunk identifiers
+Content hashes and embedding vectors
+Nearest-neighbour candidates and page-to-page semantic edges
+Evidence fragments, semantic clusters, and derived cluster labels
+----
+
+Derived knowledge is never replicated through CppWiki Sync, included in authoritative workspace export, or required to open and edit ordinary pages. Devices may differ because they use different providers, model versions, chunking algorithms, or index schedules.
+
+== Properties, Tags, and Relations
+
+=== Property Catalog
+
+Property definitions live in a workspace catalog. Groups only organize that catalog; they do not create a page type, impose a schema, or make a property mandatory. A page opts into the properties it needs.
+
+The initial type set is `Text`, `Number`, `Date`, `Checkbox`, `Select`, `Multi-select`, `Tags`, and `Relation`. Each type validates only its own value shape. Removing or changing a definition uses an explicit migration flow that shows affected values; it never silently corrupts or reinterprets a page.
+
+Used properties appear in a compact block below the page title. Empty properties are hidden. `Add property` selects from the workspace catalog, and page-local groups are intentionally not shown as a schema-like form.
+
+=== Tags
+
+Tags are property values backed by a workspace vocabulary. They support filtering and search but do not become Explicit Graph nodes. Tag suggestions prefer an existing vocabulary entry; a new entry is a separate, user-confirmed suggestion.
+
+=== Typed Relations
+
+A relation type is configured as either:
+
+[cols="1,2,2",options="header"]
+|===
+|Mode |Example |Display rule
+
+|Directed
+|`CppWiki --uses--> Couchbase Lite`
+|The target page derives `used by <- CppWiki` from the one stored relation instance.
+
+|Symmetric
+|`Architecture <-> related to <-> Sync`
+|Both pages render the same relation name; there is no independently editable inverse edge.
+|===
+
+The uniqueness key for a logical edge is workspace, source page, relation type, and target page. Creating the inverse as a second stored edge is prohibited. A relation property may have multiple target pages and materializes one relation instance per target.
+
+If a page is put in recoverable trash, its relations remain preserved but are hidden from default live-page graph views. Restoring the page restores their visibility. Permanent destruction removes relation instances involving the page; incoming content links become broken links, which the editor and graph surface for repair.
+
+== Wiki Links and Connections
+
+Wiki links are content-level references, distinct from typed relations. The editor stores the target page identifier in the structured snapshot and renders an editable label, so a page rename does not break a link. Text import/export may use a readable `[[Page title]]` representation, but resolution inside CppWiki finishes with a stable target identifier. Ambiguous imported titles require a user choice; unresolved references remain visible as broken links.
+
+Backlinks are a derived index of resolved incoming wiki links. The current page's `Connections` section is compact and contains:
+
+* incoming typed relations, including an inverse label for directed relation types; and
+* backlinks from pages whose content links to the current page.
+
+It does not repeat outgoing wiki links, because those are already visible in document content.
+
+== Explicit Graph
+
+The Explicit Graph is a visualization, not another database. Its edges are derived from parent/child hierarchy, resolved wiki links, and typed relation instances.
+
+It has two scopes and two datasets:
+
+[cols="1,2,2",options="header"]
+|===
+|Dataset |Global |Local
+
+|Explicit
+|The workspace's visible knowledge structure.
+|The selected page and neighbours at depth one or two for everyday navigation.
+
+|Semantic
+|The workspace's derived similarity topology.
+|The selected page and its strongest derived neighbours.
+|===
+
+Single click selects a page, keeps Graph View open, highlights its edges, and fills a details panel with properties and connections. Double click opens that page in the editor. Edge labels appear for the selected node, on hover, and in details, rather than making the whole graph noisy.
+
+The initial layout is a hybrid force-directed layout with parent/child affinity. Hierarchy, wiki links, and typed relations differ through arrow direction, line style, weight, and opacity rather than a large palette of colours. Nodes have a uniform size in the first release.
+
+Filters include page title, Status, Owner, Tags, custom properties, and relation type. Global mode bounds its initial rendering and expands progressively for large workspaces; it does not render an unbounded graph synchronously. Clusters are visual aids only: explicit clusters can follow top-level tree branches, while semantic clusters follow derived topology.
+
+== Semantic Layer
+
+=== Provider and Index Contract
+
+`EmbeddingProvider` is an application boundary with local and remote implementations. A local provider is a complete primary option. A remote provider is explicitly configured by the user and discloses that selected page fragments leave the device, which endpoint receives them, and how to disable the provider and erase the local index.
+
+The index pipeline is:
+
+[source,text]
+----
+Page change -> debounce -> identify changed chunks -> embed changed chunks
+    -> nearest-neighbour search -> update affected page relations and evidence
+----
+
+Chunk identity and content hashes prevent recomputing unchanged fragments. A full rebuild occurs only after a provider/model change, chunking-algorithm change, damaged index, or explicit user command. Failure, absence, or removal of a provider disables only semantic functionality; the wiki, Explicit Graph, and synchronization continue normally.
+
+=== Similarity and Evidence
+
+Page similarity aggregates the strongest independent chunk matches and their coverage. One shared generic phrase must not create many strong page edges. The exact scoring formula and thresholds are evaluated against real workspaces rather than frozen by this document.
+
+Semantic edge strength is visualized by edge weight and opacity; the exact score is shown only in the details panel. Selecting an edge shows evidence as paired source and target chunks with similarity metadata. Chunks remain an implementation detail and never appear as Graph View nodes.
+
+=== Controlled Promotion
+
+Semantic discovery has exactly one path into authoritative knowledge:
+
+[source,text]
+----
+Select semantic edge -> inspect evidence -> Add relation -> choose relation type -> confirm
+----
+
+Promotion creates a normal explicit relation instance and is auditable as such. Rejection, hiding, or rebuilding a semantic edge changes no page, property, hierarchy, tag, or existing relation.
+
+== Local-first, Sync, Backup, and Conflict Rules
+
+All authoritative records participate in the existing workspace channel and authorization model. The backend remains the authority for access; clients derive visible graph data only from records already authorized for their assigned workspace.
+
+Knowledge records participate in whole-workspace export, restore, recoverable trash, revision history where applicable, schema migration, and corruption handling. The semantic index is excluded from archive payloads and is rebuilt after import when semantic functionality is enabled.
+
+The highest test seam is a `WorkspaceKnowledgeStore` contract, parallel to the current local page repository boundary. It exposes the catalog, page property values, relation instances, and derived link queries without exposing storage implementation details. File and Couchbase Lite adapters satisfy the same observable contract. UI and Graph View depend on a knowledge service above that seam, not directly on a storage layout.
+
+== Trust Boundary
+
+AI and embedding components may calculate only derived state automatically. They may suggest tags or relations, but they cannot create them. They cannot change a property, hierarchy, page title, document snapshot, or delete data.
+
+[source,text]
+----
+Derived discovery -> human review -> explicit confirmation -> authoritative knowledge
+----
+
+This boundary is mandatory for every future recommendation, cluster label, agent, or provider.
+
+== Delivery Phases
+
+=== Phase 1 — Knowledge Foundation
+
+Deliver workspace properties and tags, typed relations with inverses, structured wiki links and backlinks, the Connections section, and Explicit Graph Local/Global modes with basic filters.
+
+=== Phase 2 — Semantic Foundation
+
+Deliver chunking, stable identifiers, provider abstraction, a local provider, local vector index, incremental indexing, semantic similarity/evidence, Semantic Graph, rebuild controls, and manual promotion to an explicit relation.
+
+=== Phase 3 — Knowledge Assistance
+
+Deliver confirmed tag suggestions, vocabulary-aware new-tag suggestions, semantic clusters and derived labels, related-page recommendations, and ranking improvements. Future work such as contradiction detection or knowledge lint remains separate product discovery.
+
+The implementation order and GitHub task graph are maintained in xref:roadmap/Knowledge_Graph_Delivery.adoc[Knowledge Graph delivery].
