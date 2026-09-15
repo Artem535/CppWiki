@@ -1,0 +1,108 @@
+name: Build and Test
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+
+jobs:
+  desktop-build-and-test:
+    name: Desktop build + ctest
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build tools and runtime libs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build \
+            libgl1-mesa-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-0 \
+            libglib2.0-0 \
+            libnss3 \
+            libnspr4 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxrandr2 \
+            libxtst6 \
+            libatspi2.0-0 \
+            libgtk-3-0 \
+            libsecret-1-dev \
+            curl \
+            zip \
+            unzip \
+            tar \
+            pkg-config
+
+      # The Ubuntu runner's system Qt6 (apt) is only 6.4.x, but this project requires Qt6 >= 6.5
+      # (see root CMakeLists.txt). Install a real Qt 6.5+ instead of relying on apt.
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.11.1"
+          modules: "qtwebengine qtwebchannel qtnetworkauth qtpositioning"
+          cache: true
+
+      - name: Set up vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg "${VCPKG_ROOT}"
+          "${VCPKG_ROOT}/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Cache vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-binarycache-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-binarycache-${{ runner.os }}-
+
+      - name: Configure (debug preset, server disabled)
+        run: |
+          cmake --preset debug -DCPPWIKI_BUILD_SERVER=OFF
+
+      - name: Build
+        run: |
+          cmake --build --preset debug
+
+      - name: Test
+        run: |
+          ctest --test-dir build/debug --output-on-failure
+
+  frontend-build:
+    name: Frontend editor build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend/editor
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (tsc --noEmit + vite build)
+        run: npm run build
