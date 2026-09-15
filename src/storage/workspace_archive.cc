@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "document/document.h"
+#include "knowledge/knowledge_record.h"
 
 namespace cppwiki::storage {
 // Named (not anonymous) so these DTOs have external linkage -- reflect-cpp's JSON introspection
@@ -31,6 +32,57 @@ struct ArchiveWorkspaceDto {
   std::string title;
   std::string created_at;
   std::int64_t schema_version{1};
+};
+
+// Issue #185: the archive format carries the four knowledge record types (property definitions,
+// page property values, relation types, page relations) as their own arrays, mirroring the
+// distinct on-disk records FileDocumentRepository uses. Each type gets a dedicated DTO rather
+// than sharing FileDocumentRepository's DTOs, since the archive is its own concern (same
+// convention as ArchiveDocumentDto above).
+struct ArchiveAuditMetadataDto {
+  std::string created_at;
+  std::string updated_at;
+  std::string created_by;
+  std::string updated_by;
+};
+
+struct ArchivePropertyDefinitionDto {
+  std::string id;
+  std::string workspace_id;
+  std::string name;
+  std::optional<std::string> group_name;
+  std::int32_t value_kind{};
+  std::vector<std::string> options;
+  std::int32_t state{};
+  ArchiveAuditMetadataDto audit;
+};
+
+struct ArchivePagePropertyValueDto {
+  std::string id;
+  std::string workspace_id;
+  std::string page_id;
+  std::string property_definition_id;
+  std::vector<std::string> values;
+  ArchiveAuditMetadataDto audit;
+};
+
+struct ArchiveRelationTypeDto {
+  std::string id;
+  std::string workspace_id;
+  std::string name;
+  std::optional<std::string> inverse_name;
+  std::int32_t direction{};
+  std::int32_t state{};
+  ArchiveAuditMetadataDto audit;
+};
+
+struct ArchivePageRelationDto {
+  std::string id;
+  std::string workspace_id;
+  std::string relation_type_id;
+  std::string source_page_id;
+  std::string target_page_id;
+  ArchiveAuditMetadataDto audit;
 };
 
 // Mirrors FileDocumentRecordDto's fields (see file_document_repository.cc) -- a separate struct
@@ -83,6 +135,15 @@ struct WorkspaceArchiveDto {
   std::vector<ArchiveDocumentDto> documents;
   std::vector<ArchiveConflictDto> conflicts;
   std::vector<ArchiveAttachmentDto> attachments;
+  // Issue #185: knowledge arrays are optional in the DTO so an archive that predates them (an
+  // older schema-v1 export, which simply has no knowledge records) still reads back as empty
+  // collections rather than failing the whole import -- the contract's "readers tolerate their
+  // absence as empty collections" rule. reflect-cpp only tolerates absent JSON fields that map
+  // to std::optional members; a plain vector that is missing from the JSON fails the read.
+  std::optional<std::vector<ArchivePropertyDefinitionDto>> property_definitions;
+  std::optional<std::vector<ArchivePagePropertyValueDto>> page_property_values;
+  std::optional<std::vector<ArchiveRelationTypeDto>> relation_types;
+  std::optional<std::vector<ArchivePageRelationDto>> page_relations;
 };
 
 auto EncodeBase64(const std::vector<std::uint8_t>& bytes) -> std::string {
@@ -234,6 +295,118 @@ auto ToDto(const AttachmentData& attachment) -> ArchiveAttachmentDto {
   };
 }
 
+auto ToDto(const knowledge::AuditMetadata& audit) -> ArchiveAuditMetadataDto {
+  return ArchiveAuditMetadataDto{
+      .created_at = audit.created_at,
+      .updated_at = audit.updated_at,
+      .created_by = audit.created_by,
+      .updated_by = audit.updated_by,
+  };
+}
+
+auto FromDto(ArchiveAuditMetadataDto dto) -> knowledge::AuditMetadata {
+  return knowledge::AuditMetadata{
+      .created_at = std::move(dto.created_at),
+      .updated_at = std::move(dto.updated_at),
+      .created_by = std::move(dto.created_by),
+      .updated_by = std::move(dto.updated_by),
+  };
+}
+
+auto ToDto(const knowledge::PropertyDefinition& definition) -> ArchivePropertyDefinitionDto {
+  return ArchivePropertyDefinitionDto{
+      .id = definition.id,
+      .workspace_id = definition.workspace_id,
+      .name = definition.name,
+      .group_name = definition.group_name,
+      .value_kind = static_cast<std::int32_t>(definition.value_kind),
+      .options = definition.options,
+      .state = static_cast<std::int32_t>(definition.state),
+      .audit = ToDto(definition.audit),
+  };
+}
+
+auto FromDto(ArchivePropertyDefinitionDto dto) -> knowledge::PropertyDefinition {
+  return knowledge::PropertyDefinition{
+      .id = std::move(dto.id),
+      .workspace_id = std::move(dto.workspace_id),
+      .name = std::move(dto.name),
+      .group_name = std::move(dto.group_name),
+      .value_kind = static_cast<knowledge::PropertyValueKind>(dto.value_kind),
+      .options = std::move(dto.options),
+      .state = static_cast<knowledge::RecordState>(dto.state),
+      .audit = FromDto(std::move(dto.audit)),
+  };
+}
+
+auto ToDto(const knowledge::PagePropertyValue& value) -> ArchivePagePropertyValueDto {
+  return ArchivePagePropertyValueDto{
+      .id = value.id,
+      .workspace_id = value.workspace_id,
+      .page_id = value.page_id,
+      .property_definition_id = value.property_definition_id,
+      .values = value.values,
+      .audit = ToDto(value.audit),
+  };
+}
+
+auto FromDto(ArchivePagePropertyValueDto dto) -> knowledge::PagePropertyValue {
+  return knowledge::PagePropertyValue{
+      .id = std::move(dto.id),
+      .workspace_id = std::move(dto.workspace_id),
+      .page_id = std::move(dto.page_id),
+      .property_definition_id = std::move(dto.property_definition_id),
+      .values = std::move(dto.values),
+      .audit = FromDto(std::move(dto.audit)),
+  };
+}
+
+auto ToDto(const knowledge::RelationType& type) -> ArchiveRelationTypeDto {
+  return ArchiveRelationTypeDto{
+      .id = type.id,
+      .workspace_id = type.workspace_id,
+      .name = type.name,
+      .inverse_name = type.inverse_name,
+      .direction = static_cast<std::int32_t>(type.direction),
+      .state = static_cast<std::int32_t>(type.state),
+      .audit = ToDto(type.audit),
+  };
+}
+
+auto FromDto(ArchiveRelationTypeDto dto) -> knowledge::RelationType {
+  return knowledge::RelationType{
+      .id = std::move(dto.id),
+      .workspace_id = std::move(dto.workspace_id),
+      .name = std::move(dto.name),
+      .inverse_name = std::move(dto.inverse_name),
+      .direction = static_cast<knowledge::RelationDirection>(dto.direction),
+      .state = static_cast<knowledge::RecordState>(dto.state),
+      .audit = FromDto(std::move(dto.audit)),
+  };
+}
+
+auto ToDto(const knowledge::PageRelation& relation) -> ArchivePageRelationDto {
+  return ArchivePageRelationDto{
+      .id = relation.id,
+      .workspace_id = relation.workspace_id,
+      .relation_type_id = relation.relation_type_id,
+      .source_page_id = relation.source_page_id,
+      .target_page_id = relation.target_page_id,
+      .audit = ToDto(relation.audit),
+  };
+}
+
+auto FromDto(ArchivePageRelationDto dto) -> knowledge::PageRelation {
+  return knowledge::PageRelation{
+      .id = std::move(dto.id),
+      .workspace_id = std::move(dto.workspace_id),
+      .relation_type_id = std::move(dto.relation_type_id),
+      .source_page_id = std::move(dto.source_page_id),
+      .target_page_id = std::move(dto.target_page_id),
+      .audit = FromDto(std::move(dto.audit)),
+  };
+}
+
 auto MakeError(RepositoryErrorCode code, std::string message) -> RepositoryError {
   return RepositoryError{.code = code, .message = std::move(message)};
 }
@@ -296,6 +469,65 @@ auto ExportWorkspaceToFile(LocalDocumentRepository& repository, std::string_view
     archive.attachments.push_back(ToDto(*loaded.attachment));
   }
 
+  // Issue #185: knowledge records are workspace-scoped, so the workspace-wide list methods give
+  // us everything for this workspace directly. Values and relations are keyed per page, so we
+  // walk the exported workspace's pages and collect each record once (deduplicated by id: a
+  // relation stored once is reachable from either endpoint page, so both pages would list it).
+  const auto property_definitions = repository.ListPropertyDefinitions(workspace_id);
+  if (property_definitions.error &&
+      property_definitions.error->code != RepositoryErrorCode::kUnsupported) {
+    return ExportWorkspaceResult{.error = property_definitions.error};
+  }
+  std::vector<ArchivePropertyDefinitionDto> property_definition_dtos;
+  for (const auto& definition : property_definitions.definitions) {
+    property_definition_dtos.push_back(ToDto(definition));
+  }
+  archive.property_definitions = std::move(property_definition_dtos);
+
+  const auto relation_types = repository.ListRelationTypes(workspace_id);
+  if (relation_types.error && relation_types.error->code != RepositoryErrorCode::kUnsupported) {
+    return ExportWorkspaceResult{.error = relation_types.error};
+  }
+  std::vector<ArchiveRelationTypeDto> relation_type_dtos;
+  for (const auto& type : relation_types.relation_types) {
+    relation_type_dtos.push_back(ToDto(type));
+  }
+  archive.relation_types = std::move(relation_type_dtos);
+
+  std::vector<std::string> seen_value_ids;
+  std::vector<std::string> seen_relation_ids;
+  std::vector<ArchivePagePropertyValueDto> value_dtos;
+  std::vector<ArchivePageRelationDto> relation_dtos;
+  for (const auto& summary : documents.documents) {
+    if (summary.workspace_id != workspace_id) {
+      continue;
+    }
+    const auto values = repository.ListPagePropertyValues(workspace_id, summary.id);
+    if (values.error && values.error->code != RepositoryErrorCode::kUnsupported) {
+      return ExportWorkspaceResult{.error = values.error};
+    }
+    for (const auto& value : values.values) {
+      if (std::find(seen_value_ids.begin(), seen_value_ids.end(), value.id) ==
+          seen_value_ids.end()) {
+        seen_value_ids.push_back(value.id);
+        value_dtos.push_back(ToDto(value));
+      }
+    }
+    const auto relations = repository.ListPageRelations(workspace_id, summary.id);
+    if (relations.error && relations.error->code != RepositoryErrorCode::kUnsupported) {
+      return ExportWorkspaceResult{.error = relations.error};
+    }
+    for (const auto& relation : relations.relations) {
+      if (std::find(seen_relation_ids.begin(), seen_relation_ids.end(), relation.id) ==
+          seen_relation_ids.end()) {
+        seen_relation_ids.push_back(relation.id);
+        relation_dtos.push_back(ToDto(relation));
+      }
+    }
+  }
+  archive.page_property_values = std::move(value_dtos);
+  archive.page_relations = std::move(relation_dtos);
+
   std::ofstream out(destination_path, std::ios::binary | std::ios::trunc);
   if (!out.is_open()) {
     return ExportWorkspaceResult{
@@ -331,9 +563,97 @@ auto ImportWorkspaceFromFile(LocalDocumentRepository& repository, const std::str
   }
   auto archive = std::move(parsed).value();
 
+  // Determine the target workspace before touching the repository: a knowledge record whose
+  // workspace_id disagrees with the rest of the archive is a scope violation, and a value or
+  // relation that points at a definition/type/page absent from the archive is dangling. Both
+  // reject the whole archive up front (Issue #185), so a broken import never persists a partial
+  // knowledge graph. Definitions and relation types must be committed before values/relations,
+  // because the repository cross-validates a value against its property definition and a
+  // relation against its relation type at save time.
   std::optional<std::string> workspace_id;
   if (archive.workspace) {
     workspace_id = archive.workspace->workspace_id;
+  } else if (!archive.documents.empty()) {
+    workspace_id = archive.documents.front().workspace_id;
+  }
+
+  std::optional<std::string> scope_error;
+  if (!workspace_id) {
+    scope_error = "archive contains no workspace data to restore";
+  }
+
+  // A legacy v1 archive has no knowledge arrays at all; in the DTO they arrived as optional
+  // vectors precisely so that absence reads back as empty rather than failing the import.
+  const auto property_definition_dtos =
+      archive.property_definitions.value_or(std::vector<ArchivePropertyDefinitionDto>{});
+  const auto relation_type_dtos =
+      archive.relation_types.value_or(std::vector<ArchiveRelationTypeDto>{});
+  const auto property_value_dtos =
+      archive.page_property_values.value_or(std::vector<ArchivePagePropertyValueDto>{});
+  const auto page_relation_dtos =
+      archive.page_relations.value_or(std::vector<ArchivePageRelationDto>{});
+
+  std::vector<std::string> definition_ids;
+  std::vector<std::string> relation_type_ids;
+  std::vector<std::string> page_ids;
+  for (const auto& definition : property_definition_dtos) {
+    if (definition.workspace_id != workspace_id) {
+      scope_error = "archive contains a property definition from another workspace";
+      break;
+    }
+    definition_ids.push_back(definition.id);
+  }
+  for (const auto& type : relation_type_dtos) {
+    if (type.workspace_id != workspace_id) {
+      scope_error = "archive contains a relation type from another workspace";
+      break;
+    }
+    relation_type_ids.push_back(type.id);
+  }
+  for (const auto& document_dto : archive.documents) {
+    page_ids.push_back(document_dto.id);
+  }
+  if (!scope_error) {
+    for (const auto& value : property_value_dtos) {
+      if (value.workspace_id != workspace_id) {
+        scope_error = "archive contains a page property value from another workspace";
+        break;
+      }
+      if (std::find(definition_ids.begin(), definition_ids.end(), value.property_definition_id) ==
+          definition_ids.end()) {
+        scope_error = "archive contains a page property value with a dangling property definition";
+        break;
+      }
+      if (std::find(page_ids.begin(), page_ids.end(), value.page_id) == page_ids.end()) {
+        scope_error = "archive contains a page property value with a dangling page reference";
+        break;
+      }
+    }
+  }
+  if (!scope_error) {
+    for (const auto& relation : page_relation_dtos) {
+      if (relation.workspace_id != workspace_id) {
+        scope_error = "archive contains a page relation from another workspace";
+        break;
+      }
+      if (std::find(relation_type_ids.begin(), relation_type_ids.end(),
+                    relation.relation_type_id) == relation_type_ids.end()) {
+        scope_error = "archive contains a page relation with a dangling relation type";
+        break;
+      }
+      if (std::find(page_ids.begin(), page_ids.end(), relation.source_page_id) == page_ids.end() ||
+          std::find(page_ids.begin(), page_ids.end(), relation.target_page_id) == page_ids.end()) {
+        scope_error = "archive contains a page relation with a dangling page reference";
+        break;
+      }
+    }
+  }
+  if (scope_error) {
+    return ImportWorkspaceResult{
+        .error = MakeError(RepositoryErrorCode::kInvalidRecord, *scope_error)};
+  }
+
+  if (archive.workspace) {
     auto save_result = repository.SaveWorkspaceRoot(WorkspaceRootRecord{
         .workspace_id = archive.workspace->workspace_id,
         .title = archive.workspace->title,
@@ -395,6 +715,37 @@ auto ImportWorkspaceFromFile(LocalDocumentRepository& repository, const std::str
     });
     if (saved.error) {
       return ImportWorkspaceResult{.error = std::move(saved.error)};
+    }
+  }
+
+  // Issue #185: knowledge definitions and relation types are restored before the values and
+  // relations that reference them, because the repository cross-validates a value against its
+  // property definition and a relation against its relation type at save time. Scope and
+  // dangling-reference validation already ran up front, so these saves are expected to succeed;
+  // a failure here is still surfaced rather than hidden.
+  for (auto& definition_dto : archive.property_definitions.value_or(std::vector<ArchivePropertyDefinitionDto>{})) {
+    auto save_result = repository.SavePropertyDefinition(FromDto(std::move(definition_dto)));
+    if (save_result.error) {
+      return ImportWorkspaceResult{.error = std::move(save_result.error)};
+    }
+  }
+  for (auto& type_dto : archive.relation_types.value_or(std::vector<ArchiveRelationTypeDto>{})) {
+    auto save_result = repository.SaveRelationType(FromDto(std::move(type_dto)));
+    if (save_result.error) {
+      return ImportWorkspaceResult{.error = std::move(save_result.error)};
+    }
+  }
+  for (auto& value_dto :
+       archive.page_property_values.value_or(std::vector<ArchivePagePropertyValueDto>{})) {
+    auto save_result = repository.SavePagePropertyValue(FromDto(std::move(value_dto)));
+    if (save_result.error) {
+      return ImportWorkspaceResult{.error = std::move(save_result.error)};
+    }
+  }
+  for (auto& relation_dto : archive.page_relations.value_or(std::vector<ArchivePageRelationDto>{})) {
+    auto save_result = repository.SavePageRelation(FromDto(std::move(relation_dto)));
+    if (save_result.error) {
+      return ImportWorkspaceResult{.error = std::move(save_result.error)};
     }
   }
 

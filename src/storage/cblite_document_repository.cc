@@ -24,6 +24,19 @@ namespace {
 constexpr std::string_view kSupportedSyncAuthMode = "oidc_access_token_passthrough";
 constexpr std::string_view kAttachmentDocumentIdPrefix = "attachment::";
 constexpr std::string_view kAttachmentRecordType = "cppwiki_attachment";
+constexpr std::string_view kKnowledgeDocumentIdPrefix = "knowledge::";
+constexpr std::string_view kKnowledgePropertyDefinitionType = "cppwiki_property_definition";
+constexpr std::string_view kKnowledgePagePropertyValueType = "cppwiki_page_property_value";
+constexpr std::string_view kKnowledgeRelationTypeType = "cppwiki_relation_type";
+constexpr std::string_view kKnowledgePageRelationType = "cppwiki_page_relation";
+
+struct KnowledgeEnvelope {
+  std::string id;
+  std::string workspace_id;
+  std::string page_id;
+  std::string record_type;
+  std::string record_json;
+};
 
 auto Slice(std::string_view value) -> cbl::slice {
   return cbl::slice(value.data(), value.size());
@@ -108,6 +121,12 @@ auto MakeAttachmentDocumentId(std::string_view attachment_id) -> std::string {
 
 auto IsAttachmentDocumentId(std::string_view document_id) -> bool {
   return document_id.starts_with(kAttachmentDocumentIdPrefix);
+}
+
+auto MakeKnowledgeDocumentId(std::string_view record_type, std::string_view record_id)
+    -> std::string {
+  return std::string(kKnowledgeDocumentIdPrefix) + std::string(record_type) +
+         "::" + std::string(record_id);
 }
 
 auto IsPendingConflict(const DocumentConflictRecord& conflict) -> bool {
@@ -385,6 +404,23 @@ class CbliteDocumentRepository::Impl {
       }
 
       spdlog::debug("CBLite DeleteDocument: id={}", page_id);
+      std::optional<std::string> workspace_id;
+      const auto synced_document = collection_->getDocument(Slice(page_id));
+      const auto local_document = local_collection_->getDocument(Slice(page_id));
+      for (const auto* document : {&synced_document, &local_document}) {
+        if (*document) {
+          const auto value = document->properties()["workspace_id"];
+          if (value) {
+            workspace_id = std::string(value.asString());
+            break;
+          }
+        }
+      }
+      if (workspace_id) {
+        if (const auto cleanup = DeleteKnowledgeForPage(*workspace_id, page_id); cleanup.error) {
+          return DeleteDocumentResult{.error = cleanup.error};
+        }
+      }
       auto doc = collection_->getDocument(Slice(page_id));
       if (doc) {
         collection_->deleteDocument(doc);
@@ -751,6 +787,300 @@ class CbliteDocumentRepository::Impl {
           .error = MakeError(RepositoryErrorCode::kReadFailed, error.what()),
       };
     }
+  }
+
+  [[nodiscard]] auto SaveKnowledgeRaw(std::string_view record_type, std::string_view id,
+                                      std::string_view workspace_id, std::string_view page_id,
+                                      std::string record_json) -> SaveKnowledgeRecordResult {
+    if (const auto error = EnsureDatabaseOpen()) {
+      return {.error = error};
+    }
+    try {
+      ScopedCollectionWriteGuard guard(*this);
+      const auto document_id = MakeKnowledgeDocumentId(record_type, id);
+      auto synced = collection_->getDocument(Slice(document_id));
+      auto local = local_collection_->getDocument(Slice(document_id));
+      const bool use_synced = synced || (!local && IsWorkspaceBackedBySync(workspace_id));
+      auto& target = use_synced ? *collection_ : *local_collection_;
+      auto document = GetMutableDocument(target, document_id);
+      document.set("record_type", Slice(record_type));
+      document.set("record_id", Slice(id));
+      document.set("workspace_id", Slice(workspace_id));
+      if (page_id.empty()) {
+        document.properties().remove("page_id");
+      } else {
+        document.set("page_id", Slice(page_id));
+      }
+      document.set("record_json", Slice(record_json));
+      target.saveDocument(document);
+      if (use_synced && local) {
+        local_collection_->deleteDocument(local);
+      }
+      return {};
+    } catch (const CBLError& error) {
+      return {.error = MakeError(RepositoryErrorCode::kWriteFailed, CbliteErrorMessage(error))};
+    } catch (const std::exception& error) {
+      return {.error = MakeError(RepositoryErrorCode::kWriteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto DeleteKnowledgeRaw(std::string_view record_type, std::string_view id)
+      -> DeleteKnowledgeRecordResult {
+    if (const auto error = EnsureDatabaseOpen()) {
+      return {.error = error};
+    }
+    try {
+      ScopedCollectionWriteGuard guard(*this);
+      const auto document_id = MakeKnowledgeDocumentId(record_type, id);
+      for (auto* collection : {collection_.get(), local_collection_.get()}) {
+        auto document = collection->getDocument(Slice(document_id));
+        if (document) {
+          collection->deleteDocument(document);
+        }
+      }
+      return {};
+    } catch (const CBLError& error) {
+      return {.error = MakeError(RepositoryErrorCode::kDeleteFailed, CbliteErrorMessage(error))};
+    } catch (const std::exception& error) {
+      return {.error = MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
+    }
+  }
+  [[nodiscard]] auto ListKnowledgeRaw(std::string_view record_type)
+      -> std::pair<std::vector<KnowledgeEnvelope>, std::optional<RepositoryError>> {
+    if (const auto error = EnsureDatabaseOpen()) {
+      return {{}, error};
+    }
+    try {
+      std::vector<KnowledgeEnvelope> records;
+      std::set<std::string> ids;
+      for (const auto* collection : {collection_.get(), local_collection_.get()}) {
+        const auto query_text = "SELECT record_id, workspace_id, page_id, record_json FROM " +
+                                MakeCollectionQualifiedName(*collection) +
+                                " WHERE record_type = '" + std::string(record_type) + "'";
+        auto query = database_->createQuery(kCBLN1QLLanguage, Slice(query_text));
+        for (const auto& row : query.execute()) {
+          const auto id = std::string(row["record_id"].asString());
+          if (id.empty() || !ids.insert(id).second) {
+            continue;
+          }
+          records.push_back({.id = id,
+                             .workspace_id = std::string(row["workspace_id"].asString()),
+                             .page_id = std::string(row["page_id"].asString()),
+                             .record_type = std::string(record_type),
+                             .record_json = std::string(row["record_json"].asString())});
+        }
+      }
+      return {std::move(records), std::nullopt};
+    } catch (const CBLError& error) {
+      return {{}, MakeError(RepositoryErrorCode::kReadFailed, CbliteErrorMessage(error))};
+    } catch (const std::exception& error) {
+      return {{}, MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
+  template <typename Record>
+  [[nodiscard]] auto ParseKnowledgeRecords(std::string_view record_type)
+      -> std::pair<std::vector<Record>, std::optional<RepositoryError>> {
+    const auto [records, error] = ListKnowledgeRaw(record_type);
+    if (error) {
+      return {{}, error};
+    }
+    std::vector<Record> parsed_records;
+    for (const auto& record : records) {
+      const auto parsed = rfl::json::read<Record>(record.record_json);
+      if (!parsed || parsed->id != record.id || parsed->workspace_id != record.workspace_id) {
+        return {{},
+                MakeError(RepositoryErrorCode::kInvalidRecord,
+                          "Knowledge record does not match its CBLite envelope.")};
+      }
+      parsed_records.push_back(*parsed);
+    }
+    return {std::move(parsed_records), std::nullopt};
+  }
+
+  [[nodiscard]] auto SavePropertyDefinition(const knowledge::PropertyDefinition& definition)
+      -> SaveKnowledgeRecordResult {
+    if (const auto validation = knowledge::ValidatePropertyDefinition(definition); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    return SaveKnowledgeRaw(kKnowledgePropertyDefinitionType, definition.id,
+                            definition.workspace_id, {}, rfl::json::write(definition));
+  }
+
+  [[nodiscard]] auto DeletePropertyDefinition(std::string_view definition_id)
+      -> DeleteKnowledgeRecordResult {
+    return DeleteKnowledgeRaw(kKnowledgePropertyDefinitionType, definition_id);
+  }
+
+  [[nodiscard]] auto ListPropertyDefinitions(std::string_view workspace_id)
+      -> ListPropertyDefinitionsResult {
+    auto [definitions, error] =
+        ParseKnowledgeRecords<knowledge::PropertyDefinition>(kKnowledgePropertyDefinitionType);
+    if (error) {
+      return {.definitions = {}, .error = error};
+    }
+    definitions.erase(
+        std::remove_if(definitions.begin(), definitions.end(),
+                       [&](const auto& item) { return item.workspace_id != workspace_id; }),
+        definitions.end());
+    for (const auto& definition : definitions) {
+      if (const auto validation = knowledge::ValidatePropertyDefinition(definition); validation) {
+        return {.definitions = {},
+                .error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+      }
+    }
+    std::ranges::sort(definitions, [](const auto& left, const auto& right) {
+      return left.name == right.name ? left.id < right.id : left.name < right.name;
+    });
+    return {.definitions = std::move(definitions), .error = std::nullopt};
+  }
+
+  [[nodiscard]] auto SavePagePropertyValue(const knowledge::PagePropertyValue& value)
+      -> SaveKnowledgeRecordResult {
+    const auto definitions = ListPropertyDefinitions(value.workspace_id);
+    if (definitions.error) {
+      return {.error = definitions.error};
+    }
+    const auto definition = std::ranges::find_if(
+        definitions.definitions,
+        [&value](const auto& item) { return item.id == value.property_definition_id; });
+    if (definition == definitions.definitions.end()) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                 "Page property value refers to an unknown property definition.")};
+    }
+    if (const auto validation = knowledge::ValidatePagePropertyValue(value, *definition);
+        validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    return SaveKnowledgeRaw(kKnowledgePagePropertyValueType, value.id, value.workspace_id,
+                            value.page_id, rfl::json::write(value));
+  }
+
+  [[nodiscard]] auto DeletePagePropertyValue(std::string_view value_id)
+      -> DeleteKnowledgeRecordResult {
+    return DeleteKnowledgeRaw(kKnowledgePagePropertyValueType, value_id);
+  }
+
+  [[nodiscard]] auto ListPagePropertyValues(std::string_view workspace_id, std::string_view page_id)
+      -> ListPagePropertyValuesResult {
+    auto [values, error] =
+        ParseKnowledgeRecords<knowledge::PagePropertyValue>(kKnowledgePagePropertyValueType);
+    if (error) {
+      return {.values = {}, .error = error};
+    }
+    values.erase(std::remove_if(values.begin(), values.end(),
+                                [&](const auto& item) {
+                                  return item.workspace_id != workspace_id ||
+                                         item.page_id != page_id;
+                                }),
+                 values.end());
+    std::ranges::sort(values,
+                      [](const auto& left, const auto& right) { return left.id < right.id; });
+    return {.values = std::move(values), .error = std::nullopt};
+  }
+  [[nodiscard]] auto SaveRelationType(const knowledge::RelationType& relation_type)
+      -> SaveKnowledgeRecordResult {
+    if (const auto validation = knowledge::ValidateRelationType(relation_type); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    return SaveKnowledgeRaw(kKnowledgeRelationTypeType, relation_type.id,
+                            relation_type.workspace_id, {}, rfl::json::write(relation_type));
+  }
+
+  [[nodiscard]] auto DeleteRelationType(std::string_view relation_type_id)
+      -> DeleteKnowledgeRecordResult {
+    return DeleteKnowledgeRaw(kKnowledgeRelationTypeType, relation_type_id);
+  }
+
+  [[nodiscard]] auto ListRelationTypes(std::string_view workspace_id) -> ListRelationTypesResult {
+    auto [relation_types, error] =
+        ParseKnowledgeRecords<knowledge::RelationType>(kKnowledgeRelationTypeType);
+    if (error) {
+      return {.relation_types = {}, .error = error};
+    }
+    relation_types.erase(
+        std::remove_if(relation_types.begin(), relation_types.end(),
+                       [&](const auto& item) { return item.workspace_id != workspace_id; }),
+        relation_types.end());
+    for (const auto& relation_type : relation_types) {
+      if (const auto validation = knowledge::ValidateRelationType(relation_type); validation) {
+        return {.relation_types = {},
+                .error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+      }
+    }
+    std::ranges::sort(relation_types, [](const auto& left, const auto& right) {
+      return left.name == right.name ? left.id < right.id : left.name < right.name;
+    });
+    return {.relation_types = std::move(relation_types), .error = std::nullopt};
+  }
+
+  [[nodiscard]] auto SavePageRelation(const knowledge::PageRelation& input)
+      -> SaveKnowledgeRecordResult {
+    const auto types = ListRelationTypes(input.workspace_id);
+    if (types.error) {
+      return {.error = types.error};
+    }
+    const auto type = std::ranges::find_if(types.relation_types, [&input](const auto& item) {
+      return item.id == input.relation_type_id;
+    });
+    if (type == types.relation_types.end()) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                 "Page relation refers to an unknown relation type.")};
+    }
+    auto relation = input;
+    if (const auto validation = knowledge::NormalizeAndValidatePageRelation(&relation, *type);
+        validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    return SaveKnowledgeRaw(kKnowledgePageRelationType, relation.id, relation.workspace_id,
+                            relation.source_page_id, rfl::json::write(relation));
+  }
+
+  [[nodiscard]] auto DeletePageRelation(std::string_view relation_id)
+      -> DeleteKnowledgeRecordResult {
+    return DeleteKnowledgeRaw(kKnowledgePageRelationType, relation_id);
+  }
+
+  [[nodiscard]] auto ListPageRelations(std::string_view workspace_id, std::string_view page_id)
+      -> ListPageRelationsResult {
+    auto [relations, error] =
+        ParseKnowledgeRecords<knowledge::PageRelation>(kKnowledgePageRelationType);
+    if (error) {
+      return {.relations = {}, .error = error};
+    }
+    relations.erase(
+        std::remove_if(relations.begin(), relations.end(),
+                       [&](const auto& item) {
+                         return item.workspace_id != workspace_id ||
+                                (item.source_page_id != page_id && item.target_page_id != page_id);
+                       }),
+        relations.end());
+    std::ranges::sort(relations,
+                      [](const auto& left, const auto& right) { return left.id < right.id; });
+    return {.relations = std::move(relations), .error = std::nullopt};
+  }
+
+  [[nodiscard]] auto DeleteKnowledgeForPage(std::string_view workspace_id, std::string_view page_id)
+      -> DeleteKnowledgeForPageResult {
+    const auto values = ListPagePropertyValues(workspace_id, page_id);
+    if (values.error) {
+      return {.error = values.error};
+    }
+    for (const auto& value : values.values) {
+      if (const auto deleted = DeletePagePropertyValue(value.id); deleted.error) {
+        return {.error = deleted.error};
+      }
+    }
+    const auto relations = ListPageRelations(workspace_id, page_id);
+    if (relations.error) {
+      return {.error = relations.error};
+    }
+    for (const auto& relation : relations.relations) {
+      if (const auto deleted = DeletePageRelation(relation.id); deleted.error) {
+        return {.error = deleted.error};
+      }
+    }
+    return {};
   }
 
   [[nodiscard]] auto SaveAttachment(const AttachmentData& attachment) -> SaveAttachmentResult {
@@ -1632,6 +1962,73 @@ CbliteDocumentRepository::CbliteDocumentRepository(CbliteDocumentRepositoryOptio
     : impl_(std::make_unique<Impl>(std::move(options))) {}
 
 CbliteDocumentRepository::~CbliteDocumentRepository() = default;
+auto CbliteDocumentRepository::SavePropertyDefinition(
+    const knowledge::PropertyDefinition& definition) -> SaveKnowledgeRecordResult {
+  return impl_->SavePropertyDefinition(definition);
+}
+
+auto CbliteDocumentRepository::DeletePropertyDefinition(std::string_view definition_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeletePropertyDefinition(definition_id);
+}
+
+auto CbliteDocumentRepository::ListPropertyDefinitions(std::string_view workspace_id)
+    -> ListPropertyDefinitionsResult {
+  return impl_->ListPropertyDefinitions(workspace_id);
+}
+
+auto CbliteDocumentRepository::SavePagePropertyValue(const knowledge::PagePropertyValue& value)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SavePagePropertyValue(value);
+}
+
+auto CbliteDocumentRepository::DeletePagePropertyValue(std::string_view value_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeletePagePropertyValue(value_id);
+}
+
+auto CbliteDocumentRepository::ListPagePropertyValues(std::string_view workspace_id,
+                                                      std::string_view page_id)
+    -> ListPagePropertyValuesResult {
+  return impl_->ListPagePropertyValues(workspace_id, page_id);
+}
+
+auto CbliteDocumentRepository::SaveRelationType(const knowledge::RelationType& relation_type)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SaveRelationType(relation_type);
+}
+
+auto CbliteDocumentRepository::DeleteRelationType(std::string_view relation_type_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeleteRelationType(relation_type_id);
+}
+
+auto CbliteDocumentRepository::ListRelationTypes(std::string_view workspace_id)
+    -> ListRelationTypesResult {
+  return impl_->ListRelationTypes(workspace_id);
+}
+
+auto CbliteDocumentRepository::SavePageRelation(const knowledge::PageRelation& relation)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SavePageRelation(relation);
+}
+
+auto CbliteDocumentRepository::DeletePageRelation(std::string_view relation_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeletePageRelation(relation_id);
+}
+
+auto CbliteDocumentRepository::ListPageRelations(std::string_view workspace_id,
+                                                 std::string_view page_id)
+    -> ListPageRelationsResult {
+  return impl_->ListPageRelations(workspace_id, page_id);
+}
+
+auto CbliteDocumentRepository::DeleteKnowledgeForPage(std::string_view workspace_id,
+                                                      std::string_view page_id)
+    -> DeleteKnowledgeForPageResult {
+  return impl_->DeleteKnowledgeForPage(workspace_id, page_id);
+}
 
 auto CbliteDocumentRepository::SaveDocument(const DocumentRecord& document) -> SaveDocumentResult {
   return impl_->SaveDocument(document);

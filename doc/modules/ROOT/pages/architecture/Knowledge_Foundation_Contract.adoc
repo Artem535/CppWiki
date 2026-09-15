@@ -1,0 +1,205 @@
+= Knowledge Foundation Contract
+:description: Editor-first authoritative knowledge records for workspace properties and typed page relations.
+
+== Status
+
+Implemented for Issue https://github.com/Artem535/CppWiki/issues/185[#185]: domain module,
+repository contract, file and Couchbase Lite persistence, and workspace archive round-trip are
+all in place and covered by focused tests. UI and graph visualization remain in follow-up issues
+(#186, #188, #189, #190).
+
+== Goal
+
+Add a small, durable knowledge model that lets later editor features create workspace properties, page property values, relation types and page relations without changing the identity or whole-document persistence of an existing page.
+
+The initial purpose is to support ordinary technical documentation. It is not an ontology system, GraphRAG store, semantic index or graph editor.
+
+== Scope
+
+The contract covers these authoritative records:
+
+* `PropertyDefinition` -- a reusable workspace-scoped property, including its display name, optional group, value kind and retirement state;
+* `PagePropertyValue` -- one value assigned to one page through a property definition;
+* `RelationType` -- a workspace-scoped directed or symmetric relation definition;
+* `PageRelation` -- one logical, typed edge between two pages.
+
+The next editor tasks use this contract for a compact properties block, relations and Connections. Wiki-link extraction and backlinks are separate records and remain in Issue #189.
+
+== Non-goals
+
+This phase does not add:
+
+* page schemas or required properties;
+* tags as graph nodes;
+* a graph visualization or graph editor;
+* semantic embeddings, inferred relations or AI suggestions;
+* Confluence import/export conversion;
+* a generic arbitrary JSON property-value editor.
+
+== Record identity and scope
+
+Every knowledge record has a generated stable UUID `id` and an explicit `workspace_id`. A page keeps its existing `PageMetadata.id`; knowledge records refer to that page ID and never use its title as identity.
+
+All records have `created_at`, `updated_at`, `created_by` and `updated_by`. All timestamps use the existing UTC ISO-8601 representation.
+
+Renaming a page, property definition or relation type changes only its display data. It never rewrites referring records.
+
+== Record shapes
+
+=== PropertyDefinition
+
+[source,json]
+----
+{
+  "id": "uuid",
+  "workspace_id": "workspace-a",
+  "name": "Status",
+  "group_name": "General",
+  "value_kind": "select",
+  "options": ["Draft", "Approved"],
+  "state": "active",
+  "created_at": "2026-09-08T10:00:00.000Z",
+  "updated_at": "2026-09-08T10:00:00.000Z",
+  "created_by": "user-a",
+  "updated_by": "user-a"
+}
+----
+
+`value_kind` is one of `text`, `number`, `date`, `checkbox`, `select`, `multi_select`, `tags` or `relation`. The first UI slice may expose fewer editors, but the persisted vocabulary is stable.
+
+`state` is `active` or `retired`. Retired definitions cannot be newly assigned, while existing values remain readable and exportable.
+
+=== PagePropertyValue
+
+[source,json]
+----
+{
+  "id": "uuid",
+  "workspace_id": "workspace-a",
+  "page_id": "page-a",
+  "property_definition_id": "property-status",
+  "value": "Approved",
+  "created_at": "2026-09-08T10:00:00.000Z",
+  "updated_at": "2026-09-08T10:00:00.000Z",
+  "created_by": "user-a",
+  "updated_by": "user-a"
+}
+----
+
+There is at most one live value per `(workspace_id, page_id, property_definition_id)`. Updating a value changes that record only; it does not rewrite the page snapshot or other property values.
+
+The `value` representation is determined by the definition's `value_kind`: scalar JSON values for text, number, date, checkbox and select; a JSON array for multi-select and tags; an ordered JSON array of target page IDs for a relation property.
+
+=== RelationType
+
+[source,json]
+----
+{
+  "id": "uuid",
+  "workspace_id": "workspace-a",
+  "name": "uses",
+  "inverse_name": "used by",
+  "direction": "directed",
+  "state": "active",
+  "created_at": "2026-09-08T10:00:00.000Z",
+  "updated_at": "2026-09-08T10:00:00.000Z",
+  "created_by": "user-a",
+  "updated_by": "user-a"
+}
+----
+
+`direction` is `directed` or `symmetric`. A directed type requires a non-empty `inverse_name`; a symmetric type has no independently editable inverse label.
+
+The first workspace offers built-in active types with generated stable IDs: `related to`, `uses`, `depends on`, `implements` and `supersedes`. Workspaces may add custom types later through the catalog UI.
+
+=== PageRelation
+
+[source,json]
+----
+{
+  "id": "uuid",
+  "workspace_id": "workspace-a",
+  "relation_type_id": "relation-uses",
+  "source_page_id": "page-cppwiki",
+  "target_page_id": "page-couchbase-lite",
+  "created_at": "2026-09-08T10:00:00.000Z",
+  "updated_at": "2026-09-08T10:00:00.000Z",
+  "created_by": "user-a",
+  "updated_by": "user-a"
+}
+----
+
+One relation record is one logical edge. The inverse of a directed relation is derived at read time from `RelationType.inverse_name`; it is never stored as a second edge. A symmetric relation is normalized by lexicographic page ID order before persistence, so `A related to B` and `B related to A` identify the same logical edge.
+
+The repository rejects a relation when either page does not exist in the same workspace, the relation type is unknown or retired, or a relation would target the same page unless the relation type explicitly allows self-relations in a later extension.
+
+== Persistence and synchronization
+
+Knowledge records are persisted separately from `DocumentRecord`.
+
+* `FileDocumentRepository` stores one atomic JSON file per knowledge record beneath `knowledge/` in dedicated `property-definitions`, `page-property-values`, `relation-types` and `page-relations` directories.
+* `CbliteDocumentRepository` stores each record as a separate Couchbase Lite document in the same workspace collection selected for the page. Each record has a `record_type` discriminator and a reserved ID prefix, so it replicates through the existing workspace/channel mapping without appearing in the page index.
+* The `LocalDocumentRepository` gains narrow list/save/delete methods for each record type. It must not expose a generic arbitrary-record API.
+
+Because each mutation changes one record, two users adding different relations or setting values on different properties do not write the same page document and cannot conflict through a whole-page snapshot update. Concurrent mutation of the same logical record uses the repository's existing conflict handling and is visible as a conflict rather than silently dropping a change.
+
+== Page lifecycle
+
+=== Rename and move
+
+Page ID, workspace ID and all knowledge references are preserved. No knowledge record changes merely because the page title, parent or sort order changes.
+
+=== Trash and restore
+
+Trashing a page retains its values, outgoing relations and incoming relations. Normal live-page queries omit edges or values whose referenced page is trashed. Restore makes the retained records visible again.
+
+=== Permanent deletion
+
+Permanent deletion removes:
+
+* values whose `page_id` is the deleted page;
+* relations whose source or target is the deleted page;
+* later wiki-link records whose source or target is the deleted page.
+
+The deletion is idempotent. A deleted page never leaves an openable relation target behind.
+
+=== Definition retirement and deletion
+
+Renaming a definition preserves its ID and references. Retirement hides it from new assignments but retains historical values and relations. Permanent deletion is permitted only after the repository has removed or migrated all dependent records; the catalog UI must require an explicit destructive confirmation.
+
+== Archive, import and schema migration
+
+The workspace archive gains arrays for each knowledge record type. Import validates workspace scope, preserves record IDs when they do not collide and rejects an archive that contains dangling references.
+
+Existing workspaces have no knowledge records and remain valid without a migration rewrite. The archive schema version increments when the new arrays are introduced. Repository readers tolerate their absence as empty collections.
+
+== Query surface for later editor work
+
+The repository must provide these queries without loading unrelated page snapshots:
+
+* active property definitions for a workspace;
+* values for one page;
+* active relation types for a workspace;
+* outgoing and incoming relations for one page;
+* relations filtered by relation type;
+* all relations and values affected by permanent deletion.
+
+The editor’s properties section and Connections section consume these queries. Graph View later consumes the same data and does not create a second graph database.
+
+== Validation rules
+
+* IDs, workspace IDs and page references must be non-empty.
+* A record may only refer to records in the same workspace.
+* Names are trimmed and non-empty; active property and relation type names are unique case-insensitively within a workspace.
+* Select and multi-select values must be present in their definition's options.
+* Relation pages must be distinct and live when a relation is created.
+* Unknown record types or malformed records are reported through `RepositoryError::kInvalidRecord`; they are not silently ignored.
+
+== Delivery sequence
+
+. Implement this repository contract, file/CBLite persistence, archive round-trip and lifecycle tests in #185.
+. Implement stable wiki-link extraction and backlinks in #189.
+. Implement a minimal workspace property catalog and compact page properties UI in #186.
+. Implement relation type and page relation UI, including inverse presentation, in #188.
+. Implement the compact Connections section in #190.
+. Add local Explicit Graph navigation only after these editor workflows are working.

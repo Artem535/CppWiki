@@ -65,6 +65,20 @@ auto MakeRevisionFilePath(const std::filesystem::path& storage_dir, std::string_
   return storage_dir / "revisions" / (sanitized + ".json");
 }
 
+auto MakeKnowledgeFilePath(const std::filesystem::path& storage_dir, std::string_view directory,
+                           std::string_view record_id) -> std::filesystem::path {
+  std::string sanitized;
+  for (char character : record_id) {
+    if (std::isalnum(static_cast<unsigned char>(character)) || character == '-' ||
+        character == '_') {
+      sanitized += character;
+    } else {
+      sanitized += '_';
+    }
+  }
+  return storage_dir / directory / (sanitized + ".json");
+}
+
 auto MakeAttachmentMetadataFilePath(const std::filesystem::path& storage_dir,
                                     std::string_view attachment_id) -> std::filesystem::path {
   return storage_dir / "attachments" / (std::string(attachment_id) + ".json");
@@ -285,6 +299,144 @@ struct FileDocumentRevisionDto {
   std::string saved_at;
 };
 
+struct FileAuditMetadataDto {
+  std::string created_at;
+  std::string updated_at;
+  std::string created_by;
+  std::string updated_by;
+};
+
+struct FilePropertyDefinitionDto {
+  std::string id;
+  std::string workspace_id;
+  std::string name;
+  std::optional<std::string> group_name;
+  std::int32_t value_kind{};
+  std::vector<std::string> options;
+  std::int32_t state{};
+  FileAuditMetadataDto audit;
+};
+
+struct FilePagePropertyValueDto {
+  std::string id;
+  std::string workspace_id;
+  std::string page_id;
+  std::string property_definition_id;
+  std::vector<std::string> values;
+  FileAuditMetadataDto audit;
+};
+
+struct FileRelationTypeDto {
+  std::string id;
+  std::string workspace_id;
+  std::string name;
+  std::optional<std::string> inverse_name;
+  std::int32_t direction{};
+  std::int32_t state{};
+  FileAuditMetadataDto audit;
+};
+
+struct FilePageRelationDto {
+  std::string id;
+  std::string workspace_id;
+  std::string relation_type_id;
+  std::string source_page_id;
+  std::string target_page_id;
+  FileAuditMetadataDto audit;
+};
+
+auto ToDto(const knowledge::AuditMetadata& audit) -> FileAuditMetadataDto {
+  return {.created_at = audit.created_at,
+          .updated_at = audit.updated_at,
+          .created_by = audit.created_by,
+          .updated_by = audit.updated_by};
+}
+
+auto FromDto(FileAuditMetadataDto dto) -> knowledge::AuditMetadata {
+  return {.created_at = std::move(dto.created_at),
+          .updated_at = std::move(dto.updated_at),
+          .created_by = std::move(dto.created_by),
+          .updated_by = std::move(dto.updated_by)};
+}
+
+auto ToDto(const knowledge::PropertyDefinition& definition) -> FilePropertyDefinitionDto {
+  return {.id = definition.id,
+          .workspace_id = definition.workspace_id,
+          .name = definition.name,
+          .group_name = definition.group_name,
+          .value_kind = static_cast<std::int32_t>(definition.value_kind),
+          .options = definition.options,
+          .state = static_cast<std::int32_t>(definition.state),
+          .audit = ToDto(definition.audit)};
+}
+
+auto FromDto(FilePropertyDefinitionDto dto) -> knowledge::PropertyDefinition {
+  return {.id = std::move(dto.id),
+          .workspace_id = std::move(dto.workspace_id),
+          .name = std::move(dto.name),
+          .group_name = std::move(dto.group_name),
+          .value_kind = static_cast<knowledge::PropertyValueKind>(dto.value_kind),
+          .options = std::move(dto.options),
+          .state = static_cast<knowledge::RecordState>(dto.state),
+          .audit = FromDto(std::move(dto.audit))};
+}
+
+auto ToDto(const knowledge::PagePropertyValue& value) -> FilePagePropertyValueDto {
+  return {.id = value.id,
+          .workspace_id = value.workspace_id,
+          .page_id = value.page_id,
+          .property_definition_id = value.property_definition_id,
+          .values = value.values,
+          .audit = ToDto(value.audit)};
+}
+
+auto FromDto(FilePagePropertyValueDto dto) -> knowledge::PagePropertyValue {
+  return {.id = std::move(dto.id),
+          .workspace_id = std::move(dto.workspace_id),
+          .page_id = std::move(dto.page_id),
+          .property_definition_id = std::move(dto.property_definition_id),
+          .values = std::move(dto.values),
+          .audit = FromDto(std::move(dto.audit))};
+}
+
+auto ToDto(const knowledge::RelationType& type) -> FileRelationTypeDto {
+  return {.id = type.id,
+          .workspace_id = type.workspace_id,
+          .name = type.name,
+          .inverse_name = type.inverse_name,
+          .direction = static_cast<std::int32_t>(type.direction),
+          .state = static_cast<std::int32_t>(type.state),
+          .audit = ToDto(type.audit)};
+}
+
+auto FromDto(FileRelationTypeDto dto) -> knowledge::RelationType {
+  return {.id = std::move(dto.id),
+          .workspace_id = std::move(dto.workspace_id),
+          .name = std::move(dto.name),
+          .inverse_name = std::move(dto.inverse_name),
+          .direction = static_cast<knowledge::RelationDirection>(dto.direction),
+          .state = static_cast<knowledge::RecordState>(dto.state),
+          .audit = FromDto(std::move(dto.audit))};
+}
+
+auto ToDto(const knowledge::PageRelation& relation) -> FilePageRelationDto {
+  return {.id = relation.id,
+          .workspace_id = relation.workspace_id,
+          .relation_type_id = relation.relation_type_id,
+          .source_page_id = relation.source_page_id,
+          .target_page_id = relation.target_page_id,
+          .audit = ToDto(relation.audit)};
+}
+
+auto FromDto(FilePageRelationDto dto) -> knowledge::PageRelation {
+  return {.id = std::move(dto.id),
+          .workspace_id = std::move(dto.workspace_id),
+          .relation_type_id = std::move(dto.relation_type_id),
+          .source_page_id = std::move(dto.source_page_id),
+          .target_page_id = std::move(dto.target_page_id),
+          .audit = FromDto(std::move(dto.audit))};
+}
+
 struct FileAttachmentDto {
   std::string id;
   std::string workspace_id;
@@ -437,6 +589,10 @@ class FileDocumentRepository::Impl {
     SweepInterruptedWrites(options_.storage_directory / "pages");
     SweepInterruptedWrites(options_.storage_directory / "conflicts");
     SweepInterruptedWrites(options_.storage_directory / "attachments");
+    SweepInterruptedWrites(options_.storage_directory / "property-definitions");
+    SweepInterruptedWrites(options_.storage_directory / "page-property-values");
+    SweepInterruptedWrites(options_.storage_directory / "relation-types");
+    SweepInterruptedWrites(options_.storage_directory / "page-relations");
   }
 
   [[nodiscard]] auto SaveDocument(const DocumentRecord& document) -> SaveDocumentResult {
@@ -464,6 +620,16 @@ class FileDocumentRepository::Impl {
 
   [[nodiscard]] auto DeleteDocument(std::string_view page_id) -> DeleteDocumentResult {
     try {
+      const auto document = LoadDocument(page_id);
+      if (document.document) {
+        if (const auto cleanup =
+                DeleteKnowledgeForPage(document.document->metadata.workspace_id, page_id);
+            cleanup.error) {
+          return {.error = cleanup.error};
+        }
+      } else if (document.error && document.error->code != RepositoryErrorCode::kReadFailed) {
+        return {.error = document.error};
+      }
       auto conflicts = ListConflicts();
       if (conflicts.error) {
         return DeleteDocumentResult{.error = std::move(conflicts.error)};
@@ -582,6 +748,302 @@ class FileDocumentRepository::Impl {
           .error = MakeError(RepositoryErrorCode::kReadFailed, e.what()),
       };
     }
+  }
+
+  [[nodiscard]] auto SavePropertyDefinition(const knowledge::PropertyDefinition& definition)
+      -> SaveKnowledgeRecordResult {
+    if (const auto validation = knowledge::ValidatePropertyDefinition(definition); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    const auto path =
+        MakeKnowledgeFilePath(options_.storage_directory, "property-definitions", definition.id);
+    if (!WriteFileAtomically(path, rfl::json::write(ToDto(definition)))) {
+      RestoreFromBackup(path);
+      return {.error = MakeError(RepositoryErrorCode::kWriteFailed,
+                                 "Failed to write property definition file.")};
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto DeletePropertyDefinition(std::string_view definition_id)
+      -> DeleteKnowledgeRecordResult {
+    try {
+      std::filesystem::remove(
+          MakeKnowledgeFilePath(options_.storage_directory, "property-definitions", definition_id));
+      return {};
+    } catch (const std::exception& error) {
+      return {.error = MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto ListPropertyDefinitions(std::string_view workspace_id)
+      -> ListPropertyDefinitionsResult {
+    const auto directory = options_.storage_directory / "property-definitions";
+    if (!std::filesystem::exists(directory)) {
+      return {};
+    }
+    try {
+      std::vector<knowledge::PropertyDefinition> definitions;
+      for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json")
+          continue;
+        const auto content = ReadFileToString(entry.path());
+        if (!content)
+          continue;
+        const auto parsed = rfl::json::read<FilePropertyDefinitionDto>(*content);
+        if (!parsed) {
+          return {.definitions = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Failed to parse property definition file.")};
+        }
+        auto definition = FromDto(parsed.value());
+        if (definition.id != entry.path().stem().string() ||
+            knowledge::ValidatePropertyDefinition(definition)) {
+          return {.definitions = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Property definition file contains an invalid record.")};
+        }
+        if (definition.workspace_id == workspace_id)
+          definitions.push_back(std::move(definition));
+      }
+      std::ranges::sort(definitions, [](const auto& left, const auto& right) {
+        return left.name == right.name ? left.id < right.id : left.name < right.name;
+      });
+      return {.definitions = std::move(definitions), .error = std::nullopt};
+    } catch (const std::exception& error) {
+      return {.definitions = {},
+              .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto SavePagePropertyValue(const knowledge::PagePropertyValue& value)
+      -> SaveKnowledgeRecordResult {
+    const auto definitions = ListPropertyDefinitions(value.workspace_id);
+    if (definitions.error)
+      return {.error = definitions.error};
+    const auto definition = std::ranges::find_if(
+        definitions.definitions,
+        [&value](const auto& item) { return item.id == value.property_definition_id; });
+    if (definition == definitions.definitions.end()) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                 "Page property value refers to an unknown property definition.")};
+    }
+    if (const auto validation = knowledge::ValidatePagePropertyValue(value, *definition);
+        validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    const auto path =
+        MakeKnowledgeFilePath(options_.storage_directory, "page-property-values", value.id);
+    if (!WriteFileAtomically(path, rfl::json::write(ToDto(value)))) {
+      RestoreFromBackup(path);
+      return {.error = MakeError(RepositoryErrorCode::kWriteFailed,
+                                 "Failed to write page property value file.")};
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto DeletePagePropertyValue(std::string_view value_id)
+      -> DeleteKnowledgeRecordResult {
+    try {
+      std::filesystem::remove(
+          MakeKnowledgeFilePath(options_.storage_directory, "page-property-values", value_id));
+      return {};
+    } catch (const std::exception& error) {
+      return {.error = MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto ListPagePropertyValues(std::string_view workspace_id, std::string_view page_id)
+      -> ListPagePropertyValuesResult {
+    const auto directory = options_.storage_directory / "page-property-values";
+    if (!std::filesystem::exists(directory))
+      return {};
+    try {
+      std::vector<knowledge::PagePropertyValue> values;
+      for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json")
+          continue;
+        const auto content = ReadFileToString(entry.path());
+        if (!content)
+          continue;
+        const auto parsed = rfl::json::read<FilePagePropertyValueDto>(*content);
+        if (!parsed)
+          return {.values = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Failed to parse page property value file.")};
+        auto value = FromDto(parsed.value());
+        if (value.id != entry.path().stem().string())
+          return {.values = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Page property value file id does not match its name.")};
+        if (value.workspace_id == workspace_id && value.page_id == page_id) {
+          values.push_back(std::move(value));
+        }
+      }
+      std::ranges::sort(values,
+                        [](const auto& left, const auto& right) { return left.id < right.id; });
+      return {.values = std::move(values), .error = std::nullopt};
+    } catch (const std::exception& error) {
+      return {.values = {}, .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto SaveRelationType(const knowledge::RelationType& relation_type)
+      -> SaveKnowledgeRecordResult {
+    if (const auto validation = knowledge::ValidateRelationType(relation_type); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    const auto path =
+        MakeKnowledgeFilePath(options_.storage_directory, "relation-types", relation_type.id);
+    if (!WriteFileAtomically(path, rfl::json::write(ToDto(relation_type)))) {
+      RestoreFromBackup(path);
+      return {.error = MakeError(RepositoryErrorCode::kWriteFailed,
+                                 "Failed to write relation type file.")};
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto DeleteRelationType(std::string_view relation_type_id)
+      -> DeleteKnowledgeRecordResult {
+    try {
+      std::filesystem::remove(
+          MakeKnowledgeFilePath(options_.storage_directory, "relation-types", relation_type_id));
+      return {};
+    } catch (const std::exception& error) {
+      return {.error = MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto ListRelationTypes(std::string_view workspace_id) -> ListRelationTypesResult {
+    const auto directory = options_.storage_directory / "relation-types";
+    if (!std::filesystem::exists(directory))
+      return {};
+    try {
+      std::vector<knowledge::RelationType> relation_types;
+      for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json")
+          continue;
+        const auto content = ReadFileToString(entry.path());
+        if (!content)
+          continue;
+        const auto parsed = rfl::json::read<FileRelationTypeDto>(*content);
+        if (!parsed)
+          return {.relation_types = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Failed to parse relation type file.")};
+        auto relation_type = FromDto(parsed.value());
+        if (relation_type.id != entry.path().stem().string() ||
+            knowledge::ValidateRelationType(relation_type)) {
+          return {.relation_types = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Relation type file contains an invalid record.")};
+        }
+        if (relation_type.workspace_id == workspace_id)
+          relation_types.push_back(std::move(relation_type));
+      }
+      std::ranges::sort(relation_types, [](const auto& left, const auto& right) {
+        return left.name == right.name ? left.id < right.id : left.name < right.name;
+      });
+      return {.relation_types = std::move(relation_types), .error = std::nullopt};
+    } catch (const std::exception& error) {
+      return {.relation_types = {},
+              .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto SavePageRelation(const knowledge::PageRelation& input)
+      -> SaveKnowledgeRecordResult {
+    const auto types = ListRelationTypes(input.workspace_id);
+    if (types.error)
+      return {.error = types.error};
+    const auto type = std::ranges::find_if(types.relation_types, [&input](const auto& item) {
+      return item.id == input.relation_type_id;
+    });
+    if (type == types.relation_types.end()) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                 "Page relation refers to an unknown relation type.")};
+    }
+    auto relation = input;
+    if (const auto validation = knowledge::NormalizeAndValidatePageRelation(&relation, *type);
+        validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    const auto path =
+        MakeKnowledgeFilePath(options_.storage_directory, "page-relations", relation.id);
+    if (!WriteFileAtomically(path, rfl::json::write(ToDto(relation)))) {
+      RestoreFromBackup(path);
+      return {.error = MakeError(RepositoryErrorCode::kWriteFailed,
+                                 "Failed to write page relation file.")};
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto DeletePageRelation(std::string_view relation_id)
+      -> DeleteKnowledgeRecordResult {
+    try {
+      std::filesystem::remove(
+          MakeKnowledgeFilePath(options_.storage_directory, "page-relations", relation_id));
+      return {};
+    } catch (const std::exception& error) {
+      return {.error = MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto ListPageRelations(std::string_view workspace_id, std::string_view page_id)
+      -> ListPageRelationsResult {
+    const auto directory = options_.storage_directory / "page-relations";
+    if (!std::filesystem::exists(directory))
+      return {};
+    try {
+      std::vector<knowledge::PageRelation> relations;
+      for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json")
+          continue;
+        const auto content = ReadFileToString(entry.path());
+        if (!content)
+          continue;
+        const auto parsed = rfl::json::read<FilePageRelationDto>(*content);
+        if (!parsed)
+          return {.relations = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Failed to parse page relation file.")};
+        auto relation = FromDto(parsed.value());
+        if (relation.id != entry.path().stem().string())
+          return {.relations = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Page relation file id does not match its name.")};
+        if (relation.workspace_id == workspace_id &&
+            (relation.source_page_id == page_id || relation.target_page_id == page_id)) {
+          relations.push_back(std::move(relation));
+        }
+      }
+      std::ranges::sort(relations,
+                        [](const auto& left, const auto& right) { return left.id < right.id; });
+      return {.relations = std::move(relations), .error = std::nullopt};
+    } catch (const std::exception& error) {
+      return {.relations = {}, .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto DeleteKnowledgeForPage(std::string_view workspace_id, std::string_view page_id)
+      -> DeleteKnowledgeForPageResult {
+    const auto values = ListPagePropertyValues(workspace_id, page_id);
+    if (values.error)
+      return {.error = values.error};
+    for (const auto& value : values.values) {
+      if (const auto deleted = DeletePagePropertyValue(value.id); deleted.error) {
+        return {.error = deleted.error};
+      }
+    }
+    const auto relations = ListPageRelations(workspace_id, page_id);
+    if (relations.error)
+      return {.error = relations.error};
+    for (const auto& relation : relations.relations) {
+      if (const auto deleted = DeletePageRelation(relation.id); deleted.error) {
+        return {.error = deleted.error};
+      }
+    }
+    return {};
   }
 
   [[nodiscard]] auto SaveAttachment(const AttachmentData& attachment) -> SaveAttachmentResult {
@@ -1009,6 +1471,74 @@ auto FileDocumentRepository::LoadDocument(std::string_view page_id) -> LoadDocum
 
 auto FileDocumentRepository::ListDocuments() -> ListDocumentsResult {
   return impl_->ListDocuments();
+}
+
+auto FileDocumentRepository::SavePropertyDefinition(const knowledge::PropertyDefinition& definition)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SavePropertyDefinition(definition);
+}
+
+auto FileDocumentRepository::DeletePropertyDefinition(std::string_view definition_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeletePropertyDefinition(definition_id);
+}
+
+auto FileDocumentRepository::ListPropertyDefinitions(std::string_view workspace_id)
+    -> ListPropertyDefinitionsResult {
+  return impl_->ListPropertyDefinitions(workspace_id);
+}
+
+auto FileDocumentRepository::SavePagePropertyValue(const knowledge::PagePropertyValue& value)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SavePagePropertyValue(value);
+}
+
+auto FileDocumentRepository::DeletePagePropertyValue(std::string_view value_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeletePagePropertyValue(value_id);
+}
+
+auto FileDocumentRepository::ListPagePropertyValues(std::string_view workspace_id,
+                                                    std::string_view page_id)
+    -> ListPagePropertyValuesResult {
+  return impl_->ListPagePropertyValues(workspace_id, page_id);
+}
+
+auto FileDocumentRepository::SaveRelationType(const knowledge::RelationType& relation_type)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SaveRelationType(relation_type);
+}
+
+auto FileDocumentRepository::DeleteRelationType(std::string_view relation_type_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeleteRelationType(relation_type_id);
+}
+
+auto FileDocumentRepository::ListRelationTypes(std::string_view workspace_id)
+    -> ListRelationTypesResult {
+  return impl_->ListRelationTypes(workspace_id);
+}
+
+auto FileDocumentRepository::SavePageRelation(const knowledge::PageRelation& relation)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SavePageRelation(relation);
+}
+
+auto FileDocumentRepository::DeletePageRelation(std::string_view relation_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeletePageRelation(relation_id);
+}
+
+auto FileDocumentRepository::ListPageRelations(std::string_view workspace_id,
+                                               std::string_view page_id)
+    -> ListPageRelationsResult {
+  return impl_->ListPageRelations(workspace_id, page_id);
+}
+
+auto FileDocumentRepository::DeleteKnowledgeForPage(std::string_view workspace_id,
+                                                    std::string_view page_id)
+    -> DeleteKnowledgeForPageResult {
+  return impl_->DeleteKnowledgeForPage(workspace_id, page_id);
 }
 
 auto FileDocumentRepository::SaveAttachment(const AttachmentData& attachment)

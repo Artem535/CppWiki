@@ -30,6 +30,32 @@ class FileDocumentRepository final : public LocalDocumentRepository {
   [[nodiscard]] auto DeleteDocument(std::string_view page_id) -> DeleteDocumentResult override;
   [[nodiscard]] auto LoadDocument(std::string_view page_id) -> LoadDocumentResult override;
   [[nodiscard]] auto ListDocuments() -> ListDocumentsResult override;
+  [[nodiscard]] auto SavePropertyDefinition(const knowledge::PropertyDefinition& definition)
+      -> SaveKnowledgeRecordResult override;
+  [[nodiscard]] auto DeletePropertyDefinition(std::string_view definition_id)
+      -> DeleteKnowledgeRecordResult override;
+  [[nodiscard]] auto ListPropertyDefinitions(std::string_view workspace_id)
+      -> ListPropertyDefinitionsResult override;
+  [[nodiscard]] auto SavePagePropertyValue(const knowledge::PagePropertyValue& value)
+      -> SaveKnowledgeRecordResult override;
+  [[nodiscard]] auto DeletePagePropertyValue(std::string_view value_id)
+      -> DeleteKnowledgeRecordResult override;
+  [[nodiscard]] auto ListPagePropertyValues(std::string_view workspace_id, std::string_view page_id)
+      -> ListPagePropertyValuesResult override;
+  [[nodiscard]] auto SaveRelationType(const knowledge::RelationType& relation_type)
+      -> SaveKnowledgeRecordResult override;
+  [[nodiscard]] auto DeleteRelationType(std::string_view relation_type_id)
+      -> DeleteKnowledgeRecordResult override;
+  [[nodiscard]] auto ListRelationTypes(std::string_view workspace_id)
+      -> ListRelationTypesResult override;
+  [[nodiscard]] auto SavePageRelation(const knowledge::PageRelation& relation)
+      -> SaveKnowledgeRecordResult override;
+  [[nodiscard]] auto DeletePageRelation(std::string_view relation_id)
+      -> DeleteKnowledgeRecordResult override;
+  [[nodiscard]] auto ListPageRelations(std::string_view workspace_id, std::string_view page_id)
+      -> ListPageRelationsResult override;
+  [[nodiscard]] auto DeleteKnowledgeForPage(std::string_view workspace_id, std::string_view page_id)
+      -> DeleteKnowledgeForPageResult override;
   [[nodiscard]] auto SaveAttachment(const AttachmentData& attachment)
       -> SaveAttachmentResult override;
   [[nodiscard]] auto LoadAttachment(std::string_view attachment_id, std::string_view workspace_id)

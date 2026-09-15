@@ -177,6 +177,24 @@ add_test(
   COMMAND cppwiki_local_document_repository_tests
 )
 
+add_executable(cppwiki_knowledge_record_tests
+  knowledge/knowledge_record_test.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.h
+)
+
+target_include_directories(cppwiki_knowledge_record_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+cppwiki_apply_common_options(cppwiki_knowledge_record_tests)
+
+add_test(
+  NAME cppwiki_knowledge_record_tests
+  COMMAND cppwiki_knowledge_record_tests
+)
+
 add_executable(cppwiki_attachment_tests
   storage/attachment_test.cc
   ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
@@ -206,6 +224,8 @@ add_executable(cppwiki_file_document_repository_tests
   ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
   ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
   ${CMAKE_SOURCE_DIR}/src/document/document.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.h
   ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.cc
   ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.h
   ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
@@ -233,6 +253,8 @@ add_executable(cppwiki_workspace_archive_tests
   storage/workspace_archive_test.cc
   ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
   ${CMAKE_SOURCE_DIR}/src/document/document.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.h
   ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.cc
   ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.h
   ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
@@ -300,6 +322,8 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
     PRIVATE
       ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.cc
       ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.h
+      ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.cc
+      ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.h
   )
 
   target_link_libraries(cppwiki_document_sync_service_tests
@@ -499,6 +523,8 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
     ${CMAKE_SOURCE_DIR}/src/sync/sync_bootstrap.h
     ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.cc
     ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.h
+    ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.cc
+    ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.h
     ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
     ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
     ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
@@ -555,6 +581,8 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
     ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
     ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.cc
     ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.h
+    ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.cc
+    ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.h
     ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
   )
 

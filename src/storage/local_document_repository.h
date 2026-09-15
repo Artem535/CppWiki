@@ -8,6 +8,7 @@
 
 #include "document/block_note_snapshot.h"
 #include "document/document.h"
+#include "knowledge/knowledge_record.h"
 #include "storage/attachment.h"
 
 namespace cppwiki::sync {
@@ -206,6 +207,38 @@ struct DeleteDocumentRevisionResult {
   std::optional<RepositoryError> error;
 };
 
+struct SaveKnowledgeRecordResult {
+  std::optional<RepositoryError> error;
+};
+
+struct DeleteKnowledgeRecordResult {
+  std::optional<RepositoryError> error;
+};
+
+struct DeleteKnowledgeForPageResult {
+  std::optional<RepositoryError> error;
+};
+
+struct ListPropertyDefinitionsResult {
+  std::vector<knowledge::PropertyDefinition> definitions;
+  std::optional<RepositoryError> error;
+};
+
+struct ListPagePropertyValuesResult {
+  std::vector<knowledge::PagePropertyValue> values;
+  std::optional<RepositoryError> error;
+};
+
+struct ListRelationTypesResult {
+  std::vector<knowledge::RelationType> relation_types;
+  std::optional<RepositoryError> error;
+};
+
+struct ListPageRelationsResult {
+  std::vector<knowledge::PageRelation> relations;
+  std::optional<RepositoryError> error;
+};
+
 class LocalDocumentRepository {
  public:
   LocalDocumentRepository() = default;
@@ -219,6 +252,70 @@ class LocalDocumentRepository {
   [[nodiscard]] virtual auto DeleteDocument(std::string_view page_id) -> DeleteDocumentResult = 0;
   [[nodiscard]] virtual auto LoadDocument(std::string_view page_id) -> LoadDocumentResult = 0;
   [[nodiscard]] virtual auto ListDocuments() -> ListDocumentsResult = 0;
+  [[nodiscard]] virtual auto SavePropertyDefinition(const knowledge::PropertyDefinition&)
+      -> SaveKnowledgeRecordResult {
+    return UnsupportedKnowledgeSaveResult();
+  }
+  [[nodiscard]] virtual auto DeletePropertyDefinition(std::string_view)
+      -> DeleteKnowledgeRecordResult {
+    return UnsupportedKnowledgeDeleteResult();
+  }
+  [[nodiscard]] virtual auto ListPropertyDefinitions(std::string_view)
+      -> ListPropertyDefinitionsResult {
+    return {
+        .definitions = {},
+        .error = UnsupportedKnowledgeError(),
+    };
+  }
+  [[nodiscard]] virtual auto SavePagePropertyValue(const knowledge::PagePropertyValue&)
+      -> SaveKnowledgeRecordResult {
+    return UnsupportedKnowledgeSaveResult();
+  }
+  [[nodiscard]] virtual auto DeletePagePropertyValue(std::string_view)
+      -> DeleteKnowledgeRecordResult {
+    return UnsupportedKnowledgeDeleteResult();
+  }
+  [[nodiscard]] virtual auto ListPagePropertyValues(std::string_view, std::string_view)
+      -> ListPagePropertyValuesResult {
+    return {
+        .values = {},
+        .error = UnsupportedKnowledgeError(),
+    };
+  }
+  [[nodiscard]] virtual auto SaveRelationType(const knowledge::RelationType&)
+      -> SaveKnowledgeRecordResult {
+    return UnsupportedKnowledgeSaveResult();
+  }
+  [[nodiscard]] virtual auto DeleteRelationType(std::string_view)
+      -> DeleteKnowledgeRecordResult {
+    return UnsupportedKnowledgeDeleteResult();
+  }
+  [[nodiscard]] virtual auto ListRelationTypes(std::string_view) -> ListRelationTypesResult {
+    return {
+        .relation_types = {},
+        .error = UnsupportedKnowledgeError(),
+    };
+  }
+  [[nodiscard]] virtual auto SavePageRelation(const knowledge::PageRelation&)
+      -> SaveKnowledgeRecordResult {
+    return UnsupportedKnowledgeSaveResult();
+  }
+  [[nodiscard]] virtual auto DeletePageRelation(std::string_view) -> DeleteKnowledgeRecordResult {
+    return UnsupportedKnowledgeDeleteResult();
+  }
+  [[nodiscard]] virtual auto ListPageRelations(std::string_view, std::string_view)
+      -> ListPageRelationsResult {
+    return {
+        .relations = {},
+        .error = UnsupportedKnowledgeError(),
+    };
+  }
+  [[nodiscard]] virtual auto DeleteKnowledgeForPage(std::string_view, std::string_view)
+      -> DeleteKnowledgeForPageResult {
+    return {
+        .error = UnsupportedKnowledgeError(),
+    };
+  }
   [[nodiscard]] virtual auto SaveAttachment(const AttachmentData&) -> SaveAttachmentResult {
     return SaveAttachmentResult{
         .error =
@@ -359,6 +456,26 @@ class LocalDocumentRepository {
                 .code = RepositoryErrorCode::kUnsupported,
                 .message = "Repository does not support document revisions.",
             },
+    };
+  }
+
+ private:
+  [[nodiscard]] static auto UnsupportedKnowledgeError() -> RepositoryError {
+    return {
+        .code = RepositoryErrorCode::kUnsupported,
+        .message = "Repository does not support knowledge records.",
+    };
+  }
+
+  [[nodiscard]] static auto UnsupportedKnowledgeSaveResult() -> SaveKnowledgeRecordResult {
+    return {
+        .error = UnsupportedKnowledgeError(),
+    };
+  }
+
+  [[nodiscard]] static auto UnsupportedKnowledgeDeleteResult() -> DeleteKnowledgeRecordResult {
+    return {
+        .error = UnsupportedKnowledgeError(),
     };
   }
 };
