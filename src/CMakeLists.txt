@@ -63,6 +63,8 @@ qt_add_executable(cppwiki_app
         gui/main_window_helpers.h
         gui/presence_strip_widget.cc
         gui/presence_strip_widget.h
+        gui/properties_strip_widget.cc
+        gui/properties_strip_widget.h
         gui/settings_dialog.cc
         gui/settings_dialog.h
         gui/trash_dialog.cc
@@ -163,6 +165,7 @@ qt_add_resources(cppwiki_app cppwiki_icon_resources
         gui/assets/icons/action-move-up.svg
         gui/assets/icons/action-move-down.svg
         gui/assets/icons/action-new-folder.svg
+        gui/assets/icons/action-properties.svg
 )
 
 # Embedded as a Qt resource (not a filesystem path guessed relative to CWD/applicationDirPath())

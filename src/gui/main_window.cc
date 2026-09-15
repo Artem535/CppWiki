@@ -42,6 +42,7 @@
 #include "gui/page.h"
 #include "gui/page_helpers.h"
 #include "gui/presence_strip_widget.h"
+#include "gui/properties_strip_widget.h"
 #include "gui/settings_dialog.h"
 #include "gui/workspace_rail_widget.h"
 #include "sync/sync_service.h"
@@ -252,6 +253,7 @@ void MainWindow::ApplyStylesheetToSafeDescendants(AccentColor accent_color) {
   current_accent_color_ = accent_color;
   for (auto* target :
        {static_cast<QWidget*>(workspace_rail_), static_cast<QWidget*>(presence_strip_widget_),
+        static_cast<QWidget*>(properties_strip_widget_),
         static_cast<QWidget*>(edit_mode_label_), static_cast<QWidget*>(save_state_label_),
         static_cast<QWidget*>(document_tools_toolbar_),
         static_cast<QWidget*>(backend_refresh_button_), document_status_widget_,
@@ -284,6 +286,9 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
 
 void MainWindow::SetContext(AppContext* context) {
   context_ = context;
+  if (properties_strip_widget_ != nullptr && context_ != nullptr) {
+    properties_strip_widget_->SetRepository(context_->document_repository);
+  }
   if (context_ != nullptr && context_->backend_client != nullptr) {
     connect(context_->backend_client, &backend::BackendClient::statusChanged, this,
             [this](backend::BackendConnectionState state, const QString& status_text) {
@@ -358,6 +363,17 @@ void MainWindow::CreateInitialPage() {
   connect(page, &Page::documentKindStateChanged, this, &MainWindow::UpdateFileActionsUi);
   connect(page, &Page::documentConflictDetected, this,
           [this](const QString&, const QString& conflict_id) { ShowConflictWindow(conflict_id); });
+  connect(page, &Page::documentPropertiesContextChanged, this,
+          [this](const QString& workspace_id, const QString& page_id, bool has_document) {
+            if (properties_strip_widget_ != nullptr) {
+              properties_strip_widget_->SetDocumentContext(workspace_id, page_id, has_document);
+            }
+          });
+  connect(page, &Page::propertiesChanged, this, [this]() {
+    if (properties_strip_widget_ != nullptr) {
+      properties_strip_widget_->RefreshCurrent();
+    }
+  });
   current_page_ = page;
   current_sidebar_widget_ = current_page_->SidebarWidget();
   current_content_widget_ = current_page_->ContentWidget();
@@ -582,6 +598,13 @@ void MainWindow::BuildUi() {
       context_->backend_client->RefreshHealth();
     }
   });
+  properties_strip_widget_ = new gui::PropertiesStripWidget(collaboration_panel_);
+  connect(properties_strip_widget_, &gui::PropertiesStripWidget::propertiesRequested, this,
+          [this]() {
+            if (current_page_ != nullptr) {
+              current_page_->OpenPropertiesDrawer();
+            }
+          });
   presence_strip_widget_ = new gui::PresenceStripWidget(collaboration_panel_);
   std::tie(document_status_widget_, document_status_badge_, document_status_label_) =
       MakeStatusWidget(QStringLiteral("Document: ready"), this);
@@ -614,6 +637,7 @@ void MainWindow::BuildUi() {
   collaboration_layout->addWidget(edit_mode_widget, 0, Qt::AlignVCenter);
   collaboration_layout->addStretch(1);
   collaboration_layout->addWidget(sync_conflicts_widget_, 0, Qt::AlignVCenter);
+  collaboration_layout->addWidget(properties_strip_widget_, 0, Qt::AlignVCenter);
   collaboration_layout->addWidget(presence_strip_widget_, 0, Qt::AlignVCenter);
   header_layout->addWidget(collaboration_panel_, 1);
 

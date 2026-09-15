@@ -459,6 +459,7 @@ void Page::BuildUi() {
     SyncContentStackToDocumentKind();
     EmitDocumentKindState();
   });
+  connect(editor_bridge_, &bridge::QEditorBridge::propertiesChanged, this, &Page::propertiesChanged);
 
   ApplyBridgeSessionContext();
   LoadEditor();
@@ -1368,6 +1369,15 @@ void Page::UpdateEditModeControls() {
 void Page::EmitDocumentKindState() {
   emit documentKindStateChanged(current_document_kind_, !selected_page_id_.isEmpty(),
                                 current_document_editable_);
+  emit documentPropertiesContextChanged(current_workspace_id_, selected_page_id_,
+                                        !selected_page_id_.isEmpty());
+}
+
+void Page::OpenPropertiesDrawer() {
+  if (editor_bridge_ == nullptr || selected_page_id_.isEmpty()) {
+    return;
+  }
+  emit editor_bridge_->openPropertiesDrawerRequested();
 }
 
 void Page::SyncContentStackToDocumentKind() {

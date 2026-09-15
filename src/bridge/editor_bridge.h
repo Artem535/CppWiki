@@ -11,6 +11,7 @@
 #include <optional>
 
 #include "document/document.h"
+#include "knowledge/knowledge_record.h"
 #include "storage/attachment.h"
 #include "sync/sync_state_provider.h"
 
@@ -120,6 +121,13 @@ class QEditorBridge final : public QObject {
   QVariantMap restoreDocumentRevision(const QString& page_id, const QString& revision_id);
   Q_INVOKABLE QVariantMap loadDocument(const QString& page_id);
   Q_INVOKABLE QVariantMap openDocument(const QString& page_id);
+  Q_INVOKABLE QVariantMap listPropertyDefinitions(const QString& workspace_id);
+  Q_INVOKABLE QVariantMap savePropertyDefinition(const QVariantMap& definition);
+  Q_INVOKABLE QVariantMap retirePropertyDefinition(const QString& definition_id);
+  Q_INVOKABLE QVariantMap listPagePropertyValues(const QString& workspace_id,
+                                                 const QString& page_id);
+  Q_INVOKABLE QVariantMap savePagePropertyValue(const QVariantMap& value);
+  Q_INVOKABLE QVariantMap deletePagePropertyValue(const QString& value_id);
   // `page_id` must match the currently open document (current_page_id_); a mismatch is
   // rejected with a "stale_document" error rather than silently applied. This closes a real
   // corruption path: JS schedules saves on a debounce/async chain, and if the open document
@@ -192,6 +200,16 @@ class QEditorBridge final : public QObject {
 
   // Emitted when document save status changes (for UI feedback).
   void saveStatusChanged(const QString& pageId, bool success, const QString& message);
+
+  // Native -> JS: the native PropertiesStripWidget's "Properties" button (see
+  // gui/properties_strip_widget.cc) lives in MainWindow's chrome, not this web page, so it opens
+  // the JS-side PropertiesDrawer through this signal instead of a local button click.
+  void openPropertiesDrawerRequested();
+  // JS -> native: emitted after a property definition, page value, or relation mutation
+  // succeeds, so PropertiesStripWidget can refresh its chip row without JS having to call back
+  // in through a dedicated "notify" method -- the same Q_INVOKABLE calls that make the change
+  // already run on this object.
+  void propertiesChanged();
 
  private:
   // Returns a document_read_only error envelope if `page_id` refers to the currently

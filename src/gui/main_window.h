@@ -26,6 +26,7 @@ class Switch;
 
 namespace cppwiki::gui {
 class PresenceStripWidget;
+class PropertiesStripWidget;
 }  // namespace cppwiki::gui
 
 namespace cppwiki::sync {
@@ -128,6 +129,7 @@ class MainWindow final : public QMainWindow {
   QWidget* current_content_widget_ = nullptr;
   QFrame* collaboration_panel_ = nullptr;
   gui::PresenceStripWidget* presence_strip_widget_ = nullptr;
+  gui::PropertiesStripWidget* properties_strip_widget_ = nullptr;
   QLabel* edit_mode_label_ = nullptr;
   QLabel* save_state_label_ = nullptr;
   oclero::qlementine::Switch* edit_mode_switch_ = nullptr;

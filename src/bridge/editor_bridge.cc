@@ -98,6 +98,12 @@ auto BridgeInfo(bool ai_features_enabled, bool ai_autocomplete_enabled,
            ToQString(constants::kBridgeMethodCancelAttachmentUpload),
            ToQString(constants::kBridgeMethodSaveAttachmentToFile),
            ToQString(constants::kBridgeMethodPasteClipboardAttachment),
+           QStringLiteral("listPropertyDefinitions"),
+           QStringLiteral("savePropertyDefinition"),
+           QStringLiteral("retirePropertyDefinition"),
+           QStringLiteral("listPagePropertyValues"),
+           QStringLiteral("savePagePropertyValue"),
+           QStringLiteral("deletePagePropertyValue"),
        }},
   };
 }
@@ -241,6 +247,123 @@ auto MetadataToVariant(const document::PageMetadata& metadata) -> QVariantMap {
       {QStringLiteral("updatedAt"), QString::fromStdString(metadata.updated_at)},
       {QStringLiteral("trashedAt"), OptionalStringToVariant(metadata.trashed_at)},
   };
+}
+
+auto CurrentUtcTimestamp() -> std::string;
+
+auto PropertyValueKindFromKey(const QString& key) -> knowledge::PropertyValueKind {
+  if (key == QStringLiteral("number"))
+    return knowledge::PropertyValueKind::kNumber;
+  if (key == QStringLiteral("date"))
+    return knowledge::PropertyValueKind::kDate;
+  if (key == QStringLiteral("checkbox"))
+    return knowledge::PropertyValueKind::kCheckbox;
+  if (key == QStringLiteral("select"))
+    return knowledge::PropertyValueKind::kSelect;
+  if (key == QStringLiteral("multiSelect"))
+    return knowledge::PropertyValueKind::kMultiSelect;
+  if (key == QStringLiteral("tags"))
+    return knowledge::PropertyValueKind::kTags;
+  if (key == QStringLiteral("relation"))
+    return knowledge::PropertyValueKind::kRelation;
+  return knowledge::PropertyValueKind::kText;
+}
+
+auto PropertyValueKindToKey(knowledge::PropertyValueKind kind) -> QString {
+  switch (kind) {
+    case knowledge::PropertyValueKind::kNumber:
+      return QStringLiteral("number");
+    case knowledge::PropertyValueKind::kDate:
+      return QStringLiteral("date");
+    case knowledge::PropertyValueKind::kCheckbox:
+      return QStringLiteral("checkbox");
+    case knowledge::PropertyValueKind::kSelect:
+      return QStringLiteral("select");
+    case knowledge::PropertyValueKind::kMultiSelect:
+      return QStringLiteral("multiSelect");
+    case knowledge::PropertyValueKind::kTags:
+      return QStringLiteral("tags");
+    case knowledge::PropertyValueKind::kRelation:
+      return QStringLiteral("relation");
+    case knowledge::PropertyValueKind::kText:
+      return QStringLiteral("text");
+  }
+  return QStringLiteral("text");
+}
+
+auto AuditToVariant(const knowledge::AuditMetadata& audit) -> QVariantMap {
+  return {{QStringLiteral("createdAt"), QString::fromStdString(audit.created_at)},
+          {QStringLiteral("updatedAt"), QString::fromStdString(audit.updated_at)},
+          {QStringLiteral("createdBy"), QString::fromStdString(audit.created_by)},
+          {QStringLiteral("updatedBy"), QString::fromStdString(audit.updated_by)}};
+}
+
+auto PropertyDefinitionToVariant(const knowledge::PropertyDefinition& definition) -> QVariantMap {
+  QStringList options;
+  for (const auto& option : definition.options)
+    options.append(QString::fromStdString(option));
+  return {{QStringLiteral("id"), QString::fromStdString(definition.id)},
+          {QStringLiteral("workspaceId"), QString::fromStdString(definition.workspace_id)},
+          {QStringLiteral("name"), QString::fromStdString(definition.name)},
+          {QStringLiteral("groupName"),
+           definition.group_name ? QString::fromStdString(*definition.group_name) : QVariant{}},
+          {QStringLiteral("valueKind"), PropertyValueKindToKey(definition.value_kind)},
+          {QStringLiteral("options"), options},
+          {QStringLiteral("state"), definition.state == knowledge::RecordState::kRetired
+                                        ? QStringLiteral("retired")
+                                        : QStringLiteral("active")},
+          {QStringLiteral("audit"), AuditToVariant(definition.audit)}};
+}
+
+auto PagePropertyValueToVariant(const knowledge::PagePropertyValue& value) -> QVariantMap {
+  QStringList values;
+  for (const auto& item : value.values)
+    values.append(QString::fromStdString(item));
+  return {{QStringLiteral("id"), QString::fromStdString(value.id)},
+          {QStringLiteral("workspaceId"), QString::fromStdString(value.workspace_id)},
+          {QStringLiteral("pageId"), QString::fromStdString(value.page_id)},
+          {QStringLiteral("propertyDefinitionId"),
+           QString::fromStdString(value.property_definition_id)},
+          {QStringLiteral("values"), values},
+          {QStringLiteral("audit"), AuditToVariant(value.audit)}};
+}
+
+auto AuditFromVariant(const QVariantMap& map) -> knowledge::AuditMetadata {
+  return {.created_at = map.value(QStringLiteral("createdAt")).toString().toStdString(),
+          .updated_at = map.value(QStringLiteral("updatedAt")).toString().toStdString(),
+          .created_by = map.value(QStringLiteral("createdBy")).toString().toStdString(),
+          .updated_by = map.value(QStringLiteral("updatedBy")).toString().toStdString()};
+}
+
+auto PropertyDefinitionFromVariant(const QVariantMap& map, const QString& workspace_id,
+                                   const QString& author_id) -> knowledge::PropertyDefinition {
+  const auto now = CurrentUtcTimestamp();
+  const auto audit_map = map.value(QStringLiteral("audit")).toMap();
+  auto audit = audit_map.isEmpty()
+                   ? knowledge::AuditMetadata{now, now, EffectiveAuthorId(author_id),
+                                              EffectiveAuthorId(author_id)}
+                   : AuditFromVariant(audit_map);
+  const auto options = map.value(QStringLiteral("options")).toStringList();
+  return {.id = map.value(QStringLiteral("id")).toString().toStdString(),
+          .workspace_id = workspace_id.toStdString(),
+          .name = map.value(QStringLiteral("name")).toString().trimmed().toStdString(),
+          .group_name =
+              map.value(QStringLiteral("groupName")).toString().trimmed().isEmpty()
+                  ? std::nullopt
+                  : std::make_optional(
+                        map.value(QStringLiteral("groupName")).toString().trimmed().toStdString()),
+          .value_kind = PropertyValueKindFromKey(map.value(QStringLiteral("valueKind")).toString()),
+          .options =
+              [&options] {
+                std::vector<std::string> result;
+                for (const auto& option : options)
+                  result.push_back(option.toStdString());
+                return result;
+              }(),
+          .state = map.value(QStringLiteral("state")).toString() == QStringLiteral("retired")
+                       ? knowledge::RecordState::kRetired
+                       : knowledge::RecordState::kActive,
+          .audit = std::move(audit)};
 }
 
 // Issue #165: which side of the trash a listing call wants. The normal document tree
@@ -1445,6 +1568,154 @@ QVariantMap QEditorBridge::openDocument(const QString& page_id) {
   emit documentAccessChanged(current_document_editable_, current_lock_owner_,
                              current_access_message_);
   return response;
+}
+
+QVariantMap QEditorBridge::listPropertyDefinitions(const QString& workspace_id) {
+  if (!repository_)
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  const auto workspace = NormalizeWorkspaceId(workspace_id);
+  const auto result = repository_->ListPropertyDefinitions(workspace.toStdString());
+  if (result.error)
+    return ErrorResponse(QStringLiteral("list_properties_failed"),
+                         QString::fromStdString(result.error->message));
+  QVariantList definitions;
+  for (const auto& definition : result.definitions)
+    definitions.append(PropertyDefinitionToVariant(definition));
+  return SuccessResponse(definitions);
+}
+
+QVariantMap QEditorBridge::savePropertyDefinition(const QVariantMap& input) {
+  if (!repository_)
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  auto definition = PropertyDefinitionFromVariant(
+      input, NormalizeWorkspaceId(current_workspace_id_), current_author_id_);
+  if (!definition.id.empty()) {
+    const auto existing = repository_->ListPropertyDefinitions(definition.workspace_id);
+    if (existing.error)
+      return ErrorResponse(QStringLiteral("list_properties_failed"),
+                           QString::fromStdString(existing.error->message));
+    const auto found = std::ranges::find_if(
+        existing.definitions, [&](const auto& item) { return item.id == definition.id; });
+    if (found != existing.definitions.end()) {
+      definition.audit.created_at = found->audit.created_at;
+      definition.audit.created_by = found->audit.created_by;
+      definition.audit.updated_at = CurrentUtcTimestamp();
+      definition.audit.updated_by = EffectiveAuthorId(current_author_id_);
+    }
+  }
+  if (definition.id.empty())
+    definition.id = GenerateUuidString();
+  const auto result = repository_->SavePropertyDefinition(definition);
+  if (result.error)
+    return ErrorResponse(QStringLiteral("save_property_failed"),
+                         QString::fromStdString(result.error->message));
+  emit propertiesChanged();
+  return SuccessResponse(PropertyDefinitionToVariant(definition));
+}
+
+QVariantMap QEditorBridge::retirePropertyDefinition(const QString& definition_id) {
+  if (!repository_)
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  const auto workspace = NormalizeWorkspaceId(current_workspace_id_);
+  auto result = repository_->ListPropertyDefinitions(workspace.toStdString());
+  if (result.error)
+    return ErrorResponse(QStringLiteral("list_properties_failed"),
+                         QString::fromStdString(result.error->message));
+  const auto found = std::ranges::find_if(result.definitions, [&](const auto& definition) {
+    return QString::fromStdString(definition.id) == definition_id;
+  });
+  if (found == result.definitions.end())
+    return ErrorResponse(QStringLiteral("not_found"),
+                         QStringLiteral("Property definition was not found."));
+  auto definition = *found;
+  definition.state = knowledge::RecordState::kRetired;
+  definition.audit.updated_at = CurrentUtcTimestamp();
+  definition.audit.updated_by = EffectiveAuthorId(current_author_id_);
+  const auto save_result = repository_->SavePropertyDefinition(definition);
+  if (save_result.error)
+    return ErrorResponse(QStringLiteral("retire_property_failed"),
+                         QString::fromStdString(save_result.error->message));
+  emit propertiesChanged();
+  return SuccessResponse(PropertyDefinitionToVariant(definition));
+}
+
+QVariantMap QEditorBridge::listPagePropertyValues(const QString& workspace_id,
+                                                  const QString& page_id) {
+  if (!repository_)
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  const auto result = repository_->ListPagePropertyValues(
+      NormalizeWorkspaceId(workspace_id).toStdString(), page_id.toStdString());
+  if (result.error)
+    return ErrorResponse(QStringLiteral("list_page_properties_failed"),
+                         QString::fromStdString(result.error->message));
+  QVariantList values;
+  for (const auto& value : result.values)
+    values.append(PagePropertyValueToVariant(value));
+  return SuccessResponse(values);
+}
+
+QVariantMap QEditorBridge::savePagePropertyValue(const QVariantMap& input) {
+  if (!repository_)
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  const auto workspace = NormalizeWorkspaceId(current_workspace_id_);
+  const auto values = input.value(QStringLiteral("values")).toStringList();
+  const auto now = CurrentUtcTimestamp();
+  knowledge::PagePropertyValue value{
+      .id = input.value(QStringLiteral("id")).toString().toStdString(),
+      .workspace_id = workspace.toStdString(),
+      .page_id = input.value(QStringLiteral("pageId")).toString().toStdString(),
+      .property_definition_id =
+          input.value(QStringLiteral("propertyDefinitionId")).toString().toStdString(),
+      .values =
+          [&values] {
+            std::vector<std::string> result;
+            for (const auto& item : values)
+              result.push_back(item.toStdString());
+            return result;
+          }(),
+      .audit = {.created_at = now,
+                .updated_at = now,
+                .created_by = EffectiveAuthorId(current_author_id_),
+                .updated_by = EffectiveAuthorId(current_author_id_)}};
+  if (value.id.empty())
+    value.id = GenerateUuidString();
+  if (!input.value(QStringLiteral("id")).toString().isEmpty()) {
+    const auto existing = repository_->ListPagePropertyValues(value.workspace_id, value.page_id);
+    if (existing.error)
+      return ErrorResponse(QStringLiteral("list_page_properties_failed"),
+                           QString::fromStdString(existing.error->message));
+    const auto found = std::ranges::find_if(existing.values,
+                                            [&](const auto& item) { return item.id == value.id; });
+    if (found != existing.values.end()) {
+      value.audit.created_at = found->audit.created_at;
+      value.audit.created_by = found->audit.created_by;
+      value.audit.updated_at = CurrentUtcTimestamp();
+      value.audit.updated_by = EffectiveAuthorId(current_author_id_);
+    }
+  }
+  const auto result = repository_->SavePagePropertyValue(value);
+  if (result.error)
+    return ErrorResponse(QStringLiteral("save_page_property_failed"),
+                         QString::fromStdString(result.error->message));
+  emit propertiesChanged();
+  return SuccessResponse(PagePropertyValueToVariant(value));
+}
+
+QVariantMap QEditorBridge::deletePagePropertyValue(const QString& value_id) {
+  if (!repository_)
+    return ErrorResponse(QStringLiteral("repository_unavailable"),
+                         QStringLiteral("Document repository is not configured."));
+  const auto result = repository_->DeletePagePropertyValue(value_id.toStdString());
+  if (result.error)
+    return ErrorResponse(QStringLiteral("delete_page_property_failed"),
+                         QString::fromStdString(result.error->message));
+  emit propertiesChanged();
+  return SuccessResponse(QVariant{});
 }
 
 QVariantMap QEditorBridge::updateSnapshot(const QString& page_id, const QString& snapshot_json) {
