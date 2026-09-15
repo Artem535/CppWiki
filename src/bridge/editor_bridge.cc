@@ -44,6 +44,7 @@
 #include "core/uuid.h"
 #include "document/document.h"
 #include "document/document_validator.h"
+#include "knowledge/knowledge_record.h"
 #include "storage/local_document_repository.h"
 
 namespace cppwiki::bridge {
@@ -483,6 +484,157 @@ auto MakeNewDocumentRecord(std::optional<std::string> parent_id = std::nullopt,
   };
 }
 
+// Issue #219: base set of properties a new page of a given kind should start with, so a fresh
+// page doesn't open with an empty properties strip. A definition is reused across pages -- of
+// the same or a different kind -- only when an existing one matches on name, value kind AND
+// options; "Status" therefore stays a single shared definition when two kinds happen to use the
+// exact same option set, but gets its own definition when a kind's vocabulary differs (e.g. a
+// wiki page's Draft/Published vs. a project board's Not started/In progress/Done), instead of
+// silently reusing -- and corrupting -- whichever options happened to be saved first.
+struct DefaultPropertySpec {
+  std::string name;
+  knowledge::PropertyValueKind value_kind{knowledge::PropertyValueKind::kText};
+  std::vector<std::string> options;
+  // The value seeded into the new page's PagePropertyValue. Left empty when the value should be
+  // derived from the document being created instead (see defaults_to_creator).
+  std::vector<std::string> default_values;
+  bool defaults_to_creator = false;
+};
+
+auto OwnerDefaultPropertySpec() -> DefaultPropertySpec {
+  return DefaultPropertySpec{
+      .name = "Owner",
+      .value_kind = knowledge::PropertyValueKind::kText,
+      .defaults_to_creator = true,
+  };
+}
+
+auto DefaultPropertySpecsForKind(document::DocumentKind kind) -> std::vector<DefaultPropertySpec> {
+  switch (kind) {
+    case document::DocumentKind::kProjectBoard:
+      return {
+          DefaultPropertySpec{
+              .name = "Status",
+              .value_kind = knowledge::PropertyValueKind::kSelect,
+              .options = {"Not started", "In progress", "Done"},
+              .default_values = {"Not started"},
+          },
+          OwnerDefaultPropertySpec(),
+      };
+    case document::DocumentKind::kWikiPage:
+      return {
+          DefaultPropertySpec{
+              .name = "Status",
+              .value_kind = knowledge::PropertyValueKind::kSelect,
+              .options = {"Draft", "Published"},
+              .default_values = {"Draft"},
+          },
+          OwnerDefaultPropertySpec(),
+      };
+    case document::DocumentKind::kJupyterNotebook:
+      return {
+          DefaultPropertySpec{
+              .name = "Status",
+              .value_kind = knowledge::PropertyValueKind::kSelect,
+              .options = {"Draft", "Reviewed"},
+              .default_values = {"Draft"},
+          },
+          OwnerDefaultPropertySpec(),
+      };
+    case document::DocumentKind::kExcalidrawCanvas:
+      return {
+          DefaultPropertySpec{
+              .name = "Status",
+              .value_kind = knowledge::PropertyValueKind::kSelect,
+              .options = {"Draft", "Final"},
+              .default_values = {"Draft"},
+          },
+          OwnerDefaultPropertySpec(),
+      };
+    case document::DocumentKind::kOpenApiSpec:
+      return {
+          DefaultPropertySpec{
+              .name = "Status",
+              .value_kind = knowledge::PropertyValueKind::kSelect,
+              .options = {"Draft", "Stable", "Deprecated"},
+              .default_values = {"Draft"},
+          },
+          OwnerDefaultPropertySpec(),
+      };
+  }
+  return {};
+}
+
+// Best-effort: a page is fully created once SaveDocument() above succeeds, so a seeding failure
+// (e.g. a knowledge-record validation error) is logged and skipped rather than surfaced as a
+// document-creation error.
+void SeedDefaultPropertiesForNewDocument(
+    const std::shared_ptr<storage::LocalDocumentRepository>& repository,
+    const document::PageMetadata& metadata, const std::string& owner_display_name) {
+  const auto specs = DefaultPropertySpecsForKind(metadata.kind);
+  if (specs.empty() || !repository) {
+    return;
+  }
+
+  // Prefer a human-readable name (username/email) for the seeded Owner value; created_by is the
+  // OIDC subject claim, which is stable but not meant to be shown to people (see
+  // gui::page_helpers::AuthorDisplayNameFromBootstrap).
+  const auto& owner_value =
+      owner_display_name.empty() ? metadata.created_by : owner_display_name;
+
+  const auto existing = repository->ListPropertyDefinitions(metadata.workspace_id);
+  const auto now = CurrentUtcTimestamp();
+
+  for (const auto& spec : specs) {
+    const auto found = std::find_if(
+        existing.definitions.begin(), existing.definitions.end(), [&](const auto& definition) {
+          return definition.state == knowledge::RecordState::kActive &&
+                definition.name == spec.name && definition.value_kind == spec.value_kind &&
+                definition.options == spec.options;
+        });
+
+    knowledge::PropertyDefinition definition;
+    if (found != existing.definitions.end()) {
+      definition = *found;
+    } else {
+      definition = knowledge::PropertyDefinition{
+          .id = GenerateUuidString(),
+          .workspace_id = metadata.workspace_id,
+          .name = spec.name,
+          .value_kind = spec.value_kind,
+          .options = spec.options,
+          .audit = knowledge::AuditMetadata{.created_at = now, .updated_at = now,
+                                            .created_by = metadata.created_by,
+                                            .updated_by = metadata.created_by},
+      };
+      if (repository->SavePropertyDefinition(definition).error) {
+        spdlog::warn("Skipping default property '{}': failed to save its definition.", spec.name);
+        continue;
+      }
+    }
+
+    const auto values =
+        spec.defaults_to_creator ? std::vector<std::string>{owner_value} : spec.default_values;
+    if (values.empty()) {
+      continue;
+    }
+
+    const auto save_result = repository->SavePagePropertyValue(knowledge::PagePropertyValue{
+        .id = GenerateUuidString(),
+        .workspace_id = metadata.workspace_id,
+        .page_id = metadata.id,
+        .property_definition_id = definition.id,
+        .values = values,
+        .audit = knowledge::AuditMetadata{.created_at = now, .updated_at = now,
+                                          .created_by = metadata.created_by,
+                                          .updated_by = metadata.created_by},
+    });
+    if (save_result.error) {
+      spdlog::warn("Skipping default property '{}': failed to save its page value.", spec.name);
+    }
+  }
+}
+
 auto NextChildSortOrder(std::shared_ptr<storage::LocalDocumentRepository> repository,
                         std::string_view parent_id) -> std::int32_t {
   if (!repository) {
@@ -747,6 +899,10 @@ void QEditorBridge::SetCurrentAuthorId(QString author_id) {
   current_author_id_ = std::move(author_id);
 }
 
+void QEditorBridge::SetCurrentAuthorDisplayName(QString author_display_name) {
+  current_author_display_name_ = std::move(author_display_name);
+}
+
 void QEditorBridge::SetCurrentWorkspaceId(QString workspace_id) {
   current_workspace_id_ = NormalizeWorkspaceId(std::move(workspace_id));
   ClearCurrentDocumentSelection();
@@ -889,6 +1045,8 @@ QVariantMap QEditorBridge::createDocumentInWorkspace(const QString& workspace_id
     return ErrorResponse(QStringLiteral("create_failed"),
                          QString::fromStdString(save_result.error->message));
   }
+  SeedDefaultPropertiesForNewDocument(repository_, record.metadata,
+                                      current_author_display_name_.toStdString());
 
   return SuccessResponse(MetadataToVariant(record.metadata));
 }
@@ -933,6 +1091,8 @@ QVariantMap QEditorBridge::createChildDocumentInWorkspace(const QString& workspa
     return ErrorResponse(QStringLiteral("create_failed"),
                          QString::fromStdString(save_result.error->message));
   }
+  SeedDefaultPropertiesForNewDocument(repository_, record.metadata,
+                                      current_author_display_name_.toStdString());
 
   return SuccessResponse(MetadataToVariant(record.metadata));
 }

@@ -48,6 +48,10 @@ class QEditorBridge final : public QObject {
   // rejected for either reason.
   void SetCurrentDocumentConflicted(bool has_conflict);
   void SetCurrentAuthorId(QString author_id);
+  // A human-readable counterpart to SetCurrentAuthorId() (see
+  // gui::page_helpers::EffectiveAuthorDisplayName) for UI labels -- e.g. the "Owner" property
+  // seeded on new documents -- that should show a name rather than an opaque OIDC subject claim.
+  void SetCurrentAuthorDisplayName(QString author_display_name);
   void SetCurrentWorkspaceId(QString workspace_id);
 
   // AI transport wiring (ADR-012 + addendum). Selects the server-mediated
@@ -229,6 +233,7 @@ class QEditorBridge final : public QObject {
   // snapshot JSON as-is after only a well-formedness check (see DocumentValidator).
   document::DocumentKind current_page_kind_ = document::DocumentKind::kWikiPage;
   QString current_author_id_;
+  QString current_author_display_name_;
   QString current_workspace_id_{QStringLiteral("default")};
   // See StashPendingMarkdownImport(). Keyed by page id; consumed (erased) the first time that
   // document is loaded, whether or not this bridge instance is the one that stashed it.

@@ -46,12 +46,23 @@ auto WorkspaceIdsFromBootstrap(const sync::SyncBootstrap& bootstrap) -> QStringL
 // Extracts author id (principal subject/username/email, in that priority) from bootstrap.
 auto AuthorIdFromBootstrap(const sync::SyncBootstrap& bootstrap) -> QString;
 
+// Extracts a human-readable author name (principal username/email/subject, in that priority --
+// the reverse of AuthorIdFromBootstrap) from bootstrap. AuthorIdFromBootstrap prefers subject
+// because it's the stable identifier locking/audit trails need across username changes; this is
+// for UI labels (e.g. the seeded "Owner" property) that should show a name, not an opaque OIDC
+// subject claim, whenever a friendlier one is available.
+auto AuthorDisplayNameFromBootstrap(const sync::SyncBootstrap& bootstrap) -> QString;
+
 // Computes the effective list of workspace ids visible to the current session,
 // preferring the document sync service snapshot, falling back to backend bootstrap.
 auto EffectiveWorkspaceIds(const AppContext& context) -> QStringList;
 
 // Computes the effective author id for document authoring attribution.
 auto EffectiveAuthorId(const AppContext& context) -> QString;
+
+// Computes the effective, human-readable author name for UI labels (see
+// AuthorDisplayNameFromBootstrap).
+auto EffectiveAuthorDisplayName(const AppContext& context) -> QString;
 
 // Picks the preferred workspace id (bootstrap hint if available among the given list).
 auto PreferredWorkspaceId(const AppContext& context, const QStringList& available_workspace_ids)
