@@ -94,6 +94,9 @@ QWidget* PropertiesStripWidget::CreateChip(const QString& name, const QString& v
   value_label->setObjectName(QStringLiteral("propertyChipValue"));
   if (!color_name.isEmpty()) {
     value_label->setProperty("chipColor", color_name);
+    // QLabel doesn't paint a stylesheet background/border-radius by default; without this the
+    // [chipColor=...] rules below only ever change the text color, never the pill background.
+    value_label->setAttribute(Qt::WA_StyledBackground, true);
   }
   layout->addWidget(value_label);
 

@@ -253,6 +253,7 @@ void MainWindow::ApplyStylesheetToSafeDescendants(AccentColor accent_color) {
   current_accent_color_ = accent_color;
   for (auto* target :
        {static_cast<QWidget*>(workspace_rail_), static_cast<QWidget*>(presence_strip_widget_),
+        static_cast<QWidget*>(properties_strip_widget_),
         static_cast<QWidget*>(edit_mode_label_), static_cast<QWidget*>(save_state_label_),
         static_cast<QWidget*>(document_tools_toolbar_),
         static_cast<QWidget*>(backend_refresh_button_), document_status_widget_,
