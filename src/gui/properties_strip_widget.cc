@@ -81,6 +81,10 @@ QWidget* PropertiesStripWidget::CreateChip(const QString& name, const QString& v
   auto* chip = new QWidget(this);
   chip->setObjectName(QStringLiteral("propertyChip"));
   chip->setFixedHeight(22);
+  // See the WA_StyledBackground comment on value_label below -- without it #propertyChip's own
+  // translucent pill background/border-radius never paints either, and every property runs
+  // together into one continuous row instead of a series of visually separated chips.
+  chip->setAttribute(Qt::WA_StyledBackground, true);
 
   auto* layout = new QHBoxLayout(chip);
   layout->setContentsMargins(8, 0, 8, 0);
@@ -88,7 +92,7 @@ QWidget* PropertiesStripWidget::CreateChip(const QString& name, const QString& v
 
   auto* name_label = new QLabel(name, chip);
   name_label->setObjectName(QStringLiteral("propertyChipName"));
-  layout->addWidget(name_label);
+  layout->addWidget(name_label, 0, Qt::AlignVCenter);
 
   auto* value_label = new QLabel(value, chip);
   value_label->setObjectName(QStringLiteral("propertyChipValue"));
@@ -98,7 +102,10 @@ QWidget* PropertiesStripWidget::CreateChip(const QString& name, const QString& v
     // [chipColor=...] rules below only ever change the text color, never the pill background.
     value_label->setAttribute(Qt::WA_StyledBackground, true);
   }
-  layout->addWidget(value_label);
+  // AlignVCenter: without it, addWidget stretches the label to the chip's full 22px height, so
+  // the [chipColor=...] pill background fills the whole row instead of reading as a compact
+  // badge centered within it.
+  layout->addWidget(value_label, 0, Qt::AlignVCenter);
 
   return chip;
 }
