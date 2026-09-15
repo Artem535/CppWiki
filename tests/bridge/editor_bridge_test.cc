@@ -781,6 +781,37 @@ auto TestCreateProjectBoardSeedsDefaultProperties() -> void {
           "the new page's Owner value should default to the page's creator");
 }
 
+// The seeded Owner value should prefer a human-readable display name (username/email) over the
+// raw author id (an opaque OIDC subject claim in a real deployment) whenever one is available.
+auto TestCreateProjectBoardOwnerPrefersDisplayNameOverAuthorId() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+  bridge.SetCurrentAuthorDisplayName(QStringLiteral("Jane Doe"));
+
+  const auto created = bridge.createDocumentInWorkspace(QStringLiteral("default"),
+                                                        QStringLiteral("projectBoard"));
+  RequireSuccessEnvelope(created);
+  const auto created_result = created.value(QStringLiteral("result")).toMap();
+  const auto page_id = created_result.value(QStringLiteral("id")).toString();
+  const auto created_by = created_result.value(QStringLiteral("createdBy")).toString();
+  Require(created_by != QStringLiteral("Jane Doe"),
+          "test setup sanity check: createdBy should be the raw author id, not the display name");
+
+  const auto definitions = repository->ListPropertyDefinitions("default");
+  const auto owner_definition = std::ranges::find_if(
+      definitions.definitions, [](const auto& definition) { return definition.name == "Owner"; });
+  Require(owner_definition != definitions.definitions.end(), "Owner definition must be seeded");
+
+  const auto values = repository->ListPagePropertyValues("default", page_id.toStdString());
+  const auto owner_value = std::ranges::find_if(values.values, [&](const auto& value) {
+    return value.property_definition_id == owner_definition->id;
+  });
+  Require(owner_value != values.values.end() &&
+              owner_value->values == std::vector<std::string>{"Jane Doe"},
+          "the seeded Owner value should use the display name, not the raw author id");
+}
+
 // A second project board in the same workspace must reuse the existing Status/Owner
 // definitions rather than creating duplicates.
 auto TestCreateProjectBoardReusesExistingDefaultPropertyDefinitions() -> void {
@@ -1621,6 +1652,7 @@ auto main() -> int {
   TestCreateJupyterNotebookProducesLoadableNbformatContent();
   TestCreateExcalidrawCanvasProducesLoadableSceneContent();
   TestCreateProjectBoardSeedsDefaultProperties();
+  TestCreateProjectBoardOwnerPrefersDisplayNameOverAuthorId();
   TestCreateProjectBoardReusesExistingDefaultPropertyDefinitions();
   TestCreateWikiPageSeedsDefaultProperties();
   TestDifferentKindsGetSeparateStatusDefinitionsWhenOptionsDiffer();

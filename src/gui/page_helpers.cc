@@ -137,6 +137,35 @@ auto EffectiveAuthorId(const AppContext& context) -> QString {
   return {};
 }
 
+auto AuthorDisplayNameFromBootstrap(const sync::SyncBootstrap& bootstrap) -> QString {
+  if (!bootstrap.principal_username.trimmed().isEmpty()) {
+    return bootstrap.principal_username.trimmed();
+  }
+  if (!bootstrap.principal_email.trimmed().isEmpty()) {
+    return bootstrap.principal_email.trimmed();
+  }
+  if (!bootstrap.principal_subject.trimmed().isEmpty()) {
+    return bootstrap.principal_subject.trimmed();
+  }
+  return {};
+}
+
+auto EffectiveAuthorDisplayName(const AppContext& context) -> QString {
+  if (context.document_sync_service != nullptr) {
+    const auto name =
+        AuthorDisplayNameFromBootstrap(context.document_sync_service->Snapshot().bootstrap);
+    if (!name.trimmed().isEmpty()) {
+      return name.trimmed();
+    }
+  }
+
+  if (context.backend_client != nullptr) {
+    return AuthorDisplayNameFromBootstrap(context.backend_client->CurrentSyncBootstrap()).trimmed();
+  }
+
+  return {};
+}
+
 auto PreferredWorkspaceId(const AppContext& context, const QStringList& available_workspace_ids)
     -> QString {
   if (context.document_sync_service != nullptr) {

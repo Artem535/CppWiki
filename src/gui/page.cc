@@ -472,6 +472,7 @@ bool Page::ApplyBridgeSessionContext() {
   }
 
   editor_bridge_->SetCurrentAuthorId(EffectiveAuthorId(context_));
+  editor_bridge_->SetCurrentAuthorDisplayName(EffectiveAuthorDisplayName(context_));
   const auto next_workspace_ids = EffectiveWorkspaceIds(context_);
   const auto previous_workspace_id = current_workspace_id_;
   const auto previous_workspace_ids = available_workspace_ids_;

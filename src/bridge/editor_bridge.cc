@@ -570,11 +570,17 @@ auto DefaultPropertySpecsForKind(document::DocumentKind kind) -> std::vector<Def
 // document-creation error.
 void SeedDefaultPropertiesForNewDocument(
     const std::shared_ptr<storage::LocalDocumentRepository>& repository,
-    const document::PageMetadata& metadata) {
+    const document::PageMetadata& metadata, const std::string& owner_display_name) {
   const auto specs = DefaultPropertySpecsForKind(metadata.kind);
   if (specs.empty() || !repository) {
     return;
   }
+
+  // Prefer a human-readable name (username/email) for the seeded Owner value; created_by is the
+  // OIDC subject claim, which is stable but not meant to be shown to people (see
+  // gui::page_helpers::AuthorDisplayNameFromBootstrap).
+  const auto& owner_value =
+      owner_display_name.empty() ? metadata.created_by : owner_display_name;
 
   const auto existing = repository->ListPropertyDefinitions(metadata.workspace_id);
   const auto now = CurrentUtcTimestamp();
@@ -607,8 +613,8 @@ void SeedDefaultPropertiesForNewDocument(
       }
     }
 
-    const auto values = spec.defaults_to_creator ? std::vector<std::string>{metadata.created_by}
-                                                 : spec.default_values;
+    const auto values =
+        spec.defaults_to_creator ? std::vector<std::string>{owner_value} : spec.default_values;
     if (values.empty()) {
       continue;
     }
@@ -893,6 +899,10 @@ void QEditorBridge::SetCurrentAuthorId(QString author_id) {
   current_author_id_ = std::move(author_id);
 }
 
+void QEditorBridge::SetCurrentAuthorDisplayName(QString author_display_name) {
+  current_author_display_name_ = std::move(author_display_name);
+}
+
 void QEditorBridge::SetCurrentWorkspaceId(QString workspace_id) {
   current_workspace_id_ = NormalizeWorkspaceId(std::move(workspace_id));
   ClearCurrentDocumentSelection();
@@ -1035,7 +1045,8 @@ QVariantMap QEditorBridge::createDocumentInWorkspace(const QString& workspace_id
     return ErrorResponse(QStringLiteral("create_failed"),
                          QString::fromStdString(save_result.error->message));
   }
-  SeedDefaultPropertiesForNewDocument(repository_, record.metadata);
+  SeedDefaultPropertiesForNewDocument(repository_, record.metadata,
+                                      current_author_display_name_.toStdString());
 
   return SuccessResponse(MetadataToVariant(record.metadata));
 }
@@ -1080,7 +1091,8 @@ QVariantMap QEditorBridge::createChildDocumentInWorkspace(const QString& workspa
     return ErrorResponse(QStringLiteral("create_failed"),
                          QString::fromStdString(save_result.error->message));
   }
-  SeedDefaultPropertiesForNewDocument(repository_, record.metadata);
+  SeedDefaultPropertiesForNewDocument(repository_, record.metadata,
+                                      current_author_display_name_.toStdString());
 
   return SuccessResponse(MetadataToVariant(record.metadata));
 }
