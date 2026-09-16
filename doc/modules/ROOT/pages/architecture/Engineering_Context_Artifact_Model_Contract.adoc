@@ -81,8 +81,15 @@ exactly the same identity, ownership and lifecycle `Document` already has, and p
 The only thing specific to them is presentational: creating one seeds its initial BlockNote content
 from an ADR or PRD template (structured sections such as Status/Context/Decision/Consequences for
 an ADR) instead of a blank page. That seeding mechanism is a later UI feature (template picker) —
-out of scope for this contract, per the Non-goals above — and does not change how these pages are
-identified, related or deleted.
+out of scope for this contract, per the Non-goals above.
+
+Ownership and lifecycle, spelled out rather than left to inference: `created_by`/`updated_by` are
+`PageMetadata.created_by`/`updated_by`, same as any page. Renaming, moving, trashing, restoring and
+permanently deleting an ADR or PRD page follow the ordinary page lifecycle unchanged — trashing
+retains its values and relations exactly as <<artifact-task>> already describes for a Task, and
+permanent deletion cascades through `ArtifactRelation` and `PagePropertyValue` the same way. Nothing
+about being "an ADR" or "a PRD" changes any of this, because that classification is just a property
+value (see below), never a distinct record with its own deletion rule.
 
 A document's ADR/PRD-ness for filtering purposes (e.g. "show me this task's linked ADRs") is
 therefore expressed the same way Task's own status already is: through an ordinary
@@ -141,9 +148,15 @@ is #206's scope.
   "completed_at": null,
   "created_at": "2026-09-16T00:00:00.000Z",
   "updated_at": "2026-09-16T00:00:00.000Z",
-  "created_by": "user-a"
+  "created_by": "user-a",
+  "updated_by": "system"
 }
 ----
+
+`updated_by` is whatever actor drove the status change — the user for a cancellation, the runtime
+adapter (#205) itself for a status the agent runtime reported (e.g. `"system"` as shown, or a
+runtime identifier) — since `status` is the one field on this record that legitimately changes
+after creation.
 
 `context_pack_ref` is an opaque, immutable token once written — #201 commits only to "the exact
 approved package this run refers to," per #202's acceptance criteria; the pack's own internal
