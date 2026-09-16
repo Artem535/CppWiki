@@ -316,11 +316,12 @@ auto DocumentValidator::ParseAndValidateSnapshot(const QByteArray& snapshot_json
   const auto json_view = ToJsonView(snapshot_json);
   const auto raw_snapshot_json = std::string(json_view);
 
-  if (kind != DocumentKind::kWikiPage) {
+  if (kind != DocumentKind::kWikiPage && kind != DocumentKind::kTask) {
     // nbformat/Excalidraw schema validation is out of scope here (#52/#53 own that) — just
     // confirm the payload is well-formed JSON, so callers get a real ValidationError instead of
     // silently persisting garbage. document/snapshot are left unset since neither
-    // Document/BlockNoteDocumentSnapshot applies to these kinds.
+    // Document/BlockNoteDocumentSnapshot applies to these kinds. kTask holds ordinary BlockNote
+    // content like kWikiPage (#201), so it falls through to the same validation path below.
     const auto parse_error =
         QJsonDocument::fromJson(snapshot_json).isNull() && !snapshot_json.trimmed().isEmpty();
     if (parse_error) {

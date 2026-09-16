@@ -102,6 +102,58 @@ auto TestSymmetricRelationNormalizesEndpointOrder() -> void {
           "a symmetric relation must use a stable endpoint order");
 }
 
+// Engineering Context Artifact Model Contract (#201, ADR-019): PageRelation gains optional
+// source_kind/target_kind fields generalizing it into ArtifactRelation. Absence still means
+// "page" (existing rows/callers are unaffected — see TestSymmetricRelationNormalizesEndpointOrder
+// above, which sets neither field), and an explicit "page" on both ends behaves identically.
+auto TestRelationAcceptsExplicitPageEndpointKinds() -> void {
+  const cppwiki::knowledge::RelationType relation_type{
+      .id = "relation-related",
+      .workspace_id = "engineering",
+      .name = "related to",
+      .inverse_name = std::nullopt,
+      .direction = cppwiki::knowledge::RelationDirection::kSymmetric,
+      .audit = MakeAudit(),
+  };
+  cppwiki::knowledge::PageRelation relation{
+      .id = "edge-1",
+      .workspace_id = "engineering",
+      .relation_type_id = "relation-related",
+      .source_page_id = "page-a",
+      .target_page_id = "page-b",
+      .source_kind = cppwiki::knowledge::ArtifactKind::kPage,
+      .target_kind = cppwiki::knowledge::ArtifactKind::kPage,
+      .audit = MakeAudit(),
+  };
+  Require(!cppwiki::knowledge::NormalizeAndValidatePageRelation(&relation, relation_type),
+          "a relation with explicit page/page endpoint kinds must be valid");
+}
+
+// No RepositoryArtifact/AgentRun/ResultReference records exist yet (#201's contract defers them);
+// the schema accepts the field, but validation must still reject a non-page endpoint today.
+auto TestRelationRejectsNonPageEndpointKindForNow() -> void {
+  const cppwiki::knowledge::RelationType relation_type{
+      .id = "relation-related",
+      .workspace_id = "engineering",
+      .name = "related to",
+      .inverse_name = std::nullopt,
+      .direction = cppwiki::knowledge::RelationDirection::kSymmetric,
+      .audit = MakeAudit(),
+  };
+  cppwiki::knowledge::PageRelation relation{
+      .id = "edge-1",
+      .workspace_id = "engineering",
+      .relation_type_id = "relation-related",
+      .source_page_id = "page-a",
+      .target_page_id = "page-b",
+      .target_kind = cppwiki::knowledge::ArtifactKind::kRepository,
+      .audit = MakeAudit(),
+  };
+  Require(cppwiki::knowledge::NormalizeAndValidatePageRelation(&relation, relation_type)
+              .has_value(),
+          "a relation to a non-page artifact kind must be rejected until that kind exists");
+}
+
 auto TestRelationRejectsSamePageEndpoints() -> void {
   const cppwiki::knowledge::RelationType relation_type{
       .id = "relation-related",
@@ -131,6 +183,8 @@ auto main() -> int {
   TestSelectValueMustUseDefinitionOption();
   TestDirectedRelationRequiresInverseName();
   TestSymmetricRelationNormalizesEndpointOrder();
+  TestRelationAcceptsExplicitPageEndpointKinds();
+  TestRelationRejectsNonPageEndpointKindForNow();
   TestRelationRejectsSamePageEndpoints();
   std::cout << "cppwiki_knowledge_record_tests passed\n";
   return EXIT_SUCCESS;

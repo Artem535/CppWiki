@@ -540,6 +540,33 @@ auto TestNonWikiPageKindStillRejectsInvalidJson() -> void {
   RequireError(result, "not valid JSON", "TestNonWikiPageKindStillRejectsInvalidJson");
 }
 
+// Engineering Context Artifact Model Contract (#201): a Task's intent/description lives in the
+// same BlockNote content area as an ordinary wiki page, unlike kJupyterNotebook/kExcalidrawCanvas
+// which hold opaque non-BlockNote JSON — kTask must go through full BlockNote validation.
+auto TestTaskKindUsesBlockNoteValidation() -> void {
+  const auto json = QByteArray(R"([
+    {
+      "id": "b1",
+      "type": "paragraph",
+      "content": [{ "type": "text", "text": "Ship it", "styles": {} }],
+      "children": []
+    }
+  ])");
+
+  const auto result = cppwiki::document::DocumentValidator::ParseAndValidateSnapshot(
+      json, cppwiki::document::DocumentKind::kTask);
+  RequireSuccess(result, "TestTaskKindUsesBlockNoteValidation");
+  Require(result.document->blocks.size() == 1, "TestTaskKindUsesBlockNoteValidation: one block");
+}
+
+auto TestTaskKindRejectsInvalidBlockNoteJson() -> void {
+  const auto json = QByteArray(R"(not json at all { )");
+
+  const auto result = cppwiki::document::DocumentValidator::ParseAndValidateSnapshot(
+      json, cppwiki::document::DocumentKind::kTask);
+  RequireError(result, "not valid JSON", "TestTaskKindRejectsInvalidBlockNoteJson");
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -564,6 +591,8 @@ auto main() -> int {
   TestJupyterNotebookKindAcceptsNonBlockNoteJson();
   TestExcalidrawCanvasKindAcceptsNonBlockNoteJson();
   TestNonWikiPageKindStillRejectsInvalidJson();
+  TestTaskKindUsesBlockNoteValidation();
+  TestTaskKindRejectsInvalidBlockNoteJson();
 
   spdlog::info("cppwiki_document_validator_tests passed");
   return EXIT_SUCCESS;
