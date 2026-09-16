@@ -173,4 +173,104 @@ auto NormalizeAndValidatePageRelation(PageRelation* relation, const RelationType
   return std::nullopt;
 }
 
+auto ValidateRepositoryArtifact(const RepositoryArtifact& repository) -> std::optional<std::string> {
+  if (repository.id.empty() || repository.workspace_id.empty()) {
+    return "Repository artifact id and workspace id must be non-empty.";
+  }
+  if (repository.name.empty() || IsBlank(repository.name)) {
+    return "Repository artifact name must be non-empty.";
+  }
+  if (repository.remote_url.empty() || IsBlank(repository.remote_url)) {
+    return "Repository artifact remote url must be non-empty.";
+  }
+  if (repository.default_branch.empty() || IsBlank(repository.default_branch)) {
+    return "Repository artifact default branch must be non-empty.";
+  }
+  if (!HasAuditMetadata(repository.audit)) {
+    return "Repository artifact audit metadata must be complete.";
+  }
+  return std::nullopt;
+}
+
+namespace {
+
+auto IsTerminalAgentRunStatus(AgentRunStatus status) -> bool {
+  return status == AgentRunStatus::kSucceeded || status == AgentRunStatus::kFailed ||
+         status == AgentRunStatus::kCancelled;
+}
+
+// Ordinal position in the forward-only state machine; terminal statuses share the highest level
+// since none of them may transition to another — see ValidateAgentRunTransition().
+auto AgentRunStatusLevel(AgentRunStatus status) -> int {
+  switch (status) {
+    case AgentRunStatus::kPending:
+      return 0;
+    case AgentRunStatus::kRunning:
+      return 1;
+    case AgentRunStatus::kSucceeded:
+    case AgentRunStatus::kFailed:
+    case AgentRunStatus::kCancelled:
+      return 2;
+  }
+  return 2;
+}
+
+}  // namespace
+
+auto ValidateAgentRun(const AgentRun& run) -> std::optional<std::string> {
+  if (run.id.empty() || run.workspace_id.empty() || run.task_id.empty()) {
+    return "Agent run identity and scope must be non-empty.";
+  }
+  if (run.context_pack_ref.empty() || IsBlank(run.context_pack_ref)) {
+    return "Agent run must reference a context pack.";
+  }
+  if (run.runtime_id.empty() || IsBlank(run.runtime_id)) {
+    return "Agent run must name its runtime.";
+  }
+  if (run.started_at.empty()) {
+    return "Agent run must record when it started.";
+  }
+  if (!HasAuditMetadata(run.audit)) {
+    return "Agent run audit metadata must be complete.";
+  }
+  const bool is_terminal = IsTerminalAgentRunStatus(run.status);
+  if (is_terminal && !run.completed_at) {
+    return "A terminal agent run must record when it completed.";
+  }
+  if (!is_terminal && run.completed_at) {
+    return "A non-terminal agent run must not record a completion time.";
+  }
+  return std::nullopt;
+}
+
+auto ValidateAgentRunTransition(AgentRunStatus from, AgentRunStatus to) -> std::optional<std::string> {
+  if (IsTerminalAgentRunStatus(from)) {
+    return "A terminal agent run status can never transition.";
+  }
+  if (AgentRunStatusLevel(to) < AgentRunStatusLevel(from)) {
+    return "Agent run status must move forward, never backward.";
+  }
+  return std::nullopt;
+}
+
+auto ValidateResultReference(const ResultReference& reference, const AgentRun& run)
+    -> std::optional<std::string> {
+  if (const auto run_error = ValidateAgentRun(run)) {
+    return "Agent run is invalid: " + *run_error;
+  }
+  if (reference.id.empty() || reference.workspace_id.empty() || reference.agent_run_id.empty()) {
+    return "Result reference identity and scope must be non-empty.";
+  }
+  if (reference.workspace_id != run.workspace_id || reference.agent_run_id != run.id) {
+    return "Result reference must refer to its agent run in the same workspace.";
+  }
+  if (reference.locator.empty() || IsBlank(reference.locator)) {
+    return "Result reference must have a non-blank locator.";
+  }
+  if (reference.created_at.empty() || reference.created_by.empty()) {
+    return "Result reference must record when and by whom it was created.";
+  }
+  return std::nullopt;
+}
+
 }  // namespace cppwiki::knowledge
