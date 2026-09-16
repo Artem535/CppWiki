@@ -16,6 +16,7 @@
 ** xref:architecture/QWebChannel_Editor_Bridge_Explained.adoc[QWebChannel editor bridge explained]
 ** xref:architecture/Knowledge_Foundation_Contract.adoc[Knowledge foundation contract]
 ** xref:architecture/plans/Knowledge_Foundation_Implementation_Plan.adoc[Knowledge foundation implementation plan]
+** xref:architecture/Engineering_Context_Artifact_Model_Contract.adoc[Engineering context artifact model contract]
 ** ADRs
 *** xref:architecture/adr/ADR-001-editor-choice.adoc[ADR-001]
 *** xref:architecture/adr/ADR-002-document-model.adoc[ADR-002]
@@ -35,6 +36,7 @@
 *** xref:architecture/adr/ADR-016-configurable-accent-color-and-navigation-chrome.adoc[ADR-016]
 *** xref:architecture/adr/ADR-017-new-content-types-notebook-canvas-mermaid-code.adoc[ADR-017]
 *** xref:architecture/adr/ADR-018-document-schema-migration-path.adoc[ADR-018]
+*** xref:architecture/adr/ADR-019-artifact-relation-generalization.adoc[ADR-019]
 ** Spikes
 *** xref:architecture/spikes/Couchbase_Lite_C_Integration.adoc[Couchbase Lite C integration]
 *** xref:architecture/spikes/Couchbase_Sync_Gateway_OIDC_Example.adoc[Couchbase Sync Gateway OIDC example]
