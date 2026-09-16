@@ -199,22 +199,6 @@ auto IsTerminalAgentRunStatus(AgentRunStatus status) -> bool {
          status == AgentRunStatus::kCancelled;
 }
 
-// Ordinal position in the forward-only state machine; terminal statuses share the highest level
-// since none of them may transition to another — see ValidateAgentRunTransition().
-auto AgentRunStatusLevel(AgentRunStatus status) -> int {
-  switch (status) {
-    case AgentRunStatus::kPending:
-      return 0;
-    case AgentRunStatus::kRunning:
-      return 1;
-    case AgentRunStatus::kSucceeded:
-    case AgentRunStatus::kFailed:
-    case AgentRunStatus::kCancelled:
-      return 2;
-  }
-  return 2;
-}
-
 }  // namespace
 
 auto ValidateAgentRun(const AgentRun& run) -> std::optional<std::string> {
@@ -247,10 +231,22 @@ auto ValidateAgentRunTransition(AgentRunStatus from, AgentRunStatus to) -> std::
   if (IsTerminalAgentRunStatus(from)) {
     return "A terminal agent run status can never transition.";
   }
-  if (AgentRunStatusLevel(to) < AgentRunStatusLevel(from)) {
-    return "Agent run status must move forward, never backward.";
+  // Explicit edges, not a level/ordinal comparison: pending may only reach running or cancelled
+  // (a run can be cancelled before it starts), and succeeded/failed are reachable only through
+  // running — a run must actually run before it can succeed or fail.
+  if (from == AgentRunStatus::kPending) {
+    if (to == AgentRunStatus::kRunning || to == AgentRunStatus::kCancelled) {
+      return std::nullopt;
+    }
+    return "A pending agent run may only move to running or cancelled.";
   }
-  return std::nullopt;
+  if (from == AgentRunStatus::kRunning) {
+    if (IsTerminalAgentRunStatus(to)) {
+      return std::nullopt;
+    }
+    return "A running agent run may only move to a terminal status.";
+  }
+  return "Unsupported agent run status transition.";
 }
 
 auto ValidateResultReference(const ResultReference& reference, const AgentRun& run)

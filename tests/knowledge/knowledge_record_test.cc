@@ -214,20 +214,56 @@ auto TestAgentRunRequiresCompletedAtOnlyWhenTerminal() -> void {
 }
 
 auto TestAgentRunRejectsBackwardStatusTransition() -> void {
-  auto run = MakeAgentRun();
-  run.status = cppwiki::knowledge::AgentRunStatus::kSucceeded;
-  run.completed_at = "2026-09-16T01:00:00.000Z";
-
   Require(cppwiki::knowledge::ValidateAgentRunTransition(
               cppwiki::knowledge::AgentRunStatus::kSucceeded,
               cppwiki::knowledge::AgentRunStatus::kRunning)
               .has_value(),
           "a terminal agent run must never move back to running");
   Require(cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kFailed,
+              cppwiki::knowledge::AgentRunStatus::kFailed)
+              .has_value(),
+          "a terminal agent run must never re-transition, even to the same status");
+  Require(cppwiki::knowledge::ValidateAgentRunTransition(
               cppwiki::knowledge::AgentRunStatus::kPending,
               cppwiki::knowledge::AgentRunStatus::kRunning)
               .has_value() == false,
           "pending to running is a valid forward transition");
+  Require(cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kPending,
+              cppwiki::knowledge::AgentRunStatus::kCancelled)
+              .has_value() == false,
+          "pending to cancelled is valid (cancelling before the run starts)");
+}
+
+// A run must actually run before it can succeed or fail — succeeded/failed are reachable only
+// through running, never directly from pending.
+auto TestAgentRunRejectsSkippingRunningToReachATerminalStatus() -> void {
+  Require(cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kPending,
+              cppwiki::knowledge::AgentRunStatus::kSucceeded)
+              .has_value(),
+          "pending must not jump straight to succeeded");
+  Require(cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kPending,
+              cppwiki::knowledge::AgentRunStatus::kFailed)
+              .has_value(),
+          "pending must not jump straight to failed");
+}
+
+auto TestAgentRunAcceptsEveryRunningToTerminalTransition() -> void {
+  Require(!cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kRunning,
+              cppwiki::knowledge::AgentRunStatus::kSucceeded),
+          "running to succeeded must be valid");
+  Require(!cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kRunning,
+              cppwiki::knowledge::AgentRunStatus::kFailed),
+          "running to failed must be valid");
+  Require(!cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kRunning,
+              cppwiki::knowledge::AgentRunStatus::kCancelled),
+          "running to cancelled must be valid");
 }
 
 auto TestResultReferenceValidatesAgainstItsAgentRun() -> void {
@@ -284,6 +320,8 @@ auto main() -> int {
   TestRepositoryArtifactRequiresIdentityAndRemoteUrl();
   TestAgentRunRequiresCompletedAtOnlyWhenTerminal();
   TestAgentRunRejectsBackwardStatusTransition();
+  TestAgentRunRejectsSkippingRunningToReachATerminalStatus();
+  TestAgentRunAcceptsEveryRunningToTerminalTransition();
   TestResultReferenceValidatesAgainstItsAgentRun();
   TestRelationRejectsSamePageEndpoints();
   std::cout << "cppwiki_knowledge_record_tests passed\n";
