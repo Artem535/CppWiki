@@ -2,6 +2,7 @@
 #define CPPWIKI_SRC_KNOWLEDGE_KNOWLEDGE_RECORD_H_
 
 #include <cstdint>
+
 #include <optional>
 #include <string>
 #include <vector>
