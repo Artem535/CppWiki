@@ -1,0 +1,346 @@
+= Engineering Context Artifact Model Contract
+:description: The minimum engineering-artifact and relation contract connecting a task to its context and to an Agent Run result.
+
+== Status
+
+Design contract for Issue https://github.com/Artem535/CppWiki/issues/201[#201]. Not yet
+implemented. Builds directly on the record and relation machinery delivered for
+https://github.com/Artem535/CppWiki/issues/185[#185] (xref:architecture/Knowledge_Foundation_Contract.adoc[]) —
+this document extends that contract rather than replacing it.
+
+Started ahead of https://github.com/Artem535/CppWiki/issues/200[#200]'s interview-based problem
+validation, by explicit decision to keep the engineering-context validation backlog moving in
+parallel rather than block on it. If #200 falsifies the underlying problem, this contract and its
+Task document kind are the cheapest layer to revert: no page-identity or sync changes, and no
+required-property catalogue.
+
+== Goal
+
+Define the smallest stable set of engineering artifacts and explicit relations needed to connect a
+task to its supporting context (documents, ADRs, repositories) and to the record of an external
+agent executing that task, without requiring a universal property catalogue or a graph editor.
+
+== Scope
+
+* A `Task` document kind — the unit of work a user hands to an external coding agent.
+* Three new lightweight knowledge-artifact record types, following the `PropertyDefinition` /
+  `RelationType` pattern from xref:architecture/Knowledge_Foundation_Contract.adoc[]: `RepositoryArtifact`,
+  `AgentRun`, and `ResultReference`.
+* `ArtifactRelation` — a backward-compatible generalization of `PageRelation` that can connect any
+  two of: page (any document kind, including Task, ADR and PRD pages), repository, Agent Run,
+  result reference.
+* The narrow persistence/sync surface the first vertical slice (#202-#207) needs from these types.
+
+== Non-goals
+
+This contract does not define:
+
+* the Context Pack format, membership or provenance rules (#202);
+* the task-context relation editing UI (#203) or pack preview/edit UI (#204);
+* the coding-agent runtime adapter (#205) or the Agent Run capture UI (#206);
+* knowledge-feedback proposal review (#207);
+* semantic/embedding-derived relations or graph visualization (explicitly deferred — see
+  <<explicit-vs-derived>>);
+* a requirement that every workspace define a property schema before using any of this — per
+  #201's acceptance criteria, none of the record types below depend on a universal property
+  catalogue;
+* a page-templating mechanism. ADR and PRD content is authored as ordinary wiki pages seeded from
+  a template — see <<artifact-adr-prd>> — but the template picker/editor itself is a separate,
+  later UI feature this contract does not specify.
+
+== Artifact kinds
+
+[[artifact-task]]
+=== Task
+
+A `Task` is a `Document` whose `kind` is `task` (extends the `Document kind` discriminator, see
+ADR-017). It is not a new identity system: it reuses `PageMetadata.id`, and every existing page
+lifecycle rule (rename, move, trash, restore, permanent deletion, lock, conflict) already defined
+for documents applies unchanged.
+
+A task's structured metadata (status, owner, and similar fields) is expressed through the existing
+`PropertyDefinition` / `PagePropertyValue` records from #185/#219/#220 — a task is not special-cased
+into its own metadata schema. Its free-form intent/description lives in the same BlockNote content
+area as any other page.
+
+Deletion: identical to any other document kind. Permanently deleting a Task cascades through
+`ArtifactRelation` and `AgentRun` exactly as page deletion already cascades through `PageRelation`
+and `PagePropertyValue` (xref:architecture/Knowledge_Foundation_Contract.adoc[], "Permanent deletion").
+
+[[artifact-adr-prd]]
+=== ADR and PRD pages
+
+Unlike this project's own existing ADRs (static `.adoc` files in
+`doc/modules/ROOT/pages/architecture/adr/`, outside CppWiki's data model entirely), an ADR or PRD
+produced *through* the engineering-context workflow is an ordinary wiki page: a `Document` with the
+default page kind, authored in BlockNote like any other page, identified by `PageMetadata.id` like
+any other page. There is no new document kind and no new record type for either — they need
+exactly the same identity, ownership and lifecycle `Document` already has, and participate in
+`ArtifactRelation` as `source_kind`/`target_kind: "page"`, the same as a Task or any other page.
+
+The only thing specific to them is presentational: creating one seeds its initial BlockNote content
+from an ADR or PRD template (structured sections such as Status/Context/Decision/Consequences for
+an ADR) instead of a blank page. That seeding mechanism is a later UI feature (template picker) —
+out of scope for this contract, per the Non-goals above.
+
+Ownership and lifecycle, spelled out rather than left to inference: `created_by`/`updated_by` are
+`PageMetadata.created_by`/`updated_by`, same as any page. Renaming, moving, trashing, restoring and
+permanently deleting an ADR or PRD page follow the ordinary page lifecycle unchanged — trashing
+retains its values and relations exactly as <<artifact-task>> already describes for a Task, and
+permanent deletion cascades through `ArtifactRelation` and `PagePropertyValue` the same way. Nothing
+about being "an ADR" or "a PRD" changes any of this, because that classification is just a property
+value (see below), never a distinct record with its own deletion rule.
+
+A document's ADR/PRD-ness for filtering purposes (e.g. "show me this task's linked ADRs") is
+therefore expressed the same way Task's own status already is: through an ordinary
+`PropertyDefinition`/`PagePropertyValue` (#185), not a schema field on `Document` itself. This
+keeps the "no universal property catalogue required" guarantee intact — a workspace that never
+creates an ADR page never needs the property that would classify one.
+
+[[artifact-repository]]
+=== RepositoryArtifact
+
+A reference to a git repository a task can target — this repo itself, or any external repository
+the configured agent runtime (#205) is pointed at.
+
+[source,json]
+----
+{
+  "id": "uuid",
+  "workspace_id": "workspace-a",
+  "name": "CppWiki",
+  "remote_url": "git@github.com:Artem535/CppWiki.git",
+  "default_branch": "main",
+  "state": "active",
+  "created_at": "2026-09-16T00:00:00.000Z",
+  "updated_at": "2026-09-16T00:00:00.000Z",
+  "created_by": "user-a",
+  "updated_by": "user-a"
+}
+----
+
+`remote_url` is unique per workspace, compared case-insensitively. A machine-local checkout path is
+deliberately excluded from this record: it is machine-specific the same way the existing
+settings-export/import feature already excludes machine-specific path settings, and belongs to
+whatever local configuration #205's runtime adapter reads, not to a synced knowledge record.
+
+Deletion: `state` moves to `archived`, never hard-deleted while any `Task`-context
+`ArtifactRelation` or `AgentRun` still references it. Archiving keeps history readable without
+letting new work target a repository the user has moved away from.
+
+[[artifact-agent-run]]
+=== AgentRun
+
+The execution record linking a `Task` to one attempt by an external agent runtime. #201 fixes its
+identity, ownership and lifecycle only; capturing the full run (summary, changed files, blockers)
+is #206's scope.
+
+[source,json]
+----
+{
+  "id": "uuid",
+  "workspace_id": "workspace-a",
+  "task_id": "page-task-a",
+  "context_pack_ref": "opaque-pack-version-token",
+  "runtime_id": "claude-code",
+  "status": "running",
+  "started_at": "2026-09-16T00:00:00.000Z",
+  "completed_at": null,
+  "created_at": "2026-09-16T00:00:00.000Z",
+  "updated_at": "2026-09-16T00:00:00.000Z",
+  "created_by": "user-a",
+  "updated_by": "system"
+}
+----
+
+`updated_by` is whatever actor drove the status change — the user for a cancellation, the runtime
+adapter (#205) itself for a status the agent runtime reported (e.g. `"system"` as shown, or a
+runtime identifier) — since `status` is the one field on this record that legitimately changes
+after creation.
+
+`context_pack_ref` is an opaque, immutable token once written — #201 commits only to "the exact
+approved package this run refers to," per #202's acceptance criteria; the pack's own internal
+shape is #202's concern, not this contract's.
+
+`status` is a strictly forward-moving state machine: `pending -> running -> {succeeded, failed,
+cancelled}`. Terminal states are final — a retry creates a new `AgentRun` row referencing the same
+`task_id`, it never reopens a terminal one. This is what lets #206 distinguish success,
+cancellation and failure "without losing available evidence."
+
+Deletion: an `AgentRun` is never deleted by ordinary user action — it is an evidence trail, not an
+editable record. It is only removed as part of cascading permanent deletion of its `task_id`.
+
+[[artifact-result-reference]]
+=== ResultReference
+
+A pointer to where an `AgentRun`'s output actually lives, external to CppWiki. CppWiki never stores
+the referenced content itself — only the locator — the same trust-boundary principle ADR-015
+already applies to Code mode's filesystem access.
+
+[source,json]
+----
+{
+  "id": "uuid",
+  "workspace_id": "workspace-a",
+  "agent_run_id": "run-a",
+  "kind": "git_ref",
+  "locator": "refs/heads/agent/run-a-result",
+  "summary": "Implemented the requested rate-limit fix",
+  "created_at": "2026-09-16T00:00:00.000Z",
+  "created_by": "user-a"
+}
+----
+
+`kind` is one of `git_ref`, `diff`, `log` or `external_url`; the field is intentionally open to
+extension since #206 may need more kinds once real runtimes are integrated. One `AgentRun` can have
+several `ResultReference` rows (e.g. one `git_ref` plus one `log`).
+
+Deletion: immutable once created — never edited in place, only added to. Removed only by cascading
+deletion of its `agent_run_id`.
+
+== ArtifactRelation: generalizing PageRelation
+
+`PageRelation` (#185) connects exactly two pages. The workflow in #199 needs to connect a `Task` to
+a `RepositoryArtifact`, its own `AgentRun`, and an `AgentRun` to its `ResultReference` rows —
+endpoints of different kinds (an ADR/PRD page is still just a page-to-page relation, per
+<<artifact-adr-prd>>). Per the #201 design decision, `PageRelation` is generalized in place into
+`ArtifactRelation` rather than adding a parallel relation mechanism, so there is exactly one
+relation model for the whole knowledge graph, present and future.
+
+[source,json]
+----
+{
+  "id": "uuid",
+  "workspace_id": "workspace-a",
+  "relation_type_id": "relation-context-for",
+  "source_kind": "page",
+  "source_id": "page-task-a",
+  "target_kind": "page",
+  "target_id": "page-adr-rate-limit",
+  "created_at": "2026-09-16T00:00:00.000Z",
+  "updated_at": "2026-09-16T00:00:00.000Z",
+  "created_by": "user-a",
+  "updated_by": "user-a"
+}
+----
+
+`source_kind`/`target_kind` is one of `page`, `repository`, `agent_run`, `result_reference`.
+`page` covers every document kind — Task, an ADR page, a PRD page, or an ordinary wiki page alike —
+a relation never needs to special-case one document kind versus another; a consumer that cares can
+look up the referenced page's own `kind` or its classifying property (<<artifact-adr-prd>>).
+
+=== Migration from PageRelation
+
+This is an additive, backward-compatible schema change, not a new record type requiring data
+migration:
+
+* `source_kind`/`target_kind` are new optional fields. A record written before this change has
+  neither field; readers treat their absence as `"page"` on both ends, which is exactly what every
+  existing `PageRelation` row already means. This is the same absence-tolerance pattern the archive
+  schema already uses when a version's new arrays are missing (xref:architecture/Knowledge_Foundation_Contract.adoc[],
+  "Archive, import and schema migration").
+* `source_page_id`/`target_page_id` remain the field names when `source_kind`/`target_kind` are
+  `"page"`, for the same reason; new non-page endpoints use `source_id`/`target_id` instead. An
+  implementation may choose either a single generic id-pair field with a kind discriminator (as
+  shown above) or kind-specific ID fields — this contract fixes the logical model, not the wire
+  encoding, since #202 onward only need the logical guarantees.
+* The on-disk/CBLite collection name (`page-relations` in `FileDocumentRepository` /
+  `CbliteDocumentRepository`) does not need to be renamed. Only the logical type name changes, in
+  documentation and in any new code, to `ArtifactRelation`.
+* No existing `PageRelation` row needs to be rewritten for this change to take effect.
+
+=== Relation vocabulary additions
+
+The existing built-in `RelationType` catalog (`related to`, `uses`, `depends on`, `implements`,
+`supersedes`) stays page-oriented and unchanged. #201 adds the built-in types the workflow needs
+across kinds:
+
+[cols="1,1,2"]
+|===
+|Name |Inverse |Used for
+
+|`context for`
+|`context provided by`
+|Task -> Document (any page, including an ADR/PRD page) / RepositoryArtifact: an explicit input
+to Context Pack assembly (#202, #203).
+
+|`executed as`
+|`executes`
+|Task -> AgentRun: written when a run starts (#205, #206), never inferred.
+
+|`produced`
+|`produced by`
+|AgentRun -> ResultReference: written when a run completes (#206).
+|===
+
+Further types may be added later through the same catalog mechanism #185 already defines; this is
+deliberately the minimum the first vertical slice needs.
+
+[[explicit-vs-derived]]
+=== Explicit relations versus derived/semantic data
+
+Every `ArtifactRelation` row is authoritative and explicit: created directly by a user action, or
+by #205/#206's own bookkeeping when a run starts or completes. Nothing in this contract, nor in
+#202-#207, writes an `ArtifactRelation` from a similarity score, an embedding lookup or any other
+inferred signal.
+
+The deferred Semantic Graph work (#193-#196) is a separate, lower-trust store; it does not read
+from or write to `ArtifactRelation`. Should a semantic discovery later warrant becoming
+authoritative, that is itself an explicit `ArtifactRelation` write triggered by a user decision —
+already anticipated as its own future issue (#195, "Promote a semantic discovery to an explicit
+relation"), not a blurring of this contract's authority boundary.
+
+=== Validation rules
+
+Extending xref:architecture/Knowledge_Foundation_Contract.adoc[]'s existing validation rules:
+
+* A relation whose `source_kind`/`target_kind` is `repository`, `agent_run` or `result_reference`
+  requires the referenced record to exist, be in the same `workspace_id`, and (for `repository`)
+  not be archived at creation time.
+* Self-relation rejection compares the full `(kind, id)` pair on both ends, not just the ID.
+* A `page`-kind endpoint keeps every existing #185 validation rule (must be live, same workspace)
+  unchanged.
+
+== Persistence and sync: the narrow first-slice surface
+
+Per #201's acceptance criteria, this is the minimum #202-#207 need — not a universal
+catalogue:
+
+* `Task`, ADR pages and PRD pages need zero new persistence work: they are all `Document`s (Task via
+  its own `kind`; ADR/PRD via the default page kind plus a seeding template), so they are already
+  covered by `FileDocumentRepository`, `CbliteDocumentRepository` and the workspace archive.
+* `RepositoryArtifact`, `AgentRun` and `ResultReference` each need the same narrow list/save/delete
+  methods `PropertyDefinition`/`RelationType` already have on `LocalDocumentRepository` — no
+  generic arbitrary-record API, per the existing non-goal.
+* `ArtifactRelation` reuses the existing `PageRelation` persistence path per the migration notes
+  above; only the validation layer changes.
+* None of the three new record types need a retirement/soft-delete UI for the first slice — low
+  volume, MVP scope; hard delete (or, for `AgentRun`/`ResultReference`, the cascade-only deletion
+  already specified) is sufficient until real usage says otherwise.
+* The workspace archive gains arrays for `RepositoryArtifact`, `AgentRun` and `ResultReference`,
+  following the same "missing array imports as empty collection" tolerance already used for the
+  #185 arrays.
+
+== Query surface for later work
+
+The repository must provide these without loading unrelated page snapshots, extending the #185
+query surface:
+
+* active `RepositoryArtifact` records for a workspace;
+* `ArtifactRelation` rows for one artifact, filtered by relation type and by endpoint kind;
+* `AgentRun` rows for one task, most-recent-first;
+* `ResultReference` rows for one `AgentRun`.
+
+#202 (Context Pack assembly) and #203 (task-context relation UI) consume these; neither needs a
+second graph database, per the same principle already stated for Graph View in
+xref:architecture/Knowledge_Foundation_Contract.adoc[].
+
+== Delivery sequence
+
+. This contract (#201).
+. Define the Context Pack format and provenance rules on top of it (#202).
+. Let a user persist/inspect task-context `ArtifactRelation` rows (#203).
+. Preview and edit a Context Pack before execution (#204).
+. Connect one external coding-agent runtime through a narrow adapter (#205).
+. Capture the full `AgentRun` record — summary, changed files, blockers (#206).
+. Turn a completed run's `ResultReference` rows into reviewable knowledge-update proposals (#207).

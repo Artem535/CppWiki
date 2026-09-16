@@ -1,0 +1,74 @@
+= ADR-019 — Generalize PageRelation to ArtifactRelation
+
+== Status
+
+Accepted
+
+== Date
+
+2026-09-16
+
+'''
+
+== Context
+
+`PageRelation` (#185, xref:architecture/Knowledge_Foundation_Contract.adoc[]) connects exactly two pages via
+`source_page_id`/`target_page_id`. It shipped and is already in `main` (#218), with a real
+persisted shape in `FileDocumentRepository`, `CbliteDocumentRepository` and the workspace archive.
+
+Issue #201 needs relations between kinds `PageRelation` never anticipated: a `Task` page to a
+`RepositoryArtifact`, a `Task` to its own `AgentRun`, and an `AgentRun` to its `ResultReference`
+rows. Two designs were considered:
+
+* Generalize `PageRelation` in place to support typed, non-page endpoints.
+* Add a second, parallel relation record type scoped to the new artifact kinds, leaving
+  `PageRelation` exactly as shipped.
+
+This is a genuine trade-off with real cost either way: generalizing touches an already-shipped
+contract; not generalizing means two relation systems a future reader has to know about, and two
+places `#188`'s graph-view work would eventually need to query.
+
+'''
+
+== Decision
+
+Generalize `PageRelation` into `ArtifactRelation` by adding two new optional discriminator fields,
+`source_kind`/`target_kind`, rather than introducing a parallel relation type.
+
+The change is additive and backward-compatible:
+
+* A record written before this change has neither field. Readers treat their absence as `"page"`
+  on both ends — exactly what every existing `PageRelation` row already means. No existing row is
+  rewritten.
+* `source_page_id`/`target_page_id` keep their names for `"page"`-kind endpoints; only genuinely
+  new endpoint kinds (`repository`, `agent_run`, `result_reference`) need new id fields.
+* The on-disk/CBLite collection name (`page-relations`) is not renamed. Only the logical type name
+  changes, in documentation and new code, to `ArtifactRelation`.
+
+Full rationale and the resulting record shape are in
+xref:architecture/Engineering_Context_Artifact_Model_Contract.adoc[] (#201).
+
+'''
+
+== Consequences
+
+=== Positive
+
+* One relation model for the whole knowledge graph, present and future — `#188`'s relation-type UI
+  and any later graph view query a single table, not two.
+* No data migration: every `PageRelation` row already written stays valid without a rewrite pass,
+  because absence of the new fields is defined to mean `"page"`.
+* The relation vocabulary (`RelationType` catalog) is shared too — `context for`, `executed as`,
+  `produced` sit alongside `related to`, `uses`, `depends on` in the same catalog, rather than a
+  second catalog a user has to learn exists.
+
+=== Negative
+
+* `PageRelation`'s validation code now branches on endpoint kind instead of assuming both sides are
+  pages — a small increase in the shipped #185 code's complexity for a feature (#201) that may
+  still be reverted if #200's validation falsifies the underlying product hypothesis. Accepted
+  because the alternative (a parallel relation type) pays that same branching cost in every
+  *consumer* of relations instead, permanently, regardless of #200's outcome.
+* The field name asymmetry (`source_page_id` for page endpoints, `source_id` for everything else)
+  is a wart carried forward specifically to avoid rewriting shipped data. A future major schema
+  version may unify this if the asymmetry proves confusing in practice.

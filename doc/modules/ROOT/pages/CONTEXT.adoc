@@ -109,6 +109,40 @@ shape and renderer differ. See ADR-017.
 _Avoid_: "document type" when referring to code (the field/discriminator is "kind" in
 the design decision — keep terminology consistent once implemented).
 
+*Task (document kind)*:
+The unit of work a user hands to an external coding agent, per the Knowledge -> Task -> Context
+Pack -> agent -> Result workflow (#199). A `Document` whose `kind` is `task` — reuses
+`PageMetadata.id` and every existing page lifecycle rule; its status/owner metadata is expressed
+through ordinary `PropertyDefinition`/`PagePropertyValue` records, not a bespoke schema. Distinct
+from a Kanban/Project-board task row (`KanbanTask`/`ProjectTask`), which is board-local JSON with
+no workspace-global identity; a board card is a link/representation of a Task page, not the Task
+itself. See xref:architecture/Engineering_Context_Artifact_Model_Contract.adoc[] (#201).
+_Avoid_: "task" unqualified when the Kanban board is also in scope — say "Task page" versus
+"board card" to disambiguate.
+
+*ADR / PRD page*:
+An ADR or PRD produced through the engineering-context workflow is an ordinary wiki page (default
+document kind), seeded from a content template at creation time — not a new document kind, and not
+an index over this project's own static `.adoc` ADR files (those remain outside CppWiki's data
+model entirely). See xref:architecture/Engineering_Context_Artifact_Model_Contract.adoc[].
+
+*ArtifactRelation*:
+The generalization of `PageRelation` (#185) to connect any two of: a page (any document kind,
+Task/ADR/PRD included), a `RepositoryArtifact`, an `AgentRun`, or a `ResultReference` — one
+relation model for the whole knowledge graph rather than a parallel mechanism per artifact kind.
+Always authoritative/explicit, never written from a similarity score or other inferred signal —
+see *explicit relation* below. See ADR-019,
+xref:architecture/Engineering_Context_Artifact_Model_Contract.adoc[].
+
+*Explicit relation* (vs. derived/semantic data):
+An `ArtifactRelation` row created directly by a user action or by the Agent Run lifecycle itself
+(#205/#206) — always authoritative. Distinct from a semantic/embedding-derived discovery (the
+deferred Semantic Graph work, #193-#196), which lives in a separate, lower-trust store and never
+writes `ArtifactRelation` rows on its own; promoting one to authoritative is itself a distinct,
+explicit `ArtifactRelation` write (#195).
+_Avoid_: treating a semantic-similarity hit as a relation — it is not one until a user or the
+Agent Run flow explicitly makes it one.
+
 *cppwiki-admin*:
 The administrative tooling surface, delivered separately from the main `cppwiki` desktop
 app (never as a mode inside it). Ships as a CLI first (C++, `ftxui`), with a web panel as
