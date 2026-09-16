@@ -16,6 +16,7 @@
 
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "knowledge/knowledge_record.h"
 #include "storage/local_document_repository.h"
 
 namespace {
@@ -212,11 +213,47 @@ class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepos
     return {};
   }
 
+  [[nodiscard]] auto SavePropertyDefinition(const cppwiki::knowledge::PropertyDefinition& definition)
+      -> cppwiki::storage::SaveKnowledgeRecordResult override {
+    property_definitions_[definition.id] = definition;
+    return {};
+  }
+
+  [[nodiscard]] auto ListPropertyDefinitions(std::string_view workspace_id)
+      -> cppwiki::storage::ListPropertyDefinitionsResult override {
+    cppwiki::storage::ListPropertyDefinitionsResult result;
+    for (const auto& [id, definition] : property_definitions_) {
+      if (definition.workspace_id == workspace_id) {
+        result.definitions.push_back(definition);
+      }
+    }
+    return result;
+  }
+
+  [[nodiscard]] auto SavePagePropertyValue(const cppwiki::knowledge::PagePropertyValue& value)
+      -> cppwiki::storage::SaveKnowledgeRecordResult override {
+    page_property_values_[value.id] = value;
+    return {};
+  }
+
+  [[nodiscard]] auto ListPagePropertyValues(std::string_view workspace_id, std::string_view page_id)
+      -> cppwiki::storage::ListPagePropertyValuesResult override {
+    cppwiki::storage::ListPagePropertyValuesResult result;
+    for (const auto& [id, value] : page_property_values_) {
+      if (value.workspace_id == workspace_id && value.page_id == page_id) {
+        result.values.push_back(value);
+      }
+    }
+    return result;
+  }
+
  private:
   std::map<std::string, cppwiki::storage::DocumentRecord> documents_;
   std::map<std::string, cppwiki::storage::AttachmentData> attachments_;
   std::map<std::string, cppwiki::storage::DocumentRevisionRecord> revisions_;
   std::map<std::string, cppwiki::storage::WorkspaceRootRecord> workspace_roots_;
+  std::map<std::string, cppwiki::knowledge::PropertyDefinition> property_definitions_;
+  std::map<std::string, cppwiki::knowledge::PagePropertyValue> page_property_values_;
 };
 
 auto TestBridgeInfo() -> void {
@@ -688,6 +725,192 @@ auto TestCreateExcalidrawCanvasProducesLoadableSceneContent() -> void {
   Require(parsed.object().value(QStringLiteral("elements")).isArray(),
           "freshly-created canvas's rawContent must have an 'elements' array (Excalidraw scene "
           "shape)");
+}
+
+// Issue #219: a freshly-created project board should start with a predictable base set of
+// properties (Status/Owner) instead of an empty properties strip.
+auto TestCreateProjectBoardSeedsDefaultProperties() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created = bridge.createDocumentInWorkspace(QStringLiteral("default"),
+                                                        QStringLiteral("projectBoard"));
+  RequireSuccessEnvelope(created);
+  const auto created_result = created.value(QStringLiteral("result")).toMap();
+  const auto page_id = created_result.value(QStringLiteral("id")).toString();
+  const auto created_by = created_result.value(QStringLiteral("createdBy")).toString();
+  Require(!created_by.isEmpty(), "created document should report a non-empty createdBy");
+
+  const auto definitions = repository->ListPropertyDefinitions("default");
+  Require(!definitions.error.has_value(), "listing property definitions must succeed");
+
+  const auto status_definition =
+      std::ranges::find_if(definitions.definitions,
+                           [](const auto& definition) { return definition.name == "Status"; });
+  Require(status_definition != definitions.definitions.end(),
+          "a new project board should seed a 'Status' property definition");
+  Require(status_definition->value_kind == cppwiki::knowledge::PropertyValueKind::kSelect,
+          "'Status' should be a select property");
+  Require(status_definition->options ==
+              std::vector<std::string>({"Not started", "In progress", "Done"}),
+          "'Status' should offer the expected default options");
+
+  const auto owner_definition = std::ranges::find_if(
+      definitions.definitions, [](const auto& definition) { return definition.name == "Owner"; });
+  Require(owner_definition != definitions.definitions.end(),
+          "a new project board should seed an 'Owner' property definition");
+  Require(owner_definition->value_kind == cppwiki::knowledge::PropertyValueKind::kText,
+          "'Owner' should be a text property");
+
+  const auto values = repository->ListPagePropertyValues("default", page_id.toStdString());
+  Require(!values.error.has_value(), "listing page property values must succeed");
+  Require(values.values.size() == 2, "the new page should have both seeded property values");
+
+  const auto status_value = std::ranges::find_if(values.values, [&](const auto& value) {
+    return value.property_definition_id == status_definition->id;
+  });
+  Require(status_value != values.values.end() && status_value->values == std::vector<std::string>{"Not started"},
+          "the new page's Status value should default to 'Not started'");
+
+  const auto owner_value = std::ranges::find_if(values.values, [&](const auto& value) {
+    return value.property_definition_id == owner_definition->id;
+  });
+  Require(owner_value != values.values.end() &&
+              owner_value->values == std::vector<std::string>{created_by.toStdString()},
+          "the new page's Owner value should default to the page's creator");
+}
+
+// The seeded Owner value should prefer a human-readable display name (username/email) over the
+// raw author id (an opaque OIDC subject claim in a real deployment) whenever one is available.
+auto TestCreateProjectBoardOwnerPrefersDisplayNameOverAuthorId() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+  bridge.SetCurrentAuthorDisplayName(QStringLiteral("Jane Doe"));
+
+  const auto created = bridge.createDocumentInWorkspace(QStringLiteral("default"),
+                                                        QStringLiteral("projectBoard"));
+  RequireSuccessEnvelope(created);
+  const auto created_result = created.value(QStringLiteral("result")).toMap();
+  const auto page_id = created_result.value(QStringLiteral("id")).toString();
+  const auto created_by = created_result.value(QStringLiteral("createdBy")).toString();
+  Require(created_by != QStringLiteral("Jane Doe"),
+          "test setup sanity check: createdBy should be the raw author id, not the display name");
+
+  const auto definitions = repository->ListPropertyDefinitions("default");
+  const auto owner_definition = std::ranges::find_if(
+      definitions.definitions, [](const auto& definition) { return definition.name == "Owner"; });
+  Require(owner_definition != definitions.definitions.end(), "Owner definition must be seeded");
+
+  const auto values = repository->ListPagePropertyValues("default", page_id.toStdString());
+  const auto owner_value = std::ranges::find_if(values.values, [&](const auto& value) {
+    return value.property_definition_id == owner_definition->id;
+  });
+  Require(owner_value != values.values.end() &&
+              owner_value->values == std::vector<std::string>{"Jane Doe"},
+          "the seeded Owner value should use the display name, not the raw author id");
+}
+
+// A second project board in the same workspace must reuse the existing Status/Owner
+// definitions rather than creating duplicates.
+auto TestCreateProjectBoardReusesExistingDefaultPropertyDefinitions() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  RequireSuccessEnvelope(
+      bridge.createDocumentInWorkspace(QStringLiteral("default"), QStringLiteral("projectBoard")));
+  RequireSuccessEnvelope(
+      bridge.createDocumentInWorkspace(QStringLiteral("default"), QStringLiteral("projectBoard")));
+
+  const auto definitions = repository->ListPropertyDefinitions("default");
+  const auto status_count = std::ranges::count_if(
+      definitions.definitions, [](const auto& definition) { return definition.name == "Status"; });
+  Require(status_count == 1,
+          "two project boards in the same workspace must share one 'Status' definition");
+}
+
+// A new wiki page gets its own Status/Owner defaults (Draft/Published), same shape as project
+// boards but with wiki-appropriate wording.
+auto TestCreateWikiPageSeedsDefaultProperties() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto created =
+      bridge.createDocumentInWorkspace(QStringLiteral("default"), QStringLiteral("wikiPage"));
+  RequireSuccessEnvelope(created);
+  const auto page_id =
+      created.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+
+  const auto definitions = repository->ListPropertyDefinitions("default");
+  const auto status_definition =
+      std::ranges::find_if(definitions.definitions,
+                           [](const auto& definition) { return definition.name == "Status"; });
+  Require(status_definition != definitions.definitions.end(),
+          "a new wiki page should seed a 'Status' property definition");
+  Require(status_definition->options == std::vector<std::string>({"Draft", "Published"}),
+          "a wiki page's 'Status' should offer Draft/Published, not the project board vocabulary");
+
+  const auto values = repository->ListPagePropertyValues("default", page_id.toStdString());
+  Require(values.values.size() == 2, "the new wiki page should have both seeded property values");
+  const auto status_value = std::ranges::find_if(values.values, [&](const auto& value) {
+    return value.property_definition_id == status_definition->id;
+  });
+  Require(status_value != values.values.end() &&
+              status_value->values == std::vector<std::string>{"Draft"},
+          "the new wiki page's Status value should default to 'Draft'");
+}
+
+// A project board and a wiki page use different 'Status' vocabularies (Not started/In
+// progress/Done vs. Draft/Published). Reuse must not let one kind's page adopt the other's
+// options just because the definitions share a name.
+auto TestDifferentKindsGetSeparateStatusDefinitionsWhenOptionsDiffer() -> void {
+  auto repository = std::make_shared<FakeDocumentRepository>();
+  cppwiki::bridge::QEditorBridge bridge;
+  bridge.SetRepository(repository);
+
+  const auto board = bridge.createDocumentInWorkspace(QStringLiteral("default"),
+                                                      QStringLiteral("projectBoard"));
+  RequireSuccessEnvelope(board);
+  const auto wiki_page =
+      bridge.createDocumentInWorkspace(QStringLiteral("default"), QStringLiteral("wikiPage"));
+  RequireSuccessEnvelope(wiki_page);
+
+  const auto definitions = repository->ListPropertyDefinitions("default");
+  const auto status_count = std::ranges::count_if(
+      definitions.definitions, [](const auto& definition) { return definition.name == "Status"; });
+  Require(status_count == 2,
+          "a project board and a wiki page must get their own 'Status' definitions when their "
+          "option sets differ");
+
+  const auto board_page_id =
+      board.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+  const auto wiki_page_id =
+      wiki_page.value(QStringLiteral("result")).toMap().value(QStringLiteral("id")).toString();
+
+  const auto board_values = repository->ListPagePropertyValues("default", board_page_id.toStdString());
+  const auto board_status = std::ranges::find_if(board_values.values, [&](const auto& value) {
+    const auto definition = std::ranges::find_if(definitions.definitions, [&](const auto& d) {
+      return d.id == value.property_definition_id;
+    });
+    return definition != definitions.definitions.end() && definition->name == "Status";
+  });
+  Require(board_status != board_values.values.end() &&
+              board_status->values == std::vector<std::string>{"Not started"},
+          "the project board must keep its own 'Not started' default, not the wiki page's 'Draft'");
+
+  const auto wiki_values = repository->ListPagePropertyValues("default", wiki_page_id.toStdString());
+  const auto wiki_status = std::ranges::find_if(wiki_values.values, [&](const auto& value) {
+    const auto definition = std::ranges::find_if(definitions.definitions, [&](const auto& d) {
+      return d.id == value.property_definition_id;
+    });
+    return definition != definitions.definitions.end() && definition->name == "Status";
+  });
+  Require(wiki_status != wiki_values.values.end() &&
+              wiki_status->values == std::vector<std::string>{"Draft"},
+          "the wiki page must keep its own 'Draft' default, not the project board's 'Not started'");
 }
 
 // Mirrors NotebookView.tsx's scheduleSave(): edit a cell, call updateSnapshot() with the whole
@@ -1428,6 +1651,11 @@ auto main() -> int {
   TestConflictFlagClearsOnFreshLoad();
   TestCreateJupyterNotebookProducesLoadableNbformatContent();
   TestCreateExcalidrawCanvasProducesLoadableSceneContent();
+  TestCreateProjectBoardSeedsDefaultProperties();
+  TestCreateProjectBoardOwnerPrefersDisplayNameOverAuthorId();
+  TestCreateProjectBoardReusesExistingDefaultPropertyDefinitions();
+  TestCreateWikiPageSeedsDefaultProperties();
+  TestDifferentKindsGetSeparateStatusDefinitionsWhenOptionsDiffer();
   TestUpdateSnapshotRoundTripsForJupyterNotebook();
   TestUpdateSnapshotRoundTripsForExcalidrawCanvas();
   TestOpenDocumentReturnsLoadedDocument();

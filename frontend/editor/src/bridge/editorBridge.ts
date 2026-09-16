@@ -24,6 +24,24 @@ export type StoredAttachment = {
   uri: string;
 };
 
+export type PropertyValueKind = "text" | "number" | "date" | "checkbox" | "select" | "multiSelect" | "tags" | "relation";
+export type PropertyDefinition = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  groupName?: string | null;
+  valueKind: PropertyValueKind;
+  options: string[];
+  state: "active" | "retired";
+};
+export type PagePropertyValue = {
+  id: string;
+  workspaceId: string;
+  pageId: string;
+  propertyDefinitionId: string;
+  values: string[];
+};
+
 // Content-schema/renderer discriminator for a document (ADR-017), mirroring
 // cppwiki::document::DocumentKind on the C++ side. Persisted/transmitted as
 // the string key produced by ToDocumentKindKey(), not a raw enum value.
@@ -46,6 +64,7 @@ export type DocumentSummary = {
 
 export type LoadedDocument = {
   id: string;
+  workspaceId?: string;
   title: string;
   parentId?: string | null;
   sortOrder: number;
@@ -85,6 +104,12 @@ export interface EditorBridge {
   listDocuments(): Promise<BridgeResult<DocumentSummary[]>>;
   loadDocument(pageId: string): Promise<BridgeResult<LoadedDocument>>;
   openDocument(pageId: string): Promise<BridgeResult<LoadedDocument>>;
+  listPropertyDefinitions(workspaceId: string): Promise<BridgeResult<PropertyDefinition[]>>;
+  savePropertyDefinition(definition: Partial<PropertyDefinition> & { name: string; valueKind: PropertyValueKind; options?: string[] }): Promise<BridgeResult<PropertyDefinition>>;
+  retirePropertyDefinition(definitionId: string): Promise<BridgeResult<PropertyDefinition>>;
+  listPagePropertyValues(workspaceId: string, pageId: string): Promise<BridgeResult<PagePropertyValue[]>>;
+  savePagePropertyValue(value: Omit<PagePropertyValue, "id"> & { id?: string }): Promise<BridgeResult<PagePropertyValue>>;
+  deletePagePropertyValue(valueId: string): Promise<BridgeResult<void>>;
   // `snapshot` is `DocumentSnapshot` (BlockNote's `Block[]`) for "wikiPage" documents. For other
   // kinds (e.g. "jupyterNotebook"/"excalidrawCanvas", #52/#53) it's whatever JSON-serializable
   // value that kind's component maintains as its document state (nbformat v4's notebook object,
@@ -134,6 +159,10 @@ export interface EditorBridge {
   onDocumentLoadFailed(callback: (pageId: string, message: string) => void): () => void;
   onDocumentSelectionCleared(callback: () => void): () => void;
   onExportCurrentDocumentRequested(callback: () => void): () => void;
+  // Fired by the native PropertiesStripWidget's "Properties" button (see
+  // gui/properties_strip_widget.cc) so the compact chip row can live in MainWindow's native
+  // chrome next to PresenceStripWidget while the actual editing surface stays this drawer.
+  onOpenPropertiesDrawerRequested(callback: () => void): () => void;
 
   // AI transport (ADR-012): every AI request is forwarded through the bridge
   // to C++, never fetched directly from this JS context. `mode` matches the
