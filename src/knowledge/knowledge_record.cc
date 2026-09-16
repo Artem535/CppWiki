@@ -157,6 +157,9 @@ auto NormalizeAndValidatePageRelation(PageRelation* relation, const RelationType
       relation->relation_type_id != relation_type.id) {
     return "Page relation must refer to its relation type in the same workspace.";
   }
+  if (relation->source_kind != ArtifactKind::kPage || relation->target_kind != ArtifactKind::kPage) {
+    return "Page relation only supports page endpoints until non-page artifact kinds exist.";
+  }
   if (!HasAuditMetadata(relation->audit)) {
     return "Page relation audit metadata must be complete.";
   }

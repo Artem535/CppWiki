@@ -1,6 +1,8 @@
 #ifndef CPPWIKI_SRC_KNOWLEDGE_KNOWLEDGE_RECORD_H_
 #define CPPWIKI_SRC_KNOWLEDGE_KNOWLEDGE_RECORD_H_
 
+#include <cstdint>
+
 #include <optional>
 #include <string>
 #include <vector>
@@ -59,12 +61,21 @@ struct RelationType {
   AuditMetadata audit;
 };
 
+// Engineering Context Artifact Model Contract (#201, ADR-019): the discriminator that
+// generalizes PageRelation into ArtifactRelation. kPage is the default so every relation record
+// written before this field existed round-trips unchanged. kRepository/kAgentRun/kResultReference
+// exist in the schema ahead of their record types landing, so the wire shape is stable once they
+// do; NormalizeAndValidatePageRelation() rejects them until then (see knowledge_record.cc).
+enum class ArtifactKind : std::uint8_t { kPage, kRepository, kAgentRun, kResultReference };
+
 struct PageRelation {
   std::string id;
   std::string workspace_id;
   std::string relation_type_id;
   std::string source_page_id;
   std::string target_page_id;
+  ArtifactKind source_kind{ArtifactKind::kPage};
+  ArtifactKind target_kind{ArtifactKind::kPage};
   AuditMetadata audit;
 };
 

@@ -23,6 +23,12 @@ enum class DocumentKind : std::uint8_t {
   // Gantt/Kanban/DataGrid views (SVAR's open-source React components), all reading/writing the
   // same underlying tasks array — see frontend/editor/src/project/ProjectBoardView.tsx.
   kProjectBoard,
+  // Task (Engineering Context Artifact Model Contract, #201): the unit of work handed to an
+  // external coding agent. Unlike kJupyterNotebook/kExcalidrawCanvas/kProjectBoard, its content
+  // is ordinary BlockNote JSON like kWikiPage — only the `kind` differs, so it can be identified
+  // and related (ArtifactRelation) as its own artifact kind. Structured metadata (status, owner)
+  // goes through the existing PropertyDefinition/PagePropertyValue records, not a bespoke schema.
+  kTask,
 };
 
 enum class BlockType : std::uint8_t {
@@ -100,6 +106,8 @@ struct Document {
       return "openApiSpec";
     case DocumentKind::kProjectBoard:
       return "projectBoard";
+    case DocumentKind::kTask:
+      return "task";
     case DocumentKind::kWikiPage:
       return "wikiPage";
   }
@@ -121,6 +129,9 @@ struct Document {
   }
   if (key == "projectBoard") {
     return DocumentKind::kProjectBoard;
+  }
+  if (key == "task") {
+    return DocumentKind::kTask;
   }
   return DocumentKind::kWikiPage;
 }
