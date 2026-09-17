@@ -1,0 +1,66 @@
+= MongrelDB Evaluation for CppWiki Semantic Search
+:revdate: 2026-08-21
+:status: Research note
+
+== Summary
+
+MongrelDB is a compelling *derived semantic-index sidecar* candidate. It
+combines encrypted local storage, dense ANN, text/sparse retrieval, metadata
+filters and reciprocal-rank fusion in one embedded engine, with a C ABI usable
+from C++.
+
+It is not yet a safe replacement for Couchbase Lite plus Sync Gateway. Its
+replication is WAL/server oriented and does not establish an offline,
+conflict-aware document synchronization model equivalent to CppWiki Sync.
+
+== Strong fit for the sidecar
+
+* The engine documents HNSW vector search, substring and sparse retrieval,
+  metadata filters, and scored hybrid retrieval using reciprocal-rank fusion.
+  link:https://www.mongreldb.com/[MongrelDB overview]
+* It documents page-level AES-256-GCM for sorted runs, WAL, cache and index
+  checkpoints, with Argon2id/HKDF-derived keys. Manifest/schema metadata are
+  not encrypted but are authenticated where relevant.
+  link:https://github.com/visorcraft/MongrelDB[MongrelDB encryption design]
+* A stable C ABI and a C++ client are published with Linux, macOS and Windows
+  prebuilt assets.
+  link:https://github.com/visorcraft/MongrelDB[MongrelDB language clients]
+
+Suggested derived schema:
+
+[source,text]
+----
+chunk_id | page_id | content_hash | index_version | chunk_text | embedding
+----
+
+The store remains local and rebuildable. It receives no sync credentials and
+does not become the source of truth for pages, properties or relations.
+
+== Risks
+
+* This is a young 0.x project with a very small public community and rapid
+  release cadence. Its many advertised subsystems should be treated as a reason
+  to validate carefully, not as proof of production suitability.
+* It is written in Rust; CppWiki would depend on a Rust-native shared library
+  and its ABI/release packaging rather than a C++-native implementation.
+* The published embedded engine permits only one process to own a durable root.
+  That is acceptable for the CppWiki desktop process but must be respected by
+  maintenance tools.
+* It does not replace CppWiki's sync semantics. The documented replication
+  follower applies committed WAL records for read scaling; it is not a
+  bidirectional offline-edit conflict protocol.
+
+== Recommendation
+
+Prefer a small comparative spike over a database migration:
+
+1. Use the published C ABI from C++ on Linux.
+2. Create an encrypted sidecar, insert realistic 384/768-dimensional chunks,
+   and exercise ANN plus lexical retrieval and RRF.
+3. Delete the sidecar and rebuild it from Couchbase Lite source documents.
+4. Measure package size, index size, indexing/query time, crash recovery and
+   macOS/Windows packaging.
+
+If that spike succeeds, MongrelDB is more attractive than ObjectBox for the
+semantic sidecar because it covers hybrid retrieval and encryption in one local
+store. Couchbase Lite + Sync Gateway should nevertheless remain authoritative.

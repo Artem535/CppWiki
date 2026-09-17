@@ -1,0 +1,240 @@
+= Encryption Options Without Couchbase Enterprise
+
+*Date:* 2026-08-18 +
+*Status:* Research note; no implementation decision yet.
+
+== Constraint
+
+CppWiki uses Couchbase Lite C Community Edition for the optional local
+repository. Couchbase Lite's transparent database encryption is an Enterprise
+Edition feature, as is Couchbase Server encryption at rest. Community Edition
+therefore cannot obtain transparent encryption by configuring a Couchbase API.
+
+Sources:
+
+* https://docs.couchbase.com/couchbase-lite/current/c/database.html[Couchbase Lite C -- Database Encryption]
+* https://docs.couchbase.com/server/current/manage/manage-security/manage-native-encryption-at-rest.html[Couchbase Server -- Native Encryption at Rest]
+
+Do not encrypt a `.cblite2` directory or its files externally while Couchbase
+Lite is using them. That is not a supported database encryption mechanism and
+would break database access, indexing and replication semantics.
+
+== Options
+
+[cols="1,2,2,2",options="header"]
+|===
+|Option |Protects |Effect on current architecture |Recommendation
+
+|Operating-system disk encryption
+|Data on a lost, stolen or offline device: Couchbase Lite, file repository,
+revisions, attachments and temporary files.
+|No CppWiki storage or sync change. Require/document FileVault, BitLocker or
+LUKS/fscrypt for deployments that store sensitive workspaces.
+|Baseline for every installation.
+
+|User-managed encrypted volume or directory overlay
+|The selected CppWiki data directory, including Couchbase Lite, without changing
+CppWiki's storage format.
+|Run CppWiki against the plaintext mount point; the encrypted backing directory
+or volume is managed by a tool such as fscrypt, gocryptfs or VeraCrypt.
+|Useful opt-in for users who need a separately unlockable workspace; do not
+embed or operate the mounting tool from CppWiki in the first version.
+
+|Password-encrypted workspace archive
+|Backups copied to cloud storage, USB media or another person.
+|Add a versioned archive envelope around the existing JSON backup/restore
+format. The live repository and Sync Gateway remain unchanged.
+|First application-level encryption feature.
+
+|Client-side document-payload encryption
+|Document content from a Sync Gateway, Couchbase Server or backup holder that
+does not have the workspace key.
+|The repository stores ciphertext for protected content. Metadata necessary for
+sync remains visible. Full-text server search, server previews and server-side
+merging no longer work over protected fields.
+|Only after explicitly choosing an end-to-end threat model.
+
+|Replace the local store with SQLCipher
+|The whole local SQLCipher database at rest.
+|Requires a new repository implementation and a replacement for Couchbase Lite
+replication; SQLCipher is SQLite, not a Couchbase Lite storage format.
+|Not a near-term replacement for the current sync path.
+|===
+
+== Candidate mechanisms
+
+=== Operating-system encryption
+
+Operating-system encryption is transparent to CppWiki and covers all files
+under the data directory, including Couchbase Lite's data and files that an
+application-level design might accidentally omit. Windows BitLocker is designed
+to protect against data exposure from lost or stolen devices. Linux fscrypt can
+encrypt directory trees, although it does not hide all filesystem metadata and
+is not a substitute for normal access control.
+
+Sources:
+
+* https://learn.microsoft.com/en-us/windows/security/book/operating-system-security-encryption-and-data-protection[Microsoft -- BitLocker]
+* https://www.kernel.org/doc/html/latest/filesystems/fscrypt.html[Linux kernel -- fscrypt]
+
+=== User-managed encrypted mounts
+
+An encrypted mount is a practical middle ground when full-disk encryption is
+not enough or the workspace must be separately unlockable. The application sees
+a normal plaintext directory, so Couchbase Lite remains supported; the lower
+storage layer writes encrypted data.
+
+On Linux, gocryptfs is an encrypted overlay filesystem: encrypted files live in
+one directory and its mounted plaintext view is used as the data directory.
+VeraCrypt provides file-hosted or device-hosted encrypted volumes across desktop
+platforms. These are deployment choices, not CppWiki dependencies: the user or
+administrator mounts and unlocks the workspace before starting the app.
+
+Sources:
+
+* https://github.com/rfjakob/gocryptfs[gocryptfs source and deployment documentation]
+* https://veracrypt.io/en/documentation.html[VeraCrypt documentation]
+
+=== Portable backup encryption
+
+For a user-password-protected archive, use a reviewed crypto library rather
+than OpenSSL primitives assembled ad hoc. A suitable format is:
+
+[source,text]
+----
+magic | format version | KDF parameters | random salt | random nonce | ciphertext + authentication tag
+----
+
+Derive a 32-byte archive key with Argon2id from the user passphrase and the
+stored salt. Encrypt the archive stream with authenticated encryption, binding
+the non-secret header as additional authenticated data. Libsodium recommends
+XChaCha20-Poly1305 where cross-library interoperability is not required, and
+its password-hashing API uses Argon2id.
+
+Sources:
+
+* https://doc.libsodium.org/password_hashing[Libsodium -- Password Hashing]
+* https://doc.libsodium.org/secret-key_cryptography/aead/chacha20-poly1305/xchacha20-poly1305_construction[Libsodium -- XChaCha20-Poly1305]
+* https://doc.libsodium.org/secret-key_cryptography/secretstream[Libsodium -- Encrypted Streams]
+
+Archive recovery must be explicit: CppWiki cannot recover an archive when its
+password is lost. The UI must say this before export and require confirmation.
+
+=== End-to-end document encryption
+
+This encrypts selected document fields before they enter either repository. A
+workspace key is generated randomly, stored locally in the OS keychain and
+shared only through an explicitly designed workspace-key distribution protocol.
+
+This is not equivalent to local encryption. It affects:
+
+* title/content search and indexes;
+* conflict comparison and merging;
+* attachment preview and metadata;
+* multi-device key recovery and new-member onboarding;
+* data migration and key rotation.
+
+The team must first decide whether the server needs to read/search document
+contents. If yes, this option is out of scope; use disk encryption plus encrypted
+backups instead.
+
+=== SQLCipher
+
+SQLCipher is an open-source SQLite fork that transparently encrypts database
+files using AES-256 and adds tamper detection and strong key derivation.
+However, it cannot open or transparently replace a Couchbase Lite database.
+Choosing it would mean implementing a separate repository and synchronization
+strategy, so it is a storage-architecture migration rather than a toggle.
+
+Sources:
+
+* https://github.com/sqlcipher/sqlcipher[SQLCipher source repository]
+* https://www.zetetic.net/sqlcipher/[SQLCipher product documentation]
+
+== Storage and Sync Migration Paths
+
+The database choice cannot be separated from replication. Couchbase Lite is both
+the local store and a replicator. Replacing it requires choosing both a local
+format and how changes travel between desktop clients and `cppwiki_server`.
+
+[cols="1,2,2,2",options="header"]
+|===
+|Path |Local encryption |Replication model |Fit for CppWiki
+
+|Keep `FileDocumentRepository` and add encrypted document envelopes
+|Application-level encryption of each document, revision and attachment, or an
+encrypted workspace mount.
+|Use the existing C++ backend API as a revision/change-log transport.
+|Smallest migration: preserves the repository seam and current single-writer,
+multi-reader product model. Search and conflict UI must decrypt locally.
+
+|SQLite + SQLCipher
+|Transparent AES-256 encrypted local database without Couchbase Enterprise.
+|Implement a change log, revision checkpoints, push/pull and conflicts through
+`cppwiki_server`.
+|Best long-term replacement if app-managed local encryption is a hard product
+requirement and the team accepts owning sync.
+
+|SQLite + Session Extension
+|Use SQLCipher or an encrypted mount for the SQLite file.
+|SQLite changesets/patchsets are generated locally, uploaded to the server and
+applied with an explicit conflict callback.
+|Good spike candidate for the existing single-writer model; it is a primitive,
+not a ready-made sync product.
+
+|SQLite + cr-sqlite
+|Use SQLCipher or an encrypted mount for the SQLite file.
+|The loadable extension provides replicated SQLite tables with CRDT semantics.
+|Future multi-writer research option, but adds a Rust-built extension and gives
+up manual conflict handling in its current history-free approach.
+
+|CouchDB-compatible backend
+|Still requires a local encrypted store or encrypted mount on desktop.
+|Use CouchDB's documented HTTP replication protocol and changes feed.
+|Technically possible but substantial: CppWiki would need a C++ local replicator
+or a different client stack, and would replace Sync Gateway integration.
+|===
+
+=== SQLite Session Extension
+
+SQLite's built-in Session Extension can record table changes, package them as a
+changeset or patchset, and later apply them to another database with a conflict
+handler. It deliberately does not define authentication, transport, retry,
+server checkpointing or a complete replication protocol. CppWiki would own
+those parts in `DocumentSyncService` and `cppwiki_server`.
+
+Source: https://www.sqlite.org/sessionintro.html[SQLite -- Session Extension].
+
+=== cr-sqlite
+
+cr-sqlite is a loadable SQLite extension for convergent replicated tables. Its
+current approach uses history-free CRDTs and automatically merges conflicts,
+which conflicts with CppWiki's present explicit conflict-resolution UX. Treat it
+as a future multi-writer spike, not a migration target for the current release.
+
+Source: https://github.com/vlcn-io/cr-sqlite[cr-sqlite source repository].
+
+=== CouchDB
+
+Apache CouchDB documents an HTTP replication protocol for JSON documents with a
+changes feed and checkpoints. It can be implemented by clients in any language,
+but it is not an embedded C++ database. Using it would therefore replace both
+Couchbase Lite and Sync Gateway behavior, not merely turn on encryption.
+
+Sources:
+
+* https://docs.couchdb.org/en/stable/replication/protocol.html[CouchDB Replication Protocol]
+* https://docs.couchdb.org/en/stable/replication/intro.html[CouchDB Replication Introduction]
+
+== Proposed decision sequence
+
+. Declare operating-system disk encryption the supported baseline for sensitive
+  workspaces; document the supported OS mechanisms and data directory location.
+. Design and implement password-encrypted backups independently of live storage.
+. Defer payload-level E2E encryption until a product decision confirms that the
+  server must not read document content.
+. If application-managed database encryption becomes mandatory, spike SQLite +
+  SQLCipher plus an explicit single-writer sync protocol before committing to a
+  storage migration.
+. Do not choose a CRDT stack or CouchDB migration solely to obtain encryption;
+  either changes the collaboration model much more than needed.

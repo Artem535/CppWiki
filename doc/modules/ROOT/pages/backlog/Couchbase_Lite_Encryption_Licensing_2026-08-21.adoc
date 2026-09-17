@@ -1,0 +1,115 @@
+= Couchbase Lite C/C++ Database Encryption: Licensing and Operational Constraints
+:revdate: 2026-08-21
+:status: Research note; no implementation decision
+
+== Scope
+
+This note covers only Couchbase Lite database-at-rest encryption for the C/C++
+SDK used by CppWiki. It does not evaluate storage migration or server-side
+encryption.
+
+== Edition and licensing facts
+
+* Couchbase documents database encryption for Couchbase Lite C as an
+  *Enterprise Edition* feature. The public C header additionally gates the
+  encryption algorithm, key type, configuration field, password derivation and
+  key-change API behind `COUCHBASE_ENTERPRISE`. It is therefore unavailable in
+  a Community build, not merely disabled by a runtime setting.
+* The current Couchbase download page distinguishes Community and Enterprise
+  Lite packages and lists encryption among Enterprise additions. Community
+  downloads require acceptance of the Couchbase Community Edition License
+  Agreement. The public materials reviewed here do not publish an Enterprise
+  price or a self-service entitlement for this feature. Commercial terms,
+  redistribution rights and support require a Couchbase quote and the
+  applicable enterprise agreement before CppWiki can ship it.
+* This is not legal advice. The purchase decision must be based on the signed
+  agreement, including desktop platforms, distribution model and support scope.
+
+Sources:
+
+* https://docs.couchbase.com/couchbase-lite/current/c/database.html[Couchbase Lite C database encryption]
+* https://raw.githubusercontent.com/couchbase/couchbase-lite-C/master/include/cbl/CBLDatabase.h[Couchbase Lite C public header]
+* https://www.couchbase.com/downloads/[Couchbase downloads and edition descriptions]
+* https://www.couchbase.com/legal/agreements/[Couchbase legal agreements]
+
+== Encryption mechanism and key custody
+
+The Enterprise C/C++ API encrypts the local Couchbase Lite database at rest
+with AES-256. The raw key is exactly 32 bytes. The API can alternatively derive
+that key from a password via `CBLEncryptionKey_FromPassword`; its documentation
+states that derivation is deliberately slow to resist brute-force attacks.
+
+CppWiki must pass the same key in `DatabaseConfiguration.encryptionKey` every
+time it opens the database. Couchbase Lite does not persist that key. Losing it
+makes the encrypted database unavailable; storing it in the database directory,
+a config file, logs or source code defeats the control. The application must
+hold it in an OS-appropriate secure store and minimize its lifetime in process
+memory.
+
+An encrypted database can be opened only by the same platform SDK family that
+encrypted it. A raw `.cblite2` directory is consequently not a portable,
+cross-SDK interchange format.
+
+Sources:
+
+* https://docs.couchbase.com/couchbase-lite/current/c/database.html#database-encryption[Encryption, opening and key persistence]
+* https://raw.githubusercontent.com/couchbase/couchbase-lite-C/master/include/cbl/CBLDatabase.h[C API: AES-256, 32-byte key and password derivation]
+
+== Required operational behaviour
+
+=== Enablement and opening
+
+Encryption is selected when creating or opening the database. CppWiki must
+obtain the key before constructing `cbl::Database`; an incorrect or absent key
+must fail closed and must not create a replacement empty database. Converting
+the existing unencrypted repository needs a deliberate one-time procedure with
+backup and rollback.
+
+=== Rotation and removal
+
+`CBLDatabase_ChangeEncryptionKey` / `cbl::Database::changeEncryptionKey` can
+add encryption to an unencrypted database, re-encrypt with a new key, or remove
+encryption. Rotation or removal requires opening with the current key first.
+Suspend replication and writes, retain a recoverable backup, verify reopening
+with the new key, then replace the old secure-store entry. There is no recovery
+if the key and a valid backup are both lost.
+
+=== Copy and backup
+
+For a Couchbase Lite database copy, use `CBL_CopyDatabase`, not filesystem
+copying. A copy preserves the source encryption key; changing it requires an
+open with the original key and the key-change API. The copy operation gives the
+copy a new internal UUID, protecting replication checkpoints. CppWiki backup
+design must state whether it is a key-bearing database copy or an application
+export with its own encrypted envelope.
+
+=== Runtime boundary
+
+Encryption at rest does not protect decrypted documents or the key in an
+unlocked process. On lock/sign-out, CppWiki should stop replication, close all
+database handles and clear in-memory key material where practical. Secure-store
+and user-authentication policy remain application responsibilities.
+
+=== Validation before release
+
+The documentation gives no performance guarantee. Validate each target build:
+
+* correct/incorrect-key create, open and reopen;
+* conversion, rotation and restore from backup;
+* replication with an encrypted local database;
+* copy/restore and clean shutdown during sync;
+* representative queries, indexes and attachments.
+
+Sources:
+
+* https://docs.couchbase.com/couchbase-lite/current/c/database.html#database-encryption[Enable, rotate and remove encryption]
+* https://docs.couchbase.com/couchbase-lite/current/c/prebuilt-database.html#database-encryption[Copying encrypted databases]
+* https://docs.couchbase.com/couchbase-lite/current/c/database.html#close-database[Closing also closes active replications, listeners and live queries]
+
+== CppWiki implication
+
+With Couchbase Lite Community, CppWiki has no supported transparent local
+database-encryption switch. Enterprise would provide one, but adoption is a
+commercial and operational decision: procure the entitlement, implement secure
+key lifecycle, then complete the validation matrix. Until then, documentation
+must not claim that the local repository is encrypted at rest.

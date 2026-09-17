@@ -1,0 +1,237 @@
+= Code Analysis — 2026-07-15
+
+Scope: full repo at `main`, desktop app (`src/`), server (`src/server/`), and `tests/`. Read source
+directly (not just listings) for the trust boundary (`bridge/`), auth (`auth/`,
+`server/middleware/auth_checker_impl`), the two largest desktop files (`gui/main_window.cc`,
+`gui/page.cc`), storage, and server handlers/services.
+
+== 1. Code quality issues
+
+* *No TODO/FIXME/XXX/HACK markers anywhere in `src/`.* Either the backlog is tracked entirely
+  outside the code (likely, given `doc/backlog/`) or debt isn't being flagged inline — worth
+  confirming with the team since it means grep-for-debt tooling won't find anything here.
+* *Large files are large because they're doing many distinct jobs, not because of one bloated
+  function.* `src/gui/main_window.cc` (1300 lines, ~23 top-level `MainWindow::` methods) mixes
+  window chrome, menu/action wiring, document-tree event handling, sync status UI, and bridge
+  signal plumbing in one class. `src/gui/page.cc` (1317 lines, ~28 methods) similarly combines
+  `QWebEngineView` lifecycle, bridge wiring, lock/presence UI feedback, and conflict-merge dialog
+  triggering. Both already have a `_helpers.cc` split (`main_window_helpers.cc`,
+  `page_helpers.cc`) started, suggesting the team is aware of this but hasn't finished extracting
+  responsibilities (e.g. sync-status presentation, bridge signal routing) into smaller
+  collaborators. `src/storage/cblite_document_repository.cc` is the single largest file at 1517
+  lines and combines Couchbase Lite session lifecycle, document CRUD, workspace-root handling, and
+  replication config in one translation unit.
+* *`kAdminRole = "wiki.admin"` is duplicated verbatim in three places*:
+  `src/server/handlers/admin_handler.cc:16`, `src/server/handlers/workspace_handler.cc:19`, and
+  `src/server/service/sync_gateway_adapter.cc:14`, each with its own local `IsAdmin`-style role
+  check. This is a magic-string DRY violation with real risk: if the role name is ever renamed for
+  one call site (e.g. during an Authentik config change) and not the others, admin authorization
+  silently splits across the codebase. Should be a single named constant (e.g. in
+  `src/server/config` or a shared auth-constants header) referenced everywhere.
+* *`src/bridge/editor_bridge.cc` inconsistently enforces the read-only/lock state.*
+  `updateSnapshot()` (`editor_bridge.cc:758`) correctly checks `current_document_editable_` and
+  refuses to save when the document is locked/read-only. But `renameDocument()` (`:608`),
+  `updateDocumentPlacement()` (`:656`), and `deleteDocument()` (`:682`) perform their mutations
+  without ever consulting `current_document_editable_` / lock-owner state — only checking that a
+  repository exists and the workspace matches. A locked document (being edited by someone else, per
+  the sync/lock model) can still be renamed, moved in the tree, or deleted through the bridge. This
+  looks like an oversight from bolting read-only enforcement onto `updateSnapshot` only, rather than
+  a repository-level or bridge-wide gate.
+* Error-handling style is fairly consistent (`QVariantMap` success/error envelopes, `RepositoryError`
+  variants, `std::variant` for parse results) — this is one of the better-disciplined areas of the
+  codebase. Server-side handlers uniformly build `dto::ErrorDto`/`response_envelope` responses.
+* No dead/commented-out code blocks of note were found beyond a handful of explanatory comments
+  flagged by a broad grep; nothing resembling stale disabled code.
+
+== 2. Architecture health
+
+* *Desktop module boundaries are respected reasonably well.* `bridge/` only depends on
+  `storage/LocalDocumentRepository` (interface, not concrete repositories) and
+  `sync/SyncStateProvider` (interface) — it does not reach into `gui/`, `auth/`, or `backend/`
+  directly, matching the documented trust-boundary intent in the root `CLAUDE.md`.
+* *`gui/` is the one place where boundary discipline weakens*: `MainWindow`/`Page` necessarily
+  wire together `bridge`, `sync`, `auth`, `storage`, and `backend` objects (that's their job as the
+  composition root), but because that wiring lives inline in already-1300-line files rather than in
+  a dedicated bootstrap/composition module, it's hard to see the full dependency graph at a glance.
+  A `gui/app_wiring.*` or expansion of the existing `sync_bootstrap.cc` pattern to cover more of this
+  wiring would make the boundary explicit rather than implicit in constructor bodies.
+* *Server-side layering (`components/ → handlers/ → service/ → dto/`) is clean and consistently
+  applied.* Handlers (`admin_handler.cc`, `workspace_handler.cc`, `lock_handler.cc`, etc.) extract
+  the `JwtPrincipal` from `RequestContext`, delegate to a `service/` class, and shape a `dto/`
+  response — no handler reaches directly into `SyncGatewayAdapter`'s HTTP client or bypasses the
+  service layer.
+* *Authorization logic (`IsAdmin`) is architecturally duplicated across layers* rather than leaked
+  across layers — see point 1. This is a coupling risk (three places must change in lockstep) even
+  though each individual file respects module boundaries.
+* No circular includes were found; header guards use the documented
+  `CPPWIKI_SRC_<PATH>_H_` convention consistently based on spot checks (`editor_bridge.h`,
+  `auth_checker_impl.h`).
+
+== 3. Test coverage gaps
+
+Comparing `tests/` against `src/`:
+
+[cols="1,2,2", options="header"]
+|===
+|Module |Test file(s) |Coverage
+
+|`document/`
+|`document_validator_test.cc`
+|covered
+
+|`bridge/`
+|`editor_bridge_test.cc`
+|covered
+
+|`storage/`
+|`file_document_repository_test.cc`, `local_document_repository_test.cc`, `cblite_repository_test.cc`, `cblite_cpp_smoke_test.cc`
+|covered
+
+|`sync/`
+|`document_sync_service_test.cc`
+|*partial* — `sync_service.cc` and `sync_bootstrap.cc` have no dedicated tests
+
+|`gui/merge/`
+|`conflict_merge_model_test.cc`, `conflict_merge_resolution_test.cc`
+|covered
+
+|`gui/document_tree_model`
+|`document_tree_model_test.cc`
+|covered
+
+|`app/`
+|`program_settings_test.cc`
+|covered
+
+|`server/config`
+|`server_config_test.cc`
+|covered
+
+|`server/handlers` (health, lock)
+|`health_handler_test.cc`, `lock_stub_test.cc`
+|*partial*
+
+|*`auth/`* (`AuthSessionManager`, `AuthTokenStore`)
+|none
+|*no tests* — 686-line OIDC session/token-lifecycle class is completely untested
+
+|*`backend/`* (`BackendClient`, 1046 lines)
+|none
+|*no tests* — the entire desktop↔server HTTP client has zero coverage
+
+|*`gui/`* (`MainWindow`, `Page`, `document_tree_view`, `document_tree_item_delegate`, `document_context_menu`, `presence_strip_widget`, `settings_dialog`)
+|none, except the merge dialog model/resolution and tree model
+|*almost entirely untested* — the two largest files in the repo (`main_window.cc`, `page.cc`) have no tests at all
+
+|*`server/handlers`*: `admin_handler`, `presence_handler`, `sync_config_handler`, `workspace_handler`, `protected_page_handler`, `openapi_handler`, `swagger_ui_handler`, `options_handler`
+|none
+|*no tests* — includes the newly-added admin sync overview endpoint and all workspace/role-based authorization logic (`IsAdmin` checks)
+
+|*`server/service`*: `LockService`, `PresenceService`, `SyncGatewayAdapter`
+|none directly (only exercised indirectly via `lock_stub_test.cc`)
+|*largely untested* — the channel-mapping logic in `SyncGatewayAdapter` (role/group → channel, admin detection) that `AdminHandler`/`WorkspaceHandler` depend on has no direct unit test
+
+|*`server/components`*
+|none
+|*no tests* — `SyncBootstrapComponent` (367 lines) untested
+|===
+
+Net: authorization-sensitive code (`IsAdmin` in 3 places, `SyncGatewayAdapter`'s channel derivation)
+and the entire desktop GUI shell are the biggest blind spots. The lock-bypass issue found in
+section 1 (`renameDocument`/`updateDocumentPlacement`/`deleteDocument` skipping the editable check)
+would likely have been caught by a bridge test that covers read-only documents for those three
+methods specifically (the existing `editor_bridge_test.cc` should be checked for this case, but the
+production code clearly doesn't gate on it).
+
+== 4. Security-relevant observations
+
+* *`editor_bridge.cc` trust boundary*: overall the bridge is disciplined — every `Q_INVOKABLE`
+  method returns a structured envelope, validates snapshot JSON via
+  `DocumentValidator::ParseAndValidateSnapshot` before persisting, and the JS side never gets a
+  repository handle or filesystem path directly. The main gap is the *read-only/lock bypass*
+  described in section 1: `renameDocument`, `updateDocumentPlacement`, and `deleteDocument` don't
+  check `current_document_editable_`/lock ownership, so a compromised or buggy JS editor (or a
+  legitimate user racing a lock) can mutate placement/title/existence of a document it only has
+  read access to. This matters more once AI features start driving bridge calls programmatically
+  (e.g. an AI agent restructuring the doc tree) — the trust boundary should enforce
+  editability/lock ownership uniformly across all mutating bridge methods, not just snapshot saves.
+* *Workspace isolation is check-based, not query-scoped*: `LoadDocumentRecord` (`editor_bridge.cc:357`)
+  and friends load a document by id first and only _afterward_ compare `workspace_id` to reject
+  cross-workspace access. This is correct today but fragile — any new bridge method that forgets
+  the post-load check would silently allow cross-workspace document access, since the underlying
+  `LocalDocumentRepository::LoadDocument` takes no workspace parameter at all. Consider pushing
+  workspace scoping into the repository interface itself so it can't be forgotten per call site.
+* *`AuthCheckerImpl` (`src/server/middleware/auth_checker_impl.cc`)*: JWT verification looks sound —
+  algorithm is pinned to RS256 (`:292`, rejects `alg: none`/HS256 confusion attacks), issuer/audience/
+  exp/nbf are all checked (`ValidateClaims`, `:149`), and JWKS is fetched over the configured
+  `http_client_` with a 5-minute cache. Two smaller notes: (1) no explicit clock-skew leeway on
+  `exp`/`nbf` — a valid token could be rejected right at expiry boundary or accepted at instant
+  expiry, minor but worth documenting; (2) `SelectKey` (`:180`) falls back to matching _any_ RSA key
+  in the JWKS if the JWT header has no `kid`, which is spec-legal but means a JWKS with multiple keys
+  could pick the wrong one — low risk given Authentik always includes `kid`, but worth a comment.
+* *Token storage (`AuthTokenStore`, `src/auth/auth_token_store.cc`)* correctly delegates to
+  `qtkeychain` (OS-native credential storage) rather than a plaintext file — this is the right
+  design. No token value is logged. One gap: `Save`/`Clear`/`Load` failures only emit a Qt signal
+  (`storageError`) with no retry/backoff — if the OS keychain is locked or unavailable (common on
+  fresh Linux installs without a keyring daemon), the failure path is silent unless something is
+  listening to the signal; worth confirming `AuthSessionManager` actually surfaces this to the user
+  rather than just logging.
+* *Authorization is role-string based with no central policy* — `IsAdmin` re-implemented three
+  times (section 1/2) increases the chance of an inconsistent authorization decision surfacing in
+  one new handler that copies an older, possibly stale, implementation.
+
+== 5. Technical debt / risk for upcoming initiatives
+
+=== Adding AI features to BlockNote (`frontend/editor`)
+
+* The bridge's read-only/lock enforcement gap (section 1/4) is the most concrete blocker: an AI
+  assistant that can restructure documents (move/rename/delete) via the same bridge surface used by
+  the human editor will inherit the same bypass unless it's fixed first. Fix this before wiring any
+  AI-driven bridge calls.
+* The bridge protocol is currently hand-rolled per-method (`Q_INVOKABLE` + ad hoc `QVariantMap`
+  envelopes) rather than a single dispatch/schema-validated RPC surface. Adding several new
+  AI-specific bridge methods (e.g. "insert AI-generated blocks", "stream partial completion") will
+  multiply this pattern further; introducing a shared request/response schema now (already partially
+  present via `apiVersion`/`ok`/`error` envelope) would make it easier to add and audit new AI
+  surface area consistently.
+* `document/document_validator.cc` (332 lines) is the single point that would need to gate
+  AI-inserted content (schema validation, block-type allowlist) — worth confirming it's strict
+  enough to reject unexpected block types an AI model might emit, since it's the only enforcement
+  point between arbitrary JSON and storage.
+* No tests at all for `bridge/`'s interaction with lock/presence state under concurrent access
+  (only `editor_bridge_test.cc` exists, scope unconfirmed) — an AI agent operating autonomously
+  increases the chance of concurrent-mutation races that today only occur under human multi-tab use.
+
+=== Antora docs migration
+
+* Existing docs are a mix of Markdown (`doc/backlog/`, this file included) and AsciiDoc
+  (`doc/architecture/`), with some `_ru` Russian variants — `CLAUDE.md` states "all documentation is
+  written in AsciiDoc" as a convention, so the Markdown backlog files (including this one) are
+  already non-conformant and will need conversion, not just migration of the AsciiDoc ones.
+* The `openapi_handler`/`swagger_ui_handler` pair (`src/server/handlers/openapi_handler.cc`,
+  `assets/openapi_spec.h`) embeds the OpenAPI spec as a generated C++ header rather than a
+  standalone spec file — if Antora is meant to publish API docs alongside architecture docs, this
+  spec will need to be extracted to a file Antora/its OpenAPI extension can consume directly, rather
+  than only being reachable through the running server's `/swagger` route.
+* No test coverage on `openapi_handler`/`swagger_ui_handler` (section 3) means a docs-migration
+  refactor touching how the spec is served has no regression safety net today.
+
+== Top 5 issues worth fixing soon
+
+. *Close the lock/read-only bypass in `editor_bridge.cc`* — `renameDocument`,
+  `updateDocumentPlacement`, and `deleteDocument` must check `current_document_editable_`/lock
+  ownership the same way `updateSnapshot` does (`src/bridge/editor_bridge.cc:608,656,682`). This is
+  a real correctness/security gap that gets worse once AI-driven bridge calls are added.
+. *Deduplicate `IsAdmin`/`kAdminRole`* into a single shared constant/helper used by
+  `admin_handler.cc`, `workspace_handler.cc`, and `sync_gateway_adapter.cc` — currently three
+  independent implementations of the same authorization check.
+. *Add tests for `auth/` and `backend/`* — `AuthSessionManager`/`AuthTokenStore` (OIDC token
+  lifecycle) and `BackendClient` (all desktop↔server HTTP) have zero test coverage despite being
+  security- and reliability-critical.
+. *Add tests for the authorization-sensitive server handlers* (`admin_handler`, `workspace_handler`)
+  and `SyncGatewayAdapter`'s role/group → channel mapping — this is exactly the code path that
+  decides who can see/administer which workspace data, and it's currently unverified by any test.
+. *Split `main_window.cc`/`page.cc`* by extracting bridge-signal wiring and sync/lock status
+  presentation into dedicated collaborators (continuing the `*_helpers.cc` pattern already started)
+  — both files are large enough that reviewing changes to them safely is difficult, and both will
+  see churn from the AI-features work.

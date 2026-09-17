@@ -1,0 +1,46 @@
+= Task Priorities — 2026-07-27
+
+== Source snapshot
+
+The GitHub state was checked on 2026-07-27 with `gh` against
+https://github.com/Artem535/CppWiki. Local planning documents were also checked,
+especially xref:roadmap/Current_Roadmap.adoc[Current Roadmap],
+xref:backlog/Backlog.adoc[Backlog], and the admin/collaboration backlogs.
+
+The older `doc/backlog/Project_Status_2026-07-15.adoc` is stale: it still calls
+issues #3 and #4 the open priorities, while the current GitHub open list has
+already moved on to issues #12, #29, #30, #31, #32, #51, #60, #113, #137, #148,
+#150, and #152.
+
+== Agreed order
+
+. *Finish and merge the release-packaging track.* Issue #150 is explicitly marked
+  `in-progress` and says no feature work currently has higher priority. Fix
+  `package-release.yml`, validate Linux AppImage, Windows installer, and macOS
+  DMG, then attach artifacts for real-world testing. The current workflow still
+  requests `qtdeclarative` as an add-on and pins Qt 6.5.3.
+. *Merge or close the already implemented PRs.* PR #153 addresses issue #152
+  (dark theme resource packaging), and PR #151 addresses issue #51 (real
+  BlockNote code highlighting). They should be reviewed/validated before new
+  feature work.
+. *Then implement attachments (#148) and the project-board follow-ups (#113,
+  #137).* These are the next feature group after release/package validation and
+  the existing PRs.
+
+CI (#12/#17) and the shared AI engine (#29–#32) are deliberately deferred by
+the current prioritisation.
+
+== Important reconciliation
+
+The roadmap still lists Phase 7 authoritative locks, heartbeats, read-only
+fallback, presence UI, and OpenTelemetry as immediate actions. The newer backlog
+and ADRs show that BlockNote AI MVP work has already progressed beyond the old
+status report. Before starting another large stream, update the roadmap to make
+the chosen sequence explicit; otherwise packaging, Phase 7, CI, and AI compete
+for attention.
+
+== Current open PRs
+
+* https://github.com/Artem535/CppWiki/pull/153 — dark theme resource fix.
+* https://github.com/Artem535/CppWiki/pull/151 — BlockNote code block upgrade.
+* https://github.com/Artem535/CppWiki/pull/17 — draft CI for ctest/frontend build.
