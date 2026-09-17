@@ -56,6 +56,23 @@ class FileDocumentRepository final : public LocalDocumentRepository {
       -> ListPageRelationsResult override;
   [[nodiscard]] auto DeleteKnowledgeForPage(std::string_view workspace_id, std::string_view page_id)
       -> DeleteKnowledgeForPageResult override;
+  [[nodiscard]] auto SaveRepositoryArtifact(const knowledge::RepositoryArtifact& artifact)
+      -> SaveKnowledgeRecordResult override;
+  [[nodiscard]] auto DeleteRepositoryArtifact(std::string_view artifact_id)
+      -> DeleteKnowledgeRecordResult override;
+  [[nodiscard]] auto ListRepositoryArtifacts(std::string_view workspace_id)
+      -> ListRepositoryArtifactsResult override;
+  [[nodiscard]] auto SaveAgentRun(const knowledge::AgentRun& run)
+      -> SaveKnowledgeRecordResult override;
+  [[nodiscard]] auto DeleteAgentRun(std::string_view run_id) -> DeleteKnowledgeRecordResult override;
+  [[nodiscard]] auto ListAgentRuns(std::string_view workspace_id) -> ListAgentRunsResult override;
+  [[nodiscard]] auto SaveResultReference(const knowledge::ResultReference& reference)
+      -> SaveKnowledgeRecordResult override;
+  [[nodiscard]] auto DeleteResultReference(std::string_view reference_id)
+      -> DeleteKnowledgeRecordResult override;
+  [[nodiscard]] auto ListResultReferences(std::string_view workspace_id,
+                                          std::string_view agent_run_id)
+      -> ListResultReferencesResult override;
   [[nodiscard]] auto SaveAttachment(const AttachmentData& attachment)
       -> SaveAttachmentResult override;
   [[nodiscard]] auto LoadAttachment(std::string_view attachment_id, std::string_view workspace_id)

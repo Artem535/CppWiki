@@ -345,6 +345,39 @@ struct FilePageRelationDto {
   FileAuditMetadataDto audit;
 };
 
+struct FileRepositoryArtifactDto {
+  std::string id;
+  std::string workspace_id;
+  std::string name;
+  std::string remote_url;
+  std::string default_branch;
+  std::int32_t state{};
+  FileAuditMetadataDto audit;
+};
+
+struct FileAgentRunDto {
+  std::string id;
+  std::string workspace_id;
+  std::string task_id;
+  std::string context_pack_ref;
+  std::string runtime_id;
+  std::int32_t status{};
+  std::string started_at;
+  std::optional<std::string> completed_at;
+  FileAuditMetadataDto audit;
+};
+
+struct FileResultReferenceDto {
+  std::string id;
+  std::string workspace_id;
+  std::string agent_run_id;
+  std::int32_t kind{};
+  std::string locator;
+  std::optional<std::string> summary;
+  std::string created_at;
+  std::string created_by;
+};
+
 auto ToDto(const knowledge::AuditMetadata& audit) -> FileAuditMetadataDto {
   return {.created_at = audit.created_at,
           .updated_at = audit.updated_at,
@@ -435,6 +468,72 @@ auto FromDto(FilePageRelationDto dto) -> knowledge::PageRelation {
           .source_page_id = std::move(dto.source_page_id),
           .target_page_id = std::move(dto.target_page_id),
           .audit = FromDto(std::move(dto.audit))};
+}
+
+auto ToDto(const knowledge::RepositoryArtifact& artifact) -> FileRepositoryArtifactDto {
+  return {.id = artifact.id,
+          .workspace_id = artifact.workspace_id,
+          .name = artifact.name,
+          .remote_url = artifact.remote_url,
+          .default_branch = artifact.default_branch,
+          .state = static_cast<std::int32_t>(artifact.state),
+          .audit = ToDto(artifact.audit)};
+}
+
+auto FromDto(FileRepositoryArtifactDto dto) -> knowledge::RepositoryArtifact {
+  return {.id = std::move(dto.id),
+          .workspace_id = std::move(dto.workspace_id),
+          .name = std::move(dto.name),
+          .remote_url = std::move(dto.remote_url),
+          .default_branch = std::move(dto.default_branch),
+          .state = static_cast<knowledge::RecordState>(dto.state),
+          .audit = FromDto(std::move(dto.audit))};
+}
+
+auto ToDto(const knowledge::AgentRun& run) -> FileAgentRunDto {
+  return {.id = run.id,
+          .workspace_id = run.workspace_id,
+          .task_id = run.task_id,
+          .context_pack_ref = run.context_pack_ref,
+          .runtime_id = run.runtime_id,
+          .status = static_cast<std::int32_t>(run.status),
+          .started_at = run.started_at,
+          .completed_at = run.completed_at,
+          .audit = ToDto(run.audit)};
+}
+
+auto FromDto(FileAgentRunDto dto) -> knowledge::AgentRun {
+  return {.id = std::move(dto.id),
+          .workspace_id = std::move(dto.workspace_id),
+          .task_id = std::move(dto.task_id),
+          .context_pack_ref = std::move(dto.context_pack_ref),
+          .runtime_id = std::move(dto.runtime_id),
+          .status = static_cast<knowledge::AgentRunStatus>(dto.status),
+          .started_at = std::move(dto.started_at),
+          .completed_at = std::move(dto.completed_at),
+          .audit = FromDto(std::move(dto.audit))};
+}
+
+auto ToDto(const knowledge::ResultReference& reference) -> FileResultReferenceDto {
+  return {.id = reference.id,
+          .workspace_id = reference.workspace_id,
+          .agent_run_id = reference.agent_run_id,
+          .kind = static_cast<std::int32_t>(reference.kind),
+          .locator = reference.locator,
+          .summary = reference.summary,
+          .created_at = reference.created_at,
+          .created_by = reference.created_by};
+}
+
+auto FromDto(FileResultReferenceDto dto) -> knowledge::ResultReference {
+  return {.id = std::move(dto.id),
+          .workspace_id = std::move(dto.workspace_id),
+          .agent_run_id = std::move(dto.agent_run_id),
+          .kind = static_cast<knowledge::ResultReferenceKind>(dto.kind),
+          .locator = std::move(dto.locator),
+          .summary = std::move(dto.summary),
+          .created_at = std::move(dto.created_at),
+          .created_by = std::move(dto.created_by)};
 }
 
 struct FileAttachmentDto {
@@ -1046,6 +1145,195 @@ class FileDocumentRepository::Impl {
     return {};
   }
 
+  [[nodiscard]] auto SaveRepositoryArtifact(const knowledge::RepositoryArtifact& artifact)
+      -> SaveKnowledgeRecordResult {
+    if (const auto validation = knowledge::ValidateRepositoryArtifact(artifact); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    const auto path =
+        MakeKnowledgeFilePath(options_.storage_directory, "repository-artifacts", artifact.id);
+    if (!WriteFileAtomically(path, rfl::json::write(ToDto(artifact)))) {
+      RestoreFromBackup(path);
+      return {.error = MakeError(RepositoryErrorCode::kWriteFailed,
+                                 "Failed to write repository artifact file.")};
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto DeleteRepositoryArtifact(std::string_view artifact_id)
+      -> DeleteKnowledgeRecordResult {
+    try {
+      std::filesystem::remove(
+          MakeKnowledgeFilePath(options_.storage_directory, "repository-artifacts", artifact_id));
+      return {};
+    } catch (const std::exception& error) {
+      return {.error = MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto ListRepositoryArtifacts(std::string_view workspace_id)
+      -> ListRepositoryArtifactsResult {
+    const auto directory = options_.storage_directory / "repository-artifacts";
+    if (!std::filesystem::exists(directory))
+      return {};
+    try {
+      std::vector<knowledge::RepositoryArtifact> artifacts;
+      for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json")
+          continue;
+        const auto content = ReadFileToString(entry.path());
+        if (!content)
+          continue;
+        const auto parsed = rfl::json::read<FileRepositoryArtifactDto>(*content);
+        if (!parsed)
+          return {.artifacts = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Failed to parse repository artifact file.")};
+        auto artifact = FromDto(parsed.value());
+        if (artifact.id != entry.path().stem().string() ||
+            knowledge::ValidateRepositoryArtifact(artifact)) {
+          return {.artifacts = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Repository artifact file contains an invalid record.")};
+        }
+        if (artifact.workspace_id == workspace_id)
+          artifacts.push_back(std::move(artifact));
+      }
+      std::ranges::sort(artifacts,
+                        [](const auto& left, const auto& right) { return left.id < right.id; });
+      return {.artifacts = std::move(artifacts), .error = std::nullopt};
+    } catch (const std::exception& error) {
+      return {.artifacts = {}, .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto SaveAgentRun(const knowledge::AgentRun& run) -> SaveKnowledgeRecordResult {
+    if (const auto validation = knowledge::ValidateAgentRun(run); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    const auto path = MakeKnowledgeFilePath(options_.storage_directory, "agent-runs", run.id);
+    if (!WriteFileAtomically(path, rfl::json::write(ToDto(run)))) {
+      RestoreFromBackup(path);
+      return {.error =
+                  MakeError(RepositoryErrorCode::kWriteFailed, "Failed to write agent run file.")};
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto DeleteAgentRun(std::string_view run_id) -> DeleteKnowledgeRecordResult {
+    try {
+      std::filesystem::remove(MakeKnowledgeFilePath(options_.storage_directory, "agent-runs", run_id));
+      return {};
+    } catch (const std::exception& error) {
+      return {.error = MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto ListAgentRuns(std::string_view workspace_id) -> ListAgentRunsResult {
+    const auto directory = options_.storage_directory / "agent-runs";
+    if (!std::filesystem::exists(directory))
+      return {};
+    try {
+      std::vector<knowledge::AgentRun> runs;
+      for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json")
+          continue;
+        const auto content = ReadFileToString(entry.path());
+        if (!content)
+          continue;
+        const auto parsed = rfl::json::read<FileAgentRunDto>(*content);
+        if (!parsed)
+          return {.runs = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Failed to parse agent run file.")};
+        auto run = FromDto(parsed.value());
+        if (run.id != entry.path().stem().string() || knowledge::ValidateAgentRun(run)) {
+          return {.runs = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Agent run file contains an invalid record.")};
+        }
+        if (run.workspace_id == workspace_id)
+          runs.push_back(std::move(run));
+      }
+      std::ranges::sort(runs,
+                        [](const auto& left, const auto& right) { return left.id < right.id; });
+      return {.runs = std::move(runs), .error = std::nullopt};
+    } catch (const std::exception& error) {
+      return {.runs = {}, .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto SaveResultReference(const knowledge::ResultReference& reference)
+      -> SaveKnowledgeRecordResult {
+    const auto runs = ListAgentRuns(reference.workspace_id);
+    if (runs.error)
+      return {.error = runs.error};
+    const auto run = std::ranges::find_if(
+        runs.runs, [&reference](const auto& item) { return item.id == reference.agent_run_id; });
+    if (run == runs.runs.end()) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                 "Result reference refers to an unknown agent run.")};
+    }
+    if (const auto validation = knowledge::ValidateResultReference(reference, *run); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    const auto path =
+        MakeKnowledgeFilePath(options_.storage_directory, "result-references", reference.id);
+    if (!WriteFileAtomically(path, rfl::json::write(ToDto(reference)))) {
+      RestoreFromBackup(path);
+      return {.error = MakeError(RepositoryErrorCode::kWriteFailed,
+                                 "Failed to write result reference file.")};
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto DeleteResultReference(std::string_view reference_id)
+      -> DeleteKnowledgeRecordResult {
+    try {
+      std::filesystem::remove(
+          MakeKnowledgeFilePath(options_.storage_directory, "result-references", reference_id));
+      return {};
+    } catch (const std::exception& error) {
+      return {.error = MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto ListResultReferences(std::string_view workspace_id,
+                                          std::string_view agent_run_id)
+      -> ListResultReferencesResult {
+    const auto directory = options_.storage_directory / "result-references";
+    if (!std::filesystem::exists(directory))
+      return {};
+    try {
+      std::vector<knowledge::ResultReference> references;
+      for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json")
+          continue;
+        const auto content = ReadFileToString(entry.path());
+        if (!content)
+          continue;
+        const auto parsed = rfl::json::read<FileResultReferenceDto>(*content);
+        if (!parsed)
+          return {.references = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Failed to parse result reference file.")};
+        auto reference = FromDto(parsed.value());
+        if (reference.id != entry.path().stem().string())
+          return {.references = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Result reference file id does not match its name.")};
+        if (reference.workspace_id == workspace_id && reference.agent_run_id == agent_run_id) {
+          references.push_back(std::move(reference));
+        }
+      }
+      std::ranges::sort(references,
+                        [](const auto& left, const auto& right) { return left.id < right.id; });
+      return {.references = std::move(references), .error = std::nullopt};
+    } catch (const std::exception& error) {
+      return {.references = {}, .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
   [[nodiscard]] auto SaveAttachment(const AttachmentData& attachment) -> SaveAttachmentResult {
     if (const auto validation = ValidateAttachmentMetadata(attachment.metadata); validation) {
       return SaveAttachmentResult{.error =
@@ -1539,6 +1827,51 @@ auto FileDocumentRepository::DeleteKnowledgeForPage(std::string_view workspace_i
                                                     std::string_view page_id)
     -> DeleteKnowledgeForPageResult {
   return impl_->DeleteKnowledgeForPage(workspace_id, page_id);
+}
+
+auto FileDocumentRepository::SaveRepositoryArtifact(const knowledge::RepositoryArtifact& artifact)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SaveRepositoryArtifact(artifact);
+}
+
+auto FileDocumentRepository::DeleteRepositoryArtifact(std::string_view artifact_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeleteRepositoryArtifact(artifact_id);
+}
+
+auto FileDocumentRepository::ListRepositoryArtifacts(std::string_view workspace_id)
+    -> ListRepositoryArtifactsResult {
+  return impl_->ListRepositoryArtifacts(workspace_id);
+}
+
+auto FileDocumentRepository::SaveAgentRun(const knowledge::AgentRun& run)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SaveAgentRun(run);
+}
+
+auto FileDocumentRepository::DeleteAgentRun(std::string_view run_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeleteAgentRun(run_id);
+}
+
+auto FileDocumentRepository::ListAgentRuns(std::string_view workspace_id) -> ListAgentRunsResult {
+  return impl_->ListAgentRuns(workspace_id);
+}
+
+auto FileDocumentRepository::SaveResultReference(const knowledge::ResultReference& reference)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SaveResultReference(reference);
+}
+
+auto FileDocumentRepository::DeleteResultReference(std::string_view reference_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeleteResultReference(reference_id);
+}
+
+auto FileDocumentRepository::ListResultReferences(std::string_view workspace_id,
+                                                  std::string_view agent_run_id)
+    -> ListResultReferencesResult {
+  return impl_->ListResultReferences(workspace_id, agent_run_id);
 }
 
 auto FileDocumentRepository::SaveAttachment(const AttachmentData& attachment)

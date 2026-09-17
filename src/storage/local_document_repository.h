@@ -239,6 +239,24 @@ struct ListPageRelationsResult {
   std::optional<RepositoryError> error;
 };
 
+// Engineering Context Artifact Model Contract (#201, issue #230): persistence for the three
+// artifact record types added in #226. Same Save/Delete/List shape and kUnsupported-by-default
+// contract as the PropertyDefinition/RelationType/PageRelation methods above.
+struct ListRepositoryArtifactsResult {
+  std::vector<knowledge::RepositoryArtifact> artifacts;
+  std::optional<RepositoryError> error;
+};
+
+struct ListAgentRunsResult {
+  std::vector<knowledge::AgentRun> runs;
+  std::optional<RepositoryError> error;
+};
+
+struct ListResultReferencesResult {
+  std::vector<knowledge::ResultReference> references;
+  std::optional<RepositoryError> error;
+};
+
 class LocalDocumentRepository {
  public:
   LocalDocumentRepository() = default;
@@ -313,6 +331,48 @@ class LocalDocumentRepository {
   [[nodiscard]] virtual auto DeleteKnowledgeForPage(std::string_view, std::string_view)
       -> DeleteKnowledgeForPageResult {
     return {
+        .error = UnsupportedKnowledgeError(),
+    };
+  }
+  [[nodiscard]] virtual auto SaveRepositoryArtifact(const knowledge::RepositoryArtifact&)
+      -> SaveKnowledgeRecordResult {
+    return UnsupportedKnowledgeSaveResult();
+  }
+  [[nodiscard]] virtual auto DeleteRepositoryArtifact(std::string_view)
+      -> DeleteKnowledgeRecordResult {
+    return UnsupportedKnowledgeDeleteResult();
+  }
+  [[nodiscard]] virtual auto ListRepositoryArtifacts(std::string_view)
+      -> ListRepositoryArtifactsResult {
+    return {
+        .artifacts = {},
+        .error = UnsupportedKnowledgeError(),
+    };
+  }
+  [[nodiscard]] virtual auto SaveAgentRun(const knowledge::AgentRun&) -> SaveKnowledgeRecordResult {
+    return UnsupportedKnowledgeSaveResult();
+  }
+  [[nodiscard]] virtual auto DeleteAgentRun(std::string_view) -> DeleteKnowledgeRecordResult {
+    return UnsupportedKnowledgeDeleteResult();
+  }
+  [[nodiscard]] virtual auto ListAgentRuns(std::string_view) -> ListAgentRunsResult {
+    return {
+        .runs = {},
+        .error = UnsupportedKnowledgeError(),
+    };
+  }
+  [[nodiscard]] virtual auto SaveResultReference(const knowledge::ResultReference&)
+      -> SaveKnowledgeRecordResult {
+    return UnsupportedKnowledgeSaveResult();
+  }
+  [[nodiscard]] virtual auto DeleteResultReference(std::string_view)
+      -> DeleteKnowledgeRecordResult {
+    return UnsupportedKnowledgeDeleteResult();
+  }
+  [[nodiscard]] virtual auto ListResultReferences(std::string_view, std::string_view)
+      -> ListResultReferencesResult {
+    return {
+        .references = {},
         .error = UnsupportedKnowledgeError(),
     };
   }

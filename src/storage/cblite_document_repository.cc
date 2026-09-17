@@ -29,6 +29,11 @@ constexpr std::string_view kKnowledgePropertyDefinitionType = "cppwiki_property_
 constexpr std::string_view kKnowledgePagePropertyValueType = "cppwiki_page_property_value";
 constexpr std::string_view kKnowledgeRelationTypeType = "cppwiki_relation_type";
 constexpr std::string_view kKnowledgePageRelationType = "cppwiki_page_relation";
+// Engineering Context Artifact Model Contract (#201, issue #230): same generic knowledge-record
+// envelope as the four types above, one constant per record type.
+constexpr std::string_view kKnowledgeRepositoryArtifactType = "cppwiki_repository_artifact";
+constexpr std::string_view kKnowledgeAgentRunType = "cppwiki_agent_run";
+constexpr std::string_view kKnowledgeResultReferenceType = "cppwiki_result_reference";
 
 struct KnowledgeEnvelope {
   std::string id;
@@ -1060,6 +1065,115 @@ class CbliteDocumentRepository::Impl {
     return {.relations = std::move(relations), .error = std::nullopt};
   }
 
+  [[nodiscard]] auto SaveRepositoryArtifact(const knowledge::RepositoryArtifact& artifact)
+      -> SaveKnowledgeRecordResult {
+    if (const auto validation = knowledge::ValidateRepositoryArtifact(artifact); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    return SaveKnowledgeRaw(kKnowledgeRepositoryArtifactType, artifact.id, artifact.workspace_id,
+                            {}, rfl::json::write(artifact));
+  }
+
+  [[nodiscard]] auto DeleteRepositoryArtifact(std::string_view artifact_id)
+      -> DeleteKnowledgeRecordResult {
+    return DeleteKnowledgeRaw(kKnowledgeRepositoryArtifactType, artifact_id);
+  }
+
+  [[nodiscard]] auto ListRepositoryArtifacts(std::string_view workspace_id)
+      -> ListRepositoryArtifactsResult {
+    auto [artifacts, error] =
+        ParseKnowledgeRecords<knowledge::RepositoryArtifact>(kKnowledgeRepositoryArtifactType);
+    if (error) {
+      return {.artifacts = {}, .error = error};
+    }
+    artifacts.erase(
+        std::remove_if(artifacts.begin(), artifacts.end(),
+                       [&](const auto& item) { return item.workspace_id != workspace_id; }),
+        artifacts.end());
+    for (const auto& artifact : artifacts) {
+      if (const auto validation = knowledge::ValidateRepositoryArtifact(artifact); validation) {
+        return {.artifacts = {},
+                .error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+      }
+    }
+    std::ranges::sort(artifacts,
+                      [](const auto& left, const auto& right) { return left.id < right.id; });
+    return {.artifacts = std::move(artifacts), .error = std::nullopt};
+  }
+
+  [[nodiscard]] auto SaveAgentRun(const knowledge::AgentRun& run) -> SaveKnowledgeRecordResult {
+    if (const auto validation = knowledge::ValidateAgentRun(run); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    return SaveKnowledgeRaw(kKnowledgeAgentRunType, run.id, run.workspace_id, {},
+                            rfl::json::write(run));
+  }
+
+  [[nodiscard]] auto DeleteAgentRun(std::string_view run_id) -> DeleteKnowledgeRecordResult {
+    return DeleteKnowledgeRaw(kKnowledgeAgentRunType, run_id);
+  }
+
+  [[nodiscard]] auto ListAgentRuns(std::string_view workspace_id) -> ListAgentRunsResult {
+    auto [runs, error] = ParseKnowledgeRecords<knowledge::AgentRun>(kKnowledgeAgentRunType);
+    if (error) {
+      return {.runs = {}, .error = error};
+    }
+    runs.erase(std::remove_if(runs.begin(), runs.end(),
+                              [&](const auto& item) { return item.workspace_id != workspace_id; }),
+              runs.end());
+    for (const auto& run : runs) {
+      if (const auto validation = knowledge::ValidateAgentRun(run); validation) {
+        return {.runs = {}, .error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+      }
+    }
+    std::ranges::sort(runs,
+                      [](const auto& left, const auto& right) { return left.id < right.id; });
+    return {.runs = std::move(runs), .error = std::nullopt};
+  }
+
+  [[nodiscard]] auto SaveResultReference(const knowledge::ResultReference& reference)
+      -> SaveKnowledgeRecordResult {
+    const auto runs = ListAgentRuns(reference.workspace_id);
+    if (runs.error) {
+      return {.error = runs.error};
+    }
+    const auto run = std::ranges::find_if(
+        runs.runs, [&reference](const auto& item) { return item.id == reference.agent_run_id; });
+    if (run == runs.runs.end()) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                 "Result reference refers to an unknown agent run.")};
+    }
+    if (const auto validation = knowledge::ValidateResultReference(reference, *run); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    return SaveKnowledgeRaw(kKnowledgeResultReferenceType, reference.id, reference.workspace_id,
+                            reference.agent_run_id, rfl::json::write(reference));
+  }
+
+  [[nodiscard]] auto DeleteResultReference(std::string_view reference_id)
+      -> DeleteKnowledgeRecordResult {
+    return DeleteKnowledgeRaw(kKnowledgeResultReferenceType, reference_id);
+  }
+
+  [[nodiscard]] auto ListResultReferences(std::string_view workspace_id,
+                                          std::string_view agent_run_id)
+      -> ListResultReferencesResult {
+    auto [references, error] =
+        ParseKnowledgeRecords<knowledge::ResultReference>(kKnowledgeResultReferenceType);
+    if (error) {
+      return {.references = {}, .error = error};
+    }
+    references.erase(std::remove_if(references.begin(), references.end(),
+                                    [&](const auto& item) {
+                                      return item.workspace_id != workspace_id ||
+                                             item.agent_run_id != agent_run_id;
+                                    }),
+                     references.end());
+    std::ranges::sort(references,
+                      [](const auto& left, const auto& right) { return left.id < right.id; });
+    return {.references = std::move(references), .error = std::nullopt};
+  }
+
   [[nodiscard]] auto DeleteKnowledgeForPage(std::string_view workspace_id, std::string_view page_id)
       -> DeleteKnowledgeForPageResult {
     const auto values = ListPagePropertyValues(workspace_id, page_id);
@@ -2028,6 +2142,51 @@ auto CbliteDocumentRepository::DeleteKnowledgeForPage(std::string_view workspace
                                                       std::string_view page_id)
     -> DeleteKnowledgeForPageResult {
   return impl_->DeleteKnowledgeForPage(workspace_id, page_id);
+}
+
+auto CbliteDocumentRepository::SaveRepositoryArtifact(const knowledge::RepositoryArtifact& artifact)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SaveRepositoryArtifact(artifact);
+}
+
+auto CbliteDocumentRepository::DeleteRepositoryArtifact(std::string_view artifact_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeleteRepositoryArtifact(artifact_id);
+}
+
+auto CbliteDocumentRepository::ListRepositoryArtifacts(std::string_view workspace_id)
+    -> ListRepositoryArtifactsResult {
+  return impl_->ListRepositoryArtifacts(workspace_id);
+}
+
+auto CbliteDocumentRepository::SaveAgentRun(const knowledge::AgentRun& run)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SaveAgentRun(run);
+}
+
+auto CbliteDocumentRepository::DeleteAgentRun(std::string_view run_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeleteAgentRun(run_id);
+}
+
+auto CbliteDocumentRepository::ListAgentRuns(std::string_view workspace_id) -> ListAgentRunsResult {
+  return impl_->ListAgentRuns(workspace_id);
+}
+
+auto CbliteDocumentRepository::SaveResultReference(const knowledge::ResultReference& reference)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SaveResultReference(reference);
+}
+
+auto CbliteDocumentRepository::DeleteResultReference(std::string_view reference_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeleteResultReference(reference_id);
+}
+
+auto CbliteDocumentRepository::ListResultReferences(std::string_view workspace_id,
+                                                    std::string_view agent_run_id)
+    -> ListResultReferencesResult {
+  return impl_->ListResultReferences(workspace_id, agent_run_id);
 }
 
 auto CbliteDocumentRepository::SaveDocument(const DocumentRecord& document) -> SaveDocumentResult {
