@@ -831,6 +831,51 @@ auto TestFileContextPackRecordLifecycle() -> void {
   std::filesystem::remove_all(storage_directory);
 }
 
+// Issue #232: FilePageRelationDto never carried PageRelation's source_kind/target_kind
+// (ArtifactKind) fields added in #225, so a relation file written with non-default kinds would
+// silently come back as ArtifactKind::kPage on the next load. Write the file directly (rather
+// than through SavePageRelation, which today still rejects non-page endpoints) to exercise the
+// DTO round-trip itself.
+auto TestFileRepositoryRoundTripsPageRelationArtifactKind() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-relation-artifact-kind-test";
+  std::filesystem::remove_all(storage_directory);
+  std::filesystem::create_directories(storage_directory / "page-relations");
+
+  const auto relation_path = storage_directory / "page-relations" / "relation-cross-kind.json";
+  {
+    std::ofstream relation_file(relation_path, std::ios::binary);
+    relation_file << R"({
+      "id": "relation-cross-kind",
+      "workspace_id": "engineering",
+      "relation_type_id": "relation-depends-on",
+      "source_page_id": "page-auth",
+      "target_page_id": "page-api",
+      "source_kind": 1,
+      "target_kind": 2,
+      "audit": {
+        "created_at": "2026-09-08T10:00:00Z",
+        "updated_at": "2026-09-08T10:00:00Z",
+        "created_by": "tester",
+        "updated_by": "tester"
+      }
+    })";
+  }
+
+  cppwiki::storage::FileDocumentRepository repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+  const auto relations = repository.ListPageRelations("engineering", "page-auth");
+  Require(!relations.error, "loading a page relation with non-page artifact kinds should succeed");
+  Require(relations.relations.size() == 1, "the page relation should be loaded");
+  const auto& relation = relations.relations.front();
+  Require(relation.source_kind == cppwiki::knowledge::ArtifactKind::kRepository,
+          "source_kind should round-trip instead of resetting to ArtifactKind::kPage");
+  Require(relation.target_kind == cppwiki::knowledge::ArtifactKind::kAgentRun,
+          "target_kind should round-trip instead of resetting to ArtifactKind::kPage");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -848,6 +893,7 @@ auto main() -> int {
   TestFileRepositoryKnowledgeRecordLifecycle();
   TestFileRepositoryArtifactRecordLifecycle();
   TestFileContextPackRecordLifecycle();
+  TestFileRepositoryRoundTripsPageRelationArtifactKind();
   spdlog::info("cppwiki_file_document_repository_tests passed");
   return EXIT_SUCCESS;
 }
