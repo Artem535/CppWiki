@@ -294,6 +294,85 @@ auto TestKnowledgeMethodsDefaultToUnsupported() -> void {
           "unsupported knowledge page cleanup must report kUnsupported");
 }
 
+// Engineering Context Artifact Model Contract (#201, issue #230): RepositoryArtifact/AgentRun/
+// ResultReference persistence follows the same kUnsupported-by-default contract as the existing
+// knowledge records above, so a backend that doesn't implement them degrades gracefully.
+auto TestArtifactRecordMethodsDefaultToUnsupported() -> void {
+  FakeDocumentRepository repository;
+  const auto audit = cppwiki::knowledge::AuditMetadata{
+      .created_at = "2026-09-17T10:00:00.000Z",
+      .updated_at = "2026-09-17T10:00:00.000Z",
+      .created_by = "tester",
+      .updated_by = "tester",
+  };
+
+  const cppwiki::knowledge::RepositoryArtifact repository_artifact{
+      .id = "repo-cppwiki",
+      .workspace_id = "engineering",
+      .name = "CppWiki",
+      .remote_url = "git@github.com:Artem535/CppWiki.git",
+      .default_branch = "main",
+      .state = cppwiki::knowledge::RecordState::kActive,
+      .audit = audit,
+  };
+  const auto save_repository = repository.SaveRepositoryArtifact(repository_artifact);
+  Require(save_repository.error.has_value() &&
+              save_repository.error->code == cppwiki::storage::RepositoryErrorCode::kUnsupported,
+          "repositories without artifact persistence must report kUnsupported for save");
+  const auto delete_repository = repository.DeleteRepositoryArtifact("repo-cppwiki");
+  Require(delete_repository.error.has_value() &&
+              delete_repository.error->code == cppwiki::storage::RepositoryErrorCode::kUnsupported,
+          "repositories without artifact persistence must report kUnsupported for delete");
+  const auto list_repositories = repository.ListRepositoryArtifacts("engineering");
+  Require(list_repositories.error.has_value() && list_repositories.artifacts.empty(),
+          "unsupported repository artifact list must return an error and no records");
+
+  const cppwiki::knowledge::AgentRun agent_run{
+      .id = "run-a",
+      .workspace_id = "engineering",
+      .task_id = "page-task-a",
+      .context_pack_ref = "pack-v1",
+      .runtime_id = "claude-code",
+      .status = cppwiki::knowledge::AgentRunStatus::kRunning,
+      .started_at = "2026-09-17T10:00:00.000Z",
+      .completed_at = std::nullopt,
+      .audit = audit,
+  };
+  const auto save_run = repository.SaveAgentRun(agent_run);
+  Require(save_run.error.has_value() &&
+              save_run.error->code == cppwiki::storage::RepositoryErrorCode::kUnsupported,
+          "repositories without artifact persistence must report kUnsupported for save");
+  const auto delete_run = repository.DeleteAgentRun("run-a");
+  Require(delete_run.error.has_value() &&
+              delete_run.error->code == cppwiki::storage::RepositoryErrorCode::kUnsupported,
+          "repositories without artifact persistence must report kUnsupported for delete");
+  const auto list_runs = repository.ListAgentRuns("engineering");
+  Require(list_runs.error.has_value() && list_runs.runs.empty(),
+          "unsupported agent run list must return an error and no records");
+
+  const cppwiki::knowledge::ResultReference result_reference{
+      .id = "result-1",
+      .workspace_id = "engineering",
+      .agent_run_id = "run-a",
+      .kind = cppwiki::knowledge::ResultReferenceKind::kGitRef,
+      .locator = "refs/heads/agent/run-a-result",
+      .summary = std::nullopt,
+      .created_at = "2026-09-17T10:00:00.000Z",
+      .created_by = "system",
+  };
+  const auto save_reference = repository.SaveResultReference(result_reference);
+  Require(save_reference.error.has_value() &&
+              save_reference.error->code == cppwiki::storage::RepositoryErrorCode::kUnsupported,
+          "repositories without artifact persistence must report kUnsupported for save");
+  const auto delete_reference = repository.DeleteResultReference("result-1");
+  Require(delete_reference.error.has_value() &&
+              delete_reference.error->code == cppwiki::storage::RepositoryErrorCode::kUnsupported,
+          "repositories without artifact persistence must report kUnsupported for delete");
+  const auto list_references = repository.ListResultReferences("engineering", "run-a");
+  Require(list_references.error.has_value() && list_references.references.empty(),
+          "unsupported result reference list must return an error and no records");
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -301,6 +380,7 @@ auto main() -> int {
   TestRepositoryInterfaceStoresConflictRecords();
   TestRepositoryInterfaceUpdatesConflictResolutionState();
   TestKnowledgeMethodsDefaultToUnsupported();
+  TestArtifactRecordMethodsDefaultToUnsupported();
 
   spdlog::info("cppwiki_local_document_repository_tests passed");
   return EXIT_SUCCESS;

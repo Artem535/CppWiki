@@ -683,6 +683,97 @@ auto TestFileRepositoryKnowledgeRecordLifecycle() -> void {
   std::filesystem::remove_all(storage_directory);
 }
 
+// Engineering Context Artifact Model Contract (#201, issue #230): RepositoryArtifact/AgentRun/
+// ResultReference follow the same save-then-reopen round-trip and delete contract exercised
+// above for the pre-existing knowledge record types.
+auto TestFileRepositoryArtifactRecordLifecycle() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-artifact-record-test";
+  std::filesystem::remove_all(storage_directory);
+
+  const cppwiki::knowledge::AuditMetadata audit{
+      .created_at = "2026-09-17T10:00:00Z",
+      .updated_at = "2026-09-17T10:00:00Z",
+      .created_by = "tester",
+      .updated_by = "tester",
+  };
+  const cppwiki::knowledge::RepositoryArtifact repository_artifact{
+      .id = "repo-cppwiki",
+      .workspace_id = "engineering",
+      .name = "CppWiki",
+      .remote_url = "git@github.com:Artem535/CppWiki.git",
+      .default_branch = "main",
+      .state = cppwiki::knowledge::RecordState::kActive,
+      .audit = audit,
+  };
+  const cppwiki::knowledge::AgentRun agent_run{
+      .id = "run-a",
+      .workspace_id = "engineering",
+      .task_id = "page-task-a",
+      .context_pack_ref = "pack-v1",
+      .runtime_id = "claude-code",
+      .status = cppwiki::knowledge::AgentRunStatus::kRunning,
+      .started_at = "2026-09-17T10:00:00Z",
+      .completed_at = std::nullopt,
+      .audit = audit,
+  };
+  const cppwiki::knowledge::ResultReference result_reference{
+      .id = "result-1",
+      .workspace_id = "engineering",
+      .agent_run_id = "run-a",
+      .kind = cppwiki::knowledge::ResultReferenceKind::kGitRef,
+      .locator = "refs/heads/agent/run-a-result",
+      .summary = std::nullopt,
+      .created_at = "2026-09-17T10:00:00Z",
+      .created_by = "system",
+  };
+
+  {
+    cppwiki::storage::FileDocumentRepository repository(
+        cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+    Require(!repository.SaveRepositoryArtifact(repository_artifact).error,
+            "file repository should save a repository artifact");
+    Require(!repository.SaveAgentRun(agent_run).error,
+            "file repository should save an agent run");
+    Require(!repository.SaveResultReference(result_reference).error,
+            "file repository should save a result reference");
+  }
+
+  cppwiki::storage::FileDocumentRepository reopened_repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+  const auto repositories = reopened_repository.ListRepositoryArtifacts("engineering");
+  Require(!repositories.error && repositories.artifacts.size() == 1,
+          "repository artifacts should survive repository restart");
+  Require(repositories.artifacts.front().remote_url == "git@github.com:Artem535/CppWiki.git",
+          "repository artifact fields should round-trip");
+
+  const auto runs = reopened_repository.ListAgentRuns("engineering");
+  Require(!runs.error && runs.runs.size() == 1, "agent runs should survive repository restart");
+  Require(runs.runs.front().status == cppwiki::knowledge::AgentRunStatus::kRunning,
+          "agent run fields should round-trip");
+
+  const auto references = reopened_repository.ListResultReferences("engineering", "run-a");
+  Require(!references.error && references.references.size() == 1,
+          "result references should survive repository restart");
+  Require(references.references.front().locator == "refs/heads/agent/run-a-result",
+          "result reference fields should round-trip");
+
+  Require(!reopened_repository.DeleteResultReference("result-1").error,
+          "deleting a result reference should succeed");
+  Require(reopened_repository.ListResultReferences("engineering", "run-a").references.empty(),
+          "deleted result reference must not be listed");
+  Require(!reopened_repository.DeleteAgentRun("run-a").error,
+          "deleting an agent run should succeed");
+  Require(reopened_repository.ListAgentRuns("engineering").runs.empty(),
+          "deleted agent run must not be listed");
+  Require(!reopened_repository.DeleteRepositoryArtifact("repo-cppwiki").error,
+          "deleting a repository artifact should succeed");
+  Require(reopened_repository.ListRepositoryArtifacts("engineering").artifacts.empty(),
+          "deleted repository artifact must not be listed");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -698,6 +789,7 @@ auto main() -> int {
   TestFileRepositoryDeleteDocumentCleansUpItsRevisions();
   TestFileRepositoryAttachmentLifecycle();
   TestFileRepositoryKnowledgeRecordLifecycle();
+  TestFileRepositoryArtifactRecordLifecycle();
   spdlog::info("cppwiki_file_document_repository_tests passed");
   return EXIT_SUCCESS;
 }
