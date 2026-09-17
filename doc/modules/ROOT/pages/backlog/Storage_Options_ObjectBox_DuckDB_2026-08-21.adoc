@@ -1,0 +1,154 @@
+= ObjectBox and DuckDB as CppWiki Storage Candidates
+:revdate: 2026-08-21
+:status: Research note
+
+== Decision summary
+
+ObjectBox is the only one of the two that is plausibly a replacement for the
+current local database plus synchronization stack: it has a C++ API, on-device
+HNSW vector search, and a supplied incremental sync product. Its Sync product
+is commercial and therefore is not a suitable reason to replace the current
+free sync stack.
+
+DuckDB is not a replacement for Couchbase Lite plus Sync Gateway.  It now has
+transparent encryption at rest, full-text search and a vector-search extension,
+but has no offline, conflict-aware device synchronization.  Moving the primary
+store to DuckDB would mean implementing CppWiki Sync as a new product.
+
+Neither option should be adopted just to obtain semantic search. Semantic
+chunks, embeddings and edges are derived state and must not be synchronized.
+The viable option is a two-store design: Couchbase Lite remains authoritative;
+ObjectBox is a local, disposable vector index only.
+
+== ObjectBox
+
+=== What it covers
+
+* The C/C++ API offers a C++11 header and persists FlatBuffers objects.
+  link:https://objectbox.io/docfiles/c/current/[ObjectBox C/C++ API]
+* On-device vector search is available for C and C++. It uses approximate
+  nearest-neighbour search and can be used either beside the primary model or
+  as the database itself.
+  link:https://docs.objectbox.io/on-device-vector-search[ObjectBox vector search]
+* ObjectBox Sync is designed for incremental synchronization of local database
+  changes, including devices that are offline and reconnect later.
+  link:https://objectbox.io/sync/[ObjectBox Sync]
+* Sync is explicitly a commercial product, licensed per project and deployment
+  needs. The database itself can be used without it.
+  link:https://objectbox.io/sync-pricing/[ObjectBox Sync pricing]
+
+=== Open questions and risks
+
+* It is a wholesale persistence migration, not a drop-in vector-index addition:
+  document layout, migrations, access layer, sync server and conflict semantics
+  must all change.
+* The published Sync material promises encrypted transport, JWT authentication
+  and access controls. It does not establish transparent database-file
+  encryption at rest for the C++ product. This must be confirmed in writing
+  with the vendor, including platform coverage and licence terms, before it can
+  be considered an answer to the encryption requirement.
+  link:https://objectbox.io/sync/[ObjectBox Sync security]
+* Vector search is documented. A first-party C++ full-text index or a built-in
+  BM25/vector rank-fusion feature was not established by this research. Treat
+  ``hybrid search'' as an integration task until a concrete supported API is
+  verified.
+* The behaviour of automatic conflict handling must be evaluated against
+  CppWiki's authoritative data model. It must not silently discard competing
+  page, property, relation or hierarchy edits.
+
+=== Fit
+
+ObjectBox is worth a small technical and commercial spike only if replacing the
+entire Couchbase Lite + Sync Gateway stack is an acceptable product decision.
+The spike should cover: C++ packaging on all target platforms, offline conflict
+cases, schema migration/export, licence cost, at-rest encryption and the exact
+text-plus-vector query path.
+
+== Two-store semantic search design
+
+This avoids ObjectBox Sync altogether and preserves the existing Sync Gateway
+protocol.
+
+[source,text]
+----
+authoritative page change
+          |
+          v
+Couchbase Lite (pages, properties, relations, FTS)
+          |
+          +--> local indexing job --> ObjectBox (chunk id, page id, vector, hash)
+
+search query --> Couchbase Lite FTS top K -----+
+                                                 +--> reciprocal-rank fusion --> results
+query embedding --> ObjectBox ANN top K -------+
+----
+
+The ObjectBox records contain no source document and no sync metadata: only a
+stable chunk identifier, its page identifier, a content hash, model/index
+version and the embedding vector. They can be erased and rebuilt from
+Couchbase Lite.
+
+Couchbase Lite already has full-text indexes, ranking and Russian stemming.
+link:https://docs.couchbase.com/couchbase-lite/current/c/fts.html[Couchbase Lite FTS]
+ObjectBox documents C++ ANN vector search; the two result lists can therefore
+be combined in CppWiki by reciprocal-rank fusion (RRF), with no score-scale
+conversion and no database join.
+
+This is *hybrid retrieval*, but not an ObjectBox one-query feature. First-party
+material found during this research documents vector nearest-neighbour search
+and ordinary property predicates, not FTS/BM25 or built-in lexical/vector rank
+fusion for ObjectBox C++.
+
+== DuckDB
+
+=== What it covers
+
+* DuckDB 1.4 introduced transparent AES database encryption. The project notes
+  that this is not currently an official NIST-compliant solution; later 1.4
+  releases also have OpenSSL-extension packaging considerations for writes.
+  link:https://duckdb.org/2025/11/19/encryption-in-duckdb[DuckDB encryption announcement]
+* Its `fts` extension provides BM25 full-text search, including Russian
+  stemming. The FTS index does *not* automatically update when source rows
+  change, so it must be rebuilt or maintained by the application.
+  link:https://duckdb.org/docs/lts/core_extensions/full_text_search[DuckDB FTS documentation]
+* The `vss` extension offers HNSW vector search. It is experimental, and
+  persistent HNSW indexes are disabled by default because crash/WAL recovery is
+  not fully implemented; enabling persistence carries a data-loss/corruption
+  warning.
+  link:https://duckdb.org/docs/lts/core_extensions/vss[DuckDB VSS documentation]
+
+=== Why it does not provide CppWiki Sync
+
+DuckDB's documented concurrency model is local: one process can write to a
+database file, while multiple processes may read it. The project points to
+Quack (beta remote protocol) and DuckLake for multi-client/server deployments,
+not to offline device replication with per-record conflicts and reconnection.
+link:https://duckdb.org/docs/current/connect/concurrency[DuckDB concurrency documentation]
+
+Therefore a migration to DuckDB would require a new synchronization protocol,
+server, authentication/authorization model, change log, conflict resolution and
+initial/partial replication. Those are precisely the responsibilities currently
+provided by Couchbase Lite and Sync Gateway.
+
+=== Fit
+
+DuckDB can be reconsidered later as a disposable local analytics cache. It is
+not suitable today as CppWiki's primary local-first document store, and using it
+only for a derived semantic index would not solve encryption for authoritative
+wiki data.
+
+== Recommendation
+
+Do not migrate the primary store to DuckDB.
+
+Keep the authoritative/derived boundary from the Knowledge Graph design:
+
+* authoritative pages, hierarchy, properties and relations need a mature,
+  conflict-aware sync system;
+* embeddings, chunks and semantic edges should remain local, rebuildable state.
+
+Use the two-store design for Phase 2 if an ObjectBox packaging spike proves
+acceptable. Do not use ObjectBox Sync. Keep Couchbase Lite + Sync Gateway for
+authoritative data and sync, and use ObjectBox solely as a rebuildable local
+vector index. This does not solve encryption for authoritative wiki data; that
+remains a separate storage-security decision.

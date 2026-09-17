@@ -1,0 +1,204 @@
+= AI Vision Proposal — Tabbed Workspace + AI Chat
+
+Status: Draft / Brainstorm +
+Date: 2026-07-15 +
+Related docs: `doc/PRD_v9_Block_Document_Edition.md`, `doc/roadmap/Current_Roadmap.md`,
+`doc/architecture/adr/ADR-001-editor-choice.md`, `ADR-003-collaboration-strategy.md`,
+`ADR-004-plugin-system.md` +
+Related issues: #3 (Прокачать BlockNote для работы с ИИ), #4 (Подключить Antora и перевести
+документацию в AsciiDoc)
+
+This is a vision/brainstorm document. It does not prescribe an implementation and contains no code.
+It exists to align the product direction before any of it is broken down into roadmap milestones or
+issues.
+
+== 1. Problem / Motivation
+
+CppWiki today is a single-surface product: one editor host (`QWebEngineView` running BlockNote) per
+`Page`, wrapped in navigation chrome (`MainWindow` + document tree). That surface is correct for
+"write and sync a wiki document" but does not have room for two things the project is already
+heading toward:
+
+* *AI assistance inside documents.* Issue #3 asks for BlockNote to be "pumped up" for AI — i.e.
+  inline AI actions in the editor (rewrite, summarize, expand, ask-about-selection). That is a
+  narrow, in-editor feature. It says nothing yet about a _standing_ AI capability the user can return
+  to across documents — a conversation, not a one-shot transform.
+* *Non-editor, project-shaped work.* Issue #4 (Antora/AsciiDoc migration) makes explicit that this
+  wiki's content is not only "user wiki pages" — it also carries the project's own documentation
+  (PRDs, ADRs, roadmap, architecture docs) as AsciiDoc source under `doc/`. That is fundamentally a
+  _docs-as-code_ corpus sitting next to a C++ codebase. A tool that already understands
+  block-structured documents, offline sync, and a C++ project on disk is naturally positioned to
+  become a place where a developer/wiki-author also asks questions about that code and those docs,
+  not just edits BlockNote pages.
+
+Right now `Page` hard-wires exactly one `QWebEngineView` as "the" content area (`src/gui/page.h`,
+`content_widget_`), and `MainWindow` hosts exactly one `Page` (`current_page_`). There is no concept
+of parallel, independently-stateful workspaces. As soon as we introduce anything that isn't "edit the
+current document" — a chat with an assistant, a code-aware view, a diff/review view — that
+single-surface assumption breaks. A *tabbed workspace* is the natural generalization: each tab is
+its own `IPage`-shaped surface with its own lifecycle, and "Documentation" (today's editor) becomes
+one tab among several instead of the whole window.
+
+AI chat is the forcing function, but the tab model should be motivated on its own terms: it is also
+the natural home for review/merge work that already exists in a modal-dialog form
+(`ConflictMergeDialog`) and for presence/lock state that is currently squeezed into a status strip.
+
+== 2. Proposed Tabs
+
+=== Core (explicitly requested)
+
+. *Documentation* — today's `Page`: document tree + BlockNote editor host. The default/primary
+  tab, unchanged in spirit; existing lock/presence/sync status chrome moves from being global
+  `MainWindow` furniture to being scoped per-Documentation-tab (still shown when other tabs are
+  active, but "owned" conceptually by this tab).
+. *Chats / Sessions* — one or more AI conversation threads. A session can be scratch (ephemeral,
+  local-only) or attached to a document/workspace (its transcript becomes referenceable context, and
+  optionally persisted like any other synced entity). Multiple concurrent sessions = multiple
+  sub-tabs or a session switcher within this tab, mirroring how browsers/IDEs handle multiple chats.
+. *Code work* — a project-aware surface: browse/read source under `src/`, view file trees,
+  possibly run `git status`/`diff`, and hand code context to the AI session. This is the tab that
+  makes CppWiki's AI story different from "wiki with a chatbot bolted on": the user is a developer on
+  _this_ codebase, and the wiki already lives in the same repo as the code and its AsciiDoc docs.
+
+=== Additional tabs proposed given the project's shape
+
+[start=4]
+. *Knowledge Graph / Search* — a cross-cutting search and backlink view over the whole corpus
+  (wiki pages + AsciiDoc docs once #4 lands + code, once Code work exists). This is the natural
+  retrieval surface for AI grounding: before an AI chat answers "how does locking work here", it (or
+  the user) should be able to search/browse the same index this tab exposes. Also doubles as a plain
+  user-facing "find in wiki" upgrade over the current document tree, which has no search today.
+. *Review / Diff* — a first-class surface for the conflict-resolution and collaborative-review
+  work that already exists as a dialog (`gui/merge/ConflictMergeDialog`) and sync-conflict actions in
+  `MainWindow` (`UseLocalForSelectedSyncConflict`, `OpenMergeEditorForSelectedSyncConflict`, etc.).
+  Promoting this from a modal dialog triggered by a status badge to a tab makes room for AI-assisted
+  merge suggestions later ("summarize what changed between these two versions") without overloading
+  a dialog.
+. *Presence / Activity* — a tab-level home for what `PresenceStripWidget` and the collaboration
+  panel currently show inline: who's editing what, lock ownership, recent activity across the
+  workspace. Low priority relative to the others, but worth calling out because "who else is here"
+  naturally grows once multiple tabs (chat, docs, code) can all be shared/synced surfaces.
+. *Settings / Integrations* — elevate today's settings dialog into a tab, primarily to hold the
+  AI-specific configuration this vision requires: which model/provider backs chat, local-vs-remote
+  inference toggle, per-workspace AI opt-in, and (per #4) Antora/AsciiDoc export settings. A dialog
+  is fine while settings are few; once "configure your AI provider and what it's allowed to see"
+  exists, a tab gives it room to be more than a dialog.
+
+Recommended minimum viable tab set for a first pass: *Documentation, Chats/Sessions, Code work,
+Knowledge Graph/Search*. Review/Diff, Presence/Activity, and Settings/Integrations can stay as
+dialogs/panels until the tab shell itself proves out, then migrate in.
+
+== 3. Mapping onto Existing Architecture
+
+=== Desktop side
+
+* *New module `src/ai/`*, parallel to `sync/`, `auth/`, `backend/`: an `AiChatService` (or similar)
+  responsible for session lifecycle, message history, and talking to whatever inference backend is
+  configured (local model, remote API, or the server-mediated path below). It should look like
+  `sync/DocumentSyncService`: a plain C++ service the GUI layer depends on, not something baked into
+  `bridge/`.
+* *`bridge/` gets a narrow new surface*, not a rewrite. The BlockNote-facing AI actions from issue #3
+  (inline "ask AI about this selection", "rewrite this block") are editor-triggered, so they belong on
+  `EditorBridge`/`QEditorBridge` as new `wiki.ai.*` methods, same trust-boundary rules as everything
+  else crossing that bridge (no raw model credentials, no unrestricted network access handed to JS).
+  A standing Chats/Sessions tab is a _separate_ concern from these inline actions — it is not a
+  `QWebEngineView` bridge call, it is its own Qt widget (or its own lightweight web view) driven by
+  `src/ai/`.
+* *`gui/` reorganization*: introduce a tab container (e.g. `WorkspaceShell`/`WorkspaceTabWidget`)
+  that owns a `QTabWidget`-style host of `IPage` instances. `MainWindow::current_page_` (single
+  `Page*`) generalizes to a collection of `IPage*` tabs, each responsible for its own content widget,
+  same as `Page::ContentWidget()`/`SidebarWidget()` today. `IPage` (`src/gui/i_page.h`) is already the
+  right abstraction point — a `ChatPage`, `CodeWorkPage`, `SearchPage` would each implement it the
+  same way `Page` does, and `MainWindow::BuildUi()` swaps from "host one `Page`" to "host a tab
+  widget of `IPage`s". Status chrome that is currently `MainWindow`-global (sync/backend/presence
+  badges) should be re-scoped: either kept global but conditionally shown per active tab, or moved
+  into whichever tab actually owns that state (Documentation for sync, Presence/Activity if it
+  exists).
+
+=== Server side
+
+* AI chat needs a request path that is either (a) purely local/on-device inference with no server
+  involvement, or (b) proxied through `cppwiki_server` if a hosted/shared model is used. Given the
+  offline-first constraint (see risks below), (a) should be the default and (b) optional. If (b) is
+  pursued, it follows the existing handler/service/dto pattern exactly: a new `handlers/ai_handler`,
+  an `AiChatService` under `service/`, and reflect-cpp DTOs under `dto/` (`ai_chat_request.h`,
+  `ai_chat_response.h`), auth-gated the same way `admin_handler`/`workspace_handler` are today via
+  `AuthCheckerImpl`. This is additive — it does not touch `SyncGatewayAdapter`, `LockService`, or
+  `PresenceService`.
+* If chat transcripts are to sync across devices (optional, see open questions), they'd flow through
+  the same Sync Gateway channel-mapping model already documented in
+  `Sync_Document_Model_and_Conflict_Contract.md`, treated as just another synced document type rather
+  than inventing a parallel transport.
+* Code work tab and Knowledge Graph/Search tab are desktop-local by default (reading the local
+  checkout / local document repository); no server changes are implied unless/until cross-device code
+  or search-index sync is wanted, which is out of scope for this vision.
+
+=== Plugin system (ADR-004)
+
+Worth flagging: capability-scoped WASM plugins are the existing extensibility story. Code work and
+Knowledge Graph/Search tabs are plausible future plugin surfaces (e.g. a plugin providing a custom
+search backend or a custom static-analysis view) rather than hard-coded C++ forever, but that's a
+later decision, not a constraint on the first pass.
+
+== 4. Phased Plan (grouping only, not a task breakdown)
+
+*Phase 1 — In-editor AI, no new tabs (= issue #3, first concrete step).* +
+Ship the BlockNote AI upgrade as scoped in #3: inline AI actions on selections/blocks via
+`wiki.ai.*` bridge methods. No tab shell, no standing chat, no server AI endpoint required if a local
+inference path is chosen. This is deliberately the near-term entry point — it validates the
+bridge-security model for AI (what the editor is/isn't allowed to send to a model) before any bigger
+UI surface is built on top of it, and it ships value independent of the tab-shell work below.
+
+*Phase 2 — Tab shell + standing Chats/Sessions tab.* +
+Introduce the `IPage`-based tab container in `gui/`, migrate today's single `Page` into the
+"Documentation" tab unchanged, and add the Chats/Sessions tab backed by the new `src/ai/` module.
+Reuses the Phase 1 bridge/service work as the backend for chat, rather than building a second AI
+integration path. This is also the natural point to decide local-vs-server inference for standing
+chat (as opposed to the narrow in-editor actions from Phase 1, which may get away with a simpler
+path).
+
+*Phase 3 — Code work + Knowledge Graph/Search tabs.* +
+Add project-code-awareness and cross-corpus search once the tab shell and chat session model exist
+to consume them. Natural sequencing dependency on issue #4 (Antora/AsciiDoc migration): once wiki
+docs are AsciiDoc-based and Antora-organized, the Knowledge Graph/Search tab has a single coherent
+corpus (AsciiDoc docs + wiki pages + code) to index instead of two divergent formats.
+
+*Phase 4 (later, optional) — Review/Diff, Presence/Activity, Settings/Integrations as tabs.* +
+Promote existing dialog-based functionality (`ConflictMergeDialog`, settings dialog, presence strip)
+into tabs once the shell has proven itself with Phases 1–3, and once AI-assisted review ("explain
+this conflict") gives Review/Diff a reason to be more than a dialog.
+
+== 5. Open Questions / Risks
+
+* *Offline-first vs. AI.* CppWiki's core value proposition is working fully offline. A cloud-hosted
+  LLM breaks that guarantee the moment the user is offline. This needs an explicit answer, likely:
+  local/on-device model as the default and required-to-work-offline path, with any remote/hosted
+  model as an opt-in, clearly-labeled "requires network" enhancement — never a hard dependency for
+  basic app usage. Needs a decision (ADR-worthy) before Phase 1 ships anything user-facing.
+* *Privacy of chat data: local vs. synced.* If chat sessions are persisted, are they local-only
+  (never leave the device) or synced like documents via Sync Gateway? Wiki documents already go
+  through an authenticated channel-mapped sync path; chat transcripts may contain far more sensitive
+  ad-hoc content (pasted secrets, unfiltered questions about the codebase) than a curated wiki page.
+  Default should probably be local-only-by-default with sync as an explicit opt-in per session/
+  workspace, not inherited automatically from the document sync setting.
+* *What can the AI see, and how is that bounded?* The bridge trust-boundary rule ("editor never
+  gets raw filesystem/token/DB access") needs an AI-specific analogue: what surfaces of Code work,
+  Documentation, and Knowledge Graph/Search is a chat session allowed to pull into a model's context
+  automatically vs. only on explicit user action? This matters more once Code work exists, since that
+  tab implies filesystem-level project access.
+* *Model choice / provisioning.* Local inference implies bundling or downloading a model
+  (size/hardware/licensing tradeoffs); server-mediated inference implies a dependency on
+  `cppwiki_server` and a real API cost/quota story. Not resolved here — flagged for a follow-up
+  decision once Phase 1 forces the question.
+* *Tab-shell scope creep.* Generalizing `MainWindow`/`Page` from one hard-wired editor surface to an
+  arbitrary tab host is a real architectural change to the desktop shell, independent of AI. It should
+  be sized and sequenced as its own piece of work (Phase 2) rather than bundled invisibly into "add AI
+  chat," so its cost is visible and reviewable on its own.
+* *Collaboration model interaction.* ADR-003's staged collaboration strategy (single-writer/
+  multi-reader in MVP, Yjs later) says nothing about AI as a participant. If AI-assisted edits
+  (accepting an AI rewrite into a locked document) are ever in scope, that needs to be reconciled with
+  the lock/presence model explicitly — an AI suggestion should not silently bypass the "one editor at
+  a time" rule.
+* *Antora/AsciiDoc migration (#4) as a prerequisite, not a parallel track.* The Knowledge
+  Graph/Search tab (Phase 3) is significantly simpler if it indexes one canonical doc format. Treating
+  #4 as blocking (or at least strongly preceding) Phase 3 avoids building a search/index layer twice.

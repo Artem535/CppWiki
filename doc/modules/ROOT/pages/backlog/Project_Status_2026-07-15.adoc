@@ -1,0 +1,154 @@
+= CppWiki Project Status — 2026-07-15
+
+Branch at time of writing: `feature/admin-backend` (report content based on `main`)
+
+== 1. What Has Been Built So Far
+
+=== Desktop app (`src/`, target `cppwiki_app`)
+
+* Qt6/C++20 skeleton with CMake presets (`debug`, `release`, `server-debug`, `server-release`).
+* Qlementine wired as the desktop Qt style; `QWebEngineView` hosts the editor.
+* BlockNote/React editor bundle (`frontend/editor`, Vite + TS) loads via `QWebChannel`, with a
+  versioned `{ apiVersion, ok, result/error }` bridge envelope (`bridge/EditorBridge`).
+* Native Qt document tree (add-child, context menu, delete, move up/down, drag-and-drop reordering),
+  replacing the original flat list UI.
+* Document model (`document/`): reflect-cpp `Document`/`BlockNoteSnapshot` DTOs and validation
+  before persistence.
+* Local storage (`storage/`): `LocalDocumentRepository` interface with `FileDocumentRepository`
+  (plain filesystem) and `CbliteDocumentRepository` (Couchbase Lite, gated by
+  `CPPWIKI_ENABLE_CBLITE_STORAGE`), selected via `RepositoryFactory`.
+* Sync (`sync/`): `DocumentSyncService`/`SyncService` for push/pull and conflict detection against
+  the backend, with conflict-resolution UI (`gui/merge/ConflictMergeDialog` and friends).
+* Auth (`auth/`): `AuthSessionManager` (OIDC/token lifecycle) + `AuthTokenStore` (secure token
+  persistence via qtkeychain) — Authentik Authorization Code Flow with PKCE is working end-to-end
+  against the dev stack.
+* Workspace concept: documents are isolated by workspace; a temporary "New workspace" button exists
+  in the desktop client for testing only (explicitly flagged as short-term, see Admin backlog).
+* Collaboration UI: presence strip, edit-mode indication, stale presence expiry, layout polish.
+
+=== Server (`src/server/`, target `cppwiki_server`, userver v3.0)
+
+* Handlers: `admin_handler` (including a newly added admin sync overview endpoint),
+  `health_handler`, `lock_handler`, `presence_handler`, `sync_config_handler`, `workspace_handler`,
+  `openapi_handler`/`swagger_ui_handler`, `protected_page_handler`, `options_handler` (CORS).
+* `middleware/`: JWT/OIDC verification (`AuthCheckerImpl`) against configured issuer/JWKS, plus
+  logging middleware.
+* `service/`: `LockService`, `PresenceService`, `SyncGatewayAdapter` (Couchbase Sync Gateway
+  admin/REST integration).
+* Reflect-cpp YAML runtime config → generated userver static config; CLI11 parsing; structured
+  logging (spdlog); Swagger/OpenAPI page for manual protected-route verification.
+* Docker image + CI pipeline for the server (dependency-cache-only build stage, explicit dependency
+  cache stage, missing packages fixed).
+
+=== Sync / Auth / Infra
+
+* Couchbase Sync Gateway config under `dev/sync-gateway`; channel-mapping proof done.
+* Authenticated replication working; conflict snapshot behavior and regression tests exist
+  (`cppwiki_conflict_merge_model_tests`, sync conflict tests).
+* CBLite local-document promotion bugs fixed; sync deployment/CBLite runbook documented.
+* `dev/docker-compose.yml` stands up Authentik + Postgres + Redis + Sync Gateway for local dev.
+
+=== Documentation
+
+* ADRs 001–009 cover editor choice, document model, collaboration strategy, plugin system,
+  rendering pipeline, Confluence integration, rejection of QTextEdit/Djot-first, Authentik auth
+  model, and server framework (userver) selection.
+* `CLAUDE.md` now documents the required workflow (issue → branch → work → MR closes issue,
+  MR description in Russian) and architecture map.
+* PRD v9 (Block Document Edition) is comprehensive: vision, goals, delivery-discovery alignment,
+  target audience, architecture, tech stack, and v8→v9 architecture changes.
+
+*Gap between roadmap/PRD "planned" and what exists:* Plugin runtime (Wasmtime/WASM), Confluence
+import/export, and OpenTelemetry observability are still only specced (Milestones 9/10, and an
+"active decision" for observability) — no code under `src/` implements them yet. Admin surface
+(`cppwiki-admin`) is decided-but-not-built; only a temporary in-app workspace-creation control
+exists in the main desktop app.
+
+== 2. What's In-Flight
+
+* *Current branch:* `feature/admin-backend` — working tree has modified `config/server.yaml`,
+  `dev/docker-compose.yml`, and a `third_party/qlementine` submodule bump, consistent with ongoing
+  admin-backend work.
+* *Recent commits (last ~15):* admin sync overview endpoint, Qt build-order fix for server builds,
+  dependency-image cache-only marking, server Docker CI hardening (cache stage, missing packages),
+  CBLite local-document promotion fix, sync conflict regression tests, workspace sync hydration
+  stabilization, sync state provider/service additions — i.e. the project just closed out the
+  *Sync Spike (Milestone 8)* and is now building the *admin backend* surface (`admin_handler`,
+  admin sync overview) that the Admin Surface Backlog calls for.
+* *Open GitHub issues:*
+** `#3` "Прокачать BlockNote для работы с ИИ" (upgrade BlockNote for AI features) — flagged by the
+   user as the nearest-priority task.
+** `#4` "Подключить Antora и перевести документацию в AsciiDoc" (Antora + AsciiDoc docs migration).
+* *Open PRs:* none.
+
+== 3. What the Roadmap/Backlog Say Is Next
+
+From `doc/roadmap/Current_Roadmap.md` §6 "Immediate Next Actions" (Phase 7):
+
+. Make the backend lock owner authoritative (stop treating lock/presence as authenticated stubs).
+. Wire desktop editing flow to acquire/release locks and send heartbeats while editing.
+. Enforce read-only fallback in the desktop editor bridge when another user holds the lock.
+. Surface lock owner and presence state in the desktop shell using the authenticated JWT identity.
+. Add OpenTelemetry request-span and metrics wiring, decoupled from business/editor code.
+. Keep local editing/persistence working when the backend is unavailable.
+
+Medium-term milestones not yet started: *Plugin Runtime Spike* (Wasmtime), *Confluence
+Import/Export Spike*.
+
+From the backlogs:
+
+* *Admin Surface Backlog*: workspace creation must move out of the main desktop app into a
+  future `cppwiki-admin` app; role/channel/policy administration and diagnostics are future scope.
+  Explicitly: do not scaffold `cppwiki-admin` yet, do not expand the temporary desktop control
+  beyond workspace-creation testing.
+* *Desktop Collaboration Backlog*: UI polish (status badges, avatar sizing, richer identity
+  chips, distinct workspace icon), behavioral decisions (presence "opened" vs "focused",
+  auto-clearing collaboration warnings), document duplication, cross-workspace moves, real
+  end-to-end sync validation in CI, admin workspace provisioning (no more manual curl), and
+  Sync Gateway diagnostics for common failure modes (invalid login, forbidden channel, missing
+  collection, initial pull failure).
+
+NOTE: the current in-flight work (admin backend / admin sync overview endpoint) is already
+executing against the Admin Surface Backlog's "future admin app" direction, ahead of/alongside the
+roadmap's Phase 7 lock/presence hardening — worth reconciling roadmap and backlog priority ordering.
+
+== 4. Recommended Next Steps
+
+Given the two named priorities (AI in BlockNote via issue #3, Antora/AsciiDoc docs migration via
+issue #4) plus what's urgent in the backlogs:
+
+. *Triage issue #3 (BlockNote AI) with a scoped spike first, not a full build.* The PRD/ADR-001
+  set the editor choice but say nothing yet about AI integration — before writing code, pin down
+  in an ADR-style note: what AI features are in scope (assist, summarize, block generation?),
+  where inference runs (local vs. server-proxied — this interacts with the "editor gets no raw
+  network access" security gate in `CLAUDE.md`/bridge boundary), and how AI-generated content
+  flows through the existing `EditorBridge` trust boundary and `DocumentValidator`. Recommend
+  following the repo's own workflow: open/label the issue in-progress, and treat this as an
+  explicit "ML/LLM Delivery Pipeline" initiative per `CLAUDE.md`'s doc-map note ("AI/LLM/RAG-
+  flavored initiatives use the templates in `ML LLM Delivery Pipeline/`") rather than ad hoc bridge
+  additions.
+. *Do not let #3 bypass the bridge security gate.* Any AI feature that lets BlockNote call out to
+  a model must go through `bridge/EditorBridge` with the same versioned envelope and validation
+  discipline as document sync — this is the single most important architectural constraint to
+  protect while iterating quickly on issue #3.
+. *Issue #4 (Antora + AsciiDoc) is lower-risk and can run in parallel* — it's a pure docs-tooling
+  change with no impact on `src/`. Since `CLAUDE.md` already mandates "all documentation is written
+  in AsciiDoc," this issue is really about closing a gap between stated convention and current
+  practice (most docs today are still Markdown). Suggest scoping it as: (a) stand up Antora site
+  skeleton, (b) convert `doc/roadmap`, `doc/backlog`, ADRs incrementally rather than all at once so
+  the PRD (the largest single doc) doesn't block the rest, (c) keep transient status/analysis notes
+  like this one in scope for conversion as soon as the migration pattern is proven on smaller docs.
+. *Before starting either #3 or #4, finish or explicitly defer Phase 7 (lock/presence
+  authoritative backend)* — it's the roadmap's stated "immediate next action" and the in-flight
+  admin-backend commits suggest attention has already shifted toward admin/workspace surface work.
+  Worth an explicit decision (and a roadmap update) on whether Phase 7 is paused in favor of #3/#4,
+  since three fronts (admin backend, Phase 7, and now AI/docs) risk fragmenting attention.
+. *Backlog item worth pulling forward regardless of #3/#4*: "Add admin workspace provisioning so
+  workspace roots, Sync Gateway roles/channels and registry docs are not managed by manual curl" —
+  this is explicitly called urgent-adjacent in the Desktop Collaboration Backlog's "Sync
+  Preparation" section and is exactly what the current `feature/admin-backend` branch and the new
+  admin sync overview endpoint are already moving toward; finishing it removes a real operational
+  risk (manual curl-based provisioning) independent of the AI/docs priorities.
+. *Do not scaffold `cppwiki-admin` as a separate app yet* — the Admin Surface Backlog is explicit
+  that this is a non-goal for now; keep admin work inside the existing `admin_handler`/desktop
+  temporary control until that decision is revisited.

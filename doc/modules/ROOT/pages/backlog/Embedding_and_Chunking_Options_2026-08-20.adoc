@@ -1,0 +1,91 @@
+= Chunking and Local Embedding Options
+
+*Status:* Research note +
+*Date:* 2026-08-20 +
+*Related:* Knowledge Graph and Semantic Layer design
+
+== Conclusion
+
+CppWiki does not need a Python chunking framework. The BlockNote snapshot already provides stronger and more stable semantic boundaries than a plain-text splitter. The first implementation should use deterministic structural C++ chunking and keep inference behind an `EmbeddingProvider` interface.
+
+The recommended first local provider is a separately launched Ollama-compatible endpoint for product validation. An in-process ONNX Runtime adapter is the leading cross-platform packaged option if the feature proves valuable. `llama.cpp` remains a supported provider, not the only runtime choice.
+
+== Chunking in C++
+
+=== Initial Algorithm
+
+. Read the BlockNote snapshot and select text-bearing blocks only.
+. Use heading blocks as section context; carry the ancestor-heading path into each chunk.
+. Preserve semantic blocks such as code, quote, list, table, and callout as indivisible input units where practical.
+. Accumulate consecutive units to a conservative model-specific budget.
+. Split an oversized prose unit at Unicode sentence boundaries; retain a small overlap only within the same section.
+. Derive a stable chunk ID from page ID, structural block IDs, chunk ordinal, and the chunking-algorithm version. Hash normalized chunk text separately to decide whether it must be embedded again.
+
+The first algorithm is deterministic and explainable, not "semantic" in the LLM sense. `QTextBoundaryFinder` exposes Unicode grapheme, word, line, and sentence boundaries through Qt Core, so sentence splitting needs no extra dependency.
+
+Source: https://doc.qt.io/qt-6/qtextboundaryfinder.html[Qt QTextBoundaryFinder].
+
+=== Token Budgets
+
+Chunking needs a model budget but no universal tokenizer. The provider owns the exact tokenizer and declares a maximum input length. The chunker uses a conservative character budget first, then asks the provider to validate or trim when exact tokens matter.
+
+For SentencePiece models, its official C++ API loads a model and encodes text directly. For ONNX models, ONNX Runtime Extensions can package tokenizer preprocessing into an ONNX graph and register that extension in a C++ session. Do not hand-write BPE or WordPiece tokenization.
+
+Sources:
+
+* https://github.com/google/sentencepiece/blob/master/doc/cpp.md[SentencePiece C++ API]
+* https://onnxruntime.ai/docs/extensions/[ONNX Runtime Extensions]
+
+== Embedding Runtime Options
+
+[cols="2,3,3",options="header"]
+|===
+|Option |Strengths |Trade-offs
+
+|Local HTTP provider: Ollama
+|Simple C++ integration through local HTTP; `/api/embed` accepts one text or an array and returns vectors. Good first validation path.
+|Requires a locally installed/running service and model management outside the app package.
+
+|In-process ONNX Runtime
+|Cross-platform C/C++ runtime; models run through CPU or execution providers. Strong packaged desktop candidate without an LLM runtime.
+|CppWiki owns model selection, tokenizer preprocessing, pooling, normalization, and hardware-provider packaging unless embedded in the model.
+
+|OpenVINO GenAI
+|Provides a `TextEmbeddingPipeline` with batching, max length, pooling, normalization, and CPU/GPU selection.
+|Additional runtime and model-export distribution; hardware focus is narrower than a universal desktop baseline.
+
+|llama.cpp
+|Native embedding mode and local `/embedding` plus OpenAI-compatible `/v1/embeddings`; GGUF ecosystem and CPU/GPU execution.
+|GGUF-specific model packaging; it is one provider adapter, not the semantic subsystem.
+
+|Remote OpenAI-compatible provider
+|Useful for corporate inference servers and opt-in high-quality models; simple client contract.
+|Page fragments leave the device, requiring explicit consent and clear provider settings.
+|===
+
+Sources:
+
+* https://docs.ollama.com/api/embed[Ollama embeddings API]
+* https://onnxruntime.ai/docs/get-started/with-cpp.html[ONNX Runtime C++]
+* https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.TextEmbeddingPipeline.html[OpenVINO TextEmbeddingPipeline]
+* https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md[llama.cpp embedding server]
+
+== Couchbase Lite Hybrid Search
+
+Couchbase Lite C has a built-in Vector Search extension and supports hybrid queries that combine a full-text `MATCH()` predicate with `APPROX_VECTOR_DISTANCE()` ordering. It also provides vector-index configuration, cosine/Euclidean/dot metrics, and lazy index updates. CppWiki would still generate vectors through ONNX Runtime; Couchbase Lite indexes and retrieves them, but does not supply the embedding model.
+
+This is not a Community Edition route. Couchbase documents the Vector Search extension for C as Enterprise-only. It is also a separately packaged native extension, so it would add platform artifacts and runtime loading to every desktop package.
+
+For a commercial Enterprise deployment, Couchbase Lite Vector Search could replace a custom local vector index while keeping the `EmbeddingProvider` and `StructuralChunker` designs unchanged. For CppWiki Community Edition, retain a local non-Couchbase vector index and treat the Couchbase implementation as an optional future adapter.
+
+Sources:
+
+* https://docs.couchbase.com/couchbase-lite/current/c/working-with-vector-search.html[Couchbase Lite C hybrid vector search]
+* https://docs.couchbase.com/couchbase-lite/current/c/gs-downloads.html[Couchbase Lite C vector-search licensing]
+
+== Recommended Sequence
+
+. Build structural chunking in C++ with a fake `EmbeddingProvider`; test stable IDs, hash invalidation, heading context, and evidence locations without an ML runtime.
+. Implement an HTTP `EmbeddingProvider` against local Ollama for a disposable product spike. Benchmark several multilingual embedding models on representative CppWiki workspaces.
+. Decide whether the product needs a packaged in-process provider. If yes, prototype ONNX Runtime with one model and its real tokenizer before committing to a model format or new dependency.
+. Store provider ID, model ID/version, vector dimension, normalization policy, and chunking-algorithm version in the derived index. A mismatch requires rebuild, never sync.

@@ -45,9 +45,18 @@
 ** xref:backlog/Admin_Surface_Backlog.adoc[Admin surface backlog]
 ** xref:backlog/Desktop_Collaboration_Backlog.adoc[Desktop collaboration backlog]
 ** xref:backlog/Attachment_Implementation_Plan.adoc[Synced attachments implementation plan]
+** xref:backlog/Project_Status_2026-07-15.adoc[Project status — 2026-07-15]
+** xref:backlog/Code_Analysis_2026-07-15.adoc[Code analysis — 2026-07-15]
+** xref:backlog/Task_Priorities_2026-07-27.adoc[Task priorities — 2026-07-27]
+** xref:backlog/Encryption_Options_2026-08-18.adoc[Encryption options without Couchbase Enterprise]
+** xref:backlog/Embedding_and_Chunking_Options_2026-08-20.adoc[Chunking and local embedding options]
+** xref:backlog/Couchbase_Lite_Encryption_Licensing_2026-08-21.adoc[Couchbase Lite encryption licensing]
+** xref:backlog/MongrelDB_Evaluation_2026-08-21.adoc[MongrelDB evaluation for semantic search]
+** xref:backlog/Storage_Options_ObjectBox_DuckDB_2026-08-21.adoc[ObjectBox and DuckDB storage candidates]
 * Roadmap
 ** xref:roadmap/Current_Roadmap.adoc[Current roadmap]
 ** xref:roadmap/Realistic_Delivery_Pipeline.adoc[Realistic delivery pipeline]
+** xref:roadmap/AI_Vision_Proposal_2026-07-15.adoc[AI vision proposal — tabbed workspace + AI chat]
 * Deployment
 ** xref:deployment/Server_Docker_Image.adoc[Server Docker image]
 * ML LLM Delivery Pipeline
