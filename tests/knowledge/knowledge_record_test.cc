@@ -154,6 +154,138 @@ auto TestRelationRejectsNonPageEndpointKindForNow() -> void {
           "a relation to a non-page artifact kind must be rejected until that kind exists");
 }
 
+auto MakeRepositoryArtifact() -> cppwiki::knowledge::RepositoryArtifact {
+  return {
+      .id = "repo-cppwiki",
+      .workspace_id = "engineering",
+      .name = "CppWiki",
+      .remote_url = "git@github.com:Artem535/CppWiki.git",
+      .default_branch = "main",
+      .state = cppwiki::knowledge::RecordState::kActive,
+      .audit = MakeAudit(),
+  };
+}
+
+auto TestRepositoryArtifactRequiresIdentityAndRemoteUrl() -> void {
+  auto repository = MakeRepositoryArtifact();
+  repository.id.clear();
+  Require(cppwiki::knowledge::ValidateRepositoryArtifact(repository).has_value(),
+          "a repository artifact without an id must be invalid");
+
+  repository = MakeRepositoryArtifact();
+  repository.remote_url = "  ";
+  Require(cppwiki::knowledge::ValidateRepositoryArtifact(repository).has_value(),
+          "a repository artifact without a remote url must be invalid");
+
+  repository = MakeRepositoryArtifact();
+  Require(!cppwiki::knowledge::ValidateRepositoryArtifact(repository),
+          "a well-formed repository artifact must be valid");
+}
+
+auto MakeAgentRun() -> cppwiki::knowledge::AgentRun {
+  return {
+      .id = "run-a",
+      .workspace_id = "engineering",
+      .task_id = "page-task-a",
+      .context_pack_ref = "pack-v1",
+      .runtime_id = "claude-code",
+      .status = cppwiki::knowledge::AgentRunStatus::kRunning,
+      .started_at = "2026-09-16T00:00:00.000Z",
+      .completed_at = std::nullopt,
+      .audit = MakeAudit(),
+  };
+}
+
+auto TestAgentRunRequiresCompletedAtOnlyWhenTerminal() -> void {
+  auto run = MakeAgentRun();
+  Require(!cppwiki::knowledge::ValidateAgentRun(run), "a running agent run needs no completed_at");
+
+  run.status = cppwiki::knowledge::AgentRunStatus::kSucceeded;
+  Require(cppwiki::knowledge::ValidateAgentRun(run).has_value(),
+          "a terminal agent run without completed_at must be invalid");
+
+  run.completed_at = "2026-09-16T01:00:00.000Z";
+  Require(!cppwiki::knowledge::ValidateAgentRun(run),
+          "a terminal agent run with completed_at must be valid");
+
+  run.status = cppwiki::knowledge::AgentRunStatus::kRunning;
+  Require(cppwiki::knowledge::ValidateAgentRun(run).has_value(),
+          "a non-terminal agent run must not carry a completed_at");
+}
+
+auto TestAgentRunRejectsBackwardStatusTransition() -> void {
+  Require(cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kSucceeded,
+              cppwiki::knowledge::AgentRunStatus::kRunning)
+              .has_value(),
+          "a terminal agent run must never move back to running");
+  Require(cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kFailed,
+              cppwiki::knowledge::AgentRunStatus::kFailed)
+              .has_value(),
+          "a terminal agent run must never re-transition, even to the same status");
+  Require(cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kPending,
+              cppwiki::knowledge::AgentRunStatus::kRunning)
+              .has_value() == false,
+          "pending to running is a valid forward transition");
+  Require(cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kPending,
+              cppwiki::knowledge::AgentRunStatus::kCancelled)
+              .has_value() == false,
+          "pending to cancelled is valid (cancelling before the run starts)");
+}
+
+// A run must actually run before it can succeed or fail — succeeded/failed are reachable only
+// through running, never directly from pending.
+auto TestAgentRunRejectsSkippingRunningToReachATerminalStatus() -> void {
+  Require(cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kPending,
+              cppwiki::knowledge::AgentRunStatus::kSucceeded)
+              .has_value(),
+          "pending must not jump straight to succeeded");
+  Require(cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kPending,
+              cppwiki::knowledge::AgentRunStatus::kFailed)
+              .has_value(),
+          "pending must not jump straight to failed");
+}
+
+auto TestAgentRunAcceptsEveryRunningToTerminalTransition() -> void {
+  Require(!cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kRunning,
+              cppwiki::knowledge::AgentRunStatus::kSucceeded),
+          "running to succeeded must be valid");
+  Require(!cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kRunning,
+              cppwiki::knowledge::AgentRunStatus::kFailed),
+          "running to failed must be valid");
+  Require(!cppwiki::knowledge::ValidateAgentRunTransition(
+              cppwiki::knowledge::AgentRunStatus::kRunning,
+              cppwiki::knowledge::AgentRunStatus::kCancelled),
+          "running to cancelled must be valid");
+}
+
+auto TestResultReferenceValidatesAgainstItsAgentRun() -> void {
+  const auto run = MakeAgentRun();
+  cppwiki::knowledge::ResultReference reference{
+      .id = "result-1",
+      .workspace_id = "engineering",
+      .agent_run_id = "run-a",
+      .kind = cppwiki::knowledge::ResultReferenceKind::kGitRef,
+      .locator = "refs/heads/agent/run-a-result",
+      .summary = std::nullopt,
+      .created_at = "2026-09-16T01:00:00.000Z",
+      .created_by = "system",
+  };
+  Require(!cppwiki::knowledge::ValidateResultReference(reference, run),
+          "a result reference matching its agent run must be valid");
+
+  reference.agent_run_id = "run-other";
+  Require(cppwiki::knowledge::ValidateResultReference(reference, run).has_value(),
+          "a result reference must refer to the agent run it was validated against");
+}
+
 auto TestRelationRejectsSamePageEndpoints() -> void {
   const cppwiki::knowledge::RelationType relation_type{
       .id = "relation-related",
@@ -185,6 +317,12 @@ auto main() -> int {
   TestSymmetricRelationNormalizesEndpointOrder();
   TestRelationAcceptsExplicitPageEndpointKinds();
   TestRelationRejectsNonPageEndpointKindForNow();
+  TestRepositoryArtifactRequiresIdentityAndRemoteUrl();
+  TestAgentRunRequiresCompletedAtOnlyWhenTerminal();
+  TestAgentRunRejectsBackwardStatusTransition();
+  TestAgentRunRejectsSkippingRunningToReachATerminalStatus();
+  TestAgentRunAcceptsEveryRunningToTerminalTransition();
+  TestResultReferenceValidatesAgainstItsAgentRun();
   TestRelationRejectsSamePageEndpoints();
   std::cout << "cppwiki_knowledge_record_tests passed\n";
   return EXIT_SUCCESS;
