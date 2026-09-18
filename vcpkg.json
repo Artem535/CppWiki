@@ -4,6 +4,7 @@
   "description": "Desktop-first offline-first wiki platform built with Qt and C++20.",
   "dependencies": [
     "cli11",
+    "ctre",
     {
       "name": "reflectcpp",
       "features": [

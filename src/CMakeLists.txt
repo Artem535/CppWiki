@@ -127,6 +127,7 @@ target_link_libraries(cppwiki_app
         qlementine
         spdlog::spdlog
         reflectcpp::reflectcpp
+        textfoundry_core
 )
 
 qt_add_resources(cppwiki_app cppwiki_qml_resources
