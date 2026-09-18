@@ -176,6 +176,28 @@ if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
     add_subdirectory(third_party/KDChart)
 endif ()
 
+if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
+    # TextFoundryEngine (issue #202): the Block/Composition/BlockRef/Renderer model a Context
+    # Pack is built on top of -- see ADR-019's follow-up decision recorded on #202. Its default
+    # ObjectBox-backed repository is turned off here: CppWiki already has one storage stack
+    # (LocalDocumentRepository -> File/CBLite) and Context Pack persistence goes through that
+    # same interface, not a second embedded database. textfoundry_core (the plain Block/
+    # Composition/Renderer logic, no storage) has no ObjectBox dependency at all once this flag
+    # is off -- see TextFoundryEngine's own CMakeLists.txt, split for exactly this purpose as of
+    # v0.2.0.
+    set(TEXTFOUNDRY_ENGINE_BUILD_OBJECTBOX_STORE OFF CACHE BOOL
+            "Disable TextFoundryEngine's ObjectBox-backed repository; CppWiki persists Context Pack data through its own LocalDocumentRepository instead" FORCE)
+    set(TEXTFOUNDRY_ENGINE_BUILD_TESTS OFF CACHE BOOL
+            "Disable TextFoundryEngine's own test suite (pulls in doctest, which CppWiki doesn't otherwise depend on)" FORCE)
+    FetchContent_Declare(
+            textfoundry_engine
+            GIT_REPOSITORY https://github.com/Artem535/TextFoundryEngine.git
+            GIT_TAG v0.2.1
+            GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(textfoundry_engine)
+endif ()
+
 if (CPPWIKI_BUILD_SERVER)
     find_package(CLI11 CONFIG REQUIRED)
     find_package(OpenSSL REQUIRED)

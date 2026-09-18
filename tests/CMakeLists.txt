@@ -195,6 +195,22 @@ add_test(
   COMMAND cppwiki_knowledge_record_tests
 )
 
+add_executable(cppwiki_text_foundry_engine_smoke_tests
+  knowledge/text_foundry_engine_smoke_test.cc
+)
+
+target_link_libraries(cppwiki_text_foundry_engine_smoke_tests
+  PRIVATE
+    textfoundry_core
+)
+
+cppwiki_apply_common_options(cppwiki_text_foundry_engine_smoke_tests)
+
+add_test(
+  NAME cppwiki_text_foundry_engine_smoke_tests
+  COMMAND cppwiki_text_foundry_engine_smoke_tests
+)
+
 add_executable(cppwiki_attachment_tests
   storage/attachment_test.cc
   ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
