@@ -128,6 +128,41 @@ struct ResultReference {
   std::string created_by;
 };
 
+// Context Pack (#202): kDraft is the mutable selection a user assembles for one Task, freely
+// including/excluding items without touching the relations or artifacts it points to. kApproved
+// marks that selection as final -- the record itself does not perform it, but this state is what
+// a later step renders into an immutable TextFoundryEngine Composition/Version (see the decision
+// recorded on #202), whose id becomes the `AgentRun.context_pack_ref` token. That rendering step
+// is not implemented yet; this record only captures and validates the approved selection.
+enum class ContextPackState : std::uint8_t { kDraft, kApproved };
+
+// One artifact carried into the pack. `relation_id` is its provenance -- the ArtifactRelation
+// (PageRelation) it was pulled in through, so every item traces back to a real, existing edge
+// from the task rather than being added out of nowhere. `included` is the "include/exclude every
+// item before execution" acceptance criterion: toggling it never changes the relation or artifact
+// it points to, only whether this pack carries it.
+struct ContextPackItem {
+  std::string id;
+  std::string relation_id;
+  ArtifactKind artifact_kind{ArtifactKind::kPage};
+  std::string artifact_id;
+  bool included{true};
+};
+
+// The pack itself: task intent plus every selected artifact and the repository guidance an agent
+// run needs. `task_intent` is captured here rather than referenced live, so editing the Task
+// later never changes what an already-built pack says it was built for.
+struct ContextPack {
+  std::string id;
+  std::string workspace_id;
+  std::string task_id;
+  std::string task_intent;
+  std::vector<ContextPackItem> items;
+  std::optional<std::string> repository_guidance;
+  ContextPackState state{ContextPackState::kDraft};
+  AuditMetadata audit;
+};
+
 [[nodiscard]] auto ValidatePropertyDefinition(const PropertyDefinition& definition)
     -> std::optional<std::string>;
 [[nodiscard]] auto ValidatePagePropertyValue(const PagePropertyValue& value,
@@ -147,6 +182,7 @@ struct ResultReference {
     -> std::optional<std::string>;
 [[nodiscard]] auto ValidateResultReference(const ResultReference& reference, const AgentRun& run)
     -> std::optional<std::string>;
+[[nodiscard]] auto ValidateContextPack(const ContextPack& pack) -> std::optional<std::string>;
 
 }  // namespace cppwiki::knowledge
 

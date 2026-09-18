@@ -269,4 +269,44 @@ auto ValidateResultReference(const ResultReference& reference, const AgentRun& r
   return std::nullopt;
 }
 
+auto ValidateContextPack(const ContextPack& pack) -> std::optional<std::string> {
+  if (pack.id.empty() || pack.workspace_id.empty() || pack.task_id.empty()) {
+    return "Context pack identity and scope must be non-empty.";
+  }
+  if (pack.task_intent.empty() || IsBlank(pack.task_intent)) {
+    return "Context pack must capture a non-blank task intent.";
+  }
+  if (pack.repository_guidance &&
+      (pack.repository_guidance->empty() || IsBlank(*pack.repository_guidance))) {
+    return "Context pack repository guidance must not be blank.";
+  }
+  if (!HasAuditMetadata(pack.audit)) {
+    return "Context pack audit metadata must be complete.";
+  }
+  if (pack.items.empty()) {
+    return "Context pack must capture at least one selected artifact.";
+  }
+
+  bool has_included_item = false;
+  for (const auto& item : pack.items) {
+    if (item.id.empty() || item.relation_id.empty() || item.artifact_id.empty()) {
+      return "Context pack item identity, provenance and artifact id must be non-empty.";
+    }
+    has_included_item = has_included_item || item.included;
+  }
+  for (auto first = pack.items.begin(); first != pack.items.end(); ++first) {
+    const auto duplicate = std::find_if(
+        std::next(first), pack.items.end(),
+        [first](const ContextPackItem& other) { return other.relation_id == first->relation_id; });
+    if (duplicate != pack.items.end()) {
+      return "Context pack items must each come from a distinct source relation.";
+    }
+  }
+
+  if (pack.state == ContextPackState::kApproved && !has_included_item) {
+    return "An approved context pack must have at least one included item.";
+  }
+  return std::nullopt;
+}
+
 }  // namespace cppwiki::knowledge

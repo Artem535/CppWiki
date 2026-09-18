@@ -371,6 +371,37 @@ auto TestArtifactRecordMethodsDefaultToUnsupported() -> void {
   const auto list_references = repository.ListResultReferences("engineering", "run-a");
   Require(list_references.error.has_value() && list_references.references.empty(),
           "unsupported result reference list must return an error and no records");
+
+  const cppwiki::knowledge::ContextPack context_pack{
+      .id = "pack-a",
+      .workspace_id = "engineering",
+      .task_id = "page-task-a",
+      .task_intent = "Fix the login bug",
+      .items =
+          {
+              cppwiki::knowledge::ContextPackItem{
+                  .id = "item-1",
+                  .relation_id = "edge-1",
+                  .artifact_kind = cppwiki::knowledge::ArtifactKind::kPage,
+                  .artifact_id = "page-auth",
+                  .included = true,
+              },
+          },
+      .repository_guidance = std::nullopt,
+      .state = cppwiki::knowledge::ContextPackState::kDraft,
+      .audit = audit,
+  };
+  const auto save_pack = repository.SaveContextPack(context_pack);
+  Require(save_pack.error.has_value() &&
+              save_pack.error->code == cppwiki::storage::RepositoryErrorCode::kUnsupported,
+          "repositories without artifact persistence must report kUnsupported for save");
+  const auto delete_pack = repository.DeleteContextPack("pack-a");
+  Require(delete_pack.error.has_value() &&
+              delete_pack.error->code == cppwiki::storage::RepositoryErrorCode::kUnsupported,
+          "repositories without artifact persistence must report kUnsupported for delete");
+  const auto list_packs = repository.ListContextPacks("engineering", "page-task-a");
+  Require(list_packs.error.has_value() && list_packs.packs.empty(),
+          "unsupported context pack list must return an error and no records");
 }
 
 }  // namespace

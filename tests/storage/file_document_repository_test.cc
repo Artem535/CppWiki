@@ -774,6 +774,63 @@ auto TestFileRepositoryArtifactRecordLifecycle() -> void {
   std::filesystem::remove_all(storage_directory);
 }
 
+auto TestFileContextPackRecordLifecycle() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-context-pack-record-test";
+  std::filesystem::remove_all(storage_directory);
+
+  const cppwiki::knowledge::AuditMetadata audit{
+      .created_at = "2026-09-18T10:00:00Z",
+      .updated_at = "2026-09-18T10:00:00Z",
+      .created_by = "tester",
+      .updated_by = "tester",
+  };
+  const cppwiki::knowledge::ContextPack context_pack{
+      .id = "pack-a",
+      .workspace_id = "engineering",
+      .task_id = "page-task-a",
+      .task_intent = "Fix the login bug",
+      .items =
+          {
+              cppwiki::knowledge::ContextPackItem{
+                  .id = "item-1",
+                  .relation_id = "edge-1",
+                  .artifact_kind = cppwiki::knowledge::ArtifactKind::kPage,
+                  .artifact_id = "page-auth",
+                  .included = true,
+              },
+          },
+      .repository_guidance = "Follow the existing auth module conventions.",
+      .state = cppwiki::knowledge::ContextPackState::kDraft,
+      .audit = audit,
+  };
+
+  {
+    cppwiki::storage::FileDocumentRepository repository(
+        cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+    Require(!repository.SaveContextPack(context_pack).error,
+            "file repository should save a context pack");
+  }
+
+  cppwiki::storage::FileDocumentRepository reopened_repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+  const auto packs = reopened_repository.ListContextPacks("engineering", "page-task-a");
+  Require(!packs.error && packs.packs.size() == 1,
+          "context packs should survive repository restart");
+  Require(packs.packs.front().task_intent == "Fix the login bug",
+          "context pack fields should round-trip");
+  Require(packs.packs.front().items.size() == 1 &&
+              packs.packs.front().items.front().artifact_id == "page-auth",
+          "context pack items should round-trip");
+
+  Require(!reopened_repository.DeleteContextPack("pack-a").error,
+          "deleting a context pack should succeed");
+  Require(reopened_repository.ListContextPacks("engineering", "page-task-a").packs.empty(),
+          "deleted context pack must not be listed");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -790,6 +847,7 @@ auto main() -> int {
   TestFileRepositoryAttachmentLifecycle();
   TestFileRepositoryKnowledgeRecordLifecycle();
   TestFileRepositoryArtifactRecordLifecycle();
+  TestFileContextPackRecordLifecycle();
   spdlog::info("cppwiki_file_document_repository_tests passed");
   return EXIT_SUCCESS;
 }

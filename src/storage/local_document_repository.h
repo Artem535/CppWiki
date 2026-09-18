@@ -257,6 +257,14 @@ struct ListResultReferencesResult {
   std::optional<RepositoryError> error;
 };
 
+// Context Pack (#202): same Save/Delete/List/kUnsupported-by-default shape as the three record
+// types above. Listed per task (like ResultReference is listed per agent run) since a task can
+// accumulate more than one pack across draft iterations.
+struct ListContextPacksResult {
+  std::vector<knowledge::ContextPack> packs;
+  std::optional<RepositoryError> error;
+};
+
 class LocalDocumentRepository {
  public:
   LocalDocumentRepository() = default;
@@ -373,6 +381,20 @@ class LocalDocumentRepository {
       -> ListResultReferencesResult {
     return {
         .references = {},
+        .error = UnsupportedKnowledgeError(),
+    };
+  }
+  [[nodiscard]] virtual auto SaveContextPack(const knowledge::ContextPack&)
+      -> SaveKnowledgeRecordResult {
+    return UnsupportedKnowledgeSaveResult();
+  }
+  [[nodiscard]] virtual auto DeleteContextPack(std::string_view) -> DeleteKnowledgeRecordResult {
+    return UnsupportedKnowledgeDeleteResult();
+  }
+  [[nodiscard]] virtual auto ListContextPacks(std::string_view, std::string_view)
+      -> ListContextPacksResult {
+    return {
+        .packs = {},
         .error = UnsupportedKnowledgeError(),
     };
   }
