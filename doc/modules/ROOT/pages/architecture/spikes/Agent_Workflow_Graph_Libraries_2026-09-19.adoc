@@ -1,0 +1,149 @@
+= C++ Libraries for Agent Workflow Graphs
+:revdate: 2026-09-19
+:status: Research note
+
+== Purpose
+
+ADR-015 establishes a shared native agent engine for AI Chat and Code: request
+the model, execute its tool calls, return tool results, and repeat until the
+model produces a final answer. This note evaluates existing C++ graph libraries
+as possible *internal implementations* of a future agent-workflow layer.
+
+It does not adopt a dependency and does not change the `AgentEngine` contract.
+The engine, tool registry, session history, Qt transport, and mode-specific
+tools remain CppWiki-owned. The question here is only how to express branching
+and asynchronous orchestration once Code mode needs permission decisions.
+
+== Two different graphs
+
+CppWiki uses the word "graph" for two unrelated models:
+
+* The *knowledge graph* links documents, tasks, repositories, Context Packs,
+  and other engineering-context artifacts. It is persisted product data.
+* The *agent workflow graph* controls a single run: model request, tool
+  dispatch, permission decision, cancellation, and completion. It is ephemeral
+  execution state, although its observable events may be recorded in an Agent
+  Session or Agent Run.
+
+Do not use a workflow library as a persistence model for the knowledge graph,
+and do not serialize a library-specific execution graph as a durable product
+format.
+
+== Candidate: Taskflow
+
+link:https://github.com/taskflow/taskflow[Taskflow] is a C++20, header-only,
+MIT-licensed task-parallel programming system. Its documented facilities are a
+strong mechanical fit for an agent workflow:
+
+* dependency graphs and nested subflows;
+* conditional tasks whose selected successor permits cycles;
+* asynchronous tasks and futures;
+* a thread-safe executor;
+* DOT export and the TFProf profiler for execution inspection.
+
+The agent loop can be represented as:
+
+[source,text]
+----
+Request model
+    |
+    v
+Has tool calls? ---- no ----> Complete
+    |
+   yes
+    v
+Execute tool calls -----------> Request model
+----
+
+Code mode adds a permission branch:
+
+[source,text]
+----
+Execute tool call
+    |
+    v
+Permission required?
+    | no                         | yes
+    v                            v
+Execute ----------------> Await user decision
+                                  | approve       | reject
+                                  v               v
+                              Execute       Return tool error
+----
+
+=== Fit and limitation
+
+Taskflow is the preferred candidate for a narrow spike because CppWiki already
+requires C++20 and its conditional tasks model cycles directly. It is most
+valuable where work is genuinely independent: read-only searches, preparation
+of context, or future sub-agent work.
+
+Taskflow must not own Qt objects or replace the Qt event loop. In particular,
+`QNetworkAccessManager`, `AiApiKeyStore`, and UI approval flows are governed by
+QObject thread affinity. Qt callbacks should resume the CppWiki workflow; only
+thread-safe CPU work or explicitly isolated handlers may execute in Taskflow's
+executor.
+
+Keep Taskflow private to an implementation module. Callers should depend on a
+small CppWiki interface such as `AgentWorkflow::Start` and
+`AgentWorkflow::Cancel`, never on `tf::Taskflow`, `tf::Task`, or Taskflow
+futures. That preserves the option to replace the executor without changing AI
+Chat, Code, tools, or a future `IAgentRuntime` adapter.
+
+== Candidate: BehaviorTree.CPP
+
+link:https://github.com/BehaviorTree/BehaviorTree.CPP[BehaviorTree.CPP] is a
+C++17, MIT-licensed behavior-tree library. It has first-class asynchronous
+actions, type-safe node dataflow, logging/replay support, and a graphical tree
+editor.
+
+It is viable if CppWiki later needs a user- or plugin-editable policy tree.
+However, its primary model is a repeatedly ticked, reactive decision tree. An
+agent run is more naturally an event-driven, cyclical protocol with an ordered
+conversation and durable tool-call results. Using a behavior tree now would
+introduce a policy DSL, tree ticks, and a larger operational model without a
+concrete CppWiki requirement for them.
+
+== Not an executor: Boost.Graph
+
+link:https://github.com/boostorg/graph[Boost.Graph] is a mature graph data
+structure and algorithm library under the Boost Software License. It can store
+and analyze topology, but it does not schedule a workflow, coordinate
+asynchronous completion, implement cancellation, or manage an execution
+lifecycle. It would leave the difficult agent-workflow behaviour to CppWiki,
+so it is not a replacement for an execution library.
+
+== Recommendation
+
+Do not add a dependency while the existing `AgentEngine` only needs its linear
+tool-use loop. Reconsider Taskflow at the first concrete workflow that has both
+of these properties:
+
+* a real conditional branch, initially Code-mode approval for write or shell
+  tools; and
+* independently runnable work that benefits from parallel execution.
+
+Before adoption, build a disposable Taskflow spike behind a CppWiki-owned
+`AgentWorkflow` interface and prove these cases:
+
+. normal final response with no tool calls;
+. tool-call loop returning to the model;
+. approval, rejection, and cancellation while an HTTP request is in flight;
+. no QObject is used from an executor worker thread; and
+. the resulting Agent Session preserves an ordered, replayable history.
+
+Adopt Taskflow only if the spike avoids Qt thread-affinity adapters leaking to
+callers and makes the workflow simpler than an event-driven CppWiki state
+machine. Otherwise retain the small native state machine; a generic graph
+library is an implementation choice, not product architecture.
+
+== Sources
+
+* link:https://github.com/taskflow/taskflow[Taskflow repository and README]
+  (MIT license, C++20 requirement, conditional tasks, async tasks, executor,
+  DOT/TFProf support).
+* link:https://github.com/BehaviorTree/BehaviorTree.CPP[BehaviorTree.CPP
+  repository and README] (MIT license, C++17 requirement, async actions,
+  dataflow, logging and replay).
+* link:https://github.com/boostorg/graph[Boost.Graph repository] (Boost
+  Software License and graph-algorithm scope).
