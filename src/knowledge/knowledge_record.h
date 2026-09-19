@@ -99,8 +99,9 @@ struct RepositoryArtifact {
 enum class AgentRunStatus : std::uint8_t { kPending, kRunning, kSucceeded, kFailed, kCancelled };
 
 // The execution record linking a Task to one attempt by an external agent runtime.
-// `context_pack_ref` is treated as an opaque, immutable token here — its internal shape belongs
-// to the Context Pack contract (#202), not this record.
+// `context_pack_ref` is treated as an opaque, immutable token here; its shape is defined by the
+// Context Pack contract (#202) as "<ContextPack.id>@<major>.<minor>" — see
+// RenderApprovedContextPack in context_pack_render.h, which is what produces it.
 struct AgentRun {
   std::string id;
   std::string workspace_id;
