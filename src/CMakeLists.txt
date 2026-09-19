@@ -34,6 +34,12 @@ qt_add_executable(cppwiki_app
         core/uuid.h
         knowledge/knowledge_record.cc
         knowledge/knowledge_record.h
+        knowledge/context_pack_composer.cc
+        knowledge/context_pack_composer.h
+        knowledge/context_pack_resolver.cc
+        knowledge/context_pack_resolver.h
+        knowledge/context_pack_render.cc
+        knowledge/context_pack_render.h
         gui/merge/conflict_merge_dialog.cc
         gui/merge/conflict_merge_dialog.h
         gui/merge/conflict_merge_model.cc

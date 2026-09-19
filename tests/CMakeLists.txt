@@ -211,6 +211,107 @@ add_test(
   COMMAND cppwiki_text_foundry_engine_smoke_tests
 )
 
+add_executable(cppwiki_context_pack_composer_tests
+  knowledge/context_pack_composer_test.cc
+  ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_composer.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_composer.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.h
+)
+
+target_include_directories(cppwiki_context_pack_composer_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_context_pack_composer_tests
+  PRIVATE
+    textfoundry_core
+    reflectcpp::reflectcpp
+)
+
+cppwiki_apply_common_options(cppwiki_context_pack_composer_tests)
+
+add_test(
+  NAME cppwiki_context_pack_composer_tests
+  COMMAND cppwiki_context_pack_composer_tests
+)
+
+add_executable(cppwiki_context_pack_resolver_tests
+  knowledge/context_pack_resolver_test.cc
+  ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
+  ${CMAKE_SOURCE_DIR}/src/document/document.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_composer.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_composer.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_resolver.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_resolver.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.h
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
+  ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.h
+  ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
+)
+
+target_include_directories(cppwiki_context_pack_resolver_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_context_pack_resolver_tests
+  PRIVATE
+    textfoundry_core
+    spdlog::spdlog
+    reflectcpp::reflectcpp
+)
+
+cppwiki_apply_common_options(cppwiki_context_pack_resolver_tests)
+
+add_test(
+  NAME cppwiki_context_pack_resolver_tests
+  COMMAND cppwiki_context_pack_resolver_tests
+)
+
+add_executable(cppwiki_context_pack_render_tests
+  knowledge/context_pack_render_test.cc
+  ${CMAKE_SOURCE_DIR}/src/document/block_note_snapshot.h
+  ${CMAKE_SOURCE_DIR}/src/document/document.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_composer.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_composer.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_render.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_render.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_resolver.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_resolver.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.h
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
+  ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/file_document_repository.h
+  ${CMAKE_SOURCE_DIR}/src/storage/local_document_repository.h
+)
+
+target_include_directories(cppwiki_context_pack_render_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_context_pack_render_tests
+  PRIVATE
+    textfoundry_core
+    spdlog::spdlog
+    reflectcpp::reflectcpp
+)
+
+cppwiki_apply_common_options(cppwiki_context_pack_render_tests)
+
+add_test(
+  NAME cppwiki_context_pack_render_tests
+  COMMAND cppwiki_context_pack_render_tests
+)
+
 add_executable(cppwiki_attachment_tests
   storage/attachment_test.cc
   ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
