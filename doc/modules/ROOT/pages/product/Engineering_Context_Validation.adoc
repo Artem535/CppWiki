@@ -1,0 +1,88 @@
+= Engineering Context Validation Plan
+:revdate: 2026-08-24
+:status: Active discovery and delivery contract
+
+== Problem hypothesis
+
+Small and medium engineering teams that actively use coding agents spend material time
+collecting task intent, requirements, decisions, architecture constraints, codebase guidance,
+and previous work from disconnected systems. Agents rediscover much of the same context.
+Implementation results then fail to update the knowledge that should explain the system.
+
+== Initial customer hypothesis
+
+The initial audience is a 5–30 person software or ML engineering team that already uses coding
+agents, maintains non-trivial technical documentation, and can test a local or self-hosted
+technical product. This is a hypothesis to validate, not a market claim.
+
+== Validation sequence
+
+. Interview at least five to seven relevant users without leading with a feature demo.
+. Synthesize the problem as `user → problem → workflow → current workaround → impact`.
+. Confirm that a user will provide a real task, repository, and supporting knowledge.
+. Demonstrate only the Context → Agent → Result → Knowledge workflow.
+. Run the flow on a real task with a design partner.
+. Compare it with the team’s current process and decide to continue, pivot toward integration,
+  or stop the wedge.
+
+== Interview prompts
+
+* Walk through the last task delegated to a coding agent.
+* Where did its context come from, and what was copied or explained manually?
+* What did the agent rediscover or ask to clarify?
+* What makes an agent result unacceptable or slow to review?
+* What happens to documentation and architecture decisions after implementation?
+* Would an integrated context layer be more acceptable than a replacement workspace?
+* What would make this workflow worth piloting or paying for?
+
+== Vertical-slice acceptance criteria
+
+* A task can link to the minimum required engineering artifacts: documents, ADRs, and a repository.
+* A user can inspect, edit, and approve a Context Pack before an agent receives it.
+* One external coding-agent runtime can execute the package without exposing unrestricted
+  desktop/browser privileges.
+* An Agent Run is linked to its task and records result, changed files, and failure state.
+* All proposed mutations of documents, tasks, ADRs, and relations require human confirmation.
+* The pilot records time, interventions, clarification count, outcome, and context usefulness.
+
+== Measures
+
+[cols="1,2",options="header"]
+|===
+|Measure |Question answered
+
+|Context preparation time
+|Does the workflow reduce manual assembly?
+
+|Agent clarification and intervention count
+|Did the supplied context reduce rediscovery and human correction?
+
+|Task outcome and end-to-end time
+|Did the run reach an acceptable result faster or more reliably?
+
+|Context relevance annotation
+|Was the retrieved material actually useful?
+
+|Knowledge-update acceptance
+|Did execution produce a useful, reviewable update to project knowledge?
+
+|Repeated use, pilot, or purchase commitment
+|Is there a credible adoption and commercial signal?
+|===
+
+== Decision gates
+
+*Continue* when multiple users independently report the problem, a design partner supplies real
+work, the flow shows measurable value, and the team repeats use or commits to a pilot.
+
+*Pivot* when the problem is real but users reject another workspace: position CppWiki as an
+engineering-context layer integrated with their existing tracker, wiki, and code host.
+
+*Rethink* when context packaging does not improve agent outcomes, users will not try a real
+task, or maintaining the context costs more than it saves.
+
+== Non-goals for the validation cycle
+
+The cycle does not prove enterprise readiness, full collaboration, all integrations, semantic
+graph quality, a full visual graph, or a replacement coding-agent runtime. Those investments
+follow demonstrated workflow value.
