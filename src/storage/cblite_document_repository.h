@@ -71,6 +71,12 @@ class CbliteDocumentRepository final : public LocalDocumentRepository {
   [[nodiscard]] auto ListResultReferences(std::string_view workspace_id,
                                           std::string_view agent_run_id)
       -> ListResultReferencesResult override;
+  [[nodiscard]] auto SaveContextPack(const knowledge::ContextPack& pack)
+      -> SaveKnowledgeRecordResult override;
+  [[nodiscard]] auto DeleteContextPack(std::string_view pack_id)
+      -> DeleteKnowledgeRecordResult override;
+  [[nodiscard]] auto ListContextPacks(std::string_view workspace_id, std::string_view task_id)
+      -> ListContextPacksResult override;
   [[nodiscard]] auto SaveAttachment(const AttachmentData& attachment)
       -> SaveAttachmentResult override;
   [[nodiscard]] auto LoadAttachment(std::string_view attachment_id, std::string_view workspace_id)

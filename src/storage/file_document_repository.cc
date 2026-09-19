@@ -536,6 +536,69 @@ auto FromDto(FileResultReferenceDto dto) -> knowledge::ResultReference {
           .created_by = std::move(dto.created_by)};
 }
 
+struct FileContextPackItemDto {
+  std::string id;
+  std::string relation_id;
+  std::int32_t artifact_kind{};
+  std::string artifact_id;
+  bool included{};
+};
+
+struct FileContextPackDto {
+  std::string id;
+  std::string workspace_id;
+  std::string task_id;
+  std::string task_intent;
+  std::vector<FileContextPackItemDto> items;
+  std::optional<std::string> repository_guidance;
+  std::int32_t state{};
+  FileAuditMetadataDto audit;
+};
+
+auto ToDto(const knowledge::ContextPackItem& item) -> FileContextPackItemDto {
+  return {.id = item.id,
+          .relation_id = item.relation_id,
+          .artifact_kind = static_cast<std::int32_t>(item.artifact_kind),
+          .artifact_id = item.artifact_id,
+          .included = item.included};
+}
+
+auto FromDto(FileContextPackItemDto dto) -> knowledge::ContextPackItem {
+  return {.id = std::move(dto.id),
+          .relation_id = std::move(dto.relation_id),
+          .artifact_kind = static_cast<knowledge::ArtifactKind>(dto.artifact_kind),
+          .artifact_id = std::move(dto.artifact_id),
+          .included = dto.included};
+}
+
+auto ToDto(const knowledge::ContextPack& pack) -> FileContextPackDto {
+  std::vector<FileContextPackItemDto> items;
+  items.reserve(pack.items.size());
+  for (const auto& item : pack.items) items.push_back(ToDto(item));
+  return {.id = pack.id,
+          .workspace_id = pack.workspace_id,
+          .task_id = pack.task_id,
+          .task_intent = pack.task_intent,
+          .items = std::move(items),
+          .repository_guidance = pack.repository_guidance,
+          .state = static_cast<std::int32_t>(pack.state),
+          .audit = ToDto(pack.audit)};
+}
+
+auto FromDto(FileContextPackDto dto) -> knowledge::ContextPack {
+  std::vector<knowledge::ContextPackItem> items;
+  items.reserve(dto.items.size());
+  for (auto& item : dto.items) items.push_back(FromDto(std::move(item)));
+  return {.id = std::move(dto.id),
+          .workspace_id = std::move(dto.workspace_id),
+          .task_id = std::move(dto.task_id),
+          .task_intent = std::move(dto.task_intent),
+          .items = std::move(items),
+          .repository_guidance = std::move(dto.repository_guidance),
+          .state = static_cast<knowledge::ContextPackState>(dto.state),
+          .audit = FromDto(std::move(dto.audit))};
+}
+
 struct FileAttachmentDto {
   std::string id;
   std::string workspace_id;
@@ -1334,6 +1397,66 @@ class FileDocumentRepository::Impl {
     }
   }
 
+  [[nodiscard]] auto SaveContextPack(const knowledge::ContextPack& pack)
+      -> SaveKnowledgeRecordResult {
+    if (const auto validation = knowledge::ValidateContextPack(pack); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    const auto path = MakeKnowledgeFilePath(options_.storage_directory, "context-packs", pack.id);
+    if (!WriteFileAtomically(path, rfl::json::write(ToDto(pack)))) {
+      RestoreFromBackup(path);
+      return {.error =
+                  MakeError(RepositoryErrorCode::kWriteFailed, "Failed to write context pack file.")};
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto DeleteContextPack(std::string_view pack_id) -> DeleteKnowledgeRecordResult {
+    try {
+      std::filesystem::remove(
+          MakeKnowledgeFilePath(options_.storage_directory, "context-packs", pack_id));
+      return {};
+    } catch (const std::exception& error) {
+      return {.error = MakeError(RepositoryErrorCode::kDeleteFailed, error.what())};
+    }
+  }
+
+  [[nodiscard]] auto ListContextPacks(std::string_view workspace_id, std::string_view task_id)
+      -> ListContextPacksResult {
+    const auto directory = options_.storage_directory / "context-packs";
+    if (!std::filesystem::exists(directory))
+      return {};
+    try {
+      std::vector<knowledge::ContextPack> packs;
+      for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json")
+          continue;
+        const auto content = ReadFileToString(entry.path());
+        if (!content)
+          continue;
+        const auto parsed = rfl::json::read<FileContextPackDto>(*content);
+        if (!parsed)
+          return {.packs = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Failed to parse context pack file.")};
+        auto pack = FromDto(parsed.value());
+        if (pack.id != entry.path().stem().string() || knowledge::ValidateContextPack(pack)) {
+          return {.packs = {},
+                  .error = MakeError(RepositoryErrorCode::kInvalidRecord,
+                                     "Context pack file contains an invalid record.")};
+        }
+        if (pack.workspace_id == workspace_id && pack.task_id == task_id) {
+          packs.push_back(std::move(pack));
+        }
+      }
+      std::ranges::sort(packs,
+                        [](const auto& left, const auto& right) { return left.id < right.id; });
+      return {.packs = std::move(packs), .error = std::nullopt};
+    } catch (const std::exception& error) {
+      return {.packs = {}, .error = MakeError(RepositoryErrorCode::kReadFailed, error.what())};
+    }
+  }
+
   [[nodiscard]] auto SaveAttachment(const AttachmentData& attachment) -> SaveAttachmentResult {
     if (const auto validation = ValidateAttachmentMetadata(attachment.metadata); validation) {
       return SaveAttachmentResult{.error =
@@ -1872,6 +1995,22 @@ auto FileDocumentRepository::ListResultReferences(std::string_view workspace_id,
                                                   std::string_view agent_run_id)
     -> ListResultReferencesResult {
   return impl_->ListResultReferences(workspace_id, agent_run_id);
+}
+
+auto FileDocumentRepository::SaveContextPack(const knowledge::ContextPack& pack)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SaveContextPack(pack);
+}
+
+auto FileDocumentRepository::DeleteContextPack(std::string_view pack_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeleteContextPack(pack_id);
+}
+
+auto FileDocumentRepository::ListContextPacks(std::string_view workspace_id,
+                                              std::string_view task_id)
+    -> ListContextPacksResult {
+  return impl_->ListContextPacks(workspace_id, task_id);
 }
 
 auto FileDocumentRepository::SaveAttachment(const AttachmentData& attachment)

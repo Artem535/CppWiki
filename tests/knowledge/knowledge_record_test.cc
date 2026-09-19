@@ -286,6 +286,94 @@ auto TestResultReferenceValidatesAgainstItsAgentRun() -> void {
           "a result reference must refer to the agent run it was validated against");
 }
 
+auto MakeContextPack() -> cppwiki::knowledge::ContextPack {
+  return {
+      .id = "pack-a",
+      .workspace_id = "engineering",
+      .task_id = "page-task-a",
+      .task_intent = "Fix the login bug",
+      .items =
+          {
+              cppwiki::knowledge::ContextPackItem{
+                  .id = "item-1",
+                  .relation_id = "edge-1",
+                  .artifact_kind = cppwiki::knowledge::ArtifactKind::kPage,
+                  .artifact_id = "page-auth",
+                  .included = true,
+              },
+          },
+      .repository_guidance = "Follow the existing auth module conventions.",
+      .state = cppwiki::knowledge::ContextPackState::kDraft,
+      .audit = MakeAudit(),
+  };
+}
+
+auto TestContextPackRequiresIdentityScopeAndIntent() -> void {
+  auto pack = MakeContextPack();
+  pack.id.clear();
+  Require(cppwiki::knowledge::ValidateContextPack(pack).has_value(),
+          "a context pack without an id must be invalid");
+
+  pack = MakeContextPack();
+  pack.task_id.clear();
+  Require(cppwiki::knowledge::ValidateContextPack(pack).has_value(),
+          "a context pack without a task id must be invalid");
+
+  pack = MakeContextPack();
+  pack.task_intent = "   ";
+  Require(cppwiki::knowledge::ValidateContextPack(pack).has_value(),
+          "a context pack without a task intent must be invalid");
+
+  pack = MakeContextPack();
+  Require(!cppwiki::knowledge::ValidateContextPack(pack),
+          "a well-formed context pack must be valid");
+}
+
+auto TestContextPackRequiresAtLeastOneItem() -> void {
+  auto pack = MakeContextPack();
+  pack.items.clear();
+  Require(cppwiki::knowledge::ValidateContextPack(pack).has_value(),
+          "a context pack without any selected artifact must be invalid");
+}
+
+auto TestContextPackItemRequiresProvenanceAndArtifactIdentity() -> void {
+  auto pack = MakeContextPack();
+  pack.items.front().relation_id.clear();
+  Require(cppwiki::knowledge::ValidateContextPack(pack).has_value(),
+          "a context pack item without its source relation must be invalid");
+
+  pack = MakeContextPack();
+  pack.items.front().artifact_id.clear();
+  Require(cppwiki::knowledge::ValidateContextPack(pack).has_value(),
+          "a context pack item without an artifact id must be invalid");
+}
+
+// Two items pointing at the same relation would double-count one piece of provenance -- each
+// item must come from a distinct ArtifactRelation.
+auto TestContextPackRejectsDuplicateItemProvenance() -> void {
+  auto pack = MakeContextPack();
+  auto second_item = pack.items.front();
+  second_item.id = "item-2";
+  second_item.artifact_id = "page-other";
+  pack.items.push_back(second_item);
+  Require(cppwiki::knowledge::ValidateContextPack(pack).has_value(),
+          "two context pack items sharing the same source relation must be invalid");
+}
+
+// Approving a pack with every item excluded would freeze an empty context -- at least one item
+// must remain included for the pack to be approved.
+auto TestApprovedContextPackRequiresAnIncludedItem() -> void {
+  auto pack = MakeContextPack();
+  pack.state = cppwiki::knowledge::ContextPackState::kApproved;
+  pack.items.front().included = false;
+  Require(cppwiki::knowledge::ValidateContextPack(pack).has_value(),
+          "an approved context pack with every item excluded must be invalid");
+
+  pack.items.front().included = true;
+  Require(!cppwiki::knowledge::ValidateContextPack(pack),
+          "an approved context pack with at least one included item must be valid");
+}
+
 auto TestRelationRejectsSamePageEndpoints() -> void {
   const cppwiki::knowledge::RelationType relation_type{
       .id = "relation-related",
@@ -323,6 +411,11 @@ auto main() -> int {
   TestAgentRunRejectsSkippingRunningToReachATerminalStatus();
   TestAgentRunAcceptsEveryRunningToTerminalTransition();
   TestResultReferenceValidatesAgainstItsAgentRun();
+  TestContextPackRequiresIdentityScopeAndIntent();
+  TestContextPackRequiresAtLeastOneItem();
+  TestContextPackItemRequiresProvenanceAndArtifactIdentity();
+  TestContextPackRejectsDuplicateItemProvenance();
+  TestApprovedContextPackRequiresAnIncludedItem();
   TestRelationRejectsSamePageEndpoints();
   std::cout << "cppwiki_knowledge_record_tests passed\n";
   return EXIT_SUCCESS;

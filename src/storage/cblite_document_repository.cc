@@ -34,6 +34,7 @@ constexpr std::string_view kKnowledgePageRelationType = "cppwiki_page_relation";
 constexpr std::string_view kKnowledgeRepositoryArtifactType = "cppwiki_repository_artifact";
 constexpr std::string_view kKnowledgeAgentRunType = "cppwiki_agent_run";
 constexpr std::string_view kKnowledgeResultReferenceType = "cppwiki_result_reference";
+constexpr std::string_view kKnowledgeContextPackType = "cppwiki_context_pack";
 
 struct KnowledgeEnvelope {
   std::string id;
@@ -1174,6 +1175,41 @@ class CbliteDocumentRepository::Impl {
     return {.references = std::move(references), .error = std::nullopt};
   }
 
+  [[nodiscard]] auto SaveContextPack(const knowledge::ContextPack& pack)
+      -> SaveKnowledgeRecordResult {
+    if (const auto validation = knowledge::ValidateContextPack(pack); validation) {
+      return {.error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+    }
+    return SaveKnowledgeRaw(kKnowledgeContextPackType, pack.id, pack.workspace_id, pack.task_id,
+                            rfl::json::write(pack));
+  }
+
+  [[nodiscard]] auto DeleteContextPack(std::string_view pack_id) -> DeleteKnowledgeRecordResult {
+    return DeleteKnowledgeRaw(kKnowledgeContextPackType, pack_id);
+  }
+
+  [[nodiscard]] auto ListContextPacks(std::string_view workspace_id, std::string_view task_id)
+      -> ListContextPacksResult {
+    auto [packs, error] = ParseKnowledgeRecords<knowledge::ContextPack>(kKnowledgeContextPackType);
+    if (error) {
+      return {.packs = {}, .error = error};
+    }
+    packs.erase(std::remove_if(packs.begin(), packs.end(),
+                               [&](const auto& item) {
+                                 return item.workspace_id != workspace_id ||
+                                        item.task_id != task_id;
+                               }),
+               packs.end());
+    for (const auto& pack : packs) {
+      if (const auto validation = knowledge::ValidateContextPack(pack); validation) {
+        return {.packs = {}, .error = MakeError(RepositoryErrorCode::kInvalidRecord, *validation)};
+      }
+    }
+    std::ranges::sort(packs,
+                      [](const auto& left, const auto& right) { return left.id < right.id; });
+    return {.packs = std::move(packs), .error = std::nullopt};
+  }
+
   [[nodiscard]] auto DeleteKnowledgeForPage(std::string_view workspace_id, std::string_view page_id)
       -> DeleteKnowledgeForPageResult {
     const auto values = ListPagePropertyValues(workspace_id, page_id);
@@ -2187,6 +2223,22 @@ auto CbliteDocumentRepository::ListResultReferences(std::string_view workspace_i
                                                     std::string_view agent_run_id)
     -> ListResultReferencesResult {
   return impl_->ListResultReferences(workspace_id, agent_run_id);
+}
+
+auto CbliteDocumentRepository::SaveContextPack(const knowledge::ContextPack& pack)
+    -> SaveKnowledgeRecordResult {
+  return impl_->SaveContextPack(pack);
+}
+
+auto CbliteDocumentRepository::DeleteContextPack(std::string_view pack_id)
+    -> DeleteKnowledgeRecordResult {
+  return impl_->DeleteContextPack(pack_id);
+}
+
+auto CbliteDocumentRepository::ListContextPacks(std::string_view workspace_id,
+                                                std::string_view task_id)
+    -> ListContextPacksResult {
+  return impl_->ListContextPacks(workspace_id, task_id);
 }
 
 auto CbliteDocumentRepository::SaveDocument(const DocumentRecord& document) -> SaveDocumentResult {

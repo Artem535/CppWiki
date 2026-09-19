@@ -627,6 +627,7 @@ auto TestCbliteRepositoryOfflineEditReconnectPushPull() -> void {
 }  // namespace
 auto TestCbliteRepositoryKnowledgeRecordLifecycle() -> void;
 auto TestCbliteRepositoryArtifactRecordLifecycle() -> void;
+auto TestCbliteContextPackRecordLifecycle() -> void;
 
 auto main() -> int {
   TestCbliteRepositoryAttachmentLifecycle();
@@ -641,6 +642,7 @@ auto main() -> int {
     TestCbliteRepositoryOfflineEditReconnectPushPull();
     TestCbliteRepositoryKnowledgeRecordLifecycle();
     TestCbliteRepositoryArtifactRecordLifecycle();
+    TestCbliteContextPackRecordLifecycle();
   } catch (const std::exception& e) {
     spdlog::error("Unhandled exception: {}", e.what());
     return EXIT_FAILURE;
@@ -800,6 +802,60 @@ auto TestCbliteRepositoryArtifactRecordLifecycle() -> void {
             "deleting a repository artifact should succeed");
     Require(repository.ListRepositoryArtifacts("engineering").artifacts.empty(),
             "deleted repository artifact must not be listed");
+  }
+  std::filesystem::remove_all(test_directory);
+}
+
+auto TestCbliteContextPackRecordLifecycle() -> void {
+  const auto test_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-cblite-context-pack-record-test";
+  std::filesystem::remove_all(test_directory);
+  const cppwiki::storage::CbliteDocumentRepositoryOptions options{
+      .database_directory = test_directory,
+      .database_name = "context_pack_records",
+  };
+  const cppwiki::knowledge::AuditMetadata audit{
+      .created_at = "2026-09-18T10:00:00Z",
+      .updated_at = "2026-09-18T10:00:00Z",
+      .created_by = "tester",
+      .updated_by = "tester",
+  };
+  const cppwiki::knowledge::ContextPack context_pack{
+      .id = "pack-a",
+      .workspace_id = "engineering",
+      .task_id = "page-task-a",
+      .task_intent = "Fix the login bug",
+      .items =
+          {
+              cppwiki::knowledge::ContextPackItem{
+                  .id = "item-1",
+                  .relation_id = "edge-1",
+                  .artifact_kind = cppwiki::knowledge::ArtifactKind::kPage,
+                  .artifact_id = "page-auth",
+                  .included = true,
+              },
+          },
+      .repository_guidance = "Follow the existing auth module conventions.",
+      .state = cppwiki::knowledge::ContextPackState::kDraft,
+      .audit = audit,
+  };
+  {
+    cppwiki::storage::CbliteDocumentRepository repository(options);
+    Require(!repository.SaveContextPack(context_pack).error, "CBLite should save a context pack");
+  }
+  {
+    cppwiki::storage::CbliteDocumentRepository repository(options);
+    const auto packs = repository.ListContextPacks("engineering", "page-task-a");
+    Require(packs.packs.size() == 1, "CBLite should persist context packs");
+    Require(packs.packs.front().task_intent == "Fix the login bug",
+            "context pack fields should round-trip");
+    Require(packs.packs.front().items.size() == 1 &&
+                packs.packs.front().items.front().artifact_id == "page-auth",
+            "context pack items should round-trip");
+
+    Require(!repository.DeleteContextPack("pack-a").error, "deleting a context pack should succeed");
+    Require(repository.ListContextPacks("engineering", "page-task-a").packs.empty(),
+            "deleted context pack must not be listed");
   }
   std::filesystem::remove_all(test_directory);
 }
