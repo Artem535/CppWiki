@@ -17,6 +17,7 @@
 #include "core/constants.h"
 #include "core/qt_string.h"
 #include "knowledge/knowledge_record.h"
+#include "storage/fake_document_repository.h"
 #include "storage/local_document_repository.h"
 
 namespace {
@@ -68,194 +69,6 @@ class FakeSyncStateProvider final : public cppwiki::sync::SyncStateProvider {
   QStringList remote_workspaces_;
 };
 
-class FakeDocumentRepository final : public cppwiki::storage::LocalDocumentRepository {
- public:
-  [[nodiscard]] auto SaveDocument(const cppwiki::storage::DocumentRecord& document)
-      -> cppwiki::storage::SaveDocumentResult override {
-    documents_[document.metadata.id] = document;
-    return cppwiki::storage::SaveDocumentResult{};
-  }
-
-  [[nodiscard]] auto DeleteDocument(std::string_view page_id)
-      -> cppwiki::storage::DeleteDocumentResult override {
-    documents_.erase(std::string(page_id));
-    return cppwiki::storage::DeleteDocumentResult{};
-  }
-
-  [[nodiscard]] auto LoadDocument(std::string_view page_id)
-      -> cppwiki::storage::LoadDocumentResult override {
-    const auto it = documents_.find(std::string(page_id));
-    if (it == documents_.end()) {
-      return cppwiki::storage::LoadDocumentResult{
-          .document = std::nullopt,
-          .error =
-              cppwiki::storage::RepositoryError{
-                  .code = cppwiki::storage::RepositoryErrorCode::kReadFailed,
-                  .message = "Document was not found.",
-              },
-      };
-    }
-
-    return cppwiki::storage::LoadDocumentResult{
-        .document = it->second,
-        .error = std::nullopt,
-    };
-  }
-
-  [[nodiscard]] auto ListDocuments() -> cppwiki::storage::ListDocumentsResult override {
-    cppwiki::storage::ListDocumentsResult result;
-    for (const auto& [id, document] : documents_) {
-      result.documents.push_back(cppwiki::storage::DocumentSummaryFromMetadata(document.metadata));
-    }
-    return result;
-  }
-
-  [[nodiscard]] auto SaveAttachment(const cppwiki::storage::AttachmentData& attachment)
-      -> cppwiki::storage::SaveAttachmentResult override {
-    attachments_[attachment.metadata.id] = attachment;
-    return {};
-  }
-
-  [[nodiscard]] auto LoadAttachment(std::string_view attachment_id, std::string_view workspace_id)
-      -> cppwiki::storage::LoadAttachmentResult override {
-    const auto it = attachments_.find(std::string(attachment_id));
-    if (it == attachments_.end() || it->second.metadata.workspace_id != workspace_id) {
-      return {.attachment = std::nullopt,
-              .error = cppwiki::storage::RepositoryError{
-                  .code = cppwiki::storage::RepositoryErrorCode::kReadFailed,
-                  .message = "Attachment was not found.",
-              }};
-    }
-    return {.attachment = it->second, .error = std::nullopt};
-  }
-
-  [[nodiscard]] auto ListAttachments(std::string_view workspace_id)
-      -> cppwiki::storage::ListAttachmentsResult override {
-    cppwiki::storage::ListAttachmentsResult result;
-    for (const auto& [id, attachment] : attachments_) {
-      if (attachment.metadata.workspace_id == workspace_id) {
-        result.attachments.push_back(attachment.metadata);
-      }
-    }
-    return result;
-  }
-
-  [[nodiscard]] auto SaveConflict(const cppwiki::storage::DocumentConflictRecord&)
-      -> cppwiki::storage::SaveConflictResult override {
-    return {};
-  }
-
-  [[nodiscard]] auto DeleteConflict(std::string_view)
-      -> cppwiki::storage::DeleteConflictResult override {
-    return {};
-  }
-
-  [[nodiscard]] auto LoadConflict(std::string_view)
-      -> cppwiki::storage::LoadConflictResult override {
-    return {};
-  }
-
-  [[nodiscard]] auto ListConflicts() -> cppwiki::storage::ListConflictsResult override {
-    return {};
-  }
-
-  [[nodiscard]] auto ResolveConflict(std::string_view)
-      -> cppwiki::storage::UpdateConflictResolutionResult override {
-    return {};
-  }
-
-  [[nodiscard]] auto DismissConflict(std::string_view)
-      -> cppwiki::storage::UpdateConflictResolutionResult override {
-    return {};
-  }
-
-  [[nodiscard]] auto SaveWorkspaceRoot(const cppwiki::storage::WorkspaceRootRecord& root)
-      -> cppwiki::storage::SaveWorkspaceRootResult override {
-    workspace_roots_[root.workspace_id] = root;
-    return {};
-  }
-
-  [[nodiscard]] auto LoadWorkspaceRoot(std::string_view workspace_id)
-      -> std::optional<cppwiki::storage::WorkspaceRootRecord> override {
-    const auto it = workspace_roots_.find(std::string(workspace_id));
-    if (it == workspace_roots_.end()) {
-      return std::nullopt;
-    }
-    return it->second;
-  }
-
-  [[nodiscard]] auto SupportsSync() const -> bool override {
-    return true;
-  }
-
-  [[nodiscard]] auto SaveDocumentRevision(const cppwiki::storage::DocumentRevisionRecord& revision)
-      -> cppwiki::storage::SaveDocumentRevisionResult override {
-    revisions_[revision.id] = revision;
-    return {};
-  }
-
-  [[nodiscard]] auto ListDocumentRevisions(std::string_view document_id)
-      -> cppwiki::storage::ListDocumentRevisionsResult override {
-    cppwiki::storage::ListDocumentRevisionsResult result;
-    for (const auto& [id, revision] : revisions_) {
-      if (revision.document_id == document_id) {
-        result.revisions.push_back(revision);
-      }
-    }
-    std::ranges::sort(result.revisions,
-                      [](const auto& lhs, const auto& rhs) { return lhs.saved_at > rhs.saved_at; });
-    return result;
-  }
-
-  [[nodiscard]] auto DeleteDocumentRevision(std::string_view revision_id)
-      -> cppwiki::storage::DeleteDocumentRevisionResult override {
-    revisions_.erase(std::string(revision_id));
-    return {};
-  }
-
-  [[nodiscard]] auto SavePropertyDefinition(const cppwiki::knowledge::PropertyDefinition& definition)
-      -> cppwiki::storage::SaveKnowledgeRecordResult override {
-    property_definitions_[definition.id] = definition;
-    return {};
-  }
-
-  [[nodiscard]] auto ListPropertyDefinitions(std::string_view workspace_id)
-      -> cppwiki::storage::ListPropertyDefinitionsResult override {
-    cppwiki::storage::ListPropertyDefinitionsResult result;
-    for (const auto& [id, definition] : property_definitions_) {
-      if (definition.workspace_id == workspace_id) {
-        result.definitions.push_back(definition);
-      }
-    }
-    return result;
-  }
-
-  [[nodiscard]] auto SavePagePropertyValue(const cppwiki::knowledge::PagePropertyValue& value)
-      -> cppwiki::storage::SaveKnowledgeRecordResult override {
-    page_property_values_[value.id] = value;
-    return {};
-  }
-
-  [[nodiscard]] auto ListPagePropertyValues(std::string_view workspace_id, std::string_view page_id)
-      -> cppwiki::storage::ListPagePropertyValuesResult override {
-    cppwiki::storage::ListPagePropertyValuesResult result;
-    for (const auto& [id, value] : page_property_values_) {
-      if (value.workspace_id == workspace_id && value.page_id == page_id) {
-        result.values.push_back(value);
-      }
-    }
-    return result;
-  }
-
- private:
-  std::map<std::string, cppwiki::storage::DocumentRecord> documents_;
-  std::map<std::string, cppwiki::storage::AttachmentData> attachments_;
-  std::map<std::string, cppwiki::storage::DocumentRevisionRecord> revisions_;
-  std::map<std::string, cppwiki::storage::WorkspaceRootRecord> workspace_roots_;
-  std::map<std::string, cppwiki::knowledge::PropertyDefinition> property_definitions_;
-  std::map<std::string, cppwiki::knowledge::PagePropertyValue> page_property_values_;
-};
-
 auto TestBridgeInfo() -> void {
   cppwiki::bridge::QEditorBridge bridge;
   const auto response = bridge.getBridgeInfo();
@@ -303,7 +116,7 @@ auto TestInitialDocumentStartsEmpty() -> void {
 }
 
 auto TestDocumentListBootstrapsWelcomePage() -> QString {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
   bridge.SetSyncStateProvider(nullptr);
@@ -330,7 +143,7 @@ auto TestDocumentListBootstrapsWelcomePage() -> QString {
 }
 
 auto TestCreateDocument() -> QString {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -358,7 +171,7 @@ auto TestCreateDocument() -> QString {
 }
 
 auto TestCreateDocumentLoadsEmptyAndSaves() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -405,7 +218,7 @@ auto TestCreateDocumentLoadsEmptyAndSaves() -> void {
 }
 
 auto TestCreateDocumentDoesNotHijackAutosaveSelection() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -461,7 +274,7 @@ auto TestCreateDocumentDoesNotHijackAutosaveSelection() -> void {
 }
 
 auto TestRenameDocumentUpdatesTitle() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -500,7 +313,7 @@ auto TestRenameDocumentUpdatesTitle() -> void {
 }
 
 auto TestDeleteDocumentRemovesItFromList() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -531,7 +344,7 @@ auto TestDeleteDocumentRemovesItFromList() -> void {
 // document itself. That is sufficient evidence that the workspace is not new and must not
 // bootstrap a replacement Welcome page after its final document is deleted.
 auto TestDeleteDocumentFromPreRootWorkspaceLeavesNormalListEmpty() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -552,7 +365,7 @@ auto TestDeleteDocumentFromPreRootWorkspaceLeavesNormalListEmpty() -> void {
 // (covered above) but reappear in listTrash(), still fully intact, until it's restored or
 // permanently deleted.
 auto TestDeleteDocumentMovesItToTrashInsteadOfErasingIt() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -579,7 +392,7 @@ auto TestDeleteDocumentMovesItToTrashInsteadOfErasingIt() -> void {
 }
 
 auto TestRestoreDocumentBringsItBackToTheNormalList() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -615,7 +428,7 @@ auto TestRestoreDocumentBringsItBackToTheNormalList() -> void {
 }
 
 auto TestPermanentlyDeleteDocumentRemovesItForGood() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -642,7 +455,7 @@ auto TestPermanentlyDeleteDocumentRemovesItForGood() -> void {
 }
 
 auto TestEmptyTrashRemovesAllCurrentlyTrashedDocuments() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -672,7 +485,7 @@ auto TestEmptyTrashRemovesAllCurrentlyTrashedDocuments() -> void {
 }
 
 auto TestCreateJupyterNotebookProducesLoadableNbformatContent() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -698,7 +511,7 @@ auto TestCreateJupyterNotebookProducesLoadableNbformatContent() -> void {
 }
 
 auto TestCreateExcalidrawCanvasProducesLoadableSceneContent() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -730,7 +543,7 @@ auto TestCreateExcalidrawCanvasProducesLoadableSceneContent() -> void {
 // Issue #219: a freshly-created project board should start with a predictable base set of
 // properties (Status/Owner) instead of an empty properties strip.
 auto TestCreateProjectBoardSeedsDefaultProperties() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -784,7 +597,7 @@ auto TestCreateProjectBoardSeedsDefaultProperties() -> void {
 // The seeded Owner value should prefer a human-readable display name (username/email) over the
 // raw author id (an opaque OIDC subject claim in a real deployment) whenever one is available.
 auto TestCreateProjectBoardOwnerPrefersDisplayNameOverAuthorId() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
   bridge.SetCurrentAuthorDisplayName(QStringLiteral("Jane Doe"));
@@ -815,7 +628,7 @@ auto TestCreateProjectBoardOwnerPrefersDisplayNameOverAuthorId() -> void {
 // A second project board in the same workspace must reuse the existing Status/Owner
 // definitions rather than creating duplicates.
 auto TestCreateProjectBoardReusesExistingDefaultPropertyDefinitions() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -834,7 +647,7 @@ auto TestCreateProjectBoardReusesExistingDefaultPropertyDefinitions() -> void {
 // A new wiki page gets its own Status/Owner defaults (Draft/Published), same shape as project
 // boards but with wiki-appropriate wording.
 auto TestCreateWikiPageSeedsDefaultProperties() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -867,7 +680,7 @@ auto TestCreateWikiPageSeedsDefaultProperties() -> void {
 // progress/Done vs. Draft/Published). Reuse must not let one kind's page adopt the other's
 // options just because the definitions share a name.
 auto TestDifferentKindsGetSeparateStatusDefinitionsWhenOptionsDiffer() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -916,7 +729,7 @@ auto TestDifferentKindsGetSeparateStatusDefinitionsWhenOptionsDiffer() -> void {
 // Mirrors NotebookView.tsx's scheduleSave(): edit a cell, call updateSnapshot() with the whole
 // notebook object, then reload and check the edit persisted and the content is still valid JSON.
 auto TestUpdateSnapshotRoundTripsForJupyterNotebook() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -953,7 +766,7 @@ auto TestUpdateSnapshotRoundTripsForJupyterNotebook() -> void {
 // Mirrors ExcalidrawCanvasView.tsx's debounced onChange: edit the scene, call updateSnapshot()
 // with the whole scene object, then reload and check the edit persisted.
 auto TestUpdateSnapshotRoundTripsForExcalidrawCanvas() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -988,7 +801,7 @@ auto TestUpdateSnapshotRoundTripsForExcalidrawCanvas() -> void {
 }
 
 auto TestOpenDocumentReturnsLoadedDocument() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1012,7 +825,7 @@ auto TestOpenDocumentReturnsLoadedDocument() -> void {
 }
 
 auto TestWorkspaceListIsolation() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1040,7 +853,7 @@ auto TestWorkspaceListIsolation() -> void {
 }
 
 auto TestEmptyRepositoryWithRemoteSyncExpectedSkipsWelcome() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   FakeSyncStateProvider sync_provider(QStringList{QStringLiteral("default")});
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
@@ -1055,7 +868,7 @@ auto TestEmptyRepositoryWithRemoteSyncExpectedSkipsWelcome() -> void {
 }
 
 auto TestEmptyRepositoryWithUnreadySyncStillBootstrapsWelcome() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   FakeSyncStateProvider sync_provider;
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
@@ -1070,7 +883,7 @@ auto TestEmptyRepositoryWithUnreadySyncStillBootstrapsWelcome() -> void {
 }
 
 auto TestNonEmptyRepositoryWithRemoteSyncExpectedReturnsDocuments() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   FakeSyncStateProvider sync_provider(QStringList{QStringLiteral("default")});
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
@@ -1088,7 +901,7 @@ auto TestNonEmptyRepositoryWithRemoteSyncExpectedReturnsDocuments() -> void {
 }
 
 auto TestWorkspaceMismatchBlocksCrossWorkspaceLoad() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1103,7 +916,7 @@ auto TestWorkspaceMismatchBlocksCrossWorkspaceLoad() -> void {
 }
 
 auto TestSessionContextOverridesWorkspaceAndAuthor() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
   bridge.SetCurrentAuthorId(QStringLiteral("subject-42"));
@@ -1130,7 +943,7 @@ auto TestSessionContextOverridesWorkspaceAndAuthor() -> void {
 }
 
 auto TestValidSnapshot() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
   const auto list_response = bridge.listDocuments();
@@ -1183,7 +996,7 @@ auto HeadingSnapshot(const QString& heading_text) -> QString {
 // about to overwrite as a revision -- so after two edits, the pre-edit-1 and pre-edit-2 states
 // should both be recoverable, distinguishable by title (each edit sets a distinct h1 heading).
 auto TestUpdateSnapshotRecordsRevisionsAndRestoreBringsBackOldContent() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1243,7 +1056,7 @@ auto TestUpdateSnapshotRecordsRevisionsAndRestoreBringsBackOldContent() -> void 
 }
 
 auto TestInvalidJsonSnapshot() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
   const auto list_response = bridge.listDocuments();
@@ -1262,7 +1075,7 @@ auto TestInvalidJsonSnapshot() -> void {
 }
 
 auto TestInvalidRootSnapshot() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
   const auto list_response = bridge.listDocuments();
@@ -1282,7 +1095,7 @@ auto TestInvalidRootSnapshot() -> void {
 }
 
 auto TestRenameDocumentRejectedWhenCurrentDocumentLocked() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1311,7 +1124,7 @@ auto TestRenameDocumentRejectedWhenCurrentDocumentLocked() -> void {
 }
 
 auto TestRenameDocumentSucceedsWhenCurrentDocumentEditable() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1336,7 +1149,7 @@ auto TestRenameDocumentSucceedsWhenCurrentDocumentEditable() -> void {
 }
 
 auto TestUpdateDocumentPlacementRejectedWhenCurrentDocumentLocked() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1358,7 +1171,7 @@ auto TestUpdateDocumentPlacementRejectedWhenCurrentDocumentLocked() -> void {
 }
 
 auto TestUpdateDocumentPlacementSucceedsWhenCurrentDocumentEditable() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1383,7 +1196,7 @@ auto TestUpdateDocumentPlacementSucceedsWhenCurrentDocumentEditable() -> void {
 }
 
 auto TestDeleteDocumentRejectedWhenCurrentDocumentLocked() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1404,7 +1217,7 @@ auto TestDeleteDocumentRejectedWhenCurrentDocumentLocked() -> void {
 }
 
 auto TestRenameDocumentRejectedWhenCurrentDocumentConflicted() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1432,7 +1245,7 @@ auto TestRenameDocumentRejectedWhenCurrentDocumentConflicted() -> void {
 }
 
 auto TestUpdateDocumentPlacementRejectedWhenCurrentDocumentConflicted() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1453,7 +1266,7 @@ auto TestUpdateDocumentPlacementRejectedWhenCurrentDocumentConflicted() -> void 
 }
 
 auto TestDeleteDocumentRejectedWhenCurrentDocumentConflicted() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1473,7 +1286,7 @@ auto TestDeleteDocumentRejectedWhenCurrentDocumentConflicted() -> void {
 }
 
 auto TestUpdateSnapshotRejectedWhenCurrentDocumentConflicted() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1503,7 +1316,7 @@ auto TestUpdateSnapshotRejectedWhenCurrentDocumentConflicted() -> void {
 }
 
 auto TestConflictFlagClearsOnFreshLoad() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1529,7 +1342,7 @@ auto TestConflictFlagClearsOnFreshLoad() -> void {
 }
 
 auto TestDeleteDocumentSucceedsWhenCurrentDocumentEditable() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
 
@@ -1579,7 +1392,7 @@ auto TestStartAiRequestWithToolSchemaReturnsRequestId() -> void {
 }
 
 auto TestAttachmentUploadPersistsOnlyAfterComplete() -> void {
-  auto repository = std::make_shared<FakeDocumentRepository>();
+  auto repository = std::make_shared<cppwiki::storage::testing::FakeDocumentRepository>();
   cppwiki::bridge::QEditorBridge bridge;
   bridge.SetRepository(repository);
   bridge.SetCurrentWorkspaceId(QStringLiteral("engineering"));
