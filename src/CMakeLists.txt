@@ -15,6 +15,13 @@ qt_add_executable(cppwiki_app
         app/application_stylesheet.h
         app/program_settings.cc
         app/program_settings.h
+        agent/agent_engine.h
+        agent/agent_message.h
+        agent/agent_session.h
+        agent/agent_tool_registry.h
+        agent/agent_transport.h
+        agent/qt_agent_transport.cc
+        agent/qt_agent_transport.h
         auth/ai_api_key_store.cc
         auth/ai_api_key_store.h
         auth/auth_token_bundle.h

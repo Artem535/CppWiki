@@ -571,6 +571,68 @@ add_test(
   COMMAND cppwiki_conflict_merge_resolution_tests
 )
 
+# Agent engine (issue #29): the shared tool-use dispatch loop, tested against a fake
+# AgentTransport and a real AgentToolRegistry configured with test handlers -- no real network
+# calls, no Qt dependency (the engine core is plain C++; QtAgentTransport, its production
+# transport, is build-verified only via the cppwiki_app target, per ADR-015).
+add_executable(cppwiki_agent_session_tests
+  agent/agent_session_test.cc
+  ${CMAKE_SOURCE_DIR}/src/agent/agent_message.h
+  ${CMAKE_SOURCE_DIR}/src/agent/agent_session.h
+)
+
+target_include_directories(cppwiki_agent_session_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+cppwiki_apply_common_options(cppwiki_agent_session_tests)
+
+add_test(
+  NAME cppwiki_agent_session_tests
+  COMMAND cppwiki_agent_session_tests
+)
+
+add_executable(cppwiki_agent_tool_registry_tests
+  agent/agent_tool_registry_test.cc
+  ${CMAKE_SOURCE_DIR}/src/agent/agent_tool_registry.h
+)
+
+target_include_directories(cppwiki_agent_tool_registry_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+cppwiki_apply_common_options(cppwiki_agent_tool_registry_tests)
+
+add_test(
+  NAME cppwiki_agent_tool_registry_tests
+  COMMAND cppwiki_agent_tool_registry_tests
+)
+
+add_executable(cppwiki_agent_engine_tests
+  agent/agent_engine_test.cc
+  agent/fake_agent_transport.h
+  ${CMAKE_SOURCE_DIR}/src/agent/agent_engine.h
+  ${CMAKE_SOURCE_DIR}/src/agent/agent_message.h
+  ${CMAKE_SOURCE_DIR}/src/agent/agent_session.h
+  ${CMAKE_SOURCE_DIR}/src/agent/agent_tool_registry.h
+  ${CMAKE_SOURCE_DIR}/src/agent/agent_transport.h
+)
+
+target_include_directories(cppwiki_agent_engine_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/agent
+)
+
+cppwiki_apply_common_options(cppwiki_agent_engine_tests)
+
+add_test(
+  NAME cppwiki_agent_engine_tests
+  COMMAND cppwiki_agent_engine_tests
+)
+
 # Project board Table view (issue #117, part of the #113 umbrella) — kept as its own block
 # linking against the cppwiki_project_board_table library target (see
 # ../src/gui/project_board/table/CMakeLists.txt) instead of relisting its sources here, so the

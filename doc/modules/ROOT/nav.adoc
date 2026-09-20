@@ -40,6 +40,7 @@
 ** Spikes
 *** xref:architecture/spikes/Couchbase_Lite_C_Integration.adoc[Couchbase Lite C integration]
 *** xref:architecture/spikes/Couchbase_Sync_Gateway_OIDC_Example.adoc[Couchbase Sync Gateway OIDC example]
+*** xref:architecture/spikes/Agent_Workflow_Graph_Libraries_2026-09-19.adoc[Agent workflow graph libraries]
 * Backlog
 ** xref:backlog/Backlog.adoc[Backlog]
 ** xref:backlog/Admin_Surface_Backlog.adoc[Admin surface backlog]
