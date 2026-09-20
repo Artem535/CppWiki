@@ -829,7 +829,46 @@ void BackendClient::AcquireDocumentLock(const QString& document_id,
                                    ? QStringLiteral("Document: read-only, lock unavailable")
                                    : QStringLiteral("Document: read-only, locked by %1").arg(owner),
             });
-          });
+            });
+}
+
+void BackendClient::CheckDocumentLockStatus(const QString& document_id,
+                                            std::function<void(LockStatusResult)> callback) {
+  if (document_id.trimmed().isEmpty() || state_ != BackendConnectionState::kReachable) {
+    // Fail closed (ADR-020): an unreachable backend must not be reported as "unlocked".
+    callback(LockStatusResult{.query_succeeded = false, .lock_owner = {}});
+    return;
+  }
+
+  const auto request =
+      MakeRequest(QUrl{ApiUrl(QStringLiteral("/api/v1/locks/%1").arg(document_id))},
+                  kLockRequestTimeoutMs, access_token_);
+  // Deliberately not tracked via a shared reply member (unlike session_reply_/heartbeat_reply_):
+  // this is a one-off read that must not cancel or be cancelled by an unrelated in-flight
+  // acquire/heartbeat/release, and several documents' status may legitimately be checked
+  // concurrently (e.g. several AI Chat tool calls in flight at once).
+  auto* reply = network_manager_->get(request);
+  connect(reply, &QNetworkReply::finished, this, [reply, callback = std::move(callback)]() mutable {
+    reply->deleteLater();
+
+    const auto error_text = ReplyErrorText(reply);
+    if (!error_text.isEmpty()) {
+      callback(LockStatusResult{.query_succeeded = false, .lock_owner = {}});
+      return;
+    }
+
+    const auto payload = ParseJsonObject(reply);
+    if (!payload.value(QStringLiteral("ok")).toBool()) {
+      callback(LockStatusResult{.query_succeeded = false, .lock_owner = {}});
+      return;
+    }
+
+    const auto result = EnvelopeResult(payload);
+    callback(LockStatusResult{
+        .query_succeeded = true,
+        .lock_owner = result.value(QStringLiteral("owner")).toString(),
+    });
+  });
 }
 
 void BackendClient::StartHeartbeat() {
