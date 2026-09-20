@@ -1,9 +1,14 @@
-= Current Roadmap
+= Foundation Delivery History
 
 *Product:* CppWiki / Wiki Platform v9 -- Block Document Edition +
-*Status:* Active +
+*Status:* Historical baseline; superseded as the active product roadmap +
 *Date:* 2026-08-03 +
 *Related docs:* xref:PRD_v9_Block_Document_Edition.adoc[], xref:architecture/Architecture_Baseline_Libraries_and_Approaches.adoc[], xref:architecture/Project_Structure_and_Style.adoc[]
+
+The active product roadmap is now xref:roadmap/AI_Native_Engineering_Context_Roadmap.adoc[AI-Native
+Engineering Context Roadmap]. This document preserves the accurate implementation baseline and
+the previous ``CppWiki Local'' feature sequence so that completed work and decisions remain
+traceable. Its near-term and future-priority sections are no longer authoritative.
 
 This document replaces the previous 2026-06-16 draft, which described an early-stage skeleton
 (single-page shell, no server, no auth/sync). Almost everything that draft treated as a future

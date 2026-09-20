@@ -6,6 +6,35 @@ during design discussions; general programming concepts are intentionally left o
 
 == Language
 
+*Engineering context*:
+The connected, inspectable set of requirements, documents, ADRs, architecture notes, tasks,
+repositories, code changes, and execution history relevant to a unit of engineering work. It is
+the product focus of the current validation cycle; it is not merely a chat prompt.
+
+*Engineering artifact*:
+A workspace object that represents a durable part of engineering context, such as a requirement,
+PRD, ADR, architecture component, task, repository, pull request, agent run, or document. The
+initial vertical slice uses the smallest useful subset rather than adding a rigid global schema.
+
+*Explicit relation*:
+A user-, workflow-, or deterministically-created typed relationship between engineering artifacts.
+It is authoritative knowledge and must be reviewable, persisted, and synchronized. Distinct from
+a semantic relation, which is derived from content.
+
+*Context Pack*:
+An inspectable, versioned collection of task intent and selected engineering context sent to an
+agent runtime. A user can include or exclude material before execution, and provenance explains
+why each item was selected.
+
+*Agent Run*:
+One externally executed attempt to perform a task with an approved Context Pack. It records its
+runtime, lifecycle, summary, changed files, result reference, blockers, and proposed knowledge
+updates. It is not itself a coding-agent runtime.
+
+*Knowledge feedback*:
+The reviewable transition from an Agent Run result to proposed updates of tasks, documents, ADRs,
+and explicit relations. It never silently mutates authoritative knowledge.
+
 *Editability gate*:
 The check in `EditorBridge` that decides whether a document mutation (rename, move,
 delete, snapshot update) is allowed to proceed. It has two independent sources of "no":

@@ -15,7 +15,12 @@ Generated documentation set for Wiki Platform v9 — Block Document Edition.
 == Files
 
 * xref:PRD_v9_Block_Document_Edition.adoc[]
-* xref:roadmap/Current_Roadmap.adoc[]
+* xref:product/Engineering_Context_Vision.adoc[]
+* xref:product/Engineering_Context_Validation.adoc[]
+* xref:product/Engineering_Context_PRD.adoc[]
+* xref:roadmap/AI_Native_Engineering_Context_Roadmap.adoc[]
+* xref:roadmap/Current_Roadmap.adoc[Foundation delivery history]
+* xref:backlog/Engineering_Context_Backlog.adoc[]
 * xref:architecture/Architecture_Baseline_Libraries_and_Approaches.adoc[]
 * xref:architecture/Desktop_Backend_Sync_Interaction.adoc[]
 * xref:architecture/Sync_Document_Model_and_Conflict_Contract.adoc[]

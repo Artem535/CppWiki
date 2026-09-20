@@ -1,0 +1,108 @@
+= CppWiki Vision — AI-Native Engineering Context Workspace
+:revdate: 2026-08-24
+:status: Active product direction
+
+== Strategic transition
+
+CppWiki began as a desktop-first, offline-first wiki foundation. That foundation remains
+valuable: structured documents, project boards, local persistence, sync, authentication,
+and a native desktop shell are assets to reuse.
+
+The product is no longer planned as a simultaneous replacement for Confluence, Jira, Miro,
+Notion, and a coding agent. The near-term priority is narrower:
+
+[quote]
+____
+CppWiki is an AI-native engineering context workspace that keeps requirements, technical
+knowledge, architecture decisions, tasks, code, and AI-agent work connected as shared,
+inspectable context.
+____
+
+== Long-term model: Engineering Context Graph
+
+The common model may eventually contain requirements, PRDs, ADRs, architecture components,
+diagrams, tasks, repositories, code entities, pull requests, agent runs, experiments, and
+documents. The value is not a graph visualisation by itself; it is the ability to retrieve
+and reason about explicit relationships across those artifacts.
+
+[source,text]
+----
+Task ──implements────> Requirement
+Task ──constrained_by─> ADR
+ADR ──affects────────> Architecture component
+Agent run ──executes─> Task
+Pull request ──implements──> Task
+Result ──updates─────> Document
+----
+
+The existing wiki, Kanban, Gantt, tables, diagrams, graph, and future agent surfaces are
+views or actions over that common model. They are not independent products that must reach
+feature parity with specialist tools.
+
+== Near-term product hypothesis
+
+Engineering teams and coding agents repeatedly reconstruct task context from disconnected
+requirements, documents, architecture decisions, repositories, issues, and conversations.
+After implementation, results often do not return to the relevant knowledge.
+
+CppWiki will test whether an inspectable, structured context package improves this closed loop:
+
+[source,text]
+----
+Knowledge → Intent → Task → Context → Agent → Code / Result → Updated knowledge
+----
+
+The first commercial question is not whether CppWiki can replace a team’s existing tools.
+It is whether a team using coding agents will repeatedly use and eventually pay for a workflow
+that reduces context assembly and keeps engineering knowledge current.
+
+== Product principles
+
+* Validate a user problem before expanding product surface.
+* Treat connected engineering context, not an individual editor or agent, as the product.
+* Keep explicit relationships authoritative; semantic discovery is derived and reviewable.
+* Remain agent-runtime agnostic: an external coding agent is a valid first runtime.
+* Make context, actions, provenance, and proposed changes inspectable before they are accepted.
+* Preserve desktop-first and offline/local value.
+* Measure workflow outcomes rather than feature count.
+* Build one complete workflow before widening five surfaces.
+
+== First wedge
+
+The first end-to-end workflow is *Context → Agent → Result → Knowledge*:
+
+. A user selects a real task linked to requirements, ADRs, architecture notes, and a repository.
+. CppWiki assembles an inspectable Context Pack from explicit relations and deterministic
+  retrieval; the user can add or remove material.
+. CppWiki sends the task and approved Context Pack to one external coding-agent runtime.
+. The run records its summary, changed files, commit or pull request, blockers, and notes.
+. CppWiki proposes reviewable task, document, ADR, and relationship updates. It never silently
+  changes authoritative knowledge.
+
+This workflow deliberately does not require Phoenix Agents or a bespoke CppWiki coding-agent
+runtime. Phoenix Agents may later integrate through the same generic agent-execution boundary.
+
+== Scope boundaries
+
+=== Near-term
+
+* Problem interviews and a design-partner pilot.
+* Minimum engineering artifacts and explicit relations.
+* Context Pack assembly, preview, provenance, and one external agent adapter.
+* Agent-run capture, proposed knowledge updates, and workflow measurement.
+* Reliability, security, and UX work that blocks a real pilot.
+
+=== Deferred until validation
+
+* Full Jira, Confluence, or Miro replacement.
+* Broad project-management, calendar, canvas, diagram, and Gantt expansion.
+* A generic graph-editor or graph visualisation programme.
+* A bespoke coding-agent runtime as a prerequisite.
+* General-purpose ``AI for everything'' features, plugin marketplace, and enterprise parity.
+
+== Success criteria
+
+The strategic cycle succeeds when CppWiki identifies a specific user and problem, supports the
+complete workflow on a real engineering task, measures a credible benefit, and earns repeated
+use or a pilot/deployment commitment. A change of hypothesis is also a valid result when users
+prefer integration with existing work systems over another workspace.

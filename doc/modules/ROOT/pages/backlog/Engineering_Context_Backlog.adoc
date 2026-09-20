@@ -1,0 +1,81 @@
+= Engineering Context Backlog Triage
+:revdate: 2026-08-24
+:status: Proposed issue triage; GitHub labels are operational after review
+
+This document preserves the transition from wiki-first foundation to AI-native engineering context. ``Deferred'' means valuable later work, not rejected work. ``Reframe'' means an issue retains its history but its outcome must serve the validation wedge.
+
+== Existing issue triage
+
+[cols="1,1,3",options="header"]
+|===
+|Issues |Disposition |Rationale
+
+|#12, #159, #168, #169, #182
+|KEEP / SUPPORTING
+|Build, packaging, data safety, onboarding, and visual reliability are pilot blockers only when they affect the chosen partner path. They do not independently prove the product hypothesis.
+
+|#160
+|KEEP / SUPPORTING
+|Search may support discovery, but Context Pack v1 should first traverse explicit relations and must not wait for a broad search programme.
+
+|#156, #161
+|KEEP / SUPPORTING
+|Fix when a pilot reproduces the problem or navigation/search UX blocks use; otherwise do not let them displace the vertical slice.
+
+|#185
+|REFRAME / PRIORITY
+|Turn the page-property migration contract into a minimum engineering artifact and explicit-relation model. Do not require the complete universal property catalogue before the first slice.
+
+|#188
+|REFRAME / PRIORITY
+|Typed relations become authoritative links between task, document, ADR, repository, Agent Run, and result; inverse rendering remains useful but is not the initial outcome.
+
+|#186, #187, #189, #190
+|KEEP / SUPPORTING
+|Properties, tags, wikilinks, backlinks, and Connections remain useful context capabilities, but only a narrow relation/UI path required by Context Pack v1 should be pulled forward.
+
+|#191, #192
+|REFRAME / DEFER
+|A graph is a relationship-inspection view, not a standalone Obsidian-like product goal. Build it only if pilot users cannot inspect context through list/detail UI.
+
+|#193, #194, #195, #196, #198
+|KEEP / DEFER
+|Semantic index, graph, promotion, recommendations, and the ObjectBox spike are derived-layer work. They follow explicit-context validation; no semantic data is authoritative or required for the first agent workflow.
+
+|#29
+|REFRAME / DEFER
+|A bespoke OpenAI-compatible agent loop is not a prerequisite. Preserve the generic tool and trust-boundary learning, but first validate a narrow external agent adapter.
+
+|#30, #31, #32
+|KEEP / DEFER
+|AI Chat, native Code mode, and sandboxed sub-agent fan-out are later product surfaces. They must not compete with an external-runtime integration in the validation cycle.
+
+|#137, #148
+|KEEP / DEFER
+|Calendar and attachments are useful wiki expansion but do not validate engineering context.
+|===
+
+== New validation path
+
+[cols="1,1,3",options="header"]
+|===
+|Order |Outcome |Blocked by
+
+|1 |Interview evidence and a design-partner hypothesis |None
+|2 |Minimum artifact and explicit-relation contract |1: discovery vocabulary and workflow
+|3 |Context Pack v1 contract and provenance rules |2
+|4 |Task linked to document, ADR, and repository |2
+|5 |Editable Context Pack preview |3, 4
+|6 |One external coding agent executes an approved pack |3, 5
+|7 |Agent Run and result linked back to task |4, 6
+|8 |Reviewable knowledge-feedback proposals |7
+|9 |Pilot metrics and comparison record |5, 6, 7, 8
+|10 |First design-partner pilot and Go/Pivot/Rethink report |9
+|===
+
+== Guardrails
+
+* Do not label deferred work `ready-for-agent`.
+* Preserve original issue text and discussion; add a triage comment rather than rewriting history.
+* An issue may have both `reframe` and `deferred` when its eventual purpose changes but its work is not next.
+* ``Priority'' is reserved for the active frontier after blockers are complete, not for every desirable foundation item.

@@ -1,0 +1,108 @@
+= PRD — AI-Native Engineering Context: Validation Vertical Slice
+:revdate: 2026-08-24
+:status: Draft — validation contract
+
+**Owner:** CppWiki product owner +
+**Stakeholders:** design partner, coding-agent users, CppWiki maintainer +
+**Related Docs:** xref:product/Engineering_Context_Vision.adoc[Vision], xref:product/Engineering_Context_Validation.adoc[Validation plan], xref:roadmap/AI_Native_Engineering_Context_Roadmap.adoc[Roadmap]
+
+== 1. Goal and Business Context
+
+* **Business problem:** task context for engineers and coding agents is scattered across requirements, ADRs, wiki pages, tasks, repositories, and prior results.
+* **Service goal:** give the user an inspectable Context Pack for a real task and turn an Agent Run into reviewable knowledge feedback.
+* **Why now:** coding-agent usage is increasing, while manual context assembly and stale documentation remain expensive.
+* **Expected effect:** reduce preparation and clarification work without hiding context selection or mutations from the user.
+
+== 2. Problem Statement
+
+Engineers and agents repeatedly rediscover task intent, constraints, and codebase guidance. An implementation result then often has no durable relation to the task and knowledge that motivated it. Generic chat or search does not provide explicit relationships, provenance, or a controlled return from execution to authoritative knowledge.
+
+LLM output is never the source of truth. Relation persistence, context membership, permissions, run state, and human confirmation are deterministic.
+
+== 3. Users and Use Cases
+
+* **Primary users:** Software Engineer, ML/LLM Engineer, and Tech Lead in a 5–30 person team already using coding agents.
+* **Secondary users:** architects and engineering managers who maintain technical decisions.
+* **Task understanding:** a user sees links from a task to requirements, ADRs, documents, and a repository.
+* **Delegation:** a user edits and approves a Context Pack before an external runtime receives it.
+* **Feedback:** a user reviews an Agent Run, result references, blockers, and proposed updates.
+
+== 4. Critical Journeys and Failure-Sensitive Paths
+
+[cols="1,1,1,1",options="header"]
+|===
+|Journey |Expected outcome |Failure mode |Required handling
+
+|Context assembly |Traceable material for a task |Missing or irrelevant artifact |Show provenance and permit include/exclude
+|External execution |Approved package reaches one runtime |Runtime fails or is cancelled |Record terminal failure; make no knowledge mutation
+|Result ingestion |Run links results and changed files to task |Partial/untrusted output |Keep unverified metadata and require review
+|Knowledge feedback |Selective update proposals |Over-broad proposal |Never mutate authoritative knowledge automatically
+|===
+
+== 5. Scope and Non-Goals
+
+=== In Scope
+
+* Minimum artifacts: task, document, ADR, repository, Agent Run, and result reference.
+* Explicit typed relations, Context Pack v1, provenance, and one external agent adapter.
+* Run capture, reviewable knowledge feedback, interview evidence, and pilot metrics.
+
+=== Out of Scope
+
+* Full Jira, Confluence, Miro, or coding-agent replacement.
+* Automatic execution-result edits, visual/semantic graph, embedding sync, multi-runtime orchestration, or Phoenix Agents as a dependency.
+* Broad enterprise administration and all tracker/wiki/code-host integrations.
+
+=== Smallest Shippable Slice
+
+A real task links to one document, ADR, and repository; the user approves a Context Pack; one external runtime executes it; CppWiki records the Agent Run and proposes, but does not automatically apply, a knowledge update.
+
+== 6. Success Criteria and KPI
+
+[cols="1,1,1,1",options="header"]
+|===
+|Category |Metric |Pilot target |How measured
+
+|Discovery |Validated interviews |5–7 relevant users |Interview synthesis
+|Adoption |Real task and repeat use |One design partner runs the flow twice |Pilot records
+|Workflow |Preparation time and interventions |Compared with team baseline, no invented universal target |Timed run and annotation
+|Quality |Context provenance and update review |Every inclusion and mutation is inspectable |Audit record
+|Commercial |Continuation signal |Pilot, deployment, or payment commitment |Written partner decision
+|===
+
+== 7. Deterministic vs ML/LLM Behavior
+
+=== Deterministic Product Requirements
+
+* Artifact IDs, explicit relations, Context Pack membership, provenance, permission checks, lifecycle, and confirmation gates are deterministic and testable.
+* A Context Pack grants no unrestricted filesystem, shell, token, browser, or database capability.
+* No model output can create or change authoritative knowledge without confirmation.
+
+=== Probabilistic Behavior
+
+Summaries, ranking, missing-context suggestions, and proposed document/ADR updates may be model-assisted. Each remains attributable to source material and discardable without side effects.
+
+== 8. Requirements Summary
+
+* **FR-01:** link a task to minimum engineering artifacts through explicit relations.
+* **FR-02:** generate an editable Context Pack with provenance.
+* **FR-03:** execute through one narrow external-runtime adapter.
+* **FR-04:** persist Agent Run state, summary, changed files, result reference, and failures.
+* **FR-05:** present selective, reviewable knowledge feedback.
+* **FR-06:** record pilot metrics and user annotations.
+
+== 9. Data, Integrations, Assumptions and Constraints
+
+Inputs are native CppWiki documents/tasks, user-entered relations, ADRs, a repository reference, selected context, and agent-run metadata. The first runtime is chosen from design-partner evidence, not as a permanent vendor commitment. Couchbase remains authoritative storage; semantic/index state stays derived and cannot be required for the slice.
+
+== 10. Model / Vendor Strategy
+
+Use deterministic explicit-relation traversal first. Add retrieval or model-assisted proposals behind interfaces only where explicit context is insufficient. The CppWiki boundary stays runtime-agnostic and does not require Phoenix-specific internals or an internal OpenAI-compatible agent loop.
+
+== 11. Dependencies and Stakeholders
+
+Dependencies are existing document/sync/auth boundaries, relation-model work, one external runtime, a design partner, and pilot-safe telemetry. The product owner and design-partner champion approve pilot readiness.
+
+== 12. Pilot / Release Acceptance
+
+Pilot entry requires at least five synthesized interviews and one real task completing Context → Agent → Result → Knowledge feedback. Context membership and every proposed mutation must be visible and reviewable. Expansion requires repeated pilot value, documented security/integration boundaries, and a credible continuation or commercial signal.
