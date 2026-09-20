@@ -15,6 +15,8 @@ qt_add_executable(cppwiki_app
         app/application_stylesheet.h
         app/program_settings.cc
         app/program_settings.h
+        ai_chat/ai_chat_tool_registry.cc
+        ai_chat/ai_chat_tool_registry.h
         agent/agent_engine.h
         agent/agent_message.h
         agent/agent_session.h
