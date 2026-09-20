@@ -1,7 +1,9 @@
 #include "agent/agent_tool_registry.h"
 
 #include <cstdlib>
+#include <functional>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -77,6 +79,68 @@ auto TestHasToolReflectsWhatWasRegistered() -> void {
   Require(registry.HasTool("search_documents"), "a registered tool must be reported as present");
 }
 
+auto TestInvokeAsyncDispatchesToAnAsyncRegisteredTool() -> void {
+  AgentToolRegistry registry;
+  std::string received_arguments;
+  registry.RegisterAsyncTool(
+      AgentToolSchema{.name = "confirm_and_write", .description = "", .parameters_json_schema = ""},
+      [&received_arguments](const std::string& arguments_json,
+                            std::function<void(AgentToolInvocationResult)> on_done) {
+        received_arguments = arguments_json;
+        on_done(AgentToolInvocationResult::Ok("written"));
+      });
+
+  std::optional<AgentToolInvocationResult> result;
+  registry.InvokeAsync("confirm_and_write", R"({"path":"a"})",
+                       [&result](AgentToolInvocationResult r) { result = std::move(r); });
+
+  Require(result.has_value(), "InvokeAsync must call on_done exactly once for a registered tool");
+  Require(!result->is_error, "a successful async tool must not be reported as an error");
+  Require(result->content == "written", "InvokeAsync must return exactly what the handler produced");
+  Require(received_arguments == R"({"path":"a"})",
+          "the async handler must receive the exact arguments passed to InvokeAsync");
+}
+
+auto TestInvokeAsyncStillDispatchesSyncRegisteredTools() -> void {
+  AgentToolRegistry registry;
+  registry.RegisterTool(
+      AgentToolSchema{.name = "search_documents", .description = "", .parameters_json_schema = ""},
+      [](const std::string&) { return AgentToolInvocationResult::Ok("[]"); });
+
+  std::optional<AgentToolInvocationResult> result;
+  registry.InvokeAsync("search_documents", "{}",
+                       [&result](AgentToolInvocationResult r) { result = std::move(r); });
+
+  Require(result.has_value(), "InvokeAsync must adapt a sync-registered tool onto the async path");
+  Require(result->content == "[]",
+          "a sync tool dispatched via InvokeAsync must behave exactly like Invoke()");
+}
+
+auto TestInvokeAsyncOfAnUnknownToolReturnsAnError() -> void {
+  AgentToolRegistry registry;
+
+  std::optional<AgentToolInvocationResult> result;
+  registry.InvokeAsync("does_not_exist", "{}",
+                       [&result](AgentToolInvocationResult r) { result = std::move(r); });
+
+  Require(result.has_value() && result->is_error,
+          "InvokeAsync must report the same unknown-tool error Invoke() does");
+}
+
+auto TestHasToolReportsAsyncRegisteredToolsToo() -> void {
+  AgentToolRegistry registry;
+  Require(!registry.HasTool("confirm_and_write"), "an unregistered tool must not be reported");
+
+  registry.RegisterAsyncTool(
+      AgentToolSchema{.name = "confirm_and_write", .description = "", .parameters_json_schema = ""},
+      [](const std::string&, std::function<void(AgentToolInvocationResult)> on_done) {
+        on_done(AgentToolInvocationResult::Ok(""));
+      });
+
+  Require(registry.HasTool("confirm_and_write"),
+          "an async-registered tool must be reported as present, same as a sync one");
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -84,6 +148,10 @@ auto main() -> int {
   TestInvokeDispatchesToTheMatchingHandlerWithItsArguments();
   TestInvokeOfAnUnknownToolReturnsAnErrorInsteadOfCrashing();
   TestHasToolReflectsWhatWasRegistered();
+  TestInvokeAsyncDispatchesToAnAsyncRegisteredTool();
+  TestInvokeAsyncStillDispatchesSyncRegisteredTools();
+  TestInvokeAsyncOfAnUnknownToolReturnsAnError();
+  TestHasToolReportsAsyncRegisteredToolsToo();
   std::cout << "cppwiki_agent_tool_registry_tests passed\n";
   return EXIT_SUCCESS;
 }

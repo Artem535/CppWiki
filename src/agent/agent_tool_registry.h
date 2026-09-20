@@ -34,6 +34,8 @@ struct AgentToolInvocationResult {
 
 using AgentToolHandler =
     std::function<AgentToolInvocationResult(const std::string& arguments_json)>;
+using AgentAsyncToolHandler = std::function<void(
+    const std::string& arguments_json, std::function<void(AgentToolInvocationResult)> on_done)>;
 
 // The named set of tools (schema + handler) one mode (AI Chat, Code) configures an Agent engine
 // run with, per the "Tool registry" glossary entry (doc/modules/ROOT/pages/CONTEXT.adoc). The
@@ -46,10 +48,15 @@ class AgentToolRegistry final {
     schemas_.push_back(std::move(schema));
   }
 
+  void RegisterAsyncTool(AgentToolSchema schema, AgentAsyncToolHandler handler) {
+    async_handlers_.emplace(schema.name, std::move(handler));
+    schemas_.push_back(std::move(schema));
+  }
+
   [[nodiscard]] auto Schemas() const -> const std::vector<AgentToolSchema>& { return schemas_; }
 
   [[nodiscard]] auto HasTool(const std::string& name) const -> bool {
-    return handlers_.contains(name);
+    return handlers_.contains(name) || async_handlers_.contains(name);
   }
 
   // Dispatches to the handler registered under `name`. Invoking a name the registry never
@@ -65,9 +72,22 @@ class AgentToolRegistry final {
     return it->second(arguments_json);
   }
 
+  // Unified dispatch for the Agent engine. Synchronous handlers invoke on_done inline; callers
+  // must not assume that this callback runs asynchronously.
+  void InvokeAsync(const std::string& name, const std::string& arguments_json,
+                   std::function<void(AgentToolInvocationResult)> on_done) const {
+    const auto it = async_handlers_.find(name);
+    if (it != async_handlers_.end()) {
+      it->second(arguments_json, std::move(on_done));
+      return;
+    }
+    on_done(Invoke(name, arguments_json));
+  }
+
  private:
   std::vector<AgentToolSchema> schemas_;
   std::unordered_map<std::string, AgentToolHandler> handlers_;
+  std::unordered_map<std::string, AgentAsyncToolHandler> async_handlers_;
 };
 
 }  // namespace cppwiki::agent

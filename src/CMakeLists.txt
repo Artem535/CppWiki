@@ -15,9 +15,12 @@ qt_add_executable(cppwiki_app
         app/application_stylesheet.h
         app/program_settings.cc
         app/program_settings.h
+        ai_chat/ai_chat_tool_registry.cc
+        ai_chat/ai_chat_tool_registry.h
         agent/agent_engine.h
         agent/agent_message.h
         agent/agent_session.h
+        agent/agent_tool_confirmation_provider.h
         agent/agent_tool_registry.h
         agent/agent_transport.h
         agent/qt_agent_transport.cc
@@ -55,6 +58,8 @@ qt_add_executable(cppwiki_app
         gui/merge/conflict_merge_resolution.h
         document/block_note_snapshot.h
         document/document.h
+        document/document_editability_gate.cc
+        document/document_editability_gate.h
         document/document_validator.cc
         document/document_validator.h
         gui/coming_soon_widget.cc

@@ -242,6 +242,53 @@ auto TestRunFeedsBackAnUnknownToolCallInsteadOfFailingTheRun() -> void {
           "the unknown-tool error must be fed back as the tool result, naming the bad tool");
 }
 
+auto TestRunDispatchesToolCallsOneAtATimeEvenWhenAsyncAndOutOfOrder() -> void {
+  AgentSession session("session-1");
+  session.AppendMessage(UserMessage("Do A then B"));
+
+  AgentMessage assistant_wants_two_tools;
+  assistant_wants_two_tools.role = AgentMessageRole::kAssistant;
+  assistant_wants_two_tools.tool_calls = {
+      AgentToolCall{.id = "call-a", .tool_name = "slow_tool", .arguments_json = "A"},
+      AgentToolCall{.id = "call-b", .tool_name = "slow_tool", .arguments_json = "B"}};
+
+  FakeAgentTransport transport;
+  transport.QueueOutcome(assistant_wants_two_tools);
+  transport.QueueOutcome(FinalAssistantMessage("done"));
+
+  AgentToolRegistry registry;
+  std::vector<std::string> started_order;
+  std::vector<std::function<void(AgentToolInvocationResult)>> pending_callbacks;
+  registry.RegisterAsyncTool(
+      MakeTool("slow_tool"),
+      [&started_order, &pending_callbacks](const std::string& arguments_json,
+                                           std::function<void(AgentToolInvocationResult)> on_done) {
+        started_order.push_back(arguments_json);
+        pending_callbacks.push_back(std::move(on_done));
+      });
+
+  const AgentEngine engine;
+  bool completed = false;
+  engine.Run(session, registry, transport, [&completed](auto) { completed = true; });
+
+  Require(started_order.size() == 1 && started_order[0] == "A",
+          "the second tool call must not start until the first one's callback fires");
+  Require(!completed, "the run must not complete while a tool call is still pending");
+
+  pending_callbacks[0](AgentToolInvocationResult::Ok("A done"));
+
+  Require(started_order.size() == 2 && started_order[1] == "B",
+          "the second tool call must start only after the first one's result was delivered");
+  Require(!completed, "the run must still not complete while the second tool call is pending");
+
+  pending_callbacks[1](AgentToolInvocationResult::Ok("B done"));
+
+  Require(completed, "the run must complete once every pending tool call has resolved");
+  const auto& messages = session.Messages();
+  Require(messages[2].content == "A done" && messages[3].content == "B done",
+          "tool results must land in the session in call order, regardless of async timing");
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -251,6 +298,7 @@ auto main() -> int {
   TestRunReportsATransportFailureWithoutASecondRoundTrip();
   TestRunGivesUpAfterExceedingTheMaximumToolCallRounds();
   TestRunFeedsBackAnUnknownToolCallInsteadOfFailingTheRun();
+  TestRunDispatchesToolCallsOneAtATimeEvenWhenAsyncAndOutOfOrder();
   std::cout << "cppwiki_agent_engine_tests passed\n";
   return EXIT_SUCCESS;
 }

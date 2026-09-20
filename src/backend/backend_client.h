@@ -34,6 +34,15 @@ struct DocumentAccessState final {
   QString status_text;
 };
 
+// A pure status query -- never acquires, heartbeats, or releases a lock. Used by
+// document::DocumentEditabilityGate (ADR-020) to check an arbitrary document's lock state
+// without joining or stealing this client's single active edit session
+// (EnterDocumentEditSession/CloseDocumentSession model at most one at a time).
+struct LockStatusResult {
+  bool query_succeeded = false;
+  QString lock_owner;
+};
+
 class BackendClient final : public QObject {
   Q_OBJECT
 
@@ -52,6 +61,8 @@ class BackendClient final : public QObject {
   void ExitDocumentEditSession(const QString& document_id,
                                std::function<void(DocumentAccessState)> callback);
   void CloseDocumentSession();
+  void CheckDocumentLockStatus(const QString& document_id,
+                               std::function<void(LockStatusResult)> callback);
 
   [[nodiscard]] auto State() const -> BackendConnectionState;
   [[nodiscard]] auto BaseUrl() const -> const QString&;

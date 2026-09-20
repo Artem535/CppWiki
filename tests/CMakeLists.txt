@@ -633,6 +633,81 @@ add_test(
   COMMAND cppwiki_agent_engine_tests
 )
 
+add_executable(cppwiki_document_editability_gate_tests
+  document/document_editability_gate_test.cc
+  ${CMAKE_SOURCE_DIR}/src/document/document_editability_gate.cc
+  ${CMAKE_SOURCE_DIR}/src/document/document_editability_gate.h
+)
+
+target_include_directories(cppwiki_document_editability_gate_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(cppwiki_document_editability_gate_tests
+  PRIVATE
+    Qt6::Core
+    spdlog::spdlog
+    reflectcpp::reflectcpp
+)
+
+cppwiki_apply_common_options(cppwiki_document_editability_gate_tests)
+
+add_test(
+  NAME cppwiki_document_editability_gate_tests
+  COMMAND cppwiki_document_editability_gate_tests
+)
+
+add_executable(cppwiki_ai_chat_tool_registry_tests
+  ai_chat/ai_chat_tool_registry_test.cc
+  ${CMAKE_SOURCE_DIR}/src/ai_chat/ai_chat_tool_registry.cc
+  ${CMAKE_SOURCE_DIR}/src/ai_chat/ai_chat_tool_registry.h
+  ${CMAKE_SOURCE_DIR}/src/agent/agent_tool_registry.h
+  ${CMAKE_SOURCE_DIR}/src/agent/agent_tool_confirmation_provider.h
+  ${CMAKE_SOURCE_DIR}/src/document/document_editability_gate.cc
+  ${CMAKE_SOURCE_DIR}/src/document/document_editability_gate.h
+  ${CMAKE_SOURCE_DIR}/src/bridge/editor_bridge.cc
+  ${CMAKE_SOURCE_DIR}/src/bridge/editor_bridge.h
+  ${CMAKE_SOURCE_DIR}/src/auth/ai_api_key_store.cc
+  ${CMAKE_SOURCE_DIR}/src/auth/ai_api_key_store.h
+  ${CMAKE_SOURCE_DIR}/src/document/document_validator.cc
+  ${CMAKE_SOURCE_DIR}/src/document/document_validator.h
+  ${CMAKE_SOURCE_DIR}/src/core/uuid.cc
+  ${CMAKE_SOURCE_DIR}/src/core/uuid.h
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+  ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_composer.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/context_pack_composer.h
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.cc
+  ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.h
+)
+
+target_include_directories(cppwiki_ai_chat_tool_registry_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/tests
+    ${CMAKE_SOURCE_DIR}/tests/agent
+)
+
+target_link_libraries(cppwiki_ai_chat_tool_registry_tests
+  PRIVATE
+    Qt6::Core
+    Qt6::Network
+    Qt6::Widgets
+    qt6keychain
+    spdlog::spdlog
+    reflectcpp::reflectcpp
+    textfoundry_core
+)
+
+cppwiki_apply_common_options(cppwiki_ai_chat_tool_registry_tests)
+
+add_test(
+  NAME cppwiki_ai_chat_tool_registry_tests
+  COMMAND cppwiki_ai_chat_tool_registry_tests
+)
+
 # Project board Table view (issue #117, part of the #113 umbrella) — kept as its own block
 # linking against the cppwiki_project_board_table library target (see
 # ../src/gui/project_board/table/CMakeLists.txt) instead of relisting its sources here, so the

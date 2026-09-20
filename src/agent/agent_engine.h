@@ -1,9 +1,11 @@
 #ifndef CPPWIKI_SRC_AGENT_AGENT_ENGINE_H_
 #define CPPWIKI_SRC_AGENT_AGENT_ENGINE_H_
 
+#include <cstddef>
 #include <functional>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include "agent/agent_message.h"
 #include "agent/agent_session.h"
@@ -71,16 +73,35 @@ class AgentEngine final {
             return;
           }
 
-          for (const auto& call : tool_calls) {
-            const auto result = registry.Invoke(call.tool_name, call.arguments_json);
-            AgentMessage tool_message;
-            tool_message.role = AgentMessageRole::kTool;
-            tool_message.tool_call_id = call.id;
-            tool_message.content = result.content;
-            session.AppendMessage(std::move(tool_message));
-          }
+          DispatchToolCallsSequentially(session, registry, transport, std::move(tool_calls), 0,
+                                        round, std::move(on_done));
+        });
+  }
 
-          RunRound(session, registry, transport, round + 1, std::move(on_done));
+  // Dispatches one assistant turn's tool calls in order, waiting for each callback before
+  // starting the next. This lets a mutation tool await user confirmation without racing a
+  // sibling call. The vector is moved through each callback so it survives async gaps.
+  void DispatchToolCallsSequentially(
+      AgentSession& session, const AgentToolRegistry& registry, AgentTransport& transport,
+      std::vector<AgentToolCall> tool_calls, std::size_t index, int round,
+      std::function<void(AgentEngineOutcome)> on_done) const {
+    if (index >= tool_calls.size()) {
+      RunRound(session, registry, transport, round + 1, std::move(on_done));
+      return;
+    }
+
+    const auto call = tool_calls[index];
+    registry.InvokeAsync(
+        call.tool_name, call.arguments_json,
+        [this, &session, &registry, &transport, tool_calls = std::move(tool_calls), index, round,
+         call, on_done = std::move(on_done)](AgentToolInvocationResult result) mutable {
+          AgentMessage tool_message;
+          tool_message.role = AgentMessageRole::kTool;
+          tool_message.tool_call_id = call.id;
+          tool_message.content = result.content;
+          session.AppendMessage(std::move(tool_message));
+          DispatchToolCallsSequentially(session, registry, transport, std::move(tool_calls),
+                                        index + 1, round, std::move(on_done));
         });
   }
 

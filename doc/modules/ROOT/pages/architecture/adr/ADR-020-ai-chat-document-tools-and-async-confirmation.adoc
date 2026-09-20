@@ -1,0 +1,138 @@
+= ADR-020 — AI Chat Document Tools: a Shared Editability Gate and Async Tool Confirmation
+
+== Status
+
+Accepted
+
+== Date
+
+2026-09-20
+
+---
+
+== Context
+
+Issue #30 registers AI Chat's document tools (read/search/mutate) with the Agent engine
+from #29. ADR-015 already decided that these tools reach wiki documents only through the
+*existing* editability gate (ADR-010, ADR-013), never a second, ungated path — but left one
+concrete question open: does a mutation additionally need its own confirmation prompt, or
+is the lock/conflict gate alone sufficient safety for MVP? This ADR resolves that question,
+plus two implementation-shape decisions it forces.
+
+=== The existing gate cannot be reused as-is
+
+`QEditorBridge::RejectIfCurrentDocumentLocked(page_id)` and
+`RejectIfCurrentDocumentConflicted(page_id)` (ADR-010, ADR-013) both short-circuit to "not
+rejected" whenever `page_id != current_page_id_` — they only ever check the one document
+the Documents-mode UI currently has open. Calling them verbatim with an arbitrary
+document id an AI Chat tool wants to mutate would silently pass for every document except
+whichever one happens to be open in Documents mode right now: a false negative, not a
+gate. AI Chat's tools need a gate keyed by the document id a tool call actually names, not
+by "whatever `Page` is showing".
+
+Separately, `BackendClient` models at most one active edit session per client
+(`EnterDocumentEditSession`/`CloseDocumentSession`, no document id on the latter), matching
+the sync backend's one-lock-per-client shape. An AI Chat tool must not acquire or steal
+that session merely to check a document's lock state.
+
+=== The tool-use loop gains its first asynchronous branch
+
+The Agent engine (#29) dispatches a tool call synchronously:
+`AgentToolHandler` returns its `AgentToolInvocationResult` immediately, and
+`AgentEngine::RunRound` proceeds to the next tool call or round without waiting on
+anything external. A confirmation step cannot fit that shape — it must wait on a user
+decision before a mutation actually runs. This is the first concrete instance of the
+"real conditional branch" the
+xref:architecture/spikes/Agent_Workflow_Graph_Libraries_2026-09-19.adoc[C++ agent
+workflow graph libraries spike] named as the trigger to revisit a workflow-graph
+executor — reached here, one issue earlier than expected, by #30 rather than #31's
+Code-mode permission model. The spike's own criteria still apply: a graph/workflow library
+buys nothing without independently runnable, parallelizable work alongside the branch, and
+there is none here — a single pending confirmation per tool call is exactly the shape the
+existing hand-written loop can grow to cover.
+
+---
+
+== Decision
+
+=== A shared, document-id-keyed `DocumentEditabilityGate`
+
+A new component checks whether a *named* document is editable: conflicted (synchronous,
+local — `LocalDocumentRepository::ListConflicts()` filtered to that `document_id` with
+`resolution_state == "pending"`) and locked (asynchronous — a new, additive
+`BackendClient::CheckDocumentLockStatus(document_id, callback)` that only issues a
+read-only `GET /api/v1/locks/{document_id}` against the lock service's already-existing
+status query; it never acquires, heartbeats, or releases a lock). `QEditorBridge` is
+refactored to call this same gate for `current_page_id_` instead of keeping its own
+`current_document_editable_`/`current_document_has_conflict_` check logic, so Documents
+mode and AI Chat provably share one rule rather than two hand-synchronized copies of it.
+A lock-status check that fails (server unreachable) is treated as *not editable* — fail
+closed, not fail open.
+
+=== `AgentToolRegistry`/`AgentEngine` gain an additive async dispatch path
+
+`AgentToolRegistry` gains an asynchronous registration/invocation path alongside its
+existing synchronous one (`RegisterTool`/`Invoke`, unchanged and still used by #29's
+tests and any future purely-synchronous tool). `AgentEngine::RunRound` dispatches every
+tool call in a turn through the async path, waiting for each callback before issuing the
+next; a synchronously-registered tool is adapted onto that same path internally so the
+engine has exactly one dispatch mechanism, not two. No existing #29 test or call site
+changes behavior.
+
+=== AI Chat mutations require an explicit confirmation before applying
+
+`update_document_snapshot`, `rename_document`, `move_document`, and `delete_document` —
+tool names the model calls, distinct from (but each backed by) `QEditorBridge`'s
+`updateSnapshot`, `renameDocument`, `updateDocumentPlacement`, and `deleteDocument` —
+each: (1) pass `DocumentEditabilityGate.Check(document_id)` — a locked/conflicted result
+is fed back to the model as an ordinary failed tool result, exactly like #29's
+unknown-tool handling, not a fatal engine error; then (2) request approval from a new
+`AgentToolConfirmationProvider` interface, one request per tool call (not batched per
+model turn, so the user sees and approves each document individually); a rejection is
+likewise fed back as a failed tool result ("user declined"), not a fatal error. Only then
+does the mutation run, through the same repository path `QEditorBridge` already uses.
+
+The real confirmation UI is out of scope here (issue #30's UI half is a separate,
+later spec) — this ADR only fixes the interface and the fail-closed default: with no
+provider wired up, mutations must be refused, never silently auto-approved. Read/search
+tools (`list_documents`, `read_document`, `search_documents`) need neither the gate nor
+confirmation; they only read already-loaded data.
+
+=== `search_documents` is a naive in-process match, not issue #160's search
+
+`LocalDocumentRepository` has no search primitive yet (issue #160, "workspace-wide
+search", is still open). `search_documents` does a plain substring match over document
+titles and `cppwiki::knowledge::ExtractPlainText`-flattened content across
+`ListDocuments()` — good enough for a chat tool to find a document by name or a
+distinctive phrase, explicitly not the indexed/ranked search #160 will eventually build.
+
+---
+
+== Consequences
+
+=== Positive
+
+* One editability rule, not two: `QEditorBridge` and AI Chat's tool registry both call
+  `DocumentEditabilityGate`, so a future change to lock/conflict semantics (ADR-010,
+  ADR-013) cannot silently drift between Documents mode and AI Chat.
+* The async dispatch path #30 needs is exactly the mechanism #31's Code-mode permission
+  model (ask/allow-for-session/auto-accept) will also need — built once, reused, not
+  duplicated when #31 starts.
+* Fail-closed defaults (no lock status, no confirmation provider) mean an incomplete or
+  not-yet-wired-up piece degrades to "AI Chat cannot mutate documents", never to
+  "AI Chat mutates without the safety checks it was supposed to have".
+
+=== Negative
+
+* `QEditorBridge`'s lock/conflict check is now a refactor, not purely additive code — it
+  touches a path ADR-010/013 already ship and rely on, so it needs its own careful test
+  coverage of the *existing* Documents-mode behavior, not just the new AI Chat path.
+* `AgentEngine`/`AgentToolRegistry` (#29) change shape earlier than planned — the original
+  design assumed a fully synchronous dispatch loop; #31's permission model would have
+  forced the same change later regardless, but #30 pays that cost first.
+* Confirming every mutating tool call individually is more interruptive than a
+  single per-turn batch approval; revisit if real usage shows a chat turn routinely wants
+  to touch several documents at once and per-call confirmation feels like noise.
+* `search_documents`'s naive substring match will need to be replaced (or kept as a
+  fast-path alongside) once #160 ships a real search index — two "search" implementations
+  will briefly coexist.
