@@ -49,6 +49,7 @@
 #include "bridge/editor_bridge.h"
 #include "core/constants.h"
 #include "core/qt_string.h"
+#include "document/document_editability_gate.h"
 #include "gui/attachment_url_scheme_handler.h"
 #include "gui/document_context_menu.h"
 #include "gui/document_tree_item_delegate.h"
@@ -1147,17 +1148,17 @@ void Page::ApplyConflictStateForDocument(const QString& page_id) {
     return;
   }
 
+  // Shared with document::DocumentEditabilityGate (ADR-020) so this and AI Chat's tool
+  // registry cannot silently drift on what "conflicted" means for a document.
   bool has_conflict = false;
   if (context_.document_repository != nullptr) {
-    const auto listed = context_.document_repository->ListConflicts();
-    if (!listed.error) {
+    has_conflict = document::IsDocumentConflicted(*context_.document_repository, page_id);
+    if (has_conflict && page_id == selected_page_id_) {
+      const auto listed = context_.document_repository->ListConflicts();
       for (const auto& conflict : listed.conflicts) {
         if (conflict.resolution_state == "pending" &&
             QString::fromStdString(conflict.document_id) == page_id) {
-          has_conflict = true;
-          if (page_id == selected_page_id_) {
-            emit documentConflictDetected(page_id, QString::fromStdString(conflict.id));
-          }
+          emit documentConflictDetected(page_id, QString::fromStdString(conflict.id));
           break;
         }
       }
