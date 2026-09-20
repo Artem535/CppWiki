@@ -18,6 +18,7 @@ qt_add_executable(cppwiki_app
         agent/agent_engine.h
         agent/agent_message.h
         agent/agent_session.h
+        agent/agent_tool_confirmation_provider.h
         agent/agent_tool_registry.h
         agent/agent_transport.h
         agent/qt_agent_transport.cc
