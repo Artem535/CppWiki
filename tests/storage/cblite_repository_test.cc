@@ -628,6 +628,7 @@ auto TestCbliteRepositoryOfflineEditReconnectPushPull() -> void {
 auto TestCbliteRepositoryKnowledgeRecordLifecycle() -> void;
 auto TestCbliteRepositoryArtifactRecordLifecycle() -> void;
 auto TestCbliteContextPackRecordLifecycle() -> void;
+auto TestCbliteRepositoryPersistsATaskToRepositoryArtifactRelation() -> void;
 
 auto main() -> int {
   TestCbliteRepositoryAttachmentLifecycle();
@@ -643,6 +644,7 @@ auto main() -> int {
     TestCbliteRepositoryKnowledgeRecordLifecycle();
     TestCbliteRepositoryArtifactRecordLifecycle();
     TestCbliteContextPackRecordLifecycle();
+    TestCbliteRepositoryPersistsATaskToRepositoryArtifactRelation();
   } catch (const std::exception& e) {
     spdlog::error("Unhandled exception: {}", e.what());
     return EXIT_FAILURE;
@@ -856,6 +858,63 @@ auto TestCbliteContextPackRecordLifecycle() -> void {
     Require(!repository.DeleteContextPack("pack-a").error, "deleting a context pack should succeed");
     Require(repository.ListContextPacks("engineering", "page-task-a").packs.empty(),
             "deleted context pack must not be listed");
+  }
+  std::filesystem::remove_all(test_directory);
+}
+
+// Engineering Context Artifact Model Contract, "context for" (#203): a Task-to-RepositoryArtifact
+// relation, saved and loaded through the real SavePageRelation/ListPageRelations API.
+auto TestCbliteRepositoryPersistsATaskToRepositoryArtifactRelation() -> void {
+  const auto test_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-cblite-context-for-relation-test";
+  std::filesystem::remove_all(test_directory);
+  const cppwiki::storage::CbliteDocumentRepositoryOptions options{
+      .database_directory = test_directory,
+      .database_name = "context_for_relation",
+  };
+  const cppwiki::knowledge::AuditMetadata audit{
+      .created_at = "2026-09-20T10:00:00Z",
+      .updated_at = "2026-09-20T10:00:00Z",
+      .created_by = "tester",
+      .updated_by = "tester",
+  };
+  const cppwiki::knowledge::RelationType relation_type{
+      .id = "relation-context-for",
+      .workspace_id = "engineering",
+      .name = "context for",
+      .inverse_name = "context provided by",
+      .direction = cppwiki::knowledge::RelationDirection::kDirected,
+      .audit = audit,
+  };
+  {
+    cppwiki::storage::CbliteDocumentRepository repository(options);
+    Require(!repository.SaveRelationType(relation_type).error,
+            "CBLite should save the context-for relation type");
+    Require(!repository
+                 .SavePageRelation({
+                     .id = "relation-task-repo",
+                     .workspace_id = "engineering",
+                     .relation_type_id = "relation-context-for",
+                     .source_page_id = "page-task-a",
+                     .target_kind = cppwiki::knowledge::ArtifactKind::kRepository,
+                     .target_id = "repo-cppwiki",
+                     .audit = audit,
+                 })
+                 .error,
+            "CBLite should save a task-to-repository-artifact relation");
+  }
+  {
+    cppwiki::storage::CbliteDocumentRepository repository(options);
+    const auto relations = repository.ListPageRelations("engineering", "page-task-a");
+    Require(relations.relations.size() == 1,
+            "the task-to-repository-artifact relation should survive repository restart");
+    const auto& relation = relations.relations.front();
+    Require(relation.target_kind == cppwiki::knowledge::ArtifactKind::kRepository,
+            "target_kind should round-trip");
+    Require(relation.target_id.has_value() && *relation.target_id == "repo-cppwiki",
+            "target_id should round-trip");
+    Require(relation.target_page_id.empty(),
+            "target_page_id should stay empty for a non-page target");
   }
   std::filesystem::remove_all(test_directory);
 }

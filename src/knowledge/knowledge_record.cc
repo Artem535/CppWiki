@@ -43,6 +43,18 @@ auto IsSingleValueKind(PropertyValueKind kind) -> bool {
          kind == PropertyValueKind::kSelect;
 }
 
+// An endpoint is well-formed when exactly one of its two id fields is set, matching its kind:
+// a kPage endpoint carries a non-empty page_id and no generic id; any other kind carries a
+// non-empty generic id and no page_id. Mixing both (or neither) is always invalid -- there is
+// exactly one authoritative identifier per endpoint.
+auto IsWellFormedRelationEndpoint(ArtifactKind kind, const std::string& page_id,
+                                  const std::optional<std::string>& id) -> bool {
+  if (kind == ArtifactKind::kPage) {
+    return !page_id.empty() && !IsBlank(page_id) && !id.has_value();
+  }
+  return page_id.empty() && id.has_value() && !id->empty() && !IsBlank(*id);
+}
+
 }  // namespace
 
 auto ValidatePropertyDefinition(const PropertyDefinition& definition) -> std::optional<std::string> {
@@ -149,24 +161,35 @@ auto NormalizeAndValidatePageRelation(PageRelation* relation, const RelationType
   if (const auto type_error = ValidateRelationType(relation_type)) {
     return "Relation type is invalid: " + *type_error;
   }
-  if (relation->id.empty() || relation->workspace_id.empty() || relation->relation_type_id.empty() ||
-      relation->source_page_id.empty() || relation->target_page_id.empty()) {
-    return "Page relation identity, scope and endpoints must be non-empty.";
+  if (relation->id.empty() || relation->workspace_id.empty() || relation->relation_type_id.empty()) {
+    return "Page relation identity and scope must be non-empty.";
+  }
+  if (!IsWellFormedRelationEndpoint(relation->source_kind, relation->source_page_id,
+                                    relation->source_id) ||
+      !IsWellFormedRelationEndpoint(relation->target_kind, relation->target_page_id,
+                                    relation->target_id)) {
+    return "Page relation endpoints must set exactly one identifier matching their kind.";
   }
   if (relation->workspace_id != relation_type.workspace_id ||
       relation->relation_type_id != relation_type.id) {
     return "Page relation must refer to its relation type in the same workspace.";
   }
-  if (relation->source_kind != ArtifactKind::kPage || relation->target_kind != ArtifactKind::kPage) {
-    return "Page relation only supports page endpoints until non-page artifact kinds exist.";
-  }
   if (!HasAuditMetadata(relation->audit)) {
     return "Page relation audit metadata must be complete.";
   }
-  if (relation->source_page_id == relation->target_page_id) {
+  const bool same_endpoint = relation->source_kind == relation->target_kind &&
+                             (relation->source_kind == ArtifactKind::kPage
+                                  ? relation->source_page_id == relation->target_page_id
+                                  : relation->source_id == relation->target_id);
+  if (same_endpoint) {
     return "Page relation endpoints must be distinct.";
   }
+  // Stable endpoint-order normalization for a symmetric relation type only applies when both
+  // endpoints are pages -- comparing a page id against a repository/agent-run/result-reference
+  // id has no meaningful order, and every symmetric relation type in use today (#185's built-in
+  // catalog) is page-to-page anyway.
   if (relation_type.direction == RelationDirection::kSymmetric &&
+      relation->source_kind == ArtifactKind::kPage && relation->target_kind == ArtifactKind::kPage &&
       relation->target_page_id < relation->source_page_id) {
     std::swap(relation->source_page_id, relation->target_page_id);
   }

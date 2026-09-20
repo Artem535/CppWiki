@@ -129,29 +129,101 @@ auto TestRelationAcceptsExplicitPageEndpointKinds() -> void {
           "a relation with explicit page/page endpoint kinds must be valid");
 }
 
-// No RepositoryArtifact/AgentRun/ResultReference records exist yet (#201's contract defers them);
-// the schema accepts the field, but validation must still reject a non-page endpoint today.
-auto TestRelationRejectsNonPageEndpointKindForNow() -> void {
+// Engineering Context Artifact Model Contract, "context for" (#201/#203): a relation from a
+// Task (page) to a RepositoryArtifact -- the first non-page endpoint kind PageRelation actually
+// needs to persist. The directed "context for"/"context provided by" type is used here rather
+// than the symmetric fixture above since that's the real relation type this endpoint shape
+// exists for.
+auto TestRelationAcceptsARepositoryTargetEndpoint() -> void {
   const cppwiki::knowledge::RelationType relation_type{
-      .id = "relation-related",
+      .id = "relation-context-for",
       .workspace_id = "engineering",
-      .name = "related to",
-      .inverse_name = std::nullopt,
-      .direction = cppwiki::knowledge::RelationDirection::kSymmetric,
+      .name = "context for",
+      .inverse_name = "context provided by",
+      .direction = cppwiki::knowledge::RelationDirection::kDirected,
       .audit = MakeAudit(),
   };
   cppwiki::knowledge::PageRelation relation{
       .id = "edge-1",
       .workspace_id = "engineering",
-      .relation_type_id = "relation-related",
-      .source_page_id = "page-a",
-      .target_page_id = "page-b",
+      .relation_type_id = "relation-context-for",
+      .source_page_id = "page-task-a",
+      .target_kind = cppwiki::knowledge::ArtifactKind::kRepository,
+      .target_id = "repo-cppwiki",
+      .audit = MakeAudit(),
+  };
+  Require(!cppwiki::knowledge::NormalizeAndValidatePageRelation(&relation, relation_type),
+          "a task-to-repository-artifact relation must be valid");
+}
+
+auto TestRelationRejectsANonPageEndpointMissingItsId() -> void {
+  const cppwiki::knowledge::RelationType relation_type{
+      .id = "relation-context-for",
+      .workspace_id = "engineering",
+      .name = "context for",
+      .inverse_name = "context provided by",
+      .direction = cppwiki::knowledge::RelationDirection::kDirected,
+      .audit = MakeAudit(),
+  };
+  cppwiki::knowledge::PageRelation relation{
+      .id = "edge-1",
+      .workspace_id = "engineering",
+      .relation_type_id = "relation-context-for",
+      .source_page_id = "page-task-a",
       .target_kind = cppwiki::knowledge::ArtifactKind::kRepository,
       .audit = MakeAudit(),
   };
   Require(cppwiki::knowledge::NormalizeAndValidatePageRelation(&relation, relation_type)
               .has_value(),
-          "a relation to a non-page artifact kind must be rejected until that kind exists");
+          "a non-page endpoint without its generic id must be invalid");
+}
+
+auto TestRelationRejectsAnEndpointSettingBothIdFields() -> void {
+  const cppwiki::knowledge::RelationType relation_type{
+      .id = "relation-context-for",
+      .workspace_id = "engineering",
+      .name = "context for",
+      .inverse_name = "context provided by",
+      .direction = cppwiki::knowledge::RelationDirection::kDirected,
+      .audit = MakeAudit(),
+  };
+  cppwiki::knowledge::PageRelation relation{
+      .id = "edge-1",
+      .workspace_id = "engineering",
+      .relation_type_id = "relation-context-for",
+      .source_page_id = "page-task-a",
+      .target_page_id = "page-b",
+      .target_kind = cppwiki::knowledge::ArtifactKind::kRepository,
+      .target_id = "repo-cppwiki",
+      .audit = MakeAudit(),
+  };
+  Require(cppwiki::knowledge::NormalizeAndValidatePageRelation(&relation, relation_type)
+              .has_value(),
+          "an endpoint carrying both a page id and a generic id must be invalid");
+}
+
+auto TestRelationRejectsAPageEndpointCarryingAGenericId() -> void {
+  const cppwiki::knowledge::RelationType relation_type{
+      .id = "relation-context-for",
+      .workspace_id = "engineering",
+      .name = "context for",
+      .inverse_name = "context provided by",
+      .direction = cppwiki::knowledge::RelationDirection::kDirected,
+      .audit = MakeAudit(),
+  };
+  cppwiki::knowledge::PageRelation relation{
+      .id = "edge-1",
+      .workspace_id = "engineering",
+      .relation_type_id = "relation-context-for",
+      .source_page_id = "page-task-a",
+      .target_kind = cppwiki::knowledge::ArtifactKind::kRepository,
+      .source_id = "unexpected",
+      .target_id = "repo-cppwiki",
+      .audit = MakeAudit(),
+  };
+  Require(cppwiki::knowledge::NormalizeAndValidatePageRelation(&relation, relation_type)
+              .has_value(),
+          "a page endpoint carrying a generic id alongside its page id must be invalid");
 }
 
 auto MakeRepositoryArtifact() -> cppwiki::knowledge::RepositoryArtifact {
@@ -404,7 +476,10 @@ auto main() -> int {
   TestDirectedRelationRequiresInverseName();
   TestSymmetricRelationNormalizesEndpointOrder();
   TestRelationAcceptsExplicitPageEndpointKinds();
-  TestRelationRejectsNonPageEndpointKindForNow();
+  TestRelationAcceptsARepositoryTargetEndpoint();
+  TestRelationRejectsANonPageEndpointMissingItsId();
+  TestRelationRejectsAnEndpointSettingBothIdFields();
+  TestRelationRejectsAPageEndpointCarryingAGenericId();
   TestRepositoryArtifactRequiresIdentityAndRemoteUrl();
   TestAgentRunRequiresCompletedAtOnlyWhenTerminal();
   TestAgentRunRejectsBackwardStatusTransition();

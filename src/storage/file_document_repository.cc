@@ -344,6 +344,8 @@ struct FilePageRelationDto {
   std::string target_page_id;
   std::int32_t source_kind{};
   std::int32_t target_kind{};
+  std::optional<std::string> source_id;
+  std::optional<std::string> target_id;
   FileAuditMetadataDto audit;
 };
 
@@ -462,6 +464,8 @@ auto ToDto(const knowledge::PageRelation& relation) -> FilePageRelationDto {
           .target_page_id = relation.target_page_id,
           .source_kind = static_cast<std::int32_t>(relation.source_kind),
           .target_kind = static_cast<std::int32_t>(relation.target_kind),
+          .source_id = relation.source_id,
+          .target_id = relation.target_id,
           .audit = ToDto(relation.audit)};
 }
 
@@ -473,6 +477,8 @@ auto FromDto(FilePageRelationDto dto) -> knowledge::PageRelation {
           .target_page_id = std::move(dto.target_page_id),
           .source_kind = static_cast<knowledge::ArtifactKind>(dto.source_kind),
           .target_kind = static_cast<knowledge::ArtifactKind>(dto.target_kind),
+          .source_id = std::move(dto.source_id),
+          .target_id = std::move(dto.target_id),
           .audit = FromDto(std::move(dto.audit))};
 }
 

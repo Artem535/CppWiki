@@ -63,11 +63,16 @@ struct RelationType {
 
 // Engineering Context Artifact Model Contract (#201, ADR-019): the discriminator that
 // generalizes PageRelation into ArtifactRelation. kPage is the default so every relation record
-// written before this field existed round-trips unchanged. kRepository/kAgentRun/kResultReference
-// exist in the schema ahead of their record types landing, so the wire shape is stable once they
-// do; NormalizeAndValidatePageRelation() rejects them until then (see knowledge_record.cc).
+// written before this field existed round-trips unchanged.
 enum class ArtifactKind : std::uint8_t { kPage, kRepository, kAgentRun, kResultReference };
 
+// A relation edge between two artifacts, each identified either by a page id (kind kPage) or a
+// generic non-page id (any other kind) -- per the wire-shape decision in
+// Engineering_Context_Artifact_Model_Contract.adoc's "ArtifactRelation: generalizing
+// PageRelation" section: source_page_id/target_page_id keep their name and meaning for page
+// endpoints (so every relation written before this generalization round-trips unchanged);
+// source_id/target_id are new fields used only for a non-page endpoint. Exactly one of a given
+// endpoint's two id fields is set, matching its *_kind -- see NormalizeAndValidatePageRelation.
 struct PageRelation {
   std::string id;
   std::string workspace_id;
@@ -76,6 +81,8 @@ struct PageRelation {
   std::string target_page_id;
   ArtifactKind source_kind{ArtifactKind::kPage};
   ArtifactKind target_kind{ArtifactKind::kPage};
+  std::optional<std::string> source_id;
+  std::optional<std::string> target_id;
   AuditMetadata audit;
 };
 

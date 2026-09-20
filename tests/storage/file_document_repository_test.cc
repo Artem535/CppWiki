@@ -876,6 +876,64 @@ auto TestFileRepositoryRoundTripsPageRelationArtifactKind() -> void {
   std::filesystem::remove_all(storage_directory);
 }
 
+// Engineering Context Artifact Model Contract, "context for" (#203): a Task-to-RepositoryArtifact
+// relation, saved and loaded through the real SavePageRelation/ListPageRelations API (not
+// written to disk directly, unlike the DTO round-trip test above) -- this is what unblocking
+// ArtifactKind::kRepository at the validation layer is actually for.
+auto TestFileRepositoryPersistsATaskToRepositoryArtifactRelation() -> void {
+  const auto storage_directory =
+      std::filesystem::temp_directory_path() / "cppwiki-file-repo-context-for-relation-test";
+  std::filesystem::remove_all(storage_directory);
+
+  const cppwiki::knowledge::AuditMetadata audit{
+      .created_at = "2026-09-20T10:00:00Z",
+      .updated_at = "2026-09-20T10:00:00Z",
+      .created_by = "tester",
+      .updated_by = "tester",
+  };
+  const cppwiki::knowledge::RelationType relation_type{
+      .id = "relation-context-for",
+      .workspace_id = "engineering",
+      .name = "context for",
+      .inverse_name = "context provided by",
+      .direction = cppwiki::knowledge::RelationDirection::kDirected,
+      .audit = audit,
+  };
+
+  {
+    cppwiki::storage::FileDocumentRepository repository(
+        cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+    Require(!repository.SaveRelationType(relation_type).error,
+            "file repository should save the context-for relation type");
+    Require(!repository
+                 .SavePageRelation(cppwiki::knowledge::PageRelation{
+                     .id = "relation-task-repo",
+                     .workspace_id = "engineering",
+                     .relation_type_id = "relation-context-for",
+                     .source_page_id = "page-task-a",
+                     .target_kind = cppwiki::knowledge::ArtifactKind::kRepository,
+                     .target_id = "repo-cppwiki",
+                     .audit = audit,
+                 })
+                 .error,
+            "file repository should save a task-to-repository-artifact relation");
+  }
+
+  cppwiki::storage::FileDocumentRepository reopened_repository(
+      cppwiki::storage::FileDocumentRepositoryOptions{.storage_directory = storage_directory});
+  const auto relations = reopened_repository.ListPageRelations("engineering", "page-task-a");
+  Require(!relations.error && relations.relations.size() == 1,
+          "the task-to-repository-artifact relation should survive repository restart");
+  const auto& relation = relations.relations.front();
+  Require(relation.target_kind == cppwiki::knowledge::ArtifactKind::kRepository,
+          "target_kind should round-trip");
+  Require(relation.target_id.has_value() && *relation.target_id == "repo-cppwiki",
+          "target_id should round-trip");
+  Require(relation.target_page_id.empty(), "target_page_id should stay empty for a non-page target");
+
+  std::filesystem::remove_all(storage_directory);
+}
+
 }  // namespace
 
 auto main() -> int {
@@ -894,6 +952,7 @@ auto main() -> int {
   TestFileRepositoryArtifactRecordLifecycle();
   TestFileContextPackRecordLifecycle();
   TestFileRepositoryRoundTripsPageRelationArtifactKind();
+  TestFileRepositoryPersistsATaskToRepositoryArtifactRelation();
   spdlog::info("cppwiki_file_document_repository_tests passed");
   return EXIT_SUCCESS;
 }
