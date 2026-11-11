@@ -26,6 +26,11 @@ option(CPPWIKI_BUILD_ADMIN_CLI "Build the cppwiki-admin ftxui CLI" ON)
 option(CPPWIKI_ENABLE_CLANG_TIDY "Enable clang-tidy when available" OFF)
 option(CPPWIKI_ENABLE_CBLITE_STORAGE "Enable Couchbase Lite storage adapter" OFF)
 option(
+        CPPWIKI_ENABLE_TRANSCRIPTION
+        "Build local meeting transcription (sherpa-onnx + GigaAM/Silero models)"
+        ON
+)
+option(
         CPPWIKI_BUILD_EDITOR_BUNDLE_WITH_APP
         "Build the frontend editor bundle before building the desktop app"
         OFF
@@ -34,6 +39,12 @@ option(
 include(cmake/ProjectOptions.cmake)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(FetchContent)
+# sherpa-onnx + pinned GigaAM/Silero model files for the transcription core (issue #240).
+# Only the desktop app and the tests can consume it, so a server-only configure never pays
+# the sherpa-onnx fetch; the file early-returns when CPPWIKI_ENABLE_TRANSCRIPTION is OFF.
+if (CPPWIKI_ENABLE_TRANSCRIPTION AND (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS))
+    include(cmake/Transcription.cmake)
+endif ()
 
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)

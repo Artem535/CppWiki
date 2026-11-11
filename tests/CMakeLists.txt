@@ -943,3 +943,86 @@ if(CPPWIKI_BUILD_SERVER)
     COMMAND cppwiki_server_auth_checker_tests
   )
 endif()
+
+# Local meeting-transcription engine core (issue #240, ported from Sessio). The plain suites
+# run with a fake VAD and recognizer — no models, no sherpa-onnx; the model suite runs the
+# real GigaAM + Silero VAD path against the bundled example WAV (skipped, not failed, when
+# the model files are absent; ctest passes CPPWIKI_MODELS_DIR so a full build runs it).
+if (CPPWIKI_ENABLE_TRANSCRIPTION)
+    foreach (cppwiki_transcription_suite
+            engine:transcription_engine_test
+            segmenter:transcription_segmenter_test
+            resampler:transcription_resampler_test
+            locator:transcription_locator_test)
+        string(REGEX REPLACE ":.*" "" cppwiki_suite_name "${cppwiki_transcription_suite}")
+        string(REGEX REPLACE ".*:" "" cppwiki_suite_file "${cppwiki_transcription_suite}")
+        add_executable(cppwiki_transcription_${cppwiki_suite_name}_tests
+                transcription/${cppwiki_suite_file}.cc
+                transcription/transcription_test_support.h
+        )
+
+        target_include_directories(cppwiki_transcription_${cppwiki_suite_name}_tests
+                PRIVATE
+                ${CMAKE_SOURCE_DIR}
+                ${CMAKE_SOURCE_DIR}/src
+        )
+
+        target_link_libraries(cppwiki_transcription_${cppwiki_suite_name}_tests
+                PRIVATE
+                cppwiki_transcription
+        )
+
+        cppwiki_apply_common_options(cppwiki_transcription_${cppwiki_suite_name}_tests)
+
+        add_test(
+                NAME cppwiki_transcription_${cppwiki_suite_name}_tests
+                COMMAND cppwiki_transcription_${cppwiki_suite_name}_tests
+        )
+    endforeach ()
+
+    add_executable(cppwiki_transcription_model_tests
+            transcription/transcription_model_test.cc
+    )
+
+    target_include_directories(cppwiki_transcription_model_tests
+            PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/src
+            ${CPPWIKI_SHERPA_SOURCE_DIR}
+    )
+
+    target_link_libraries(cppwiki_transcription_model_tests
+            PRIVATE
+            cppwiki_transcription
+            cppwiki_transcription_sherpa
+            sherpa-onnx-cxx-api
+    )
+
+    # sherpa-onnx and ONNX Runtime build as shared libraries under the build tree; without
+    # these RPATH entries the test binary cannot find libsherpa-onnx-*.so/libonnxruntime.so.
+    set_target_properties(cppwiki_transcription_model_tests PROPERTIES
+            BUILD_RPATH "${CMAKE_BINARY_DIR}/lib;${CPPWIKI_ONNXRUNTIME_LIB_DIR}"
+    )
+
+    if (WIN32)
+        # The exe needs the sherpa/ONNX Runtime DLLs beside it (no rpath on Windows).
+        add_custom_command(TARGET cppwiki_transcription_model_tests POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:sherpa-onnx-c-api>
+                $<TARGET_FILE:sherpa-onnx-cxx-api>
+                ${CPPWIKI_ONNXRUNTIME_LIBS}
+                $<TARGET_FILE_DIR:cppwiki_transcription_model_tests>
+                VERBATIM)
+    endif ()
+
+    add_dependencies(cppwiki_transcription_model_tests cppwiki_transcription_models)
+
+    add_test(
+            NAME cppwiki_transcription_model_tests
+            COMMAND cppwiki_transcription_model_tests
+    )
+
+    set_tests_properties(cppwiki_transcription_model_tests PROPERTIES
+            ENVIRONMENT "CPPWIKI_MODELS_DIR=${CPPWIKI_MODELS_DIR}"
+    )
+endif ()
