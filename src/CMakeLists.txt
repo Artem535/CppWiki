@@ -557,6 +557,13 @@ if (CPPWIKI_BUILD_SERVER)
     cppwiki_apply_common_options(cppwiki_server)
 endif ()
 
+# Local meeting-transcription engine core ported from Sessio (issue #240) — its own narrow
+# targets (see src/transcription/CMakeLists.txt), not yet linked into cppwiki_app; only the
+# tests consume them until the call UI lands.
+if (CPPWIKI_ENABLE_TRANSCRIPTION AND (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS))
+    add_subdirectory(transcription)
+endif ()
+
 # Native QTableView Table view for the Project board document kind (issue #117, part of the #113
 # umbrella). Standalone/not yet linked into cppwiki_app — see
 # gui/project_board/table/CMakeLists.txt. Kept as its own add_subdirectory() block, isolated from
