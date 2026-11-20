@@ -65,6 +65,29 @@ add_test(
   COMMAND cppwiki_document_validator_tests
 )
 
+add_executable(cppwiki_plugins_tests
+  plugins/plugin_host_test.cc
+)
+
+target_include_directories(cppwiki_plugins_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(cppwiki_plugins_tests
+  PRIVATE
+    Qt6::Core
+    spdlog::spdlog
+    cppwiki_plugins
+)
+
+cppwiki_apply_common_options(cppwiki_plugins_tests)
+
+add_test(
+  NAME cppwiki_plugins_tests
+  COMMAND cppwiki_plugins_tests
+)
+
 if (CPPWIKI_BUILD_ADMIN_CLI)
   add_executable(cppwiki_admin_cli_tests
     admin/admin_response_parsing_test.cc

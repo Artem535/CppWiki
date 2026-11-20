@@ -18,6 +18,10 @@ namespace cppwiki::sync {
 class SyncService;
 }
 
+namespace cppwiki::plugins {
+class PluginHost;
+}
+
 namespace cppwiki {
 
 // Application context that provides access to shared services and configuration.
@@ -28,17 +32,17 @@ struct AppContext {
   backend::BackendClient* backend_client;
   auth::AuthSessionManager* auth_session_manager;
   sync::SyncService* document_sync_service;
+  plugins::PluginHost* plugin_host;
 
-  AppContext(ProgramSettings settings,
-             std::shared_ptr<storage::LocalDocumentRepository> repository,
-             backend::BackendClient* backend_client,
-             auth::AuthSessionManager* auth_session_manager,
-             sync::SyncService* document_sync_service)
+  AppContext(ProgramSettings settings, std::shared_ptr<storage::LocalDocumentRepository> repository,
+             backend::BackendClient* backend_client, auth::AuthSessionManager* auth_session_manager,
+             sync::SyncService* document_sync_service, plugins::PluginHost* plugin_host = nullptr)
       : settings(std::move(settings)),
         document_repository(std::move(repository)),
         backend_client(backend_client),
         auth_session_manager(auth_session_manager),
-        document_sync_service(document_sync_service) {}
+        document_sync_service(document_sync_service),
+        plugin_host(plugin_host) {}
 };
 
 }  // namespace cppwiki

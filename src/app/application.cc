@@ -1,22 +1,23 @@
 #include "app/application.h"
 
-#include <oclero/qlementine.hpp>
-
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QFont>
 #include <QFontDatabase>
 #include <QSettings>
 #include <QStringList>
+#include <oclero/qlementine.hpp>
 #include <optional>
 
-#include "core/constants.h"
-#include "core/qt_string.h"
 #include "app/accent_color.h"
 #include "app/application_stylesheet.h"
 #include "auth/auth_session_manager.h"
 #include "backend/backend_client.h"
+#include "core/constants.h"
+#include "core/qt_string.h"
 #include "gui/page.h"
+#include "plugins/executor.h"
+#include "plugins/host.h"
 #include "storage/repository_factory.h"
 
 namespace cppwiki {
@@ -62,8 +63,8 @@ void LoadApplicationFont() {
   }
 
   const auto families = QFontDatabase::applicationFontFamilies(font_id);
-  const auto family = families.isEmpty() ? ToQString(constants::kApplicationFontFamily)
-                                         : families.constFirst();
+  const auto family =
+      families.isEmpty() ? ToQString(constants::kApplicationFontFamily) : families.constFirst();
 
   auto font = QApplication::font();
   font.setFamily(family);
@@ -82,7 +83,9 @@ auto ResolveThemePath() -> QString {
 
 }  // namespace
 
-auto GetQlementineStyle() -> oclero::qlementine::QlementineStyle* { return g_qlementine_style; }
+auto GetQlementineStyle() -> oclero::qlementine::QlementineStyle* {
+  return g_qlementine_style;
+}
 
 Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   QCoreApplication::setApplicationName(ToQString(constants::kApplicationName));
@@ -105,18 +108,21 @@ Application::Application(int& argc, char** argv) : qt_application_(argc, argv) {
   auth_session_manager_ = std::make_unique<auth::AuthSessionManager>(&qt_application_);
   backend_client_ = std::make_unique<backend::BackendClient>(&qt_application_);
   document_sync_service_ = std::make_unique<sync::DocumentSyncService>(&qt_application_);
+  plugin_executor_ = std::make_unique<plugins::ThreadExecutor>();
+  plugin_host_ =
+      std::make_unique<plugins::PluginHost>(*plugin_executor_, plugins::PlatformServices{});
   QObject::connect(auth_session_manager_.get(), &auth::AuthSessionManager::accessTokenChanged,
                    backend_client_.get(), &backend::BackendClient::SetAccessToken);
   QObject::connect(auth_session_manager_.get(), &auth::AuthSessionManager::accessTokenChanged,
                    document_sync_service_.get(), &sync::SyncService::SetAccessToken);
-  QObject::connect(backend_client_.get(), &backend::BackendClient::syncBootstrapChanged,
-                   &qt_application_, [this]() {
-                     if (backend_client_ == nullptr || document_sync_service_ == nullptr) {
-                       return;
-                     }
-                     document_sync_service_->SetBackendBootstrap(
-                         backend_client_->CurrentSyncBootstrap());
-                   });
+  QObject::connect(
+      backend_client_.get(), &backend::BackendClient::syncBootstrapChanged, &qt_application_,
+      [this]() {
+        if (backend_client_ == nullptr || document_sync_service_ == nullptr) {
+          return;
+        }
+        document_sync_service_->SetBackendBootstrap(backend_client_->CurrentSyncBootstrap());
+      });
 
   ReloadContext();
 
@@ -163,9 +169,9 @@ void Application::ReloadContext() {
   document_sync_service_->SetRepository(repository);
 
   // Create application context
-  context_ = std::make_unique<AppContext>(*settings_, std::move(repository),
-                                          backend_client_.get(), auth_session_manager_.get(),
-                                          document_sync_service_.get());
+  context_ = std::make_unique<AppContext>(*settings_, std::move(repository), backend_client_.get(),
+                                          auth_session_manager_.get(), document_sync_service_.get(),
+                                          plugin_host_.get());
 
   main_window_.SetContext(context_.get());
 }
