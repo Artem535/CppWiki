@@ -441,6 +441,8 @@ if(CPPWIKI_ENABLE_CBLITE_STORAGE)
       ${CMAKE_SOURCE_DIR}/src/storage/cblite_document_repository.h
       ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.cc
       ${CMAKE_SOURCE_DIR}/src/knowledge/knowledge_record.h
+      ${CMAKE_SOURCE_DIR}/src/storage/attachment.cc
+      ${CMAKE_SOURCE_DIR}/src/storage/attachment.h
   )
 
   target_link_libraries(cppwiki_document_sync_service_tests

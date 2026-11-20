@@ -3,6 +3,9 @@
 #   <MODELS_DIR>/silero_vad.onnx
 #   <MODELS_DIR>/gigaam-v3-rnnt/{encoder.int8.onnx,decoder.onnx,joiner.onnx,tokens.txt}
 #   <MODELS_DIR>/gigaam-v3-rnnt/test_wavs/example.wav   (used by the model tests)
+# GigaAM is MIT-licensed by Sber and Silero VAD is MIT-licensed; redistributable bundles that
+# ship these files must include their notices (see
+# doc/modules/ROOT/pages/architecture/Transcription_Core.adoc).
 if(NOT MODELS_DIR)
   message(FATAL_ERROR "MODELS_DIR is required")
 endif()

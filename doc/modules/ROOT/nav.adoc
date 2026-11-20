@@ -17,6 +17,7 @@
 ** xref:architecture/Knowledge_Foundation_Contract.adoc[Knowledge foundation contract]
 ** xref:architecture/plans/Knowledge_Foundation_Implementation_Plan.adoc[Knowledge foundation implementation plan]
 ** xref:architecture/Engineering_Context_Artifact_Model_Contract.adoc[Engineering context artifact model contract]
+** xref:architecture/Transcription_Core.adoc[Transcription core]
 ** ADRs
 *** xref:architecture/adr/ADR-001-editor-choice.adoc[ADR-001]
 *** xref:architecture/adr/ADR-002-document-model.adoc[ADR-002]
