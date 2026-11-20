@@ -219,6 +219,60 @@ auto ParseNode(const QJsonObject& object, int depth, std::size_t& node_count, st
       }
       node.actions.push_back(std::move(action));
     }
+  } else if (node.type == "form") {
+    const auto fields = object.value(QStringLiteral("fields"));
+    if (!fields.isUndefined()) {
+      if (!fields.isArray()) {
+        error = "form surface 'fields' must be an array";
+        return std::nullopt;
+      }
+      for (const auto& entry : fields.toArray()) {
+        if (!entry.isObject()) {
+          error = "form fields must be objects";
+          return std::nullopt;
+        }
+        const auto field_object = entry.toObject();
+        SurfaceField field;
+        const auto name = field_object.value(QStringLiteral("name"));
+        const auto label = field_object.value(QStringLiteral("label"));
+        const auto type = field_object.value(QStringLiteral("type"));
+        if (!name.isString() || name.toString().isEmpty() || !label.isString() ||
+            label.toString().isEmpty() || !type.isString()) {
+          error = "form fields require non-empty 'name', 'label' and 'type' strings";
+          return std::nullopt;
+        }
+        field.name = name.toString().toStdString();
+        field.label = label.toString().toStdString();
+        field.type = type.toString().toStdString();
+        if (field.type != "text" && field.type != "number" && field.type != "boolean" &&
+            field.type != "select" && field.type != "multi-select") {
+          error = "unknown form field type '" + field.type + "'";
+          return std::nullopt;
+        }
+        if (!CheckNoUrl(field.label, error)) {
+          return std::nullopt;
+        }
+        const auto value = field_object.value(QStringLiteral("value"));
+        if (!value.isUndefined()) {
+          if (!value.isString()) {
+            error = "form field 'value' must be a string";
+            return std::nullopt;
+          }
+          field.value = value.toString().toStdString();
+        }
+        if (field.type == "select" || field.type == "multi-select") {
+          if (!ReadStringArray(field_object.value(QStringLiteral("options")), "options",
+                               field.options, error)) {
+            return std::nullopt;
+          }
+          if (field.options.empty()) {
+            error = "select form fields require at least one option";
+            return std::nullopt;
+          }
+        }
+        node.fields.push_back(std::move(field));
+      }
+    }
   } else if (node.type == "progress") {
     const auto value = object.value(QStringLiteral("value"));
     if (!value.isDouble()) {
@@ -293,6 +347,29 @@ auto ValidateNode(const SurfaceNode& node, int depth, std::size_t& count, std::s
     }
     if (!CheckNoUrl(action.label, error)) {
       return false;
+    }
+  }
+  for (const auto& field : node.fields) {
+    if (field.name.empty() || field.label.empty()) {
+      error = "form fields require a non-empty name and label";
+      return false;
+    }
+    if (field.type != "text" && field.type != "number" && field.type != "boolean" &&
+        field.type != "select" && field.type != "multi-select") {
+      error = "unknown form field type '" + field.type + "'";
+      return false;
+    }
+    if ((field.type == "select" || field.type == "multi-select") && field.options.empty()) {
+      error = "select form fields require at least one option";
+      return false;
+    }
+    if (!CheckNoUrl(field.label, error) || !CheckNoUrl(field.value, error)) {
+      return false;
+    }
+    for (const auto& option : field.options) {
+      if (!CheckNoUrl(option, error)) {
+        return false;
+      }
     }
   }
   if (node.type == "progress" &&

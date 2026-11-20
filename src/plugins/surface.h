@@ -24,6 +24,16 @@ struct SurfaceAction {
   std::string style;
 };
 
+// One editable field inside a `form` primitive. Values are strings on the wire; the host
+// parses them according to `type`.
+struct SurfaceField {
+  std::string name;
+  std::string label;
+  std::string type;  // text, number, boolean, select, multi-select
+  std::string value;
+  std::vector<std::string> options;
+};
+
 struct SurfaceNode {
   std::string type;
   std::string id;
@@ -38,6 +48,7 @@ struct SurfaceNode {
   std::vector<std::string> columns;
   std::vector<std::vector<std::string>> rows;
   std::vector<SurfaceAction> actions;
+  std::vector<SurfaceField> fields;
   double progress = 0.0;
   bool has_progress = false;
 };

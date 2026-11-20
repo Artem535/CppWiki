@@ -40,6 +40,32 @@ if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
     )
 
     cppwiki_apply_common_options(cppwiki_plugins)
+
+    # Qt renderer for the declarative surface primitives. Kept separate so the host core and
+    # its console tests do not depend on QtWidgets.
+    add_library(cppwiki_plugins_ui STATIC
+            plugins/surface_renderer.cc
+            plugins/surface_renderer.h
+    )
+
+    target_include_directories(cppwiki_plugins_ui
+            PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
+    target_link_libraries(cppwiki_plugins_ui
+            PUBLIC
+            cppwiki_plugins
+            Qt6::Widgets
+    )
+
+    set_target_properties(cppwiki_plugins_ui PROPERTIES
+            AUTOMOC OFF
+            AUTOUIC OFF
+            AUTORCC OFF
+    )
+
+    cppwiki_apply_common_options(cppwiki_plugins_ui)
 endif ()
 
 if (CPPWIKI_BUILD_DESKTOP_APP)
