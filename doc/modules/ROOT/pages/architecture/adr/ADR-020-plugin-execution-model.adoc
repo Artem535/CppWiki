@@ -42,10 +42,14 @@ Adopt a two-tier plugin execution model behind one manifest and one set of contr
 
 * *Tier A — bundled native plugins.* Built from this repository with the same toolchain as the
   application, statically registered and executed in-process. Intended for all first-party
-  capabilities, including every UI-bearing kind.
-* *Tier B — third-party WASM plugins.* Executed by Wasmtime, capability-based, headless only
-  in v0. The C++ headless interfaces are designed so a WASM host can expose the same calls as
-  imports without changing plugin contracts.
+  capabilities, including native views and document editors.
+* *Tier B — third-party WASM plugins.* Executed by Wasmtime, capability-based, headless plus
+  declarative host-rendered surfaces in v0. The C++ headless interfaces are designed so a WASM
+  host can expose the same calls as imports without changing plugin contracts.
+
+UI is split along the same line: native views and document editors belong to Tier A, while
+both tiers may contribute declarative surfaces that the host renders (design document,
+section "Display API"). A Tier B plugin never executes drawing code in the host.
 
 The plugin gate announced in the roadmap ("a failed plugin cannot crash the host") applies to
 Tier B. Tier A isolation is achieved by review, contract tests and the fact that only
@@ -68,8 +72,9 @@ documented fallback if that proves insufficient.
 * Two execution paths to maintain; Tier B needs host-call ABI work that Tier A does not.
 * A bundled plugin bug can crash the application. Mitigations are tests and review, not a
   sandbox.
-* UI-bearing plugin kinds are reserved to the platform for now; third-party plugins cannot
-  extend the shell until a declarative or web view contract exists.
+* Native UI (document editors, native views) is reserved to the platform for now; third-party
+  plugins can contribute declarative surfaces but not native widgets or editors. A rich
+  third-party web surface is postponed.
 
 === Neutral
 
