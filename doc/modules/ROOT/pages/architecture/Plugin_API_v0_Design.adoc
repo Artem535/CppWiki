@@ -1,0 +1,596 @@
+= Plugin API v0 — Design
+
+:toc:
+:toclevels: 3
+
+*Status:* Proposed +
+*Date:* 2026-11-20 +
+*Related:* xref:roadmap/Current_Roadmap.adoc[Current roadmap], xref:architecture/adr/ADR-004-plugin-system.adoc[ADR-004],
+xref:architecture/adr/ADR-020-plugin-execution-model.adoc[ADR-020]
+
+== 1. Purpose and scope
+
+This document turns the plugin taxonomy agreed in the platform roadmap (issue #242) into
+concrete contracts for *Plugin API v0*. CppWiki is the platform: it owns documents, storage,
+sync, authentication, access control and this API. Domain capabilities — meetings,
+transcription, retrieval, external connectors, specialist client work — arrive as plugins and
+connectors, not as forks of the core.
+
+The design has one job: make it possible to port Sessio capabilities into CppWiki *once*, as
+plugins, without the platform accumulating per-audience `if` branches. Profiles (an enabled
+plugin set plus settings) express audience differences.
+
+v0 scope:
+
+* the execution model and isolation tiers (ADR-020);
+* the plugin kinds and the interfaces each kind implements;
+* the manifest, permissions and data scopes;
+* lifecycle, failure handling and events;
+* the host services a plugin may call;
+* the versioning policy and the packaging/licensing boundary;
+* the vertical-slice programme that proves the API before it is frozen.
+
+Not in scope: a marketplace, plugin signing/notarisation, third-party UI rendering, hot
+reload, or the actual implementation of any plugin.
+
+== 2. Principles
+
+. *One platform, everything else is a plugin.* The core has no product-specific branches.
+. *First-party first, sandbox later.* W1-W3 need native audio, threads, models and Qt
+  surfaces. The API is shaped so an untrusted third-party tier can be added without changing
+  plugin contracts (ADR-020).
+. *Contracts before code.* A plugin is described by data (manifest, scopes, events) that the
+  host validates; the compiled code is an implementation detail behind that description.
+. *Narrow host services.* A plugin gets exactly the capabilities it declares and nothing
+  else. No direct access to `QFile`, the network stack, credentials or the repository
+  implementations.
+. *Sessio remains the source of truth* for domain stacks until each piece is ported; the
+  reverse dependency never appears (CppWiki does not import Sessio's database or UI).
+. *Design now, inline with W1.* The API shape decides how ported modules are retrofitted from
+  "module" to "plugin", so it cannot wait for W4 to start after W1.
+
+== 3. Execution model
+
+Two execution tiers share one manifest and one contract (ADR-020):
+
+[cols="1,2,2"]
+|===
+|Tier |What runs there |Isolation
+
+|*A — bundled native*
+|First-party plugins built from this repository with the same toolchain and shipped in the
+installer (meeting service, transcription, RAG, Outline connector, wiki search).
+|In-process C++. A plugin crash can take the application down; mitigated by code review,
+contract tests and the fact that only maintainers can add a Tier A plugin.
+
+|*B — third-party WASM*
+|Headless plugins from outside the project, executed by Wasmtime through the host ABI; they
+may also contribute declarative surfaces rendered by the host.
+|Memory-safe sandbox; crashes are contained and restartable; capability access only through
+host calls. No native UI in v0: declarative surfaces only.
+|===
+
+Why not WASM-first, as ADR-004 assumed: the W1-W2 stacks need audio capture callbacks,
+dedicated threads, ONNX Runtime/sherpa-onnx, large model files and Qt widgets. Running those
+inside WASM is either impossible or a rewrite of the code being ported. Conversely, requiring
+everything to be native would abandon the "a failed plugin cannot crash the host" guarantee.
+The hybrid keeps native where the platform needs it and puts the boundary where untrusted
+code actually arrives.
+
+Consequences that the rest of this document assumes:
+
+* Native UI — document editors and native views — is *Tier A only* in v0. Every tier may
+  contribute declarative, host-rendered surfaces (section 10), which cover status, forms and
+  result blocks; a rich third-party web surface is postponed.
+* Headless kinds (service, connector, search provider) have a host-service surface that can
+  be exposed over WASM imports later without changing their C++ interface.
+* Crash isolation is a property of Tier B. The roadmap's plugin gate is re-scoped accordingly
+  (see <<11-open-questions,open questions>>); out-of-process execution for Tier A services is
+  the fallback if bundled-plugin robustness proves insufficient.
+* Tier A plugins are registered statically at build time. The platform does not `dlopen`
+  native plugin binaries in v0: a directory of `.so`/`.dll`/`.dylib` files is not a plugin
+  source, and there is no native third-party tier.
+
+== 4. Plugin kinds
+
+Every plugin declares one primary kind (and may contribute secondary extension points, noted
+in its manifest). A plugin is a single bundle, not one class per kind.
+
+[cols="1,3,2"]
+|===
+|Kind |Contract |First consumer
+
+|*doc kind*
+|Registers a document type: stable string key, schema/properties, validator, editor or
+renderer, import/export. Requires turning `DocumentKind` from a closed enum
+(`src/document/document.h`) into a string-keyed registry, with existing values migrated to
+keys (`wikiPage`, `jupyterNotebook`, `excalidrawCanvas`, `openApiSpec`, `projectBoard`,
+`task`).
+|Meeting record (W1 step 3)
+
+|*view*
+|Contributes to a host slot (rail mode, side panel, full tab): either a native Qt/QML view
+(Tier A) or a declarative surface rendered by the host (any tier). Consumes host services and
+events; never creates top-level windows. See section 10.
+|Prompter panel (W1 step 4)
+
+|*service*
+|Background lifecycle beyond UI: `start`/`stop`, own threads allowed, audio/model/file I/O
+through host services. Declares a stop deadline.
+|Call service (W1 step 2)
+
+|*connector*
+|External source/sink with an incremental sync loop: cursor, revision tracking, conflict
+policy, deletion policy, credential handle.
+|Outline connector (W3)
+
+|*search provider*
+|Participates in unified search: receives a query, returns ranked hits with provenance
+(document id, kind, span, score) and an honest "no data" result.
+|Wiki FTS (S1)
+|===
+
+Kind interfaces live in `src/plugins/api/` and are pure C++ (no Qt in the headless kinds), so
+a future WASM host can expose the same shape.
+
+== 5. Manifest
+
+The manifest is the source of truth the host validates before any plugin code runs. It is
+declarative JSON shipped next to the plugin, with the same schema for both tiers; Tier A
+plugins also register a compiled factory under the same id, and the host fails the start if
+the manifest and the factory disagree.
+
+[source,json]
+----
+{
+  "id": "cppwiki.search.fts",
+  "name": "Wiki full-text search",
+  "version": "0.1.0",
+  "api_version": 1,
+  "min_platform_version": "0.4.0",
+  "kind": "search-provider",
+  "permissions": {
+    "documents": { "read": ["*"] },
+    "events": { "publish": ["search.hits.v1"], "subscribe": [] },
+    "filesystem": ["plugin-data"],
+    "network": []
+  }
+}
+----
+
+Rules:
+
+* `id` is a reverse-DNS-style stable string; the plugin owns a settings namespace and a data
+  directory keyed by it.
+* `version` is the plugin's own semantic version.
+* `api_version` is the Plugin API major version the plugin was built against (v0 = `1`);
+  the host refuses a mismatch.
+* `min_platform_version` is the oldest application version whose contracts the plugin needs.
+* `kind` is one of the taxonomy values; extension points beyond the primary kind must be
+  listed in the `contributes` array. Each entry names a host slot, a stable id, a title and
+  whether it provides a `native` or `declarative` surface (section 10).
+* Permissions are *deny by default*; an unknown permission is a manifest error, not a warning.
+
+== 6. Permissions and data scopes
+
+|===
+|Scope |Grants
+
+|`documents.read` / `documents.write`
+|Access through `DocumentAccess`, optionally filtered by kind list and workspace. Writes go
+through the existing `DocumentValidator` for the target kind; a plugin cannot persist an
+invalid body.
+
+|`attachments.read` / `attachments.write`
+|Attachment records and payloads through the repository facade, never the filesystem.
+
+|`filesystem: plugin-data`
+|A single directory owned by the plugin; no other path is reachable.
+
+|`models.read`
+|Read-only access to model files resolved by the platform (transcription, embeddings).
+
+|`network`
+|Allowlisted hosts and schemes, requested through `NetworkBroker`. Actual transport,
+retries, timeouts and proxy behaviour stay in the platform.
+
+|`credentials`
+|Handles for named credentials stored via the platform's keychain integration; the plugin
+receives a token for a call, never the stored secret.
+
+|`events`
+|Explicit publish/subscribe topic lists (section 8).
+
+|`ui`
+|Declared rail entries / page surfaces; Tier A only.
+|===
+
+Every plugin-originated document write is recorded in a host audit trail (plugin id,
+document id, timestamp, operation) so a later "why did this change" question has an answer
+without instrumenting the plugin.
+
+Property keys contributed by a plugin are namespaced `plugin.<plugin-id>.<key>`; document
+bodies never contain plugin-private keys outside that namespace.
+
+== 7. Lifecycle
+
+[cols="1,3"]
+|===
+|State |Meaning and allowed transitions
+
+|discovered
+|Manifest parsed and validated; nothing executed. → resolved or rejected.
+
+|resolved
+|Dependencies and `min_platform_version` checked, permissions granted by the profile.
+→ loaded.
+
+|loaded
+|Factory/ABI registered; no threads, no I/O. → started.
+
+|started
+|`start(PluginContext&)` returned successfully; the plugin may run. → stopping.
+
+|stopping
+|`stop()` called with the manifest's stop deadline; the host waits, then logs and continues.
+→ unloaded (or failed).
+|===
+
+Rules:
+
+* Start order follows declared dependencies (`requires`), stop order is the reverse.
+* A failing plugin start is isolated: the host logs it, marks the plugin failed, and continues
+  starting the rest. A failed Tier A plugin is disabled for the session, not retried in a
+  loop.
+* A plugin may not block the UI thread. Headless kinds are called on a platform-owned
+  executor; `stop()` is always called off the UI thread for services.
+* Unload (releasing the module) is Tier B only in v0; Tier A plugins live for the process
+  lifetime.
+* A Tier B crash is a contained failure: the host records it, applies a restart policy with
+  backoff, and disables the plugin after repeated crashes. A Tier A crash is an application
+  crash — this is the accepted price of native first-party code (ADR-020).
+
+== 8. Events
+
+Plugins talk to each other only through versioned topics on the host event bus.
+
+* Topic name: `<domain>.<subject>.v<major>` — e.g. `meeting.transcript.phrase.v1`,
+  `meeting.call.state.v1`, `search.hits.v1`.
+* Payload: a versioned, serialisable struct (JSON-able), documented next to the topic.
+  Structural changes require a new major topic; additive fields are allowed within a major.
+* Delivery: in-process, at-most-once, asynchronous on the subscriber's executor. No
+  persistence, no ordering guarantee across topics; ordering within one topic from one
+  publisher is preserved.
+* Backpressure: each subscription declares a queue policy. High-volume streams (transcript
+  phrases) default to drop-oldest and report the drop count; the prompter must cope with
+  gaps rather than stall the recogniser.
+* Permissions: publishing and subscribing are declarative (`permissions.events`); an
+  undeclared topic is denied and logged.
+* No synchronous plugin-to-plugin calls. If a consumer needs an answer, it publishes a
+  request topic and the provider publishes a response topic; or it calls a host service.
+
+Example contract (W1):
+
+[source,text]
+----
+topic: meeting.transcript.phrase.v1
+payload: {
+  call_id: string,
+  track_id: string,
+  role: "host" | "participant",
+  speaker_name: string,
+  start_ms: int64,   // from the start of the call
+  end_ms: int64,
+  text: string,
+  evidence_id: string
+}
+----
+
+`evidence_id` is the provenance handle the summary/prompter pipelines need to cite a phrase;
+it is assigned by the transcript owner (the service plugin), not by consumers.
+
+== 9. Host services
+
+`PluginContext` exposes only these facades:
+
+[cols="1,3"]
+|===
+|Service |Responsibility
+
+|`DocumentAccess`
+|Scoped read/write of documents, kinds and properties; validation and audit.
+
+|`EventBus`
+|Publish/subscribe with the permission checks above.
+
+|`Settings`
+|Namespaced key/value storage surfaced in the profile/settings UI; no direct file access.
+
+|`PluginStorage`
+|Private directory for plugin data (caches, cursors, indexes), included in backup/export
+policy at the platform's discretion.
+
+|`ModelStore`
+|Resolves and opens platform-managed models by logical name.
+
+|`NetworkBroker`
+|HTTP(S) requests restricted to declared hosts; platform-owned timeouts and retries.
+
+|`Credentials`
+|Short-lived credential handles backed by the OS keychain.
+
+|`UiRegistry`
+|Owns host slots: validates contributions, creates native views (Tier A), renders declarative
+surfaces for all tiers, and routes `SurfaceEvent` interactions back to the plugin.
+
+|`Log`
+|Structured logging tagged with the plugin id; visible in support diagnostics.
+|===
+
+Facades are interfaces with platform implementations; a plugin never receives the concrete
+repository, `QNetworkAccessManager`, keychain object or `QWidget` parent.
+
+== 10. Display API
+
+Plugins never place widgets themselves. The host owns the shell, and a plugin contributes a
+view either as a *native* view (Tier A) or as a *declarative surface* the host renders (all
+tiers). Both layers exist in v0; they differ in who executes drawing code.
+
+=== 10.1 Slots
+
+[cols="1,1,2,2"]
+|===
+|Slot |Allowed providers |Multiplicity |Purpose
+
+|`rail.mode`
+|native, declarative (host-wrapped)
+|one per mode
+|Primary workspace mode with a rail entry, shown as a tab or full-mode surface.
+
+|`page.side-panel`
+|native, declarative
+|many, tabbed
+|Auxiliary panel next to a document: call panel, prompter, connector status.
+
+|`page.full-tab`
+|native, declarative
+|many, tabbed per page
+|Full-width surface inside the current page.
+
+|`document.editor`
+|native only
+|one per document kind
+|Editor/renderer for a doc-kind plugin; the host owns the tab and save lifecycle.
+
+|`search.results`
+|declarative preferred, native allowed
+|many, ordered
+|A provider's result block in unified search.
+
+|`settings.section`
+|declarative preferred
+|many, ordered
+|Plugin settings inside the settings dialog.
+
+|`status.item`
+|declarative only
+|many, ordered
+|Short status: sync state, queue depth, recording indicator.
+|===
+
+Contributions are declared in the manifest:
+
+[source,json]
+----
+"contributes": [
+  { "slot": "page.side-panel", "id": "prompter", "title": "Prompter", "surface": "native" },
+  { "slot": "search.results", "id": "results", "title": "Wiki", "surface": "declarative" }
+]
+----
+
+The host validates slot, tier and surface kind at load time; an unknown slot or a native
+contribution from a Tier B plugin fails the plugin start rather than silently disappearing.
+
+=== 10.2 Native views (Tier A)
+
+A native contribution returns a widget the host parents, shows, hides and destroys:
+
+[source,cpp]
+----
+class IViewFactory {
+ public:
+  virtual ~IViewFactory() = default;
+  // The host sets the parent, owns visibility and destroys the widget.
+  virtual QWidget* createView(ViewContext& context) = 0;
+};
+----
+
+`ViewContext` carries the theme tokens, host commands ("open document", "run search"), the
+plugin's scoped services and lifecycle callbacks (`activate`, `deactivate`, `dispose`). Views
+are created lazily on first visibility; a hidden view must not poll or run timers.
+
+Document editors use a narrower contract; the host owns the tab, save, conflict gate and
+revision history:
+
+[source,cpp]
+----
+class IDocumentEditor {
+ public:
+  virtual ~IDocumentEditor() = default;
+  virtual void load(const DocumentSnapshot& snapshot) = 0;
+  virtual DocumentSnapshot snapshot() const = 0;
+  virtual bool isDirty() const = 0;
+  virtual std::optional<std::string> validate() const = 0;
+};
+----
+
+Native rules: no top-level windows, no `MainWindow` access, no global stylesheet overrides.
+Theme, DPI, focus and accessibility stay with the host.
+
+=== 10.3 Declarative surfaces (all tiers)
+
+A declarative surface is a versioned tree of host-rendered primitives. It is the only UI
+available to Tier B and the preferred one for status, forms and result blocks. The host
+guarantees layout, theme and accessibility, so a plugin cannot break the shell visually.
+
+[source,json]
+----
+{
+  "surface_version": 1,
+  "type": "panel",
+  "children": [
+    { "type": "section", "title": "Outline", "children": [
+      { "type": "key-value", "items": [["Last sync", "2 minutes ago"]] },
+      { "type": "progress", "value": 0.4, "label": "Indexing" }
+    ]},
+    { "type": "actions", "items": [
+      { "id": "sync-now", "label": "Sync now", "style": "primary" }
+    ]}
+  ]
+}
+----
+
+Primitives in v0: `panel`, `section`, `text`, `markdown`, `list`, `table`, `key-value`,
+`form`, `actions`, `progress`, `badge`. Constraints: at most 1000 nodes and depth 8, no HTML,
+no CSS, no arbitrary URLs, all strings escaped by the host. `form` fields are text, number,
+boolean, select and multi-select; file paths and credentials are never typed into a surface —
+the plugin requests them through host services.
+
+Interaction goes back to the plugin as `SurfaceEvent {surface_id, action_id, values}`. The
+plugin validates it and publishes a replacement tree (full replacement in v0; node patching is
+a later optimisation). The host delivers updates only while the surface is visible and
+coalesces bursts.
+
+=== 10.4 Web surface (postponed)
+
+Rich third-party content would need a sandboxed `QWebEngineView` with its own versioned JS
+bridge, similar to `EditorBridge`. It is not part of v0: declarative surfaces cover status,
+forms and result blocks, and native views cover first-party UI. Revisit when a Tier B plugin
+needs content the primitives cannot express.
+
+== 11. Open questions [[11-open-questions]]
+
+. *Crash isolation for Tier A services.* Out-of-process execution (helper process + IPC) is
+   the fallback noted in ADR-020, not part of v0. Decide before shipping a service plugin
+   that touches untrusted input (audio codecs, external files).
+. *Wasmtime provisioning.* Still the open decision from the roadmap: vcpkg port, overlay port
+   or vendoring. Only the Tier B slice is blocked on it.
+. *Web surface for rich third-party content.* Declarative primitives cover status, forms and
+   result blocks. If a Tier B plugin needs richer content, decide between extending the
+   primitives and a sandboxed web surface.
+. *Declarative primitive coverage.* Whether the v0 set is enough for connectors and search, or
+   charts/images are needed; settle after S1/S2.
+. *Plugin signing and distribution.* Profiles decide which plugins are enabled, but nothing
+   yet decides authenticity for downloaded plugins.
+. *Settings UI ownership.* Whether the profile editor is a dedicated surface or part of the
+   existing settings dialog.
+. *Property namespace enforcement.* Whether `plugin.<id>.<key>` is enforced by the validator
+   or only by convention in v0.
+
+== 12. Versioning policy
+
+* The platform follows semantic versioning; the installer advertises its version in the
+  manifest check.
+* `api_version` is an integer major. Within a major, new optional host services and manifest
+  fields may appear; a plugin built against v1 must keep working.
+* Breaking a host interface or removing a manifest field requires a new `api_version`; the
+  platform then supports the previous major for at least two minor platform releases and
+  logs a deprecation warning on start.
+* Topic majors are independent of `api_version` but follow the same compatibility rule.
+* The platform is pre-1.0: the policy protects plugins from silent breakage, not from a
+  documented migration, which is always announced in the roadmap document.
+
+== 13. Profiles and packaging
+
+* A profile is an enabled plugin set plus a settings preset (`generic`, `psychology`,
+  `sales/raftds`, ...). Profiles are configuration, never compiled-in branches.
+* Bundled (Tier A) plugins ship in the default installer; optional plugins can be disabled
+  per profile without reinstalling.
+* CppWiki is AGPL-3.0. Bundled plugins are part of the same work and licensed accordingly;
+  a third-party plugin that links GPL-incompatible code must be relicensable by its author or
+  kept outside the bundled set. The plugin boundary is a licensing boundary as much as a
+  technical one.
+* Platform-managed assets (transcription models, embeddings) keep their own notices; the
+  ported GigaAM/Silero stack is the current example (issue #240).
+
+== 14. Vertical slices
+
+The API is proven by three slices, in this order. Each slice is independently shippable and
+must pass the host contract tests (discovery, manifest validation, permission denial,
+lifecycle, failure isolation) on a clean profile.
+
+=== S1 — Wiki full-text search as a search provider
+
+* Proves: discovery, manifest, `documents.read`, synchronous host call-in, no UI, no network.
+* Deliverable: a Tier A search-provider plugin that indexes the local workspace and answers
+  unified-search queries with provenance; its result block is a declarative `search.results`
+  surface, so the slice also proves the declarative renderer; a contract test for an
+  unauthorized document kind.
+* Exit: search results appear in the shell for a clean profile with only this plugin enabled.
+
+=== S2 — Outline connector
+
+* Proves: the connector contract, `NetworkBroker` allowlisting, credential handles, cursor
+  persistence, incremental sync and deletion policy.
+* Deliverable: allowlisted Outline collections imported as documents, with a stored sync
+  cursor and a documented conflict policy; connector status is a declarative
+  `settings.section` surface; integration tests against a local stub.
+* Exit: a second sync run is incremental, a remote deletion is reflected according to policy,
+  and no credential material is reachable from plugin code.
+
+=== S3 — Meeting call service and prompter
+
+* Proves: service lifecycle with a stop deadline, audio host bridge, transcript events and a
+  view-consuming event stream — the W1 retrofit path.
+* Deliverable: the ported transcription core (issue #240) wrapped as a service plugin,
+  publishing `meeting.transcript.phrase.v1`, plus a prompter as a native Tier A
+  `page.side-panel` view subscribing to it. Call transport/audio capture is the W1 task that
+  precedes it.
+* Exit: stopping the call within the deadline leaves the app responsive, the prompter shows
+  live phrases, and a forced decode failure does not corrupt the transcript owner.
+
+== 15. Implementation sketch
+
+Nothing in this section exists yet; it defines the first code layout so the slices do not
+invent their own.
+
+[source,text]
+----
+src/plugins/               plugin host (Tier A)
+  manifest.{h,cc}          parse + validate plugin.json
+  registry.{h,cc}          id -> factory, dependency resolution
+  host.{h,cc}              lifecycle, executor, failure policy
+  event_bus.{h,cc}
+  permissions.{h,cc}
+  ui_registry.{h,cc}       host slots, contribution and surface lifecycle
+  surface.{h,cc}           declarative tree validation + rendering
+  api/                     public plugin-facing headers (no Qt in headless kinds)
+    plugin.h               IPlugin, PluginContext
+    document_access.h
+    events.h
+    services.h
+    ui.h                   IViewFactory, ViewContext, IDocumentEditor
+    surface.h              surface tree types, SurfaceEvent
+plugins/                   first-party plugin bundles, one CMake target each
+  search-fts/
+  outline-connector/
+  meeting-service/
+----
+
+Host wiring: `AppContext` gains a `PluginHost` built from the active profile; the desktop
+shell asks `UiRegistry` for rail entries instead of hardcoding them. Platform code keeps the
+right to register built-in providers (documents, repository, sync) that plugins consume but
+cannot replace.
+
+== 16. Migration from ADR-004 and the ported modules
+
+* ADR-020 supersedes ADR-004's "WASM for everything" decision while keeping its plugin
+  contract ideas (manifest, schema, validation, rendering, plain-text extraction) as the
+  doc-kind interface.
+* The transcription core (issue #240) is a plain library today. S3 wraps it instead of
+  rewriting it: the engine stays engine-agnostic, the service plugin owns threads, model
+  discovery and event publication.
+* RAG (W2) lands behind the search-provider interface, so the retrieval stack can change
+  (BM25, dense, LadybugDB) without the shell knowing.
+* Doc kinds gain a registry before the meeting record slice; until then, `DocumentKind` stays
+  a closed enum and doc-kind plugins are blocked.
