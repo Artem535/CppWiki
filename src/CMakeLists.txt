@@ -1,3 +1,73 @@
+if (CPPWIKI_BUILD_DESKTOP_APP OR CPPWIKI_BUILD_TESTS)
+    # Plugin host v0 (issue #245): manifest/registry/lifecycle/events/permissions plus the
+    # display registry. QtCore-only so headless plugin tests stay console binaries; native
+    # widgets are supplied by plugins behind api/ui.h (forward-declared QWidget).
+    add_library(cppwiki_plugins STATIC
+            plugins/api/plugin.h
+            plugins/api/services.h
+            plugins/api/ui.h
+            plugins/event_bus.cc
+            plugins/event_bus.h
+            plugins/executor.cc
+            plugins/executor.h
+            plugins/host.cc
+            plugins/host.h
+            plugins/manifest.cc
+            plugins/manifest.h
+            plugins/surface.cc
+            plugins/surface.h
+            plugins/display_registry.cc
+            plugins/display_registry.h
+    )
+
+    target_include_directories(cppwiki_plugins
+            PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
+    target_link_libraries(cppwiki_plugins
+            PUBLIC
+            Qt6::Core
+            spdlog::spdlog
+    )
+
+    # api/ui.h and display_registry.h look like Qt `ui_*.h` form headers to AUTOUIC, which then
+    # fails looking for a .ui file. The library has neither QObject nor .ui files.
+    set_target_properties(cppwiki_plugins PROPERTIES
+            AUTOMOC OFF
+            AUTOUIC OFF
+            AUTORCC OFF
+    )
+
+    cppwiki_apply_common_options(cppwiki_plugins)
+
+    # Qt renderer for the declarative surface primitives. Kept separate so the host core and
+    # its console tests do not depend on QtWidgets.
+    add_library(cppwiki_plugins_ui STATIC
+            plugins/surface_renderer.cc
+            plugins/surface_renderer.h
+    )
+
+    target_include_directories(cppwiki_plugins_ui
+            PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
+    target_link_libraries(cppwiki_plugins_ui
+            PUBLIC
+            cppwiki_plugins
+            Qt6::Widgets
+    )
+
+    set_target_properties(cppwiki_plugins_ui PROPERTIES
+            AUTOMOC OFF
+            AUTOUIC OFF
+            AUTORCC OFF
+    )
+
+    cppwiki_apply_common_options(cppwiki_plugins_ui)
+endif ()
+
 if (CPPWIKI_BUILD_DESKTOP_APP)
 qt_add_executable(cppwiki_app
         MANUAL_FINALIZATION
@@ -141,6 +211,7 @@ target_link_libraries(cppwiki_app
         spdlog::spdlog
         reflectcpp::reflectcpp
         textfoundry_core
+        cppwiki_plugins
 )
 
 qt_add_resources(cppwiki_app cppwiki_qml_resources

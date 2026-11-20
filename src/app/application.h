@@ -17,6 +17,11 @@ namespace oclero::qlementine {
 class QlementineStyle;
 }
 
+namespace cppwiki::plugins {
+class PluginHost;
+class ThreadExecutor;
+}  // namespace cppwiki::plugins
+
 namespace cppwiki {
 
 class Application final {
@@ -37,6 +42,8 @@ class Application final {
   std::unique_ptr<auth::AuthSessionManager> auth_session_manager_;
   std::unique_ptr<backend::BackendClient> backend_client_;
   std::unique_ptr<sync::SyncService> document_sync_service_;
+  std::unique_ptr<plugins::ThreadExecutor> plugin_executor_;
+  std::unique_ptr<plugins::PluginHost> plugin_host_;
   std::unique_ptr<AppContext> context_;
   MainWindow main_window_;
 };
