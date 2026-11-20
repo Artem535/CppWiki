@@ -1,0 +1,93 @@
+= ADR-020 — Plugin Execution Model: Native First-Party Modules with a WASM Tier for Third Parties
+
+== Status
+
+Accepted
+
+== Date
+
+2026-11-20
+
+== Supersedes
+
+xref:architecture/adr/ADR-004-plugin-system.adoc[ADR-004 — Plugin System]. ADR-004's plugin contract ideas
+(manifest, schema, validation, rendering, plain-text extraction) are retained; its
+"Wasmtime for everything" execution model is not.
+
+'''
+
+== Context
+
+ADR-004 (2026-06-11) decided that plugins are WebAssembly modules executed through Wasmtime,
+with a C++20 SDK hiding the ABI. The goal was safety: a plugin crash must not crash the host.
+
+Since then the product direction changed (roadmap issue #242): CppWiki becomes a plugin-based
+workbench whose first workstreams are the ported Sessio meeting stack (W1) and retrieval (W2).
+Those capabilities need things WASM makes impractical or impossible:
+
+* audio capture callbacks and transport from the platform;
+* dedicated real-time threads for segmentation and decoding;
+* ONNX Runtime and sherpa-onnx, plus large model files on disk;
+* Qt/QML surfaces inside the desktop shell (call panel, prompter, meeting views).
+
+Conversely, the plugins that carry real crash risk are third-party ones, which do not exist
+yet and whose UI story is undecided. Requiring every first-party module to survive a WASM
+boundary would mean rewriting the very stacks being ported, and postponing W1 until Wasmtime
+provisioning (still unresolved: no vcpkg port, no vendoring decision) is settled.
+
+== Decision
+
+Adopt a two-tier plugin execution model behind one manifest and one set of contracts
+(see xref:architecture/Plugin_API_v0_Design.adoc[Plugin API v0 design]):
+
+* *Tier A — bundled native plugins.* Built from this repository with the same toolchain as the
+  application, statically registered and executed in-process. Intended for all first-party
+  capabilities, including every UI-bearing kind.
+* *Tier B — third-party WASM plugins.* Executed by Wasmtime, capability-based, headless only
+  in v0. The C++ headless interfaces are designed so a WASM host can expose the same calls as
+  imports without changing plugin contracts.
+
+The plugin gate announced in the roadmap ("a failed plugin cannot crash the host") applies to
+Tier B. Tier A isolation is achieved by review, contract tests and the fact that only
+maintainers can add a bundled plugin; out-of-process execution for Tier A services remains the
+documented fallback if that proves insufficient.
+
+== Consequences
+
+=== Positive
+
+* W1-W3 can be implemented with the code being ported, without waiting on Wasmtime
+  provisioning or a WASM rewrite of audio, threads and model runtimes.
+* The manifest, permissions, event and versioning contracts are exercised immediately by real
+  plugins, so the third-party tier is designed against working code rather than assumptions.
+* Crash isolation is still promised where it matters (untrusted code) and honestly not
+  promised where it cannot be achieved (bundled code).
+
+=== Negative
+
+* Two execution paths to maintain; Tier B needs host-call ABI work that Tier A does not.
+* A bundled plugin bug can crash the application. Mitigations are tests and review, not a
+  sandbox.
+* UI-bearing plugin kinds are reserved to the platform for now; third-party plugins cannot
+  extend the shell until a declarative or web view contract exists.
+
+=== Neutral
+
+* The API version is one integer for both tiers. If the WASM host needs a different call
+  convention, it maps onto the same interfaces; it does not fork the plugin contract.
+
+== Alternatives considered
+
+* *WASM only (ADR-004 as written).* Rejected: blocks W1/W2 on runtime provisioning and forces
+  audio/model code into an environment it does not fit.
+* *Native only.* Rejected: abandons crash isolation for third-party code and makes the plugin
+  gate unachievable in principle.
+* *Out-of-process native plugins from day one.* Rejected for v0: process-per-plugin plus IPC
+  adds lifecycle, packaging and debugging cost before any plugin exists. Kept as the fallback
+  for Tier A services (design document, open questions).
+
+== References
+
+* xref:architecture/Plugin_API_v0_Design.adoc[Plugin API v0 design]
+* xref:architecture/adr/ADR-004-plugin-system.adoc[ADR-004 — Plugin System]
+* xref:roadmap/Current_Roadmap.adoc[Current roadmap]

@@ -120,8 +120,11 @@ document is the narrative/architecture view of the same plan.
   PR regardless of which files changed -- occasionally flakes on GitHub's cache-export step,
   unrelated to the code being tested.
 
-The plugin runtime (Wasmtime) and Confluence import/export, previously "Milestone 9/10"
-spikes, have not been started -- see <<6-open-decisions>>.
+The plugin platform now has a design: xref:architecture/Plugin_API_v0_Design.adoc[Plugin API v0]
+and xref:architecture/adr/ADR-020-plugin-execution-model.adoc[ADR-020] (native first-party tier,
+WASM for untrusted third-party plugins later). No plugin code has started yet; roadmap issue
+#242 tracks the workstreams. Confluence import/export, previously a "Milestone 9/10" spike,
+remains unstarted -- see <<6-open-decisions>>.
 
 == 2. In-Flight Work [[2-in-flight-work]]
 
@@ -261,8 +264,10 @@ for a real user (Gatekeeper, see <<1-current-baseline>>'s Packaging and CI notes
 (packaged-launch smoke test) exists specifically so this class of gap fails CI, not a user.
 
 |Plugin gate
-|Failed plugin cannot crash the host
-|Not started -- Wasmtime provisioning still undecided, see <<6-open-decisions>>
+|A failed third-party plugin cannot crash the host
+|Scoped by xref:architecture/adr/ADR-020-plugin-execution-model.adoc[ADR-020] to the WASM tier;
+bundled native plugins are reviewed and tested instead. Neither tier has code yet -- see
+<<6-open-decisions>>
 
 |Agent tool gate
 |An agent-mode tool call (Code mode's filesystem/shell tools, in particular) cannot act outside
@@ -278,8 +283,8 @@ its granted scope/permission mode
 
 |Wasmtime dependency provisioning
 |Open
-|Unchanged since the previous roadmap. Not in `vcpkg.json`; needs a supported port, overlay
-port or separate vendoring strategy. No plugin work has started against this.
+|Only the third-party (WASM) tier needs it, so it no longer blocks first-party plugin work.
+Not in `vcpkg.json`; needs a supported port, overlay port or separate vendoring strategy.
 
 |Confluence import/export
 |Open
@@ -346,5 +351,7 @@ permission mode; `forkd` is the intended Linux sandboxing mechanism for sub-agen
 . Continue #29 (shared agent engine) as the only active work toward
   <<4-future-agent-modes>>; do not start #30/#31 until #29 lands, and don't let it compete with
   the `0.x` milestones above for priority.
-. Observability (OpenTelemetry), the Wasmtime/plugin spike, and Confluence import/export remain
-  explicitly deferred -- no action until the `CppWiki Local` milestones clear.
+. Observability (OpenTelemetry) and Confluence import/export remain explicitly deferred -- no
+  action until the `CppWiki Local` milestones clear. The plugin platform's design is done
+  (ADR-020, Plugin API v0), but its implementation follows the sequencing in #242 and does not
+  add scope to the `0.x` milestones.

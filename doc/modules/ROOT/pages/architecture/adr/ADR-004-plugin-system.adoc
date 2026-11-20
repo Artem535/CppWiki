@@ -2,7 +2,9 @@
 
 == Status
 
-Accepted
+Superseded by xref:architecture/adr/ADR-020-plugin-execution-model.adoc[ADR-020] (2026-11-20). The plugin
+contract ideas below are retained; the Wasmtime-only execution model is replaced by a native
+first-party tier plus a WASM tier for untrusted third-party plugins.
 
 == Date
 

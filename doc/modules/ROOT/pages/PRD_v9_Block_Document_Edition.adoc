@@ -39,15 +39,14 @@ Couchbase Lite + Sync Gateway
 oat++ Backend
 ----
 
-Расширяемость обеспечивается через безопасную систему плагинов:
+Расширяемость обеспечивается через систему плагинов (xref:architecture/adr/ADR-020-plugin-execution-model.adoc[ADR-020]):
 
 [source,text]
 ----
 C++ Plugin SDK
     ↓
-WASM
-    ↓
-Wasmtime
+Tier A: нативные first-party модули (в процессе приложения)
+Tier B: WASM / Wasmtime (сторонние headless-плагины)
 ----
 
 В MVP используется упрощенная модель коллаборации:
@@ -344,7 +343,8 @@ desktop app
 |Backend |oat{plus}{plus} |C{plus}{plus} HTTP/WebSocket server with
 explicit DTO/controller model and good fit for typed API contracts
 
-|Plugin Runtime |Wasmtime |Safe WASM execution
+|Plugin Runtime |Native (Tier A) + Wasmtime (Tier B) |ADR-020: first-party plugins in-process,
+untrusted third-party plugins in WASM
 
 |Plugin SDK |C{plus}{plus}20 |Native plugin developer experience
 
